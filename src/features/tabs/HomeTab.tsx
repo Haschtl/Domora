@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 interface HomeTabProps {
   household: Household;
   households: Household[];
-  userEmail: string | undefined;
+  userLabel: string | undefined | null;
   completedTasks: number;
   totalTasks: number;
   onSelectHousehold: (householdId: string) => void;
@@ -17,7 +17,7 @@ interface HomeTabProps {
 export const HomeTab = ({
   household,
   households,
-  userEmail,
+  userLabel,
   completedTasks,
   totalTasks,
   onSelectHousehold
@@ -31,7 +31,7 @@ export const HomeTab = ({
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <CardTitle>{t("home.title")}</CardTitle>
-            <CardDescription>{userEmail ?? t("app.noUserLabel")}</CardDescription>
+            <CardDescription>{userLabel ?? t("app.noUserLabel")}</CardDescription>
           </div>
           <Badge>{t("app.codeBadge", { code: household.invite_code })}</Badge>
         </div>

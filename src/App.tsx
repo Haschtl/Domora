@@ -29,14 +29,16 @@ import { useWorkspaceController } from "./hooks/useWorkspaceController";
 
 const tabPathMap: Record<AppTab, string> = {
   home: "/home",
-  shopping: "/shopping",
+  shopping: "/shopping/list",
   tasks: "/tasks/overview",
   finances: "/finances/overview",
-  settings: "/settings"
+  settings: "/settings/me"
 };
 
+type ShoppingSubTab = "list" | "history";
 type TaskSubTab = "overview" | "stats" | "history";
 type FinanceSubTab = "overview" | "stats" | "archive" | "subscriptions";
+type SettingsSubTab = "me" | "household";
 
 const resolveTabFromPathname = (pathname: string): AppTab => {
   if (pathname.startsWith("/home")) return "home";
@@ -53,11 +55,21 @@ const resolveTaskSubTabFromPathname = (pathname: string): TaskSubTab => {
   return "overview";
 };
 
+const resolveShoppingSubTabFromPathname = (pathname: string): ShoppingSubTab => {
+  if (pathname.startsWith("/shopping/history")) return "history";
+  return "list";
+};
+
 const resolveFinanceSubTabFromPathname = (pathname: string): FinanceSubTab => {
   if (pathname.startsWith("/finances/stats")) return "stats";
   if (pathname.startsWith("/finances/archive")) return "archive";
   if (pathname.startsWith("/finances/subscriptions")) return "subscriptions";
   return "overview";
+};
+
+const resolveSettingsSubTabFromPathname = (pathname: string): SettingsSubTab => {
+  if (pathname.startsWith("/settings/household")) return "household";
+  return "me";
 };
 
 const tabItems: Array<{ id: AppTab; icon: LucideIcon }> = [
@@ -73,6 +85,10 @@ const taskSubPathMap: Record<TaskSubTab, "/tasks/overview" | "/tasks/stats" | "/
   stats: "/tasks/stats",
   history: "/tasks/history"
 };
+const shoppingSubPathMap: Record<ShoppingSubTab, "/shopping/list" | "/shopping/history"> = {
+  list: "/shopping/list",
+  history: "/shopping/history"
+};
 
 const financeSubPathMap: Record<
   FinanceSubTab,
@@ -82,6 +98,10 @@ const financeSubPathMap: Record<
   stats: "/finances/stats",
   archive: "/finances/archive",
   subscriptions: "/finances/subscriptions"
+};
+const settingsSubPathMap: Record<SettingsSubTab, "/settings/me" | "/settings/household"> = {
+  me: "/settings/me",
+  household: "/settings/household"
 };
 
 const App = () => {
@@ -101,11 +121,13 @@ const App = () => {
     tasks,
     taskCompletions,
     finances,
+    cashAuditRequests,
     householdMembers,
     memberPimpers,
     userId,
     userEmail,
     userAvatarUrl,
+    userDisplayName,
     currentMember,
     completedTasks,
     notificationPermission,
@@ -113,6 +135,7 @@ const App = () => {
     onSignIn,
     onSignUp,
     onGoogleSignIn,
+    onSignOut,
     onCreateHousehold,
     onJoinHousehold,
     onAddShoppingItem,
@@ -121,18 +144,29 @@ const App = () => {
     onAddTask,
     onCompleteTask,
     onAddFinanceEntry,
+    onUpdateFinanceEntry,
+    onDeleteFinanceEntry,
     onRequestCashAudit,
     onEnableNotifications,
     onUpdateHousehold,
     onUpdateMemberSettings,
     onUpdateUserAvatar,
-    onLeaveHousehold
+    onUpdateUserDisplayName,
+    onLeaveHousehold,
+    onDissolveHousehold,
+    onSetMemberRole,
+    onRemoveMember
   } = useWorkspaceController();
 
   const tab = useMemo(() => resolveTabFromPathname(location.pathname), [location.pathname]);
+  const shoppingSubTab = useMemo(() => resolveShoppingSubTabFromPathname(location.pathname), [location.pathname]);
   const taskSubTab = useMemo(() => resolveTaskSubTabFromPathname(location.pathname), [location.pathname]);
   const financeSubTab = useMemo(() => resolveFinanceSubTabFromPathname(location.pathname), [location.pathname]);
-  const hasSubNav = tab === "tasks" || tab === "finances";
+  const settingsSubTab = useMemo(() => resolveSettingsSubTabFromPathname(location.pathname), [location.pathname]);
+  const dueTasksCount = useMemo(() => {
+    const now = Date.now();
+    return tasks.filter((task) => !task.done && new Date(task.due_at).getTime() <= now).length;
+  }, [tasks]);
 
   const onTabChange = (value: string) => {
     const nextTab = value as AppTab;
@@ -149,8 +183,20 @@ const App = () => {
     }
   };
 
+  const onDissolveHouseholdWithRedirect = async () => {
+    await onDissolveHousehold();
+    if (location.pathname.startsWith("/settings")) {
+      void navigate({ to: "/home" });
+    }
+  };
+
   const subItems: Array<{ id: string; icon: LucideIcon; labelKey: string; path: string }> =
-    tab === "tasks"
+    tab === "shopping"
+      ? [
+          { id: "list", icon: LayoutList, labelKey: "subnav.shopping.list", path: shoppingSubPathMap.list },
+          { id: "history", icon: FileText, labelKey: "subnav.shopping.history", path: shoppingSubPathMap.history }
+        ]
+      : tab === "tasks"
       ? [
           { id: "overview", icon: LayoutList, labelKey: "subnav.tasks.overview", path: taskSubPathMap.overview },
           { id: "stats", icon: BarChart3, labelKey: "subnav.tasks.stats", path: taskSubPathMap.stats },
@@ -178,9 +224,41 @@ const App = () => {
               path: financeSubPathMap.subscriptions
             }
           ]
+        : tab === "settings"
+          ? [
+              { id: "me", icon: Settings, labelKey: "subnav.settings.me", path: settingsSubPathMap.me },
+              {
+                id: "household",
+                icon: Home,
+                labelKey: "subnav.settings.household",
+                path: settingsSubPathMap.household
+              }
+            ]
         : [];
 
-  const activeSubPath = tab === "tasks" ? taskSubPathMap[taskSubTab] : tab === "finances" ? financeSubPathMap[financeSubTab] : "";
+  const activeSubPath =
+    tab === "shopping"
+      ? shoppingSubPathMap[shoppingSubTab]
+      : tab === "tasks"
+      ? taskSubPathMap[taskSubTab]
+      : tab === "finances"
+        ? financeSubPathMap[financeSubTab]
+        : tab === "settings"
+          ? settingsSubPathMap[settingsSubTab]
+          : "";
+  const mobileSubItems: Array<{ id: string; icon: LucideIcon; labelKey: string; path: string }> =
+    subItems.length > 0
+      ? subItems
+      : [
+          {
+            id: tab,
+            icon: tabItems.find((item) => item.id === tab)?.icon ?? Home,
+            labelKey: `tab.${tab}`,
+            path: tabPathMap[tab]
+          }
+        ];
+  const activeMobileSubPath = subItems.length > 0 ? activeSubPath : tabPathMap[tab];
+  const hasSingleMobileSubItem = mobileSubItems.length === 1;
 
   useEffect(() => {
     if (error) toast.error(error);
@@ -189,6 +267,12 @@ const App = () => {
   useEffect(() => {
     if (message) toast.success(message);
   }, [message]);
+
+  useEffect(() => {
+    const brand = t("app.brand");
+    const householdName = activeHousehold?.name?.trim();
+    document.title = householdName ? `${householdName} | ${brand}` : brand;
+  }, [activeHousehold?.name, t]);
 
   return (
     <div className="mx-auto min-h-screen w-full max-w-7xl p-4 pb-10 text-slate-900 dark:text-slate-100 sm:p-6">
@@ -214,13 +298,14 @@ const App = () => {
           onCreate={onCreateHousehold}
           onJoin={onJoinHousehold}
           onSelect={(household) => setActiveHousehold(household)}
+          onSignOut={onSignOut}
         />
       ) : null}
 
       {!loadingSession && session && activeHousehold ? (
-        <section className="pb-24 lg:pb-0">
-          <div className="lg:grid lg:grid-cols-[230px_minmax(0,1fr)] lg:gap-6">
-            <aside className="hidden lg:block">
+        <section className="pb-24 sm:pb-0">
+          <div className="sm:grid sm:grid-cols-[230px_minmax(0,1fr)] sm:gap-6">
+            <aside className="hidden sm:block">
               <div className="sticky top-6 rounded-2xl border border-brand-100 bg-white/90 p-3 shadow-card dark:border-slate-700 dark:bg-slate-900/80">
                 <ul className="space-y-1">
                   {tabItems.map((item) => {
@@ -233,13 +318,18 @@ const App = () => {
                           type="button"
                           className={
                             active
-                              ? "flex w-full items-center gap-2 rounded-lg bg-brand-100 px-3 py-2 text-left text-sm font-medium text-brand-900 dark:bg-brand-900 dark:text-brand-100"
-                              : "flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-slate-600 hover:bg-brand-50 dark:text-slate-300 dark:hover:bg-slate-800"
+                              ? "relative flex w-full items-center gap-2 rounded-lg bg-brand-100 px-3 py-2 text-left text-sm font-medium text-brand-900 dark:bg-brand-900 dark:text-brand-100"
+                              : "relative flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-slate-600 hover:bg-brand-50 dark:text-slate-300 dark:hover:bg-slate-800"
                           }
                           onClick={() => onTabChange(item.id)}
                         >
                           <Icon className="h-4 w-4" />
                           {t(`tab.${item.id}`)}
+                          {item.id === "tasks" && dueTasksCount > 0 ? (
+                            <span className="absolute right-2 top-1 inline-flex min-h-5 min-w-5 items-center justify-center rounded-full border border-brand-200 bg-brand-500 px-1.5 text-[10px] font-semibold leading-none text-white dark:border-brand-700 dark:bg-brand-600">
+                              {dueTasksCount}
+                            </span>
+                          ) : null}
                         </button>
                       </li>
                     );
@@ -278,14 +368,28 @@ const App = () => {
               </div>
             </aside>
 
-            <div className={hasSubNav ? "pt-16 sm:pt-0 lg:pt-0" : ""}>
-              {subItems.length > 0 ? (
+            <div className="pt-24 sm:pt-0 lg:pt-0">
+              {mobileSubItems.length > 0 ? (
                 <div className="fixed inset-x-0 top-0 z-40 border-b border-brand-200 bg-white/95 px-3 py-2 backdrop-blur dark:border-slate-700 dark:bg-slate-900/95 sm:hidden">
                   <div className="mx-auto max-w-7xl">
-                    <ul className={subItems.length > 3 ? "grid grid-cols-4 gap-1" : "grid grid-cols-3 gap-1"}>
-                      {subItems.map((item) => {
+                    <div className="mb-2 px-1">
+                      <p className="text-base font-semibold text-slate-900 dark:text-slate-100">
+                        {t(`tab.${tab}`)}
+                      </p>
+                    </div>
+                    <ul
+                      className={
+                        hasSingleMobileSubItem
+                          ? "invisible grid grid-cols-1 gap-1"
+                          : mobileSubItems.length > 3
+                            ? "grid grid-cols-4 gap-1"
+                            : "grid grid-cols-3 gap-1"
+                      }
+                      aria-hidden={hasSingleMobileSubItem}
+                    >
+                      {mobileSubItems.map((item) => {
                         const Icon = item.icon;
-                        const active = activeSubPath === item.path;
+                        const active = activeMobileSubPath === item.path;
                         return (
                           <li key={item.id}>
                             <button
@@ -320,7 +424,7 @@ const App = () => {
                     <HomeTab
                       household={activeHousehold}
                       households={households}
-                      userEmail={userEmail}
+                      userLabel={userDisplayName ?? userEmail}
                       completedTasks={completedTasks}
                       totalTasks={tasks.length}
                       onSelectHousehold={(householdId) => {
@@ -332,8 +436,10 @@ const App = () => {
 
                   {tab === "shopping" ? (
                     <ShoppingTab
+                      section={shoppingSubTab}
                       items={shoppingItems}
                       completions={shoppingCompletions}
+                      members={householdMembers}
                       userId={userId!}
                       busy={busy}
                       onAdd={onAddShoppingItem}
@@ -362,33 +468,43 @@ const App = () => {
                     <FinancesTab
                       section={financeSubTab}
                       entries={finances}
+                      cashAuditRequests={cashAuditRequests}
+                      household={activeHousehold}
+                      currentMember={currentMember}
                       members={householdMembers}
                       busy={busy}
                       userId={userId!}
                       onAdd={onAddFinanceEntry}
+                      onUpdateEntry={onUpdateFinanceEntry}
+                      onDeleteEntry={onDeleteFinanceEntry}
+                      onUpdateHousehold={onUpdateHousehold}
+                      onUpdateMemberSettings={onUpdateMemberSettings}
                       onRequestCashAudit={onRequestCashAudit}
                     />
                   ) : null}
 
                   {tab === "settings" ? (
                     <SettingsTab
+                      section={settingsSubTab}
                       household={activeHousehold}
+                      members={householdMembers}
                       currentMember={currentMember}
+                      userId={userId!}
                       userEmail={userEmail}
                       userAvatarUrl={userAvatarUrl}
+                      userDisplayName={userDisplayName}
                       busy={busy}
                       onUpdateHousehold={onUpdateHousehold}
-                      onUpdateMemberSettings={onUpdateMemberSettings}
                       onUpdateUserAvatar={onUpdateUserAvatar}
+                      onUpdateUserDisplayName={onUpdateUserDisplayName}
+                      onSetMemberRole={onSetMemberRole}
+                      onRemoveMember={onRemoveMember}
                       onLeaveHousehold={onLeaveHouseholdWithRedirect}
+                      onDissolveHousehold={onDissolveHouseholdWithRedirect}
                     />
                   ) : null}
                 </motion.div>
               </AnimatePresence>
-
-              <p className="mt-4 text-center text-xs text-slate-500 dark:text-slate-400">
-                {t("app.tasksDone", { done: completedTasks, total: tasks.length })}
-              </p>
             </div>
           </div>
 
@@ -404,14 +520,19 @@ const App = () => {
                       type="button"
                       className={
                         active
-                          ? "flex w-full flex-col items-center rounded-lg bg-brand-100 px-1 py-2 text-brand-900 dark:bg-brand-900 dark:text-brand-100"
-                          : "flex w-full flex-col items-center rounded-lg px-1 py-2 text-slate-500 dark:text-slate-400"
+                          ? "relative flex w-full flex-col items-center rounded-lg bg-brand-100 px-1 py-2 text-brand-900 dark:bg-brand-900 dark:text-brand-100"
+                          : "relative flex w-full flex-col items-center rounded-lg px-1 py-2 text-slate-500 dark:text-slate-400"
                       }
                       onClick={() => onTabChange(item.id)}
                       aria-label={t(`tab.${item.id}`)}
                     >
                       <Icon className="h-4 w-4" />
                       <span className="mt-1 text-[10px] font-medium">{t(`tab.${item.id}`)}</span>
+                      {item.id === "tasks" && dueTasksCount > 0 ? (
+                        <span className="absolute right-1 top-1 inline-flex min-h-4 min-w-4 items-center justify-center rounded-full border border-brand-200 bg-brand-500 px-1 text-[9px] font-semibold leading-none text-white dark:border-brand-700 dark:bg-brand-600">
+                          {dueTasksCount}
+                        </span>
+                      ) : null}
                     </button>
                   </li>
                 );

@@ -1,8 +1,11 @@
-import { type ChangeEvent, useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useForm } from "@tanstack/react-form";
-import { CircleHelp } from "lucide-react";
+import imageCompression from "browser-image-compression";
+import { Camera, Check, Crown, UserMinus, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { Household, HouseholdMember } from "../../lib/types";
+import { createDiceBearAvatarDataUri } from "../../lib/avatar";
+import { createMemberLabelGetter } from "../../lib/member-label";
 import { ThemeLanguageControls } from "../../components/theme-language-controls";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
@@ -15,26 +18,35 @@ import {
   DialogTitle,
   DialogTrigger
 } from "../../components/ui/dialog";
+import { FileUploadButton } from "../../components/ui/file-upload-button";
 import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
-import { Popover, PopoverContent, PopoverTrigger } from "../../components/ui/popover";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
 
 interface SettingsTabProps {
+  section?: "me" | "household";
   household: Household;
+  members: HouseholdMember[];
   currentMember: HouseholdMember | null;
+  userId: string;
   userEmail: string | undefined;
   userAvatarUrl: string | null;
+  userDisplayName: string | null;
   busy: boolean;
   onUpdateHousehold: (input: {
+    name: string;
     imageUrl: string;
     address: string;
     currency: string;
     apartmentSizeSqm: number | null;
     warmRentMonthly: number | null;
   }) => Promise<void>;
-  onUpdateMemberSettings: (input: { roomSizeSqm: number | null; commonAreaFactor: number }) => Promise<void>;
   onUpdateUserAvatar: (avatarUrl: string) => Promise<void>;
+  onUpdateUserDisplayName: (displayName: string) => Promise<void>;
+  onSetMemberRole: (targetUserId: string, role: "owner" | "member") => Promise<void>;
+  onRemoveMember: (targetUserId: string) => Promise<void>;
   onLeaveHousehold: () => Promise<void>;
+  onDissolveHousehold: () => Promise<void>;
 }
 
 const normalizeCurrency = (value: string) =>
@@ -43,39 +55,71 @@ const normalizeCurrency = (value: string) =>
     .replace(/[^A-Z]/g, "")
     .slice(0, 3);
 
-const toNumericInputValue = (value: number | null) => (value === null ? "" : String(value));
-const parseOptionalNumber = (value: string) => {
-  const trimmed = value.trim();
-  if (!trimmed) return null;
-  const parsed = Number(trimmed);
-  return Number.isFinite(parsed) ? parsed : Number.NaN;
-};
+const CURRENCY_OPTIONS = [
+  { code: "EUR", icon: "€", label: "Euro" },
+  { code: "USD", icon: "$", label: "US Dollar" },
+  { code: "CHF", icon: "₣", label: "Swiss Franc" },
+  { code: "GBP", icon: "£", label: "British Pound" },
+  { code: "SEK", icon: "kr", label: "Swedish Krona" },
+  { code: "NOK", icon: "kr", label: "Norwegian Krone" },
+  { code: "DKK", icon: "kr", label: "Danish Krone" },
+  { code: "PLN", icon: "zł", label: "Polish Zloty" },
+  { code: "CZK", icon: "Kč", label: "Czech Koruna" }
+] as const;
+const findCurrencyOption = (code: string) => CURRENCY_OPTIONS.find((entry) => entry.code === code);
 
-const readFileAsDataUrl = (file: File) =>
+const MAX_IMAGE_DIMENSION = 1600;
+const MAX_IMAGE_SIZE_MB = 0.9;
+const IMAGE_QUALITY = 0.78;
+
+const readBlobAsDataUrl = (blob: Blob) =>
   new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(String(reader.result ?? ""));
     reader.onerror = () => reject(new Error("Datei konnte nicht gelesen werden."));
-    reader.readAsDataURL(file);
+    reader.readAsDataURL(blob);
   });
 
+const compressImageToDataUrl = async (file: File) => {
+  if (!file.type.startsWith("image/")) {
+    return readBlobAsDataUrl(file);
+  }
+
+  const compressed = await imageCompression(file, {
+    maxSizeMB: MAX_IMAGE_SIZE_MB,
+    maxWidthOrHeight: MAX_IMAGE_DIMENSION,
+    useWebWorker: true,
+    initialQuality: IMAGE_QUALITY
+  });
+
+  return imageCompression.getDataUrlFromFile(compressed);
+};
+
 export const SettingsTab = ({
+  section = "me",
   household,
+  members,
   currentMember,
+  userId,
   userEmail,
   userAvatarUrl,
+  userDisplayName,
   busy,
   onUpdateHousehold,
-  onUpdateMemberSettings,
   onUpdateUserAvatar,
-  onLeaveHousehold
+  onUpdateUserDisplayName,
+  onSetMemberRole,
+  onRemoveMember,
+  onLeaveHousehold,
+  onDissolveHousehold
 }: SettingsTabProps) => {
   const { t } = useTranslation();
+  const isOwner = currentMember?.role === "owner";
 
   const [formError, setFormError] = useState<string | null>(null);
-  const [memberFormError, setMemberFormError] = useState<string | null>(null);
   const [profileUploadError, setProfileUploadError] = useState<string | null>(null);
   const [householdUploadError, setHouseholdUploadError] = useState<string | null>(null);
+  const profileUploadInputRef = useRef<HTMLInputElement | null>(null);
 
   const profileForm = useForm({
     defaultValues: {
@@ -85,123 +129,106 @@ export const SettingsTab = ({
       await onUpdateUserAvatar(value.profileImageUrl);
     }
   });
+  const profileNameForm = useForm({
+    defaultValues: {
+      displayName: userDisplayName ?? ""
+    },
+    onSubmit: async ({ value }: { value: { displayName: string } }) => {
+      await onUpdateUserDisplayName(value.displayName);
+    }
+  });
 
   const householdForm = useForm({
     defaultValues: {
+      name: household.name ?? "",
       imageUrl: household.image_url ?? "",
       address: household.address ?? "",
-      currency: household.currency ?? "EUR",
-      apartmentSizeSqm: toNumericInputValue(household.apartment_size_sqm),
-      warmRentMonthly: toNumericInputValue(household.warm_rent_monthly)
+      currency: household.currency ?? "EUR"
     },
     onSubmit: async ({ value }: {
       value: {
+        name: string;
         imageUrl: string;
         address: string;
         currency: string;
-        apartmentSizeSqm: string;
-        warmRentMonthly: string;
       };
     }) => {
+      if (!isOwner) {
+        setFormError(t("settings.householdOwnerOnlyHint"));
+        return;
+      }
+
+      const normalizedName = value.name.trim();
+      if (!normalizedName) {
+        setFormError(t("settings.householdNameError"));
+        return;
+      }
+
       const normalized = normalizeCurrency(value.currency);
       if (normalized.length !== 3) {
         setFormError(t("settings.currencyError"));
         return;
       }
 
-      const parsedHouseholdSize = parseOptionalNumber(value.apartmentSizeSqm);
-      if (Number.isNaN(parsedHouseholdSize) || (parsedHouseholdSize !== null && parsedHouseholdSize <= 0)) {
-        setFormError(t("settings.householdSizeError"));
-        return;
-      }
-
-      const parsedWarmRent = parseOptionalNumber(value.warmRentMonthly);
-      if (Number.isNaN(parsedWarmRent) || (parsedWarmRent !== null && parsedWarmRent < 0)) {
-        setFormError(t("settings.warmRentError"));
-        return;
-      }
-
       setFormError(null);
       await onUpdateHousehold({
+        name: normalizedName,
         imageUrl: value.imageUrl,
         address: value.address,
         currency: normalized,
-        apartmentSizeSqm: parsedHouseholdSize,
-        warmRentMonthly: parsedWarmRent
+        apartmentSizeSqm: household.apartment_size_sqm,
+        warmRentMonthly: household.warm_rent_monthly
       });
     }
   });
 
-  const memberForm = useForm({
-    defaultValues: {
-      roomSizeSqm: toNumericInputValue(currentMember?.room_size_sqm ?? null),
-      commonAreaFactor: currentMember ? String(currentMember.common_area_factor) : "1"
-    },
-    onSubmit: async ({ value }: { value: { roomSizeSqm: string; commonAreaFactor: string } }) => {
-      const parsedRoomSize = parseOptionalNumber(value.roomSizeSqm);
-      if (Number.isNaN(parsedRoomSize) || (parsedRoomSize !== null && parsedRoomSize <= 0)) {
-        setMemberFormError(t("settings.roomSizeError"));
-        return;
-      }
-
-      const parsedFactor = Number(value.commonAreaFactor);
-      if (!Number.isFinite(parsedFactor) || parsedFactor <= 0) {
-        setMemberFormError(t("settings.commonFactorError"));
-        return;
-      }
-
-      setMemberFormError(null);
-      await onUpdateMemberSettings({
-        roomSizeSqm: parsedRoomSize,
-        commonAreaFactor: parsedFactor
-      });
-    }
-  });
 
   useEffect(() => {
+    householdForm.setFieldValue("name", household.name ?? "");
     householdForm.setFieldValue("imageUrl", household.image_url ?? "");
     householdForm.setFieldValue("address", household.address ?? "");
     householdForm.setFieldValue("currency", household.currency ?? "EUR");
-    householdForm.setFieldValue("apartmentSizeSqm", toNumericInputValue(household.apartment_size_sqm));
-    householdForm.setFieldValue("warmRentMonthly", toNumericInputValue(household.warm_rent_monthly));
   }, [
     household.address,
-    household.apartment_size_sqm,
     household.currency,
     household.id,
     household.image_url,
-    household.warm_rent_monthly,
+    household.name,
     householdForm
   ]);
 
   useEffect(() => {
     profileForm.setFieldValue("profileImageUrl", userAvatarUrl ?? "");
   }, [profileForm, userAvatarUrl]);
-
   useEffect(() => {
-    memberForm.setFieldValue("roomSizeSqm", toNumericInputValue(currentMember?.room_size_sqm ?? null));
-    memberForm.setFieldValue("commonAreaFactor", currentMember ? String(currentMember.common_area_factor) : "1");
-  }, [currentMember, memberForm]);
+    profileNameForm.setFieldValue("displayName", userDisplayName ?? "");
+  }, [profileNameForm, userDisplayName]);
 
-  const onProfileFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
+  const onProfileFileChange = async (file: File) => {
     try {
-      const dataUrl = await readFileAsDataUrl(file);
+      const dataUrl = await compressImageToDataUrl(file);
       profileForm.setFieldValue("profileImageUrl", dataUrl);
+      await onUpdateUserAvatar(dataUrl);
       setProfileUploadError(null);
     } catch {
       setProfileUploadError(t("settings.profileUploadError"));
     }
   };
 
-  const onHouseholdFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
+  const onRemoveProfileImage = async () => {
     try {
-      const dataUrl = await readFileAsDataUrl(file);
+      profileForm.setFieldValue("profileImageUrl", "");
+      await onUpdateUserAvatar("");
+      setProfileUploadError(null);
+    } catch {
+      setProfileUploadError(t("settings.profileUploadError"));
+    }
+  };
+
+  const onHouseholdFileChange = async (file: File) => {
+    if (!isOwner) return;
+    try {
+      const dataUrl = await compressImageToDataUrl(file);
       householdForm.setFieldValue("imageUrl", dataUrl);
       setHouseholdUploadError(null);
     } catch {
@@ -210,56 +237,159 @@ export const SettingsTab = ({
   };
 
   const profileImageUrl = profileForm.state.values.profileImageUrl.trim();
+  const profileSeed = useMemo(() => {
+    const displayName = profileNameForm.state.values.displayName.trim();
+    if (displayName) return displayName;
+    if (userEmail) return userEmail;
+    return userId;
+  }, [profileNameForm.state.values.displayName, userEmail, userId]);
+  const generatedProfileAvatarUrl = useMemo(() => createDiceBearAvatarDataUri(profileSeed), [profileSeed]);
+  const profilePreviewImageUrl = profileImageUrl || generatedProfileAvatarUrl;
   const householdImageUrl = householdForm.state.values.imageUrl.trim();
+  const ownerCount = useMemo(() => members.filter((member) => member.role === "owner").length, [members]);
+  const uniqueMembers = useMemo(() => {
+    const map = new Map<string, HouseholdMember>();
+    members.forEach((member) => map.set(member.user_id, member));
+    if (!map.has(userId)) {
+      map.set(userId, {
+        household_id: household.id,
+        user_id: userId,
+        role: currentMember?.role ?? "member",
+        display_name: currentMember?.display_name ?? null,
+        avatar_url: currentMember?.avatar_url ?? null,
+        room_size_sqm: currentMember?.room_size_sqm ?? null,
+        common_area_factor: currentMember?.common_area_factor ?? 1,
+        created_at: currentMember?.created_at ?? new Date(0).toISOString()
+      });
+    }
+    return [...map.values()];
+  }, [currentMember, household.id, members, userId]);
+  const memberLabel = useMemo(
+    () =>
+      createMemberLabelGetter({
+        members: uniqueMembers,
+        currentUserId: userId,
+        youLabel: t("common.you"),
+        fallbackLabel: t("common.memberFallback")
+      }),
+    [t, uniqueMembers, userId]
+  );
+  const canDissolveHousehold = isOwner && uniqueMembers.length === 1 && uniqueMembers[0]?.user_id === userId;
+  const showMe = section === "me";
+  const showHousehold = section === "household";
 
   return (
     <div className="space-y-4">
-      <Card>
-        <CardHeader>
-          <CardTitle>{t("settings.clientTitle")}</CardTitle>
-          <CardDescription>{t("settings.clientDescription")}</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <ThemeLanguageControls surface="default" />
-        </CardContent>
-      </Card>
+      {showMe ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>{t("settings.clientTitle")}</CardTitle>
+            <CardDescription>{t("settings.clientDescription")}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ThemeLanguageControls surface="default" />
+          </CardContent>
+        </Card>
+      ) : null}
 
-      <Card>
-        <CardHeader>
-          <CardTitle>{t("settings.profileTitle")}</CardTitle>
-          <CardDescription>{t("settings.profileDescription")}</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form
-            className="space-y-3"
-            onSubmit={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              void profileForm.handleSubmit();
-            }}
-          >
+      {showMe ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>{t("settings.profileTitle")}</CardTitle>
+            <CardDescription>{t("settings.profileDescription")}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form
+              className="space-y-3"
+              onSubmit={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                void profileNameForm.handleSubmit();
+              }}
+            >
             <div className="space-y-1">
-              <Label htmlFor="profile-image-upload">{t("settings.profileImageUploadLabel")}</Label>
-              <Input
+              <Label htmlFor="profile-display-name">{t("settings.profileNameLabel")}</Label>
+              <profileNameForm.Field
+                name="displayName"
+                children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
+                  <div className="relative">
+                    <Input
+                      id="profile-display-name"
+                      className="pr-11"
+                      value={field.state.value}
+                      onChange={(event) => field.handleChange(event.target.value)}
+                      placeholder={t("settings.profileNamePlaceholder")}
+                    />
+                    <Button
+                      type="submit"
+                      size="sm"
+                      variant="outline"
+                      className="absolute right-1 top-1/2 h-8 w-8 -translate-y-1/2 rounded-md p-0"
+                      disabled={busy}
+                      aria-label={t("settings.profileNameSave")}
+                      title={t("settings.profileNameSave")}
+                    >
+                      <Check className="h-4 w-4" />
+                    </Button>
+                  </div>
+                )}
+              />
+            </div>
+
+            <div className="space-y-1">
+              <input
+                ref={profileUploadInputRef}
                 id="profile-image-upload"
                 type="file"
                 accept="image/*"
+                className="sr-only"
                 onChange={(event) => {
-                  void onProfileFileChange(event);
+                  const file = event.target.files?.[0];
+                  if (!file) return;
+                  void onProfileFileChange(file);
+                  event.currentTarget.value = "";
                 }}
               />
+              <div className="relative inline-block w-fit">
+                <button
+                  type="button"
+                  className="relative inline-flex h-20 w-20 items-center justify-center overflow-hidden rounded-full border border-brand-200 bg-brand-50 text-slate-600 transition hover:border-brand-300 hover:bg-brand-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:bg-slate-800"
+                  disabled={busy}
+                  onClick={() => {
+                    profileUploadInputRef.current?.click();
+                  }}
+                  aria-label={t("settings.profileImageUploadLabel")}
+                  title={t("settings.profileImageUploadLabel")}
+                >
+                  <img
+                    src={profilePreviewImageUrl}
+                    alt={t("settings.profileImagePreviewAlt")}
+                    className="h-full w-full object-cover"
+                  />
+                  <span className="absolute bottom-1 right-1 inline-flex h-6 w-6 items-center justify-center rounded-full bg-white/90 text-slate-700 dark:bg-slate-900/90 dark:text-slate-200">
+                    <Camera className="h-3.5 w-3.5" />
+                  </span>
+                </button>
+                {profileImageUrl ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="danger"
+                    className="absolute -right-1 -top-1 h-6 w-6 rounded-full p-0"
+                    disabled={busy}
+                    onClick={() => {
+                      void onRemoveProfileImage();
+                    }}
+                    aria-label={t("settings.removeImage")}
+                  >
+                    <X className="h-3 w-3" />
+                  </Button>
+                ) : null}
+              </div>
               <p className="text-xs text-slate-500 dark:text-slate-400">
                 {userEmail ? t("settings.currentEmail", { value: userEmail }) : null}
               </p>
             </div>
-
-            {profileImageUrl ? (
-              <img
-                src={profileImageUrl}
-                alt={t("settings.profileImagePreviewAlt")}
-                className="h-16 w-16 rounded-full border border-brand-200 object-cover dark:border-slate-700"
-              />
-            ) : null}
 
             {profileUploadError ? (
               <p className="rounded-lg border border-rose-300 bg-rose-50 px-3 py-2 text-xs text-rose-700 dark:border-rose-900 dark:bg-rose-950/60 dark:text-rose-200">
@@ -267,44 +397,50 @@ export const SettingsTab = ({
               </p>
             ) : null}
 
-            <Button
-              type="button"
-              variant="ghost"
-              disabled={busy}
-              onClick={() => profileForm.setFieldValue("profileImageUrl", "")}
+            </form>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {showHousehold ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>{t("settings.householdTitle")}</CardTitle>
+            <CardDescription>{isOwner ? t("settings.householdDescription") : t("settings.householdOwnerOnlyHint")}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form
+              className="space-y-3"
+              onSubmit={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                void householdForm.handleSubmit();
+              }}
             >
-              {t("settings.removeImage")}
-            </Button>
+            <div className="space-y-1">
+              <Label htmlFor="household-name">{t("settings.householdNameLabel")}</Label>
+              <householdForm.Field
+                name="name"
+                children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
+                  <Input
+                    id="household-name"
+                    value={field.state.value}
+                    disabled={busy || !isOwner}
+                    onChange={(event) => field.handleChange(event.target.value)}
+                    placeholder={t("settings.householdNamePlaceholder")}
+                  />
+                )}
+              />
+            </div>
 
-            <Button type="submit" disabled={busy}>
-              {t("settings.profileSave")}
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>{t("settings.householdTitle")}</CardTitle>
-          <CardDescription>{t("settings.householdDescription")}</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form
-            className="space-y-3"
-            onSubmit={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              void householdForm.handleSubmit();
-            }}
-          >
             <div className="space-y-1">
               <Label htmlFor="household-image-upload">{t("settings.householdImageUploadLabel")}</Label>
-              <Input
+              <FileUploadButton
                 id="household-image-upload"
-                type="file"
-                accept="image/*"
-                onChange={(event) => {
-                  void onHouseholdFileChange(event);
+                disabled={busy || !isOwner}
+                buttonLabel={t("settings.householdImageUploadLabel")}
+                onFileSelect={(file) => {
+                  void onHouseholdFileChange(file);
                 }}
               />
             </div>
@@ -317,6 +453,7 @@ export const SettingsTab = ({
                   <Input
                     id="household-address"
                     value={field.state.value}
+                    disabled={busy || !isOwner}
                     onChange={(event) => field.handleChange(event.target.value)}
                     placeholder={t("settings.householdAddressPlaceholder")}
                   />
@@ -328,61 +465,64 @@ export const SettingsTab = ({
               <Label htmlFor="household-currency">{t("settings.householdCurrencyLabel")}</Label>
               <householdForm.Field
                 name="currency"
-                children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
-                  <Input
-                    id="household-currency"
-                    value={field.state.value}
-                    onChange={(event) => field.handleChange(normalizeCurrency(event.target.value))}
-                    placeholder={t("settings.householdCurrencyPlaceholder")}
-                  />
-                )}
+                children={(field: { state: { value: string }; handleChange: (value: string) => void }) => {
+                  const selected = findCurrencyOption(field.state.value);
+                  return (
+                  <Select value={field.state.value} onValueChange={field.handleChange} disabled={busy || !isOwner}>
+                    <SelectTrigger id="household-currency" aria-label={t("settings.householdCurrencyLabel")}>
+                      {field.state.value ? (
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-semibold">{selected?.icon ?? "💱"}</span>
+                          <span>{field.state.value}</span>
+                        </div>
+                      ) : (
+                        <SelectValue placeholder={t("settings.householdCurrencyPlaceholder")} />
+                      )}
+                    </SelectTrigger>
+                    <SelectContent>
+                      {findCurrencyOption(field.state.value) ? null : (
+                        <SelectItem value={field.state.value}>
+                          <div className="flex items-center gap-2">
+                            <span className="font-semibold">💱</span>
+                            <span>{field.state.value}</span>
+                          </div>
+                        </SelectItem>
+                      )}
+                      {CURRENCY_OPTIONS.map((currency) => (
+                        <SelectItem key={currency.code} value={currency.code}>
+                          <div className="flex items-center gap-2">
+                            <span className="font-semibold">{currency.icon}</span>
+                            <span>{currency.code}</span>
+                            <span className="text-xs text-slate-500 dark:text-slate-400">{currency.label}</span>
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  );
+                }}
               />
-            </div>
-
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="space-y-1">
-                <Label htmlFor="household-size-sqm">{t("settings.householdSizeLabel")}</Label>
-                <householdForm.Field
-                  name="apartmentSizeSqm"
-                  children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
-                    <Input
-                      id="household-size-sqm"
-                      type="number"
-                      min="0.1"
-                      step="0.1"
-                      value={field.state.value}
-                      onChange={(event) => field.handleChange(event.target.value)}
-                      placeholder={t("settings.householdSizePlaceholder")}
-                    />
-                  )}
-                />
-              </div>
-
-              <div className="space-y-1">
-                <Label htmlFor="household-warm-rent">{t("settings.warmRentLabel")}</Label>
-                <householdForm.Field
-                  name="warmRentMonthly"
-                  children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
-                    <Input
-                      id="household-warm-rent"
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={field.state.value}
-                      onChange={(event) => field.handleChange(event.target.value)}
-                      placeholder={t("settings.warmRentPlaceholder")}
-                    />
-                  )}
-                />
-              </div>
             </div>
 
             {householdImageUrl ? (
-              <img
-                src={householdImageUrl}
-                alt={t("settings.householdImagePreviewAlt")}
-                className="h-20 w-full rounded-xl border border-brand-200 object-cover dark:border-slate-700"
-              />
+              <div className="relative">
+                <img
+                  src={householdImageUrl}
+                  alt={t("settings.householdImagePreviewAlt")}
+                  className="h-20 w-full rounded-xl border border-brand-200 object-cover dark:border-slate-700"
+                />
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="danger"
+                  className="absolute right-2 top-2 h-6 w-6 rounded-full p-0"
+                  disabled={busy || !isOwner}
+                  onClick={() => householdForm.setFieldValue("imageUrl", "")}
+                  aria-label={t("settings.removeImage")}
+                >
+                  <X className="h-3.5 w-3.5" />
+                </Button>
+              </div>
             ) : null}
 
             {householdUploadError ? (
@@ -391,134 +531,162 @@ export const SettingsTab = ({
               </p>
             ) : null}
 
-            <Button type="button" variant="ghost" disabled={busy} onClick={() => householdForm.setFieldValue("imageUrl", "")}>
-              {t("settings.removeImage")}
-            </Button>
-
             {formError ? (
               <p className="rounded-lg border border-rose-300 bg-rose-50 px-3 py-2 text-xs text-rose-700 dark:border-rose-900 dark:bg-rose-950/60 dark:text-rose-200">
                 {formError}
               </p>
             ) : null}
 
-            <Button type="submit" disabled={busy}>
+            <Button type="submit" disabled={busy || !isOwner}>
               {t("settings.householdSave")}
             </Button>
-          </form>
-        </CardContent>
-      </Card>
+            </form>
+          </CardContent>
+        </Card>
+      ) : null}
 
-      <Card>
-        <CardHeader>
-          <CardTitle>{t("settings.memberTitle")}</CardTitle>
-          <CardDescription>{t("settings.memberDescription")}</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form
-            className="space-y-3"
-            onSubmit={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              void memberForm.handleSubmit();
-            }}
-          >
-            <div className="space-y-1">
-              <Label htmlFor="member-room-sqm">{t("settings.roomSizeLabel")}</Label>
-              <memberForm.Field
-                name="roomSizeSqm"
-                children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
-                  <Input
-                    id="member-room-sqm"
-                    type="number"
-                    min="0.1"
-                    step="0.1"
-                    value={field.state.value}
-                    onChange={(event) => field.handleChange(event.target.value)}
-                    placeholder={t("settings.roomSizePlaceholder")}
-                  />
-                )}
-              />
-            </div>
+      {showHousehold ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>{t("settings.tenantsTitle")}</CardTitle>
+            <CardDescription>
+              {isOwner ? t("settings.tenantsDescription") : t("settings.tenantsOwnerOnly")}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {uniqueMembers.length === 0 ? (
+              <p className="text-sm text-slate-500 dark:text-slate-400">{t("settings.tenantsNoMembers")}</p>
+            ) : (
+              <ul className="space-y-2">
+                {uniqueMembers.map((member) => {
+                const isSelf = member.user_id === userId;
+                const isMemberOwner = member.role === "owner";
+                const canDemoteLastOwner = isMemberOwner && ownerCount <= 1;
+                const nextRole = isMemberOwner ? "member" : "owner";
 
-            <div className="space-y-1">
-              <div className="flex items-center gap-2">
-                <Label htmlFor="member-common-factor">{t("settings.commonFactorLabel")}</Label>
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button type="button" size="sm" variant="ghost" className="h-7 w-7 rounded-full p-0" aria-label={t("settings.commonFactorLabel")}>
-                      <CircleHelp className="h-4 w-4" />
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent align="start" className="w-72">
-                    {t("settings.commonFactorHint")}
-                  </PopoverContent>
-                </Popover>
-              </div>
-              <memberForm.Field
-                name="commonAreaFactor"
-                children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
-                  <Input
-                    id="member-common-factor"
-                    type="number"
-                    min="0.01"
-                    step="0.01"
-                    value={field.state.value}
-                    onChange={(event) => field.handleChange(event.target.value)}
-                    placeholder={t("settings.commonFactorPlaceholder")}
-                  />
-                )}
-              />
-            </div>
-
-            {memberFormError ? (
-              <p className="rounded-lg border border-rose-300 bg-rose-50 px-3 py-2 text-xs text-rose-700 dark:border-rose-900 dark:bg-rose-950/60 dark:text-rose-200">
-                {memberFormError}
-              </p>
-            ) : null}
-
-            <Button type="submit" disabled={busy}>
-              {t("settings.memberSave")}
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
-
-      <Card className="border-rose-200 dark:border-rose-900">
-        <CardHeader>
-          <CardTitle>{t("settings.leaveTitle")}</CardTitle>
-          <CardDescription>{t("settings.leaveDescription")}</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Dialog>
-            <DialogTrigger asChild>
-              <Button type="button" variant="outline" className="border-rose-300 text-rose-700 hover:bg-rose-50 dark:border-rose-800 dark:text-rose-300">
-                {t("settings.leaveAction")}
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>{t("settings.leaveConfirmTitle")}</DialogTitle>
-                <DialogDescription>{t("settings.leaveConfirmDescription")}</DialogDescription>
-              </DialogHeader>
-              <div className="mt-4 flex justify-end gap-2">
-                <DialogClose asChild>
-                  <Button variant="ghost">{t("common.cancel")}</Button>
-                </DialogClose>
-                <DialogClose asChild>
-                  <Button
-                    variant="outline"
-                    className="border-rose-300 text-rose-700 hover:bg-rose-50 dark:border-rose-800 dark:text-rose-300"
-                    onClick={onLeaveHousehold}
-                    disabled={busy}
+                return (
+                  <li
+                    key={member.user_id}
+                    className="flex items-center justify-between gap-3 rounded-lg border border-brand-100 p-3 dark:border-slate-700"
                   >
-                    {t("settings.leaveConfirmAction")}
-                  </Button>
-                </DialogClose>
-              </div>
-            </DialogContent>
-          </Dialog>
-        </CardContent>
-      </Card>
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium text-slate-900 dark:text-slate-100">
+                        {memberLabel(member.user_id)}
+                      </p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">
+                        {isMemberOwner ? t("settings.tenantsRoleOwner") : t("settings.tenantsRoleMember")}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        disabled={busy || !isOwner || canDemoteLastOwner}
+                        onClick={() => {
+                          void onSetMemberRole(member.user_id, nextRole);
+                        }}
+                      >
+                        <Crown className="mr-1 h-3.5 w-3.5" />
+                        {isMemberOwner ? t("settings.tenantsDemoteOwner") : t("settings.tenantsMakeOwner")}
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="danger"
+                        disabled={busy || !isOwner || isSelf}
+                        onClick={() => {
+                          void onRemoveMember(member.user_id);
+                        }}
+                      >
+                        <UserMinus className="mr-1 h-3.5 w-3.5" />
+                        {t("settings.tenantsKick")}
+                      </Button>
+                    </div>
+                  </li>
+                );
+                })}
+              </ul>
+            )}
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {showMe ? (
+        <Card className="border-rose-200 dark:border-rose-900">
+          <CardHeader>
+            <CardTitle>{t("settings.leaveTitle")}</CardTitle>
+            <CardDescription>{t("settings.leaveDescription")}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-wrap gap-2">
+            <Dialog>
+              <DialogTrigger asChild>
+                <Button type="button" variant="outline" className="border-rose-300 text-rose-700 hover:bg-rose-50 dark:border-rose-800 dark:text-rose-300">
+                  {t("settings.leaveAction")}
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>{t("settings.leaveConfirmTitle")}</DialogTitle>
+                  <DialogDescription>{t("settings.leaveConfirmDescription")}</DialogDescription>
+                </DialogHeader>
+                <div className="mt-4 flex justify-end gap-2">
+                  <DialogClose asChild>
+                    <Button variant="ghost">{t("common.cancel")}</Button>
+                  </DialogClose>
+                  <DialogClose asChild>
+                    <Button
+                      variant="outline"
+                      className="border-rose-300 text-rose-700 hover:bg-rose-50 dark:border-rose-800 dark:text-rose-300"
+                      onClick={onLeaveHousehold}
+                      disabled={busy}
+                    >
+                      {t("settings.leaveConfirmAction")}
+                    </Button>
+                  </DialogClose>
+                </div>
+              </DialogContent>
+            </Dialog>
+
+            <Dialog>
+              <DialogTrigger asChild>
+                <Button
+                  type="button"
+                  variant="danger"
+                  disabled={busy || !canDissolveHousehold}
+                >
+                  {t("settings.dissolveAction")}
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>{t("settings.dissolveConfirmTitle")}</DialogTitle>
+                  <DialogDescription>{t("settings.dissolveConfirmDescription")}</DialogDescription>
+                </DialogHeader>
+                {!canDissolveHousehold ? (
+                  <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">{t("settings.dissolveDisabledHint")}</p>
+                ) : null}
+                <div className="mt-4 flex justify-end gap-2">
+                  <DialogClose asChild>
+                    <Button variant="ghost">{t("common.cancel")}</Button>
+                  </DialogClose>
+                  <DialogClose asChild>
+                    <Button
+                      variant="danger"
+                      onClick={onDissolveHousehold}
+                      disabled={busy || !canDissolveHousehold}
+                    >
+                      {t("settings.dissolveConfirmAction")}
+                    </Button>
+                  </DialogClose>
+                </div>
+              </DialogContent>
+            </Dialog>
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
     </div>
   );
 };

@@ -19,9 +19,16 @@ create table if not exists household_members (
   user_id uuid not null references auth.users(id) on delete cascade,
   role text not null default 'member' check (role in ('owner', 'member')),
   room_size_sqm numeric(8, 2) check (room_size_sqm is null or room_size_sqm > 0),
-  common_area_factor numeric(8, 3) not null default 1 check (common_area_factor > 0),
+  common_area_factor numeric(8, 3) not null default 1 check (common_area_factor >= 0 and common_area_factor <= 2),
   created_at timestamptz not null default now(),
   primary key (household_id, user_id)
+);
+
+create table if not exists user_profiles (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  display_name text,
+  avatar_url text,
+  updated_at timestamptz not null default now()
 );
 
 create table if not exists shopping_items (
@@ -29,12 +36,17 @@ create table if not exists shopping_items (
   household_id uuid not null references households(id) on delete cascade,
   title text not null,
   tags text[] not null default '{}',
-  recurrence_interval_minutes integer check (recurrence_interval_minutes is null or recurrence_interval_minutes > 0),
+  recurrence_interval_value integer check (recurrence_interval_value is null or recurrence_interval_value > 0),
+  recurrence_interval_unit text check (recurrence_interval_unit is null or recurrence_interval_unit in ('days', 'weeks', 'months')),
   done boolean not null default false,
   done_at timestamptz,
   done_by uuid references auth.users(id) on delete set null,
   created_by uuid not null references auth.users(id) on delete cascade,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  check (
+    (recurrence_interval_value is null and recurrence_interval_unit is null)
+    or (recurrence_interval_value is not null and recurrence_interval_unit is not null)
+  )
 );
 
 create table if not exists shopping_item_completions (
@@ -102,6 +114,9 @@ create table if not exists finance_entries (
   category text not null default 'general',
   amount numeric(12, 2) not null check (amount >= 0),
   paid_by uuid not null references auth.users(id) on delete cascade,
+  paid_by_user_ids uuid[] not null default '{}',
+  beneficiary_user_ids uuid[] not null default '{}',
+  entry_date date not null default current_date,
   created_at timestamptz not null default now()
 );
 
@@ -163,14 +178,32 @@ begin
       check (room_size_sqm is null or room_size_sqm > 0);
   end if;
 
-  if not exists (
+  if exists (
     select 1
     from pg_constraint
     where conname = 'household_members_common_area_factor_positive_check'
   ) then
     alter table household_members
-      add constraint household_members_common_area_factor_positive_check
-      check (common_area_factor > 0);
+      drop constraint household_members_common_area_factor_positive_check;
+  end if;
+
+  if exists (
+    select 1
+    from pg_constraint
+    where conname = 'household_members_common_area_factor_check'
+  ) then
+    alter table household_members
+      drop constraint household_members_common_area_factor_check;
+  end if;
+
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'household_members_common_area_factor_range_check'
+  ) then
+    alter table household_members
+      add constraint household_members_common_area_factor_range_check
+      check (common_area_factor >= 0 and common_area_factor <= 2);
   end if;
 end;
 $$;
@@ -193,11 +226,162 @@ end;
 $$;
 
 alter table shopping_items add column if not exists tags text[] not null default '{}';
-alter table shopping_items add column if not exists recurrence_interval_minutes integer;
+alter table shopping_items add column if not exists recurrence_interval_value integer;
+alter table shopping_items add column if not exists recurrence_interval_unit text;
 alter table shopping_items add column if not exists done_at timestamptz;
 alter table shopping_items add column if not exists done_by uuid references auth.users(id) on delete set null;
 alter table task_completions add column if not exists task_title_snapshot text not null default '';
 alter table finance_entries add column if not exists category text not null default 'general';
+alter table finance_entries add column if not exists paid_by_user_ids uuid[] not null default '{}';
+alter table finance_entries add column if not exists beneficiary_user_ids uuid[] not null default '{}';
+alter table finance_entries add column if not exists entry_date date not null default current_date;
+
+update finance_entries
+set paid_by_user_ids = array[paid_by]
+where paid_by_user_ids is null
+   or cardinality(paid_by_user_ids) = 0;
+
+update finance_entries fe
+set beneficiary_user_ids = coalesce(
+  (
+    select array_agg(hm.user_id order by hm.created_at)
+    from household_members hm
+    where hm.household_id = fe.household_id
+  ),
+  array[fe.paid_by]
+)
+where beneficiary_user_ids is null
+   or cardinality(beneficiary_user_ids) = 0;
+
+update finance_entries
+set entry_date = created_at::date
+where entry_date is null;
+
+update shopping_items
+set recurrence_interval_unit = lower(recurrence_interval_unit)
+where recurrence_interval_unit is not null;
+
+update shopping_items
+set recurrence_interval_unit = null
+where recurrence_interval_unit is not null
+  and recurrence_interval_unit not in ('days', 'weeks', 'months');
+
+do $$
+begin
+  if exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'shopping_items'
+      and column_name = 'recurrence_interval_minutes'
+  ) then
+    update shopping_items
+    set recurrence_interval_value = case
+      when recurrence_interval_minutes is null then recurrence_interval_value
+      when recurrence_interval_minutes % (60 * 24 * 30) = 0 then recurrence_interval_minutes / (60 * 24 * 30)
+      when recurrence_interval_minutes % (60 * 24 * 7) = 0 then recurrence_interval_minutes / (60 * 24 * 7)
+      else greatest(1, ceil(recurrence_interval_minutes::numeric / (60 * 24))::integer)
+    end
+    where recurrence_interval_value is null
+      and recurrence_interval_minutes is not null;
+
+    update shopping_items
+    set recurrence_interval_unit = case
+      when recurrence_interval_minutes is null then recurrence_interval_unit
+      when recurrence_interval_minutes % (60 * 24 * 30) = 0 then 'months'
+      when recurrence_interval_minutes % (60 * 24 * 7) = 0 then 'weeks'
+      else 'days'
+    end
+    where recurrence_interval_unit is null
+      and recurrence_interval_minutes is not null;
+  end if;
+end;
+$$;
+
+update shopping_items
+set
+  recurrence_interval_value = null,
+  recurrence_interval_unit = null
+where (recurrence_interval_value is null) is distinct from (recurrence_interval_unit is null);
+
+do $$
+begin
+  if exists (
+    select 1
+    from pg_constraint
+    where conname = 'finance_entries_paid_by_user_ids_non_empty_check'
+  ) then
+    alter table finance_entries
+      drop constraint finance_entries_paid_by_user_ids_non_empty_check;
+  end if;
+
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'finance_entries_paid_by_user_ids_not_empty_check'
+  ) then
+    alter table finance_entries
+      add constraint finance_entries_paid_by_user_ids_not_empty_check
+      check (cardinality(paid_by_user_ids) > 0);
+  end if;
+
+  if exists (
+    select 1
+    from pg_constraint
+    where conname = 'finance_entries_beneficiary_user_ids_non_empty_check'
+  ) then
+    alter table finance_entries
+      drop constraint finance_entries_beneficiary_user_ids_non_empty_check;
+  end if;
+
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'finance_entries_beneficiary_user_ids_not_empty_check'
+  ) then
+    alter table finance_entries
+      add constraint finance_entries_beneficiary_user_ids_not_empty_check
+      check (cardinality(beneficiary_user_ids) > 0);
+  end if;
+end;
+$$;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'shopping_items_recurrence_interval_value_positive_check'
+  ) then
+    alter table shopping_items
+      add constraint shopping_items_recurrence_interval_value_positive_check
+      check (recurrence_interval_value is null or recurrence_interval_value > 0);
+  end if;
+
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'shopping_items_recurrence_interval_unit_allowed_check'
+  ) then
+    alter table shopping_items
+      add constraint shopping_items_recurrence_interval_unit_allowed_check
+      check (recurrence_interval_unit is null or recurrence_interval_unit in ('days', 'weeks', 'months'));
+  end if;
+
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'shopping_items_recurrence_interval_pair_check'
+  ) then
+    alter table shopping_items
+      add constraint shopping_items_recurrence_interval_pair_check
+      check (
+        (recurrence_interval_value is null and recurrence_interval_unit is null)
+        or (recurrence_interval_value is not null and recurrence_interval_unit is not null)
+      );
+  end if;
+end;
+$$;
 
 alter table tasks add column if not exists description text not null default '';
 alter table tasks add column if not exists start_date date not null default current_date;
@@ -210,6 +394,7 @@ create index if not exists idx_shopping_items_household_created_at on shopping_i
 create index if not exists idx_shopping_item_completions_household_completed_at on shopping_item_completions (household_id, completed_at desc);
 create index if not exists idx_tasks_household_due_at on tasks (household_id, due_at asc);
 create index if not exists idx_task_completions_household_completed_at on task_completions (household_id, completed_at desc);
+create index if not exists idx_finance_entries_household_entry_date on finance_entries (household_id, entry_date desc);
 
 create or replace function is_household_member(hid uuid)
 returns boolean
@@ -257,12 +442,34 @@ begin
     done_by = null
   where household_id = p_household_id
     and done = true
-    and recurrence_interval_minutes is not null
+    and recurrence_interval_value is not null
+    and recurrence_interval_unit is not null
+    and done_at
+      + case recurrence_interval_unit
+          when 'days' then make_interval(days => recurrence_interval_value)
+          when 'weeks' then make_interval(days => recurrence_interval_value * 7)
+          when 'months' then make_interval(months => recurrence_interval_value)
+        end <= now()
     and done_at is not null
-    and done_at + make_interval(mins => recurrence_interval_minutes) <= now();
+    ;
 
   get diagnostics affected = row_count;
   return affected;
+end;
+$$;
+
+do $$
+begin
+  if exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'shopping_items'
+      and column_name = 'recurrence_interval_minutes'
+  ) then
+    alter table shopping_items
+      drop column recurrence_interval_minutes;
+  end if;
 end;
 $$;
 
@@ -407,6 +614,7 @@ $$;
 
 alter table households enable row level security;
 alter table household_members enable row level security;
+alter table user_profiles enable row level security;
 alter table shopping_items enable row level security;
 alter table shopping_item_completions enable row level security;
 alter table tasks enable row level security;
@@ -458,7 +666,7 @@ drop policy if exists household_members_delete on household_members;
 create policy household_members_delete on household_members
 for delete
 to authenticated
-using (auth.uid() = user_id);
+using (auth.uid() = user_id or is_household_owner(household_id));
 
 drop policy if exists household_members_update on household_members;
 create policy household_members_update on household_members
@@ -466,6 +674,25 @@ for update
 to authenticated
 using (auth.uid() = user_id or is_household_owner(household_id))
 with check (auth.uid() = user_id or is_household_owner(household_id));
+
+drop policy if exists user_profiles_select on user_profiles;
+create policy user_profiles_select on user_profiles
+for select
+to authenticated
+using (true);
+
+drop policy if exists user_profiles_insert on user_profiles;
+create policy user_profiles_insert on user_profiles
+for insert
+to authenticated
+with check (auth.uid() = user_id);
+
+drop policy if exists user_profiles_update on user_profiles;
+create policy user_profiles_update on user_profiles
+for update
+to authenticated
+using (auth.uid() = user_id)
+with check (auth.uid() = user_id);
 
 drop policy if exists shopping_items_all on shopping_items;
 create policy shopping_items_all on shopping_items

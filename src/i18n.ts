@@ -11,14 +11,36 @@ const toLanguage = (value: string | null | undefined): SupportedLanguage | null 
   return match ?? null;
 };
 
+const detectLanguageFromNavigator = (): SupportedLanguage | null => {
+  if (typeof window === "undefined") return null;
+
+  const preferred = window.navigator.languages?.length
+    ? window.navigator.languages
+    : [window.navigator.language];
+
+  for (const candidate of preferred) {
+    const detected = toLanguage(candidate);
+    if (detected) return detected;
+  }
+
+  return null;
+};
+
 const resolveInitialLanguage = (): SupportedLanguage => {
   if (typeof window === "undefined") return defaultLanguage;
 
   const stored = toLanguage(window.localStorage.getItem(STORAGE_KEY));
   if (stored) return stored;
 
-  const browser = toLanguage(window.navigator.language);
-  return browser ?? defaultLanguage;
+  const htmlLang = toLanguage(document.documentElement.lang);
+  if (htmlLang) return htmlLang;
+
+  return detectLanguageFromNavigator() ?? defaultLanguage;
+};
+
+export const persistLanguagePreference = (language: SupportedLanguage) => {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(STORAGE_KEY, language);
 };
 
 void i18n.use(initReactI18next).init({
@@ -30,11 +52,6 @@ void i18n.use(initReactI18next).init({
   },
   showSupportNotice:false,
   returnNull: false
-});
-
-i18n.on("languageChanged", (language) => {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem(STORAGE_KEY, language);
 });
 
 export const getDateLocale = (language: string) => (language.startsWith("de") ? "de-DE" : "en-GB");

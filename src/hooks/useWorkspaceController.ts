@@ -1,172 +1,66 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useStore } from "@tanstack/react-store";
-import type { Session } from "@supabase/supabase-js";
+import { useCallback, useState } from "react";
+import { useMutation } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import {
   addFinanceEntry,
   addShoppingItem,
   addTask,
+  dissolveHousehold,
   completeTask,
   createHousehold,
+  deleteFinanceEntry,
   deleteShoppingItem,
   getCurrentSession,
-  getFinanceEntries,
-  getHouseholdMemberPimpers,
-  getHouseholdMembers,
-  getHouseholdsForUser,
-  getShoppingCompletions,
-  getShoppingItems,
-  getTaskCompletions,
-  getTasks,
   joinHouseholdByInvite,
   leaveHousehold,
+  removeHouseholdMember,
   requestCashAudit,
+  setHouseholdMemberRole,
+  signOut,
   signIn,
   signInWithGoogle,
   signUp,
+  updateFinanceEntry,
   updateHouseholdSettings,
   updateMemberSettings,
   updateShoppingItemStatus,
-  updateUserAvatar
+  updateUserAvatar,
+  updateUserDisplayName
 } from "../lib/api";
-import { appStore, setActiveHouseholdId } from "../lib/app-store";
+import { setActiveHouseholdId } from "../lib/app-store";
 import { queryKeys } from "../lib/query-keys";
-import { supabase } from "../lib/supabase";
 import type {
   FinanceEntry,
   Household,
-  HouseholdMember,
-  HouseholdMemberPimpers,
   NewTaskInput,
+  ShoppingRecurrenceUnit,
   ShoppingItem,
-  ShoppingItemCompletion,
-  TaskCompletion,
   TaskItem
 } from "../lib/types";
 import { useTaskNotifications } from "./useTaskNotifications";
-
-interface WorkspaceData {
-  shoppingItems: ShoppingItem[];
-  shoppingCompletions: ShoppingItemCompletion[];
-  tasks: TaskItem[];
-  taskCompletions: TaskCompletion[];
-  finances: FinanceEntry[];
-  householdMembers: HouseholdMember[];
-  memberPimpers: HouseholdMemberPimpers[];
-}
-
-const emptyWorkspace: WorkspaceData = {
-  shoppingItems: [],
-  shoppingCompletions: [],
-  tasks: [],
-  taskCompletions: [],
-  finances: [],
-  householdMembers: [],
-  memberPimpers: []
-};
-
-const getWorkspaceData = async (householdId: string): Promise<WorkspaceData> => {
-  const [shoppingItems, shoppingCompletions, tasks, taskCompletions, finances, householdMembers, memberPimpers] =
-    await Promise.all([
-      getShoppingItems(householdId),
-      getShoppingCompletions(householdId),
-      getTasks(householdId),
-      getTaskCompletions(householdId),
-      getFinanceEntries(householdId),
-      getHouseholdMembers(householdId),
-      getHouseholdMemberPimpers(householdId)
-    ]);
-
-  return {
-    shoppingItems,
-    shoppingCompletions,
-    tasks,
-    taskCompletions,
-    finances,
-    householdMembers,
-    memberPimpers
-  };
-};
+import { useWorkspaceData } from "./use-workspace-data";
+import { useWorkspaceActions } from "./use-workspace-actions";
 
 export const useWorkspaceController = () => {
   const { t } = useTranslation();
-  const queryClient = useQueryClient();
+  const {
+    sessionQuery,
+    queryClient,
+    session,
+    userId,
+    households,
+    activeHouseholdId,
+    activeHousehold,
+    workspace,
+    userEmail,
+    userAvatarUrl,
+    userDisplayName,
+    currentMember,
+    completedTasks
+  } = useWorkspaceData();
 
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
-
-  const sessionQuery = useQuery<Session | null>({
-    queryKey: queryKeys.session,
-    queryFn: getCurrentSession
-  });
-
-  useEffect(() => {
-    const {
-      data: { subscription }
-    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
-      queryClient.setQueryData(queryKeys.session, nextSession);
-      setError(null);
-      setMessage(null);
-    });
-
-    return () => subscription.unsubscribe();
-  }, [queryClient]);
-
-  const session = sessionQuery.data ?? null;
-  const userId = session?.user.id;
-
-  const householdsQuery = useQuery<Household[]>({
-    queryKey: userId ? queryKeys.households(userId) : ["households", "anonymous"],
-    queryFn: () => getHouseholdsForUser(userId!),
-    enabled: Boolean(userId)
-  });
-
-  const households = useMemo<Household[]>(() => householdsQuery.data ?? [], [householdsQuery.data]);
-  const activeHouseholdId = useStore(appStore, (state: { activeHouseholdId: string | null }) => state.activeHouseholdId);
-
-  useEffect(() => {
-    if (households.length === 0) {
-      setActiveHouseholdId(null);
-      return;
-    }
-
-    if (activeHouseholdId && households.some((entry) => entry.id === activeHouseholdId)) {
-      return;
-    }
-
-    setActiveHouseholdId(households[0].id);
-  }, [activeHouseholdId, households]);
-
-  const activeHousehold = useMemo(
-    () => households.find((entry) => entry.id === activeHouseholdId) ?? null,
-    [activeHouseholdId, households]
-  );
-
-  const workspaceQuery = useQuery<WorkspaceData>({
-    queryKey: activeHousehold ? queryKeys.workspace(activeHousehold.id) : ["workspace", "none"],
-    queryFn: () => getWorkspaceData(activeHousehold!.id),
-    enabled: Boolean(activeHousehold)
-  });
-
-  const workspace = workspaceQuery.data ?? emptyWorkspace;
-
-  const userEmail = session?.user.email;
-  const userAvatarUrl = useMemo(() => {
-    const raw = session?.user.user_metadata?.avatar_url;
-    return typeof raw === "string" ? raw : null;
-  }, [session?.user.user_metadata?.avatar_url]);
-
-  const currentMember = useMemo(
-    () =>
-      userId ? workspace.householdMembers.find((entry: HouseholdMember) => entry.user_id === userId) ?? null : null,
-    [workspace.householdMembers, userId]
-  );
-
-  const completedTasks = useMemo(
-    () => workspace.tasks.filter((task: TaskItem) => task.done).length,
-    [workspace.tasks]
-  );
 
   const { permission, requestPermission } = useTaskNotifications(workspace.tasks, userId);
 
@@ -188,6 +82,11 @@ export const useWorkspaceController = () => {
     },
     [actionMutation, t]
   );
+  const { invalidateWorkspace, runWithWorkspaceInvalidation } = useWorkspaceActions({
+    queryClient,
+    activeHouseholdId,
+    executeAction
+  });
 
   const onSignIn = useCallback(
     async (email: string, password: string) => {
@@ -214,6 +113,17 @@ export const useWorkspaceController = () => {
       await signInWithGoogle();
     });
   }, [executeAction]);
+
+  const onSignOut = useCallback(async () => {
+    await executeAction(async () => {
+      await signOut();
+      setActiveHouseholdId(null);
+      await queryClient.invalidateQueries({ queryKey: queryKeys.session });
+      if (userId) {
+        await queryClient.invalidateQueries({ queryKey: queryKeys.households(userId) });
+      }
+    });
+  }, [executeAction, queryClient, userId]);
 
   const onCreateHousehold = useCallback(
     async (name: string) => {
@@ -244,76 +154,109 @@ export const useWorkspaceController = () => {
   );
 
   const onAddShoppingItem = useCallback(
-    async (title: string, tags: string[], recurrenceIntervalMinutes: number | null) => {
+    async (title: string, tags: string[], recurrenceInterval: { value: number; unit: ShoppingRecurrenceUnit } | null) => {
       if (!activeHousehold || !userId) return;
 
-      await executeAction(async () => {
-        await addShoppingItem(activeHousehold.id, title, tags, recurrenceIntervalMinutes, userId);
-        await queryClient.invalidateQueries({ queryKey: queryKeys.workspace(activeHousehold.id) });
+      await runWithWorkspaceInvalidation(async () => {
+        await addShoppingItem(activeHousehold.id, title, tags, recurrenceInterval, userId);
       });
     },
-    [activeHousehold, executeAction, queryClient, userId]
+    [activeHousehold, runWithWorkspaceInvalidation, userId]
   );
 
   const onToggleShoppingItem = useCallback(
     async (item: ShoppingItem) => {
       if (!activeHousehold || !userId) return;
 
-      await executeAction(async () => {
+      await runWithWorkspaceInvalidation(async () => {
         await updateShoppingItemStatus(item.id, !item.done, userId);
-        await queryClient.invalidateQueries({ queryKey: queryKeys.workspace(activeHousehold.id) });
       });
     },
-    [activeHousehold, executeAction, queryClient, userId]
+    [activeHousehold, runWithWorkspaceInvalidation, userId]
   );
 
   const onDeleteShoppingItem = useCallback(
     async (item: ShoppingItem) => {
       if (!activeHousehold) return;
 
-      await executeAction(async () => {
+      await runWithWorkspaceInvalidation(async () => {
         await deleteShoppingItem(item.id);
-        await queryClient.invalidateQueries({ queryKey: queryKeys.workspace(activeHousehold.id) });
       });
     },
-    [activeHousehold, executeAction, queryClient]
+    [activeHousehold, runWithWorkspaceInvalidation]
   );
 
   const onAddTask = useCallback(
     async (input: NewTaskInput) => {
       if (!activeHousehold || !userId) return;
 
-      await executeAction(async () => {
+      await runWithWorkspaceInvalidation(async () => {
         await addTask(activeHousehold.id, input, userId);
-        await queryClient.invalidateQueries({ queryKey: queryKeys.workspace(activeHousehold.id) });
       });
     },
-    [activeHousehold, executeAction, queryClient, userId]
+    [activeHousehold, runWithWorkspaceInvalidation, userId]
   );
 
   const onCompleteTask = useCallback(
     async (task: TaskItem) => {
       if (!activeHousehold || !userId) return;
 
-      await executeAction(async () => {
+      await runWithWorkspaceInvalidation(async () => {
         await completeTask(task.id, userId);
-        await queryClient.invalidateQueries({ queryKey: queryKeys.workspace(activeHousehold.id) });
         setMessage(t("tasks.completedMessage", { title: task.title }));
       });
     },
-    [activeHousehold, executeAction, queryClient, t, userId]
+    [activeHousehold, runWithWorkspaceInvalidation, t, userId]
   );
 
   const onAddFinanceEntry = useCallback(
-    async (description: string, amount: number, category: string) => {
+    async (input: {
+      description: string;
+      amount: number;
+      category: string;
+      paidByUserIds: string[];
+      beneficiaryUserIds: string[];
+      entryDate?: string | null;
+    }) => {
       if (!activeHousehold || !userId) return;
 
-      await executeAction(async () => {
-        await addFinanceEntry(activeHousehold.id, description, amount, category, userId);
-        await queryClient.invalidateQueries({ queryKey: queryKeys.workspace(activeHousehold.id) });
+      await runWithWorkspaceInvalidation(async () => {
+        await addFinanceEntry(activeHousehold.id, input);
       });
     },
-    [activeHousehold, executeAction, queryClient, userId]
+    [activeHousehold, runWithWorkspaceInvalidation, userId]
+  );
+
+  const onUpdateFinanceEntry = useCallback(
+    async (
+      entry: FinanceEntry,
+      input: {
+        description: string;
+        amount: number;
+        category: string;
+        paidByUserIds: string[];
+        beneficiaryUserIds: string[];
+        entryDate?: string | null;
+      }
+    ) => {
+      if (!activeHousehold || !userId) return;
+
+      await runWithWorkspaceInvalidation(async () => {
+        await updateFinanceEntry(entry.id, input);
+      });
+    },
+    [activeHousehold, runWithWorkspaceInvalidation, userId]
+  );
+
+  const onDeleteFinanceEntry = useCallback(
+    async (entry: FinanceEntry) => {
+      if (!activeHousehold) return;
+
+      await runWithWorkspaceInvalidation(async () => {
+        await deleteFinanceEntry(entry.id);
+      });
+    },
+    [activeHousehold, runWithWorkspaceInvalidation]
   );
 
   const onRequestCashAudit = useCallback(async () => {
@@ -338,6 +281,7 @@ export const useWorkspaceController = () => {
 
   const onUpdateHousehold = useCallback(
     async (input: {
+      name: string;
       imageUrl: string;
       address: string;
       currency: string;
@@ -351,24 +295,23 @@ export const useWorkspaceController = () => {
         queryClient.setQueryData(queryKeys.households(userId), (current: Household[] | undefined) =>
           (current ?? []).map((entry) => (entry.id === updated.id ? updated : entry))
         );
-        await queryClient.invalidateQueries({ queryKey: queryKeys.workspace(activeHousehold.id) });
+        await invalidateWorkspace();
         setMessage(t("settings.householdSaved"));
       });
     },
-    [activeHousehold, executeAction, queryClient, t, userId]
+    [activeHousehold, executeAction, invalidateWorkspace, queryClient, t, userId]
   );
 
   const onUpdateMemberSettings = useCallback(
     async (input: { roomSizeSqm: number | null; commonAreaFactor: number }) => {
       if (!activeHousehold || !userId) return;
 
-      await executeAction(async () => {
+      await runWithWorkspaceInvalidation(async () => {
         await updateMemberSettings(activeHousehold.id, userId, input);
-        await queryClient.invalidateQueries({ queryKey: queryKeys.workspace(activeHousehold.id) });
         setMessage(t("settings.memberSaved"));
       });
     },
-    [activeHousehold, executeAction, queryClient, t, userId]
+    [activeHousehold, runWithWorkspaceInvalidation, t, userId]
   );
 
   const onUpdateUserAvatar = useCallback(
@@ -378,6 +321,18 @@ export const useWorkspaceController = () => {
         const nextSession = await getCurrentSession();
         queryClient.setQueryData(queryKeys.session, nextSession);
         setMessage(t("settings.profileSaved"));
+      });
+    },
+    [executeAction, queryClient, t]
+  );
+
+  const onUpdateUserDisplayName = useCallback(
+    async (displayName: string) => {
+      await executeAction(async () => {
+        await updateUserDisplayName(displayName);
+        const nextSession = await getCurrentSession();
+        queryClient.setQueryData(queryKeys.session, nextSession);
+        setMessage(t("settings.profileNameSaved"));
       });
     },
     [executeAction, queryClient, t]
@@ -393,6 +348,39 @@ export const useWorkspaceController = () => {
       setMessage(t("settings.leftHousehold"));
     });
   }, [activeHousehold, executeAction, queryClient, t, userId]);
+
+  const onDissolveHousehold = useCallback(async () => {
+    if (!activeHousehold || !userId) return;
+
+    await executeAction(async () => {
+      await dissolveHousehold(activeHousehold.id, userId);
+      await queryClient.invalidateQueries({ queryKey: queryKeys.households(userId) });
+      setActiveHouseholdId(null);
+      setMessage(t("settings.dissolvedHousehold"));
+    });
+  }, [activeHousehold, executeAction, queryClient, t, userId]);
+
+  const onSetMemberRole = useCallback(
+    async (targetUserId: string, role: "owner" | "member") => {
+      if (!activeHousehold) return;
+
+      await runWithWorkspaceInvalidation(async () => {
+        await setHouseholdMemberRole(activeHousehold.id, targetUserId, role);
+      });
+    },
+    [activeHousehold, runWithWorkspaceInvalidation]
+  );
+
+  const onRemoveMember = useCallback(
+    async (targetUserId: string) => {
+      if (!activeHousehold) return;
+
+      await runWithWorkspaceInvalidation(async () => {
+        await removeHouseholdMember(activeHousehold.id, targetUserId);
+      });
+    },
+    [activeHousehold, runWithWorkspaceInvalidation]
+  );
 
   const setActiveHousehold = useCallback((household: Household | null) => {
     setActiveHouseholdId(household?.id ?? null);
@@ -411,11 +399,13 @@ export const useWorkspaceController = () => {
     tasks: workspace.tasks,
     taskCompletions: workspace.taskCompletions,
     finances: workspace.finances,
+    cashAuditRequests: workspace.cashAuditRequests,
     householdMembers: workspace.householdMembers,
     memberPimpers: workspace.memberPimpers,
     userId,
     userEmail,
     userAvatarUrl,
+    userDisplayName,
     currentMember,
     completedTasks,
     notificationPermission: permission,
@@ -423,6 +413,7 @@ export const useWorkspaceController = () => {
     onSignIn,
     onSignUp,
     onGoogleSignIn,
+    onSignOut,
     onCreateHousehold,
     onJoinHousehold,
     onAddShoppingItem,
@@ -431,11 +422,17 @@ export const useWorkspaceController = () => {
     onAddTask,
     onCompleteTask,
     onAddFinanceEntry,
+    onUpdateFinanceEntry,
+    onDeleteFinanceEntry,
     onRequestCashAudit,
     onEnableNotifications,
     onUpdateHousehold,
     onUpdateMemberSettings,
     onUpdateUserAvatar,
-    onLeaveHousehold
+    onUpdateUserDisplayName,
+    onLeaveHousehold,
+    onDissolveHousehold,
+    onSetMemberRole,
+    onRemoveMember
   };
 };

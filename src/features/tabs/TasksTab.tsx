@@ -22,7 +22,7 @@ import {
   PointElement,
   Tooltip as ChartTooltip
 } from "chart.js";
-import { BellRing, CheckCircle2, GripVertical, Plus } from "lucide-react";
+import { BellRing, CheckCircle2, ChevronLeft, ChevronRight, CircleUserRound, GripVertical, Medal, Plus } from "lucide-react";
 import { Bar, Line } from "react-chartjs-2";
 import { useTranslation } from "react-i18next";
 import type {
@@ -36,10 +36,16 @@ import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
 import { Input } from "../../components/ui/input";
+import { Label } from "../../components/ui/label";
 import { MobileSubpageDialog } from "../../components/ui/mobile-subpage-dialog";
 import { SectionPanel } from "../../components/ui/section-panel";
 import { Switch } from "../../components/ui/switch";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../../components/ui/tooltip";
+import { useSmartSuggestions } from "../../hooks/use-smart-suggestions";
 import { formatDateTime, formatShortDay, isDueNow } from "../../lib/date";
+import { createDiceBearAvatarDataUri } from "../../lib/avatar";
+import { createMemberLabelGetter } from "../../lib/member-label";
+import { useTaskSuggestions, type TaskSuggestion } from "./hooks/use-task-suggestions";
 
 ChartJS.register(
   CategoryScale,
@@ -74,8 +80,37 @@ const toDateInputValue = (date: Date) => {
 };
 
 const dueLabel = (dueAtIso: string, language: string, fallback: string) => formatDateTime(dueAtIso, language, fallback);
+const startOfMonth = (date: Date) => new Date(date.getFullYear(), date.getMonth(), 1);
+const endOfMonth = (date: Date) => new Date(date.getFullYear(), date.getMonth() + 1, 0);
+const dayKey = (date: Date) =>
+  `${date.getFullYear()}-${`${date.getMonth() + 1}`.padStart(2, "0")}-${`${date.getDate()}`.padStart(2, "0")}`;
 
-const userLabel = (id: string, ownUserId: string, ownLabel: string) => (id === ownUserId ? ownLabel : id.slice(0, 8));
+const buildMonthGrid = (monthDate: Date) => {
+  const firstDay = startOfMonth(monthDate);
+  const lastDay = endOfMonth(monthDate);
+  const firstWeekday = (firstDay.getDay() + 6) % 7;
+  const daysInMonth = lastDay.getDate();
+  const cells: Array<{ date: Date; inCurrentMonth: boolean }> = [];
+
+  for (let index = firstWeekday - 1; index >= 0; index -= 1) {
+    const date = new Date(firstDay);
+    date.setDate(firstDay.getDate() - (index + 1));
+    cells.push({ date, inCurrentMonth: false });
+  }
+
+  for (let day = 1; day <= daysInMonth; day += 1) {
+    cells.push({ date: new Date(monthDate.getFullYear(), monthDate.getMonth(), day), inCurrentMonth: true });
+  }
+
+  while (cells.length % 7 !== 0) {
+    const lastDate = cells[cells.length - 1]?.date ?? lastDay;
+    const date = new Date(lastDate);
+    date.setDate(lastDate.getDate() + 1);
+    cells.push({ date, inCurrentMonth: false });
+  }
+
+  return cells;
+};
 
 interface SortableRotationItemProps {
   id: string;
@@ -145,6 +180,7 @@ export const TasksTab = ({
   const [rotationUserIds, setRotationUserIds] = useState<string[]>([userId]);
   const [formError, setFormError] = useState<string | null>(null);
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+  const [calendarMonthDate, setCalendarMonthDate] = useState(() => startOfMonth(new Date()));
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: { distance: 6 }
@@ -242,12 +278,65 @@ export const TasksTab = ({
         .sort((a, b) => a.total_pimpers - b.total_pimpers || a.user_id.localeCompare(b.user_id)),
     [members, pimperByUserId]
   );
+  const podiumRows = useMemo(
+    () =>
+      [...sortedMemberRows]
+        .sort((a, b) => b.total_pimpers - a.total_pimpers || a.user_id.localeCompare(b.user_id))
+        .slice(0, 3),
+    [sortedMemberRows]
+  );
 
   const permissionLabel = t(`tasks.notificationStatus.${notificationPermission}`);
   const pushEnabled = notificationPermission === "granted";
   const showOverview = section === "overview";
   const showStats = section === "stats";
   const showHistory = section === "history";
+  const taskTitleQuery = taskForm.state.values.title.trim();
+  const userLabel = useMemo(
+    () =>
+      createMemberLabelGetter({
+        members,
+        currentUserId: userId,
+        youLabel: t("common.you"),
+        fallbackLabel: t("common.memberFallback")
+      }),
+    [members, t, userId]
+  );
+
+  const allTaskSuggestions = useTaskSuggestions(tasks, completions, language);
+
+  const applyTaskSuggestion = (suggestion: TaskSuggestion) => {
+    taskForm.setFieldValue("title", suggestion.title);
+    if (!taskForm.state.values.description.trim() && suggestion.description) {
+      taskForm.setFieldValue("description", suggestion.description);
+    }
+    taskForm.setFieldValue("frequencyDays", String(suggestion.frequencyDays));
+    taskForm.setFieldValue("effortPimpers", String(suggestion.effortPimpers));
+  };
+  const {
+    suggestions: taskSuggestions,
+    focused: titleFocused,
+    activeSuggestionIndex,
+    onFocus: onTitleFocus,
+    onBlur: onTitleBlur,
+    onKeyDown: onTitleKeyDown,
+    applySuggestion: onSelectTaskSuggestion
+  } = useSmartSuggestions<TaskSuggestion>({
+    items: allTaskSuggestions,
+    query: taskTitleQuery,
+    getLabel: (entry) => entry.title,
+    onApply: applyTaskSuggestion,
+    fuseOptions: {
+      keys: [
+        { name: "title", weight: 0.8 },
+        { name: "description", weight: 0.15 },
+        { name: "tags", weight: 0.05 }
+      ],
+      threshold: 0.35,
+      ignoreLocation: true,
+      minMatchCharLength: 2
+    }
+  });
 
   const completionSeries = useMemo(() => {
     const byDay = new Map<string, number>();
@@ -266,19 +355,15 @@ export const TasksTab = ({
   }, [completions, language]);
 
   const pimpersByUserSeries = useMemo(() => {
-    const byUser = new Map<string, number>();
-    completions.forEach((entry) => {
-      byUser.set(entry.user_id, (byUser.get(entry.user_id) ?? 0) + entry.pimpers_earned);
-    });
-
-    const labels = [...byUser.keys()];
-    const values = labels.map((id) => byUser.get(id) ?? 0);
+    const rows = [...sortedMemberRows].sort(
+      (a, b) => b.total_pimpers - a.total_pimpers || a.user_id.localeCompare(b.user_id)
+    );
 
     return {
-      labels: labels.map((id) => userLabel(id, userId, t("common.you"))),
-      values
+      labels: rows.map((entry) => userLabel(entry.user_id)),
+      values: rows.map((entry) => entry.total_pimpers)
     };
-  }, [completions, userId, t]);
+  }, [sortedMemberRows, userLabel]);
 
   const toggleRotationMember = (targetUserId: string) => {
     setRotationUserIds((current) => {
@@ -308,8 +393,197 @@ export const TasksTab = ({
     });
   };
 
-  return (
+  const weekdayLabels = useMemo(() => {
+    const monday = new Date(Date.UTC(2026, 0, 5));
+    return Array.from({ length: 7 }, (_, index) =>
+      new Intl.DateTimeFormat(language, { weekday: "short" }).format(new Date(monday.getTime() + index * 24 * 60 * 60 * 1000))
+    );
+  }, [language]);
+
+  const monthCells = useMemo(() => buildMonthGrid(calendarMonthDate), [calendarMonthDate]);
+  const calendarTitle = useMemo(
+    () => new Intl.DateTimeFormat(language, { month: "long", year: "numeric" }).format(calendarMonthDate),
+    [calendarMonthDate, language]
+  );
+  const dueTasksByDay = useMemo(() => {
+    const map = new Map<
+      string,
+      {
+        tasks: TaskItem[];
+        memberIds: string[];
+      }
+    >();
+
+    tasks.forEach((task) => {
+      const taskDueDate = new Date(task.due_at);
+      if (Number.isNaN(taskDueDate.getTime())) return;
+      const key = dayKey(taskDueDate);
+      const current = map.get(key) ?? { tasks: [], memberIds: [] };
+      current.tasks.push(task);
+
+      const assigneeKey = task.assignee_id ?? "__unassigned__";
+      if (!current.memberIds.includes(assigneeKey)) {
+        current.memberIds.push(assigneeKey);
+      }
+
+      map.set(key, current);
+    });
+
+    return map;
+  }, [tasks]);
+
+  const memberById = useMemo(() => {
+    const map = new Map<string, HouseholdMember>();
+    members.forEach((member) => map.set(member.user_id, member));
+    return map;
+  }, [members]);
+
+  const calendarCard = showOverview ? (
     <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between gap-2">
+          <CardTitle>{t("tasks.calendarTitle")}</CardTitle>
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-8 w-8 p-0"
+              onClick={() => {
+                setCalendarMonthDate((current) => new Date(current.getFullYear(), current.getMonth() - 1, 1));
+              }}
+              aria-label={t("tasks.calendarPrevMonth")}
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <p className="min-w-[130px] text-center text-sm font-medium capitalize text-slate-700 dark:text-slate-200">
+              {calendarTitle}
+            </p>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-8 w-8 p-0"
+              onClick={() => {
+                setCalendarMonthDate((current) => new Date(current.getFullYear(), current.getMonth() + 1, 1));
+              }}
+              aria-label={t("tasks.calendarNextMonth")}
+            >
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="grid grid-cols-7 gap-1">
+          {weekdayLabels.map((label) => (
+            <p
+              key={label}
+              className="px-1 py-1 text-center text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400"
+            >
+              {label}
+            </p>
+          ))}
+        </div>
+
+        <TooltipProvider>
+          <div className="grid grid-cols-7 gap-1">
+            {monthCells.map((cell) => {
+              const isToday = dayKey(cell.date) === dayKey(new Date());
+              const entry = dueTasksByDay.get(dayKey(cell.date));
+              const memberIds = entry?.memberIds ?? [];
+              const visibleMemberIds = memberIds.slice(0, 4);
+              const overflowCount = Math.max(0, memberIds.length - visibleMemberIds.length);
+
+              return (
+                <div
+                  key={dayKey(cell.date)}
+                  className={`min-h-[70px] rounded-lg border px-1.5 py-1 ${
+                    cell.inCurrentMonth
+                      ? "border-brand-100 bg-white/90 dark:border-slate-700 dark:bg-slate-900"
+                      : "border-brand-50 bg-white/40 opacity-65 dark:border-slate-800 dark:bg-slate-900/40"
+                  }`}
+                >
+                  <p
+                    className={`text-xs font-medium ${
+                      isToday
+                        ? "text-brand-700 dark:text-brand-300"
+                        : "text-slate-700 dark:text-slate-300"
+                    }`}
+                  >
+                    {cell.date.getDate()}
+                  </p>
+
+                  {entry && entry.tasks.length > 0 ? (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <div className="mt-1 flex items-center">
+                          {visibleMemberIds.map((memberId, index) => {
+                            const member = memberById.get(memberId);
+                            const displayName = memberId === "__unassigned__" ? t("tasks.unassigned") : userLabel(memberId);
+                            const avatarUrl = member?.avatar_url?.trim() ?? "";
+                            const avatarSrc =
+                              memberId === "__unassigned__"
+                                ? null
+                                : avatarUrl || createDiceBearAvatarDataUri(member?.display_name?.trim() || displayName || memberId);
+
+                            return (
+                              <div
+                                key={`${dayKey(cell.date)}-${memberId}`}
+                                className={`h-6 w-6 overflow-hidden rounded-full border-2 border-white bg-brand-100 text-[10px] font-semibold text-brand-800 dark:border-slate-900 dark:bg-brand-900 dark:text-brand-100 ${
+                                  index > 0 ? "-ml-2" : ""
+                                }`}
+                                title={displayName}
+                              >
+                                {avatarSrc ? (
+                                  <img src={avatarSrc} alt={displayName} className="h-full w-full object-cover" />
+                                ) : memberId === "__unassigned__" ? (
+                                  <div className="flex h-full w-full items-center justify-center">
+                                    <CircleUserRound className="h-3.5 w-3.5" />
+                                  </div>
+                                ) : (
+                                  <div className="flex h-full w-full items-center justify-center">
+                                    {displayName.slice(0, 1).toUpperCase()}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                          {overflowCount > 0 ? (
+                            <div className="-ml-2 flex h-6 w-6 items-center justify-center rounded-full border-2 border-white bg-slate-200 text-[10px] font-semibold text-slate-700 dark:border-slate-900 dark:bg-slate-700 dark:text-slate-100">
+                              +{overflowCount}
+                            </div>
+                          ) : null}
+                        </div>
+                      </TooltipTrigger>
+                      <TooltipContent className="max-w-[280px]">
+                        <p className="mb-1 font-semibold">
+                          {t("tasks.calendarTooltipTitle", {
+                            date: formatShortDay(dayKey(cell.date), language, dayKey(cell.date))
+                          })}
+                        </p>
+                        <ul className="space-y-1">
+                          {entry.tasks.map((task) => (
+                            <li key={`${dayKey(cell.date)}-${task.id}`} className="text-xs">
+                              {task.title} · {task.assignee_id ? userLabel(task.assignee_id) : t("tasks.unassigned")}
+                            </li>
+                          ))}
+                        </ul>
+                      </TooltipContent>
+                    </Tooltip>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+        </TooltipProvider>
+      </CardContent>
+    </Card>
+  ) : null;
+
+  return (
+    <div className="space-y-4">
+      <Card>
       <CardHeader>
         <div className="flex items-center justify-between gap-2">
           <div>
@@ -369,24 +643,73 @@ export const TasksTab = ({
                     <taskForm.Field
                       name="title"
                       children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
-                        <Input
-                          value={field.state.value}
-                          onChange={(event) => field.handleChange(event.target.value)}
-                          placeholder={t("tasks.placeholder")}
-                          required
-                        />
+                        <div className="relative space-y-1">
+                          <Label>{t("tasks.titleLabel")}</Label>
+                          <Input
+                            value={field.state.value}
+                            onChange={(event) => field.handleChange(event.target.value)}
+                            onFocus={onTitleFocus}
+                            onBlur={onTitleBlur}
+                            onKeyDown={onTitleKeyDown}
+                            placeholder={t("tasks.placeholder")}
+                            autoComplete="off"
+                            required
+                          />
+                          {titleFocused && taskSuggestions.length > 0 ? (
+                            <div className="absolute left-0 right-0 top-[calc(100%+0.4rem)] z-20 rounded-xl border border-brand-100 bg-white p-1 shadow-lg dark:border-slate-700 dark:bg-slate-900">
+                              <p className="px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                                {t("tasks.suggestionsTitle")}
+                              </p>
+                              <ul className="max-h-56 overflow-y-auto">
+                                {taskSuggestions.map((suggestion, index) => (
+                                  <li key={suggestion.key}>
+                                    <button
+                                      type="button"
+                                      className={`flex w-full items-center justify-between gap-2 rounded-lg px-2 py-2 text-left hover:bg-brand-50 dark:hover:bg-slate-800 ${
+                                        index === activeSuggestionIndex ? "bg-brand-50 dark:bg-slate-800" : ""
+                                      }`}
+                                      onMouseDown={(event) => event.preventDefault()}
+                                      onClick={() => {
+                                        onSelectTaskSuggestion(suggestion);
+                                      }}
+                                    >
+                                      <div className="min-w-0">
+                                        <p className="truncate text-sm font-medium text-slate-900 dark:text-slate-100">
+                                          {suggestion.title}
+                                        </p>
+                                        {suggestion.tags.length > 0 ? (
+                                          <p className="truncate text-[11px] text-slate-500 dark:text-slate-400">
+                                            #{suggestion.tags.join(" #")}
+                                          </p>
+                                        ) : null}
+                                      </div>
+                                      <Badge className="text-[10px]">
+                                        {suggestion.source === "history"
+                                          ? t("tasks.suggestionUsedCount", { count: suggestion.count })
+                                          : t("tasks.suggestionLibraryBadge")}
+                                      </Badge>
+                                    </button>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          ) : null}
+                        </div>
                       )}
                     />
 
                     <taskForm.Field
                       name="description"
                       children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
-                        <textarea
-                          className="min-h-[90px] w-full rounded-xl border border-brand-200 bg-white p-3 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-400"
-                          placeholder={t("tasks.descriptionPlaceholder")}
-                          value={field.state.value}
-                          onChange={(event) => field.handleChange(event.target.value)}
-                        />
+                        <div className="space-y-1">
+                          <Label>{t("tasks.descriptionLabel")}</Label>
+                          <textarea
+                            className="min-h-[90px] w-full rounded-xl border border-brand-200 bg-white p-3 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-400"
+                            placeholder={t("tasks.descriptionPlaceholder")}
+                            value={field.state.value}
+                            onChange={(event) => field.handleChange(event.target.value)}
+                          />
+                        </div>
                       )}
                     />
 
@@ -394,39 +717,60 @@ export const TasksTab = ({
                       <taskForm.Field
                         name="startDate"
                         children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
-                          <Input
-                            type="date"
-                            value={field.state.value}
-                            onChange={(event) => field.handleChange(event.target.value)}
-                            title={t("tasks.startDate")}
-                            required
-                          />
+                          <div className="space-y-1">
+                            <Label>{t("tasks.startDate")}</Label>
+                            <Input
+                              type="date"
+                              value={field.state.value}
+                              onChange={(event) => field.handleChange(event.target.value)}
+                              title={t("tasks.startDate")}
+                              required
+                            />
+                          </div>
                         )}
                       />
                       <taskForm.Field
                         name="frequencyDays"
                         children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
-                          <Input
-                            type="number"
-                            min="1"
-                            inputMode="numeric"
-                            value={field.state.value}
-                            onChange={(event) => field.handleChange(event.target.value)}
-                            placeholder={t("tasks.frequencyDays")}
-                          />
+                          <div className="space-y-1">
+                            <Label>{t("tasks.frequencyDays")}</Label>
+                            <div className="relative">
+                              <Input
+                                className="pr-10"
+                                type="number"
+                                min="1"
+                                inputMode="numeric"
+                                value={field.state.value}
+                                onChange={(event) => field.handleChange(event.target.value)}
+                                placeholder={t("tasks.frequencyDays")}
+                              />
+                              <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-500 dark:text-slate-400">
+                                d
+                              </span>
+                            </div>
+                          </div>
                         )}
                       />
                       <taskForm.Field
                         name="effortPimpers"
                         children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
-                          <Input
-                            type="number"
-                            min="1"
-                            inputMode="numeric"
-                            value={field.state.value}
-                            onChange={(event) => field.handleChange(event.target.value)}
-                            placeholder={t("tasks.effortPimpers")}
-                          />
+                          <div className="space-y-1">
+                            <Label>{t("tasks.effortPimpers")}</Label>
+                            <div className="relative">
+                              <Input
+                                className="pr-10"
+                                type="number"
+                                min="1"
+                                inputMode="numeric"
+                                value={field.state.value}
+                                onChange={(event) => field.handleChange(event.target.value)}
+                                placeholder={t("tasks.effortPimpers")}
+                              />
+                              <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-500 dark:text-slate-400">
+                                P
+                              </span>
+                            </div>
+                          </div>
                         )}
                       />
                     </div>
@@ -456,7 +800,7 @@ export const TasksTab = ({
                                 onClick={() => toggleRotationMember(member.user_id)}
                               >
                                 {isSelected ? t("tasks.inRotation") : t("tasks.addToRotation")}{" "}
-                                {userLabel(member.user_id, userId, t("common.you"))}
+                                {userLabel(member.user_id)}
                               </button>
                             </div>
                           );
@@ -473,7 +817,7 @@ export const TasksTab = ({
                                   <SortableRotationItem
                                     key={rotationUserId}
                                     id={rotationUserId}
-                                    label={userLabel(rotationUserId, userId, t("common.you"))}
+                                    label={userLabel(rotationUserId)}
                                     onRemove={removeRotationMember}
                                     removeLabel={t("tasks.removeFromRotation")}
                                     pimperText={t("tasks.pimpersValue", { count: score })}
@@ -509,8 +853,8 @@ export const TasksTab = ({
                 const isAssignedToCurrentUser = task.assignee_id === userId;
                 const canComplete = isDue && isAssignedToCurrentUser && !busy;
                 const dueText = dueLabel(task.due_at, language, t("tasks.noDate"));
-                const assigneeText = task.assignee_id
-                  ? userLabel(task.assignee_id, userId, t("common.you"))
+                  const assigneeText = task.assignee_id
+                  ? userLabel(task.assignee_id)
                   : t("tasks.unassigned");
 
                 return (
@@ -544,7 +888,7 @@ export const TasksTab = ({
                         {task.rotation_user_ids.length > 0 ? (
                           <p className="text-xs text-slate-500 dark:text-slate-400">
                             {t("tasks.rotationOrder", {
-                              value: task.rotation_user_ids.map((entry) => userLabel(entry, userId, t("common.you"))).join(" -> ")
+                              value: task.rotation_user_ids.map((entry) => userLabel(entry)).join(" -> ")
                             })}
                           </p>
                         ) : null}
@@ -593,11 +937,59 @@ export const TasksTab = ({
         {showStats && sortedMemberRows.length > 0 ? (
           <SectionPanel className="mb-4">
             <p className="mb-2 text-sm font-semibold text-brand-900 dark:text-brand-100">{t("tasks.scoreboardTitle")}</p>
+            {podiumRows.length > 0 ? (
+              <div className="mb-4 rounded-xl border border-brand-100 bg-white/90 p-3 dark:border-slate-700 dark:bg-slate-900">
+                <div className="grid grid-cols-3 items-end gap-2">
+                  {[1, 0, 2].map((index) => {
+                    const member = podiumRows[index];
+                    if (!member) return <div key={`podium-empty-${index}`} />;
+
+                    const rank = index + 1;
+                    const isGold = rank === 1;
+                    const isSilver = rank === 2;
+                    const pillarHeight = isGold ? "h-24" : isSilver ? "h-20" : "h-16";
+                    const pillarColor = isGold
+                      ? "bg-amber-100 text-amber-900 dark:bg-amber-900/40 dark:text-amber-200"
+                      : isSilver
+                        ? "bg-slate-200 text-slate-800 dark:bg-slate-700 dark:text-slate-100"
+                        : "bg-orange-100 text-orange-900 dark:bg-orange-900/40 dark:text-orange-200";
+                    const medalColor = isGold
+                      ? "text-amber-500"
+                      : isSilver
+                        ? "text-slate-400"
+                        : "text-orange-500";
+                    const rankLabel = isGold
+                      ? t("tasks.podiumGold")
+                      : isSilver
+                        ? t("tasks.podiumSilver")
+                        : t("tasks.podiumBronze");
+
+                    return (
+                      <div key={member.user_id} className="flex flex-col items-center">
+                        <img
+                          src={member.avatar_url?.trim() || createDiceBearAvatarDataUri(userLabel(member.user_id))}
+                          alt={userLabel(member.user_id)}
+                          className="h-8 w-8 rounded-full border border-brand-200 object-cover dark:border-slate-700"
+                        />
+                        <p className="mt-1 max-w-[90px] truncate text-center text-[11px] text-slate-600 dark:text-slate-300">
+                          {userLabel(member.user_id)}
+                        </p>
+                        <div className={`mt-2 flex w-full flex-col items-center justify-end rounded-t-lg ${pillarHeight} ${pillarColor}`}>
+                          <Medal className={`mb-1 h-4 w-4 ${medalColor}`} />
+                          <p className="text-[10px] font-semibold">{rankLabel}</p>
+                          <p className="mb-2 text-xs font-bold">{t("tasks.pimpersValue", { count: member.total_pimpers })}</p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
             <ul className="space-y-1 text-sm">
               {sortedMemberRows.map((member) => (
                 <li key={member.user_id} className="flex justify-between gap-2">
                   <span className={member.user_id === userId ? "font-medium" : "text-slate-600 dark:text-slate-300"}>
-                    {userLabel(member.user_id, userId, t("common.you"))}
+                    {userLabel(member.user_id)}
                   </span>
                   <span>{t("tasks.pimpersValue", { count: member.total_pimpers })}</span>
                 </li>
@@ -691,7 +1083,7 @@ export const TasksTab = ({
                     </div>
                     <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
                       {t("tasks.historyLine", {
-                        user: userLabel(entry.user_id, userId, t("common.you")),
+                        user: userLabel(entry.user_id),
                         pimpers: entry.pimpers_earned
                       })}
                     </p>
@@ -702,6 +1094,9 @@ export const TasksTab = ({
           </SectionPanel>
         ) : null}
       </CardContent>
-    </Card>
+      </Card>
+
+      {calendarCard}
+    </div>
   );
 };

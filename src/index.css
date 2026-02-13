@@ -1,11 +1,15 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+@config "../tailwind.config.ts";
 
 :root {
   color: #0f172a;
   background: #eef6f4;
   font-family: "Space Grotesk", "Segoe UI", sans-serif;
+  --toastify-color-light: #f8fcfb;
+  --toastify-text-color-light: #0f172a;
+  --toastify-color-success: #059669;
+  --toastify-color-error: #dc2626;
+  --toastify-toast-bd-radius: 12px;
 }
 
 * {
@@ -33,6 +37,83 @@ body {
     linear-gradient(160deg, #081217 0%, #0b1b22 50%, #111827 100%);
 }
 
+.dark {
+  --toastify-color-dark: #0f172a;
+  --toastify-text-color-dark: #e2e8f0;
+  --toastify-color-success: #10b981;
+  --toastify-color-error: #f87171;
+}
+
+.Toastify__toast-container {
+  width: min(26rem, calc(100vw - 1.25rem));
+  padding: 0.625rem;
+}
+
+.Toastify__toast-container--top-right {
+  top: 0.5rem;
+  right: 0.5rem;
+}
+
+.domora-toast {
+  border: 1px solid #bfe4dc;
+  border-radius: 1rem;
+  margin-bottom: 0.5rem;
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.12);
+  backdrop-filter: blur(4px);
+}
+
+.domora-toast-body {
+  padding: 0.125rem 0;
+  font-size: 0.875rem;
+  line-height: 1.35;
+}
+
+.dark .domora-toast {
+  border-color: #334155;
+  box-shadow: 0 10px 28px rgba(2, 6, 23, 0.45);
+}
+
 #root {
   min-height: 100vh;
+}
+
+.common-factor-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 0.875rem;
+  border-radius: 9999px;
+  background: transparent;
+}
+
+.common-factor-slider::-webkit-slider-runnable-track {
+  height: 0.875rem;
+  border-radius: 9999px;
+  background: var(--slider-gradient);
+}
+
+.common-factor-slider::-moz-range-track {
+  height: 0.875rem;
+  border-radius: 9999px;
+  background: var(--slider-gradient);
+}
+
+.common-factor-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  margin-top: -4px;
+  height: 1.375rem;
+  width: 1.375rem;
+  border-radius: 9999px;
+  border: 2px solid #ffffff;
+  background: var(--slider-thumb);
+  box-shadow: 0 1px 6px rgba(15, 23, 42, 0.28);
+}
+
+.common-factor-slider::-moz-range-thumb {
+  height: 1.375rem;
+  width: 1.375rem;
+  border-radius: 9999px;
+  border: 2px solid #ffffff;
+  background: var(--slider-thumb);
+  box-shadow: 0 1px 6px rgba(15, 23, 42, 0.28);
 }

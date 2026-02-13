@@ -14,30 +14,32 @@ import { Trash2 } from "lucide-react";
 import { Line } from "react-chartjs-2";
 import { useTranslation } from "react-i18next";
 import { Checkbox } from "../../components/ui/checkbox";
-import type { ShoppingItem, ShoppingItemCompletion } from "../../lib/types";
+import type { HouseholdMember, ShoppingItem, ShoppingItemCompletion, ShoppingRecurrenceUnit } from "../../lib/types";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
 import { Input } from "../../components/ui/input";
+import { Label } from "../../components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
-import { addMinutesToIso, formatDateTime, formatShortDay } from "../../lib/date";
+import { useSmartSuggestions } from "../../hooks/use-smart-suggestions";
+import { addRecurringIntervalToIso, formatDateTime, formatShortDay } from "../../lib/date";
+import { createMemberLabelGetter } from "../../lib/member-label";
+import { useShoppingSuggestions, type ShoppingSuggestion } from "./hooks/use-shopping-suggestions";
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Filler, Tooltip, Legend);
 
-type RecurrenceUnit = "minutes" | "hours" | "days";
-
-const recurrenceFactor: Record<RecurrenceUnit, number> = {
-  minutes: 1,
-  hours: 60,
-  days: 60 * 24
-};
-
 interface ShoppingTabProps {
+  section?: "list" | "history";
   items: ShoppingItem[];
   completions: ShoppingItemCompletion[];
+  members: HouseholdMember[];
   userId: string;
   busy: boolean;
-  onAdd: (title: string, tags: string[], recurrenceIntervalMinutes: number | null) => Promise<void>;
+  onAdd: (
+    title: string,
+    tags: string[],
+    recurrenceInterval: { value: number; unit: ShoppingRecurrenceUnit } | null
+  ) => Promise<void>;
   onToggle: (item: ShoppingItem) => Promise<void>;
   onDelete: (item: ShoppingItem) => Promise<void>;
 }
@@ -49,24 +51,29 @@ const normalizeTags = (value: string) =>
     .filter((entry) => entry.length > 0)
     .slice(0, 10);
 
-const formatRecurrence = (minutes: number, t: (key: string, opts?: Record<string, unknown>) => string) => {
-  if (minutes % (60 * 24) === 0) {
-    return t("shopping.recurrenceEveryDays", { count: minutes / (60 * 24) });
-  }
-
-  if (minutes % 60 === 0) {
-    return t("shopping.recurrenceEveryHours", { count: minutes / 60 });
-  }
-
-  return t("shopping.recurrenceEveryMinutes", { count: minutes });
+const formatRecurrence = (
+  value: number,
+  unit: ShoppingRecurrenceUnit,
+  t: (key: string, opts?: Record<string, unknown>) => string
+) => {
+  if (unit === "months") return t("shopping.recurrenceEveryMonths", { count: value });
+  if (unit === "weeks") return t("shopping.recurrenceEveryWeeks", { count: value });
+  return t("shopping.recurrenceEveryDays", { count: value });
 };
 
-const userLabel = (memberId: string, ownUserId: string, ownLabel: string) =>
-  memberId === ownUserId ? ownLabel : memberId.slice(0, 8);
-
-export const ShoppingTab = ({ items, completions, userId, busy, onAdd, onToggle, onDelete }: ShoppingTabProps) => {
+export const ShoppingTab = ({
+  section = "list",
+  items,
+  completions,
+  members,
+  userId,
+  busy,
+  onAdd,
+  onToggle,
+  onDelete
+}: ShoppingTabProps) => {
   const { t, i18n } = useTranslation();
-  const [recurrenceUnit, setRecurrenceUnit] = useState<RecurrenceUnit>("hours");
+  const [recurrenceUnit, setRecurrenceUnit] = useState<ShoppingRecurrenceUnit>("days");
   const form = useForm({
     defaultValues: {
       title: "",
@@ -83,22 +90,70 @@ export const ShoppingTab = ({ items, completions, userId, busy, onAdd, onToggle,
       if (!value.title.trim()) return;
 
       const parsedValue = Number(value.recurrenceValue);
-      const recurrenceMinutes =
-        Number.isFinite(parsedValue) && parsedValue > 0 ? Math.floor(parsedValue * recurrenceFactor[recurrenceUnit]) : null;
+      const recurrenceInterval =
+        Number.isFinite(parsedValue) && parsedValue > 0
+          ? {
+              value: Math.floor(parsedValue),
+              unit: recurrenceUnit
+            }
+          : null;
 
-      await onAdd(value.title, normalizeTags(value.tagsInput), recurrenceMinutes);
+      await onAdd(value.title, normalizeTags(value.tagsInput), recurrenceInterval);
       formApi.reset();
-      setRecurrenceUnit("hours");
+      setRecurrenceUnit("days");
     }
   });
 
   const language = i18n.resolvedLanguage ?? i18n.language;
+  const titleQuery = form.state.values.title.trim();
 
-  const unitOptions: Array<{ id: RecurrenceUnit; label: string }> = useMemo(
+  const allSuggestions = useShoppingSuggestions(completions, language);
+  const userLabel = useMemo(
+    () =>
+      createMemberLabelGetter({
+        members,
+        currentUserId: userId,
+        youLabel: t("common.you"),
+        fallbackLabel: t("common.memberFallback")
+      }),
+    [members, t, userId]
+  );
+
+  const applySuggestion = (suggestion: ShoppingSuggestion) => {
+    form.setFieldValue("title", suggestion.title);
+    if (!form.state.values.tagsInput.trim() && suggestion.tags.length > 0) {
+      form.setFieldValue("tagsInput", suggestion.tags.join(", "));
+    }
+  };
+  const {
+    suggestions,
+    focused: titleFocused,
+    activeSuggestionIndex,
+    onFocus: onTitleFocus,
+    onBlur: onTitleBlur,
+    onKeyDown: onTitleKeyDown,
+    applySuggestion: onSelectSuggestion
+  } = useSmartSuggestions<ShoppingSuggestion>({
+    items: allSuggestions,
+    query: titleQuery,
+    getLabel: (entry) => entry.title,
+    onApply: applySuggestion,
+    fuseOptions: {
+      keys: [
+        { name: "title", weight: 0.85 },
+        { name: "tags", weight: 0.15 }
+      ],
+      threshold: 0.35,
+      ignoreLocation: true,
+      minMatchCharLength: 2
+    }
+  });
+
+  const unitOptions: Array<{ id: ShoppingRecurrenceUnit; label: string }> = useMemo(
     () => [
-      { id: "minutes", label: t("shopping.recurrenceUnitMinutes") },
-      { id: "hours", label: t("shopping.recurrenceUnitHours") },
-      { id: "days", label: t("shopping.recurrenceUnitDays") }
+      { id: "days", label: t("shopping.recurrenceUnitDays") },
+      { id: "weeks", label: t("shopping.recurrenceUnitWeeks") },
+      { id: "months", label: t("shopping.recurrenceUnitMonths") }
     ],
     [t]
   );
@@ -118,31 +173,84 @@ export const ShoppingTab = ({ items, completions, userId, busy, onAdd, onToggle,
       values
     };
   }, [completions, language]);
+  const recurrenceUnitLabel =
+    unitOptions.find((option) => option.id === recurrenceUnit)?.label ?? t("shopping.recurrenceUnitDays");
+  const showList = section === "list";
+  const showHistory = section === "history";
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>{t("shopping.title")}</CardTitle>
-        <CardDescription>{t("shopping.description")}</CardDescription>
+        <CardTitle>{showHistory ? t("shopping.historyTitle") : t("shopping.title")}</CardTitle>
+        <CardDescription>{showHistory ? t("shopping.historyDescription") : t("shopping.description")}</CardDescription>
       </CardHeader>
       <CardContent>
-        <form
-          className="mb-4 space-y-2"
-          onSubmit={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            void form.handleSubmit();
-          }}
-        >
+        {showList ? (
+          <form
+            className="mb-4 space-y-2"
+            onSubmit={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              void form.handleSubmit();
+            }}
+          >
           <div className="flex gap-2">
             <form.Field
               name="title"
               children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
-                <Input
-                  value={field.state.value}
-                  onChange={(event) => field.handleChange(event.target.value)}
-                  placeholder={t("shopping.placeholder")}
-                />
+                <div className="relative flex-1 space-y-1">
+                  <Label>{t("shopping.itemLabel")}</Label>
+                  <Input
+                    value={field.state.value}
+                    onChange={(event) => field.handleChange(event.target.value)}
+                    onFocus={onTitleFocus}
+                    onBlur={onTitleBlur}
+                    onKeyDown={onTitleKeyDown}
+                    placeholder={t("shopping.placeholder")}
+                    autoComplete="off"
+                  />
+                  {titleFocused && suggestions.length > 0 ? (
+                    <div className="absolute left-0 right-0 top-[calc(100%+0.4rem)] z-20 rounded-xl border border-brand-100 bg-white p-1 shadow-lg dark:border-slate-700 dark:bg-slate-900">
+                      <p className="px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                        {t("shopping.suggestionsTitle")}
+                      </p>
+                      <ul className="max-h-56 overflow-y-auto">
+                        {suggestions.map((suggestion: ShoppingSuggestion, index: number) => (
+                          <li key={suggestion.key}>
+                            <button
+                              type="button"
+                              className={`flex w-full items-center justify-between gap-2 rounded-lg px-2 py-2 text-left hover:bg-brand-50 dark:hover:bg-slate-800 ${
+                                index === activeSuggestionIndex ? "bg-brand-50 dark:bg-slate-800" : ""
+                              }`}
+                              onMouseDown={(event) => event.preventDefault()}
+                              onClick={() => {
+                                onSelectSuggestion(suggestion);
+                              }}
+                            >
+                              <div className="min-w-0">
+                                <p className="truncate text-sm font-medium text-slate-900 dark:text-slate-100">
+                                  {suggestion.title}
+                                </p>
+                                {suggestion.tags.length > 0 ? (
+                                  <p className="truncate text-[11px] text-slate-500 dark:text-slate-400">
+                                    #{suggestion.tags.join(" #")}
+                                  </p>
+                                ) : null}
+                              </div>
+                              {suggestion.source === "history" ? (
+                                <Badge className="text-[10px]">
+                                  {t("shopping.suggestionBoughtCount", { count: suggestion.count })}
+                                </Badge>
+                              ) : (
+                                <Badge className="text-[10px]">{t("shopping.suggestionLibraryBadge")}</Badge>
+                              )}
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+                </div>
               )}
             />
             <Button type="submit" disabled={busy}>
@@ -154,48 +262,68 @@ export const ShoppingTab = ({ items, completions, userId, busy, onAdd, onToggle,
             <form.Field
               name="tagsInput"
               children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
-                <Input
-                  value={field.state.value}
-                  onChange={(event) => field.handleChange(event.target.value)}
-                  placeholder={t("shopping.tagsPlaceholder")}
-                />
+                <div className="space-y-1">
+                  <Label>{t("shopping.tagsLabel")}</Label>
+                  <Input
+                    value={field.state.value}
+                    onChange={(event) => field.handleChange(event.target.value)}
+                    placeholder={t("shopping.tagsPlaceholder")}
+                  />
+                </div>
               )}
             />
             <div className="grid grid-cols-[1fr_auto] gap-2">
               <form.Field
                 name="recurrenceValue"
                 children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
-                  <Input
-                    type="number"
-                    min="1"
-                    inputMode="numeric"
-                    value={field.state.value}
-                    onChange={(event) => field.handleChange(event.target.value)}
-                    placeholder={t("shopping.recurrenceValuePlaceholder")}
-                  />
+                  <div className="space-y-1">
+                    <Label>{t("shopping.recurrenceValueLabel")}</Label>
+                    <div className="relative">
+                      <Input
+                        className="pr-16"
+                        type="number"
+                        min="1"
+                        inputMode="numeric"
+                        value={field.state.value}
+                        onChange={(event) => field.handleChange(event.target.value)}
+                        placeholder={t("shopping.recurrenceValuePlaceholder")}
+                      />
+                      <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-500 dark:text-slate-400">
+                        {recurrenceUnitLabel}
+                      </span>
+                    </div>
+                  </div>
                 )}
               />
-              <Select value={recurrenceUnit} onValueChange={(value: string) => setRecurrenceUnit(value as RecurrenceUnit)}>
-                <SelectTrigger className="w-[110px]">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                {unitOptions.map((option) => (
-                  <SelectItem key={option.id} value={option.id}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-                </SelectContent>
-              </Select>
+              <div className="space-y-1">
+                <Label>{t("shopping.recurrenceUnitLabel")}</Label>
+                <Select
+                  value={recurrenceUnit}
+                  onValueChange={(value: string) => setRecurrenceUnit(value as ShoppingRecurrenceUnit)}
+                >
+                  <SelectTrigger className="w-[110px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {unitOptions.map((option) => (
+                      <SelectItem key={option.id} value={option.id}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
           </div>
-        </form>
+          </form>
+        ) : null}
 
-        <ul className="space-y-2">
-          {items.map((item) => {
+        {showList ? (
+          <ul className="space-y-2">
+            {items.map((item) => {
             const nextOpenAt =
-              item.done && item.done_at && item.recurrence_interval_minutes
-                ? addMinutesToIso(item.done_at, item.recurrence_interval_minutes)
+              item.done && item.done_at && item.recurrence_interval_value && item.recurrence_interval_unit
+                ? addRecurringIntervalToIso(item.done_at, item.recurrence_interval_value, item.recurrence_interval_unit)
                 : null;
 
             return (
@@ -224,10 +352,10 @@ export const ShoppingTab = ({ items, completions, userId, busy, onAdd, onToggle,
                     </Badge>
                   ))}
 
-                  {item.recurrence_interval_minutes ? (
+                  {item.recurrence_interval_value && item.recurrence_interval_unit ? (
                     <Badge className="bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-100">
                       {t("shopping.recursAfter", {
-                        value: formatRecurrence(item.recurrence_interval_minutes, t)
+                        value: formatRecurrence(item.recurrence_interval_value, item.recurrence_interval_unit, t)
                       })}
                     </Badge>
                   ) : null}
@@ -250,13 +378,15 @@ export const ShoppingTab = ({ items, completions, userId, busy, onAdd, onToggle,
                 ) : null}
               </li>
             );
-          })}
-        </ul>
+            })}
+          </ul>
+        ) : null}
 
-        {items.length === 0 ? <p className="text-sm text-slate-500 dark:text-slate-400">{t("shopping.empty")}</p> : null}
+        {showList && items.length === 0 ? <p className="text-sm text-slate-500 dark:text-slate-400">{t("shopping.empty")}</p> : null}
 
-        <div className="mt-5 rounded-xl border border-brand-100 bg-brand-50/60 p-3 dark:border-slate-700 dark:bg-slate-800/60">
-          <p className="mb-2 text-sm font-semibold text-brand-900 dark:text-brand-100">{t("shopping.historyTitle")}</p>
+        {showHistory ? (
+          <div className="rounded-xl border border-brand-100 bg-brand-50/60 p-3 dark:border-slate-700 dark:bg-slate-800/60">
+            <p className="mb-2 text-sm font-semibold text-brand-900 dark:text-brand-100">{t("shopping.historyTitle")}</p>
           {completionSeries.labels.length > 0 ? (
             <div className="mb-3 rounded-lg bg-white p-2 dark:bg-slate-900">
               <Line
@@ -293,9 +423,9 @@ export const ShoppingTab = ({ items, completions, userId, busy, onAdd, onToggle,
           ) : null}
           {completions.length === 0 ? <p className="text-sm text-slate-500 dark:text-slate-400">{t("shopping.historyEmpty")}</p> : null}
 
-          {completions.length > 0 ? (
-            <ul className="space-y-2">
-              {completions.map((entry) => (
+            {completions.length > 0 ? (
+              <ul className="space-y-2">
+                {completions.map((entry) => (
                 <li
                   key={entry.id}
                   className="rounded-lg border border-brand-100 bg-white/90 p-2 dark:border-slate-700 dark:bg-slate-900"
@@ -318,13 +448,14 @@ export const ShoppingTab = ({ items, completions, userId, busy, onAdd, onToggle,
                   ) : null}
 
                   <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                    {t("shopping.historyBy", { value: userLabel(entry.completed_by, userId, t("common.you")) })}
+                    {t("shopping.historyBy", { value: userLabel(entry.completed_by) })}
                   </p>
                 </li>
-              ))}
-            </ul>
-          ) : null}
-        </div>
+                ))}
+              </ul>
+            ) : null}
+          </div>
+        ) : null}
       </CardContent>
     </Card>
   );

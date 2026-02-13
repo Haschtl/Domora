@@ -1,12 +1,22 @@
 import { v4 as uuid } from "uuid";
 import { z } from "zod";
+import { calculateBalancesByMember } from "./finance-math";
+import {
+  assertCanDemoteOwner,
+  assertCanDissolveHousehold,
+  assertCanLeaveAsOwner,
+  assertCanLeaveWithBalance,
+  assertCanRemoveOwner
+} from "./household-guards";
 import { supabase } from "./supabase";
 import type {
+  CashAuditRequest,
   FinanceEntry,
   Household,
   HouseholdMember,
   HouseholdMemberPimpers,
   NewTaskInput,
+  ShoppingRecurrenceUnit,
   ShoppingItem,
   ShoppingItemCompletion,
   TaskCompletion,
@@ -33,6 +43,7 @@ const nonNegativeOptionalNumberSchema = optionalNumberSchema.refine(
   (value) => value === null || value >= 0,
   "Expected a non-negative number or null"
 );
+const shoppingRecurrenceUnitSchema = z.enum(["days", "weeks", "months"]);
 
 const householdSchema = z.object({
   id: z.string().uuid(),
@@ -51,9 +62,16 @@ const householdMemberSchema = z.object({
   household_id: z.string().uuid(),
   user_id: z.string().uuid(),
   role: z.enum(["owner", "member"]),
+  display_name: z.string().nullable().optional().transform((value) => value ?? null),
+  avatar_url: z.string().nullable().optional().transform((value) => value ?? null),
   room_size_sqm: positiveOptionalNumberSchema,
-  common_area_factor: z.coerce.number().finite().positive(),
+  common_area_factor: z.coerce.number().finite().min(0).max(2),
   created_at: z.string().min(1)
+});
+const userProfileSchema = z.object({
+  user_id: z.string().uuid(),
+  display_name: z.string().nullable().optional().transform((value) => value ?? null),
+  avatar_url: z.string().nullable().optional().transform((value) => value ?? null)
 });
 
 const shoppingItemSchema = z.object({
@@ -61,7 +79,8 @@ const shoppingItemSchema = z.object({
   household_id: z.string().uuid(),
   title: z.string().min(1),
   tags: z.array(z.string()).default([]),
-  recurrence_interval_minutes: z.coerce.number().int().positive().nullable().optional().transform((value) => value ?? null),
+  recurrence_interval_value: z.coerce.number().int().positive().nullable().optional().transform((value) => value ?? null),
+  recurrence_interval_unit: shoppingRecurrenceUnitSchema.nullable().optional().transform((value) => value ?? null),
   done: z.coerce.boolean(),
   done_at: z.string().nullable().optional().transform((value) => value ?? null),
   done_by: z.string().uuid().nullable().optional().transform((value) => value ?? null),
@@ -113,6 +132,17 @@ const financeEntrySchema = z.object({
   category: z.string().min(1),
   amount: z.coerce.number().finite().nonnegative(),
   paid_by: z.string().uuid(),
+  paid_by_user_ids: z.array(z.string().uuid()).default([]),
+  beneficiary_user_ids: z.array(z.string().uuid()).default([]),
+  entry_date: z.string().min(1).default(""),
+  created_at: z.string().min(1)
+});
+
+const cashAuditRequestSchema = z.object({
+  id: z.string().uuid(),
+  household_id: z.string().uuid(),
+  requested_by: z.string().uuid(),
+  status: z.enum(["queued", "sent", "failed"]),
   created_at: z.string().min(1)
 });
 
@@ -142,7 +172,21 @@ const normalizeTaskCompletion = (row: Record<string, unknown>): TaskCompletion =
 });
 
 const normalizeFinanceEntry = (row: Record<string, unknown>): FinanceEntry => ({
-  ...financeEntrySchema.parse(row)
+  ...(() => {
+    const parsed = financeEntrySchema.parse(row);
+    const fallbackDate =
+      typeof row.created_at === "string" && row.created_at.length >= 10 ? row.created_at.slice(0, 10) : "";
+    return {
+      ...parsed,
+      paid_by_user_ids: parsed.paid_by_user_ids.length > 0 ? parsed.paid_by_user_ids : [parsed.paid_by],
+      beneficiary_user_ids: parsed.beneficiary_user_ids,
+      entry_date: parsed.entry_date || fallbackDate
+    };
+  })()
+});
+
+const normalizeCashAuditRequest = (row: Record<string, unknown>): CashAuditRequest => ({
+  ...cashAuditRequestSchema.parse(row)
 });
 
 const getDueAtFromStartDate = (startDate: string) => {
@@ -195,6 +239,48 @@ export const updateUserAvatar = async (avatarUrl: string) => {
   });
 
   if (error) throw error;
+
+  const { data: userData, error: userError } = await supabase.auth.getUser();
+  if (userError) throw userError;
+  const userId = userData.user?.id;
+  if (!userId) return;
+
+  const { error: profileError } = await supabase.from("user_profiles").upsert(
+    {
+      user_id: userId,
+      avatar_url: normalizedAvatar.length > 0 ? normalizedAvatar : null,
+      updated_at: new Date().toISOString()
+    },
+    { onConflict: "user_id" }
+  );
+  if (profileError) throw profileError;
+};
+
+export const updateUserDisplayName = async (displayName: string) => {
+  const normalizedDisplayName = z.string().trim().max(80).parse(displayName);
+
+  const { error } = await supabase.auth.updateUser({
+    data: {
+      display_name: normalizedDisplayName.length > 0 ? normalizedDisplayName : null
+    }
+  });
+
+  if (error) throw error;
+
+  const { data: userData, error: userError } = await supabase.auth.getUser();
+  if (userError) throw userError;
+  const userId = userData.user?.id;
+  if (!userId) return;
+
+  const { error: profileError } = await supabase.from("user_profiles").upsert(
+    {
+      user_id: userId,
+      display_name: normalizedDisplayName.length > 0 ? normalizedDisplayName : null,
+      updated_at: new Date().toISOString()
+    },
+    { onConflict: "user_id" }
+  );
+  if (profileError) throw profileError;
 };
 
 export const getHouseholdsForUser = async (userId: string): Promise<Household[]> => {
@@ -223,7 +309,32 @@ export const getHouseholdMembers = async (householdId: string): Promise<Househol
     .order("created_at", { ascending: true });
 
   if (error) throw error;
-  return (data ?? []).map((entry) => normalizeHouseholdMember(entry as Record<string, unknown>));
+  const members = (data ?? []).map((entry) => normalizeHouseholdMember(entry as Record<string, unknown>));
+
+  if (members.length === 0) return members;
+
+  const memberUserIds = [...new Set(members.map((entry) => entry.user_id))];
+  const { data: profileRows, error: profileError } = await supabase
+    .from("user_profiles")
+    .select("user_id,display_name,avatar_url")
+    .in("user_id", memberUserIds);
+
+  if (profileError) throw profileError;
+
+  const profileByUserId = new Map(
+    (profileRows ?? [])
+      .map((entry) => userProfileSchema.parse(entry as Record<string, unknown>))
+      .map((entry) => [entry.user_id, entry] as const)
+  );
+
+  return members.map((entry) => {
+    const profile = profileByUserId.get(entry.user_id);
+    return {
+      ...entry,
+      display_name: profile?.display_name ?? null,
+      avatar_url: profile?.avatar_url ?? null
+    };
+  });
 };
 
 export const getHouseholdMemberPimpers = async (householdId: string): Promise<HouseholdMemberPimpers[]> => {
@@ -302,6 +413,7 @@ export const joinHouseholdByInvite = async (inviteCode: string, userId: string):
 export const updateHouseholdSettings = async (
   householdId: string,
   input: {
+    name: string;
     imageUrl: string;
     address: string;
     currency: string;
@@ -311,6 +423,7 @@ export const updateHouseholdSettings = async (
 ): Promise<Household> => {
   const validatedHouseholdId = z.string().uuid().parse(householdId);
   const parsedInput = z.object({
+    name: z.string().trim().min(1).max(120),
     imageUrl: z.string().trim(),
     address: z.string().trim().max(300),
     currency: z.string().trim().toUpperCase().length(3),
@@ -321,6 +434,7 @@ export const updateHouseholdSettings = async (
   const { data, error } = await supabase
     .from("households")
     .update({
+      name: parsedInput.name,
       image_url: parsedInput.imageUrl.length > 0 ? parsedInput.imageUrl : null,
       address: parsedInput.address,
       currency: parsedInput.currency,
@@ -344,7 +458,7 @@ export const updateMemberSettings = async (
   const validatedUserId = z.string().uuid().parse(userId);
   const parsedInput = z.object({
     roomSizeSqm: positiveOptionalNumberSchema,
-    commonAreaFactor: z.coerce.number().finite().positive()
+    commonAreaFactor: z.coerce.number().finite().min(0).max(2)
   }).parse(input);
 
   const { data, error } = await supabase
@@ -366,6 +480,52 @@ export const leaveHousehold = async (householdId: string, userId: string) => {
   const validatedHouseholdId = z.string().uuid().parse(householdId);
   const validatedUserId = z.string().uuid().parse(userId);
 
+  const { data: financeRows, error: financeError } = await supabase
+    .from("finance_entries")
+    .select("*")
+    .eq("household_id", validatedHouseholdId);
+
+  if (financeError) throw financeError;
+
+  const allEntries = (financeRows ?? []).map((row) => normalizeFinanceEntry(row as Record<string, unknown>));
+
+  const { data: auditRows, error: auditError } = await supabase
+    .from("cash_audit_requests")
+    .select("created_at")
+    .eq("household_id", validatedHouseholdId)
+    .order("created_at", { ascending: false })
+    .limit(1);
+
+  if (auditError) throw auditError;
+
+  const lastCashAuditAt = String(auditRows?.[0]?.created_at ?? "");
+  const auditDay = lastCashAuditAt ? lastCashAuditAt.slice(0, 10) : null;
+  const entriesSinceLastAudit = auditDay
+    ? allEntries.filter((entry) => {
+        const entryDay = entry.entry_date || entry.created_at.slice(0, 10);
+        return entryDay > auditDay;
+      })
+    : allEntries;
+
+  const { data: memberRows, error: memberListError } = await supabase
+    .from("household_members")
+    .select("user_id")
+    .eq("household_id", validatedHouseholdId);
+
+  if (memberListError) throw memberListError;
+
+  const settlementMemberIds = (memberRows ?? [])
+    .map((row) => String(row.user_id ?? ""))
+    .filter((entry): entry is string => entry.length > 0);
+  const fallbackMemberIds = [...new Set(entriesSinceLastAudit.flatMap((entry) => entry.paid_by_user_ids))];
+  const memberIdsForBalance = settlementMemberIds.length > 0 ? settlementMemberIds : fallbackMemberIds;
+
+  const userBalance = calculateBalancesByMember(entriesSinceLastAudit, memberIdsForBalance).find(
+    (entry) => entry.memberId === validatedUserId
+  )?.balance ?? 0;
+
+  assertCanLeaveWithBalance(userBalance);
+
   const { data: memberRow, error: memberError } = await supabase
     .from("household_members")
     .select("role")
@@ -385,9 +545,7 @@ export const leaveHousehold = async (householdId: string, userId: string) => {
 
     if (ownerCountError) throw ownerCountError;
 
-    if ((count ?? 0) <= 1) {
-      throw new Error("Du bist der letzte Owner. Lege zuerst einen weiteren Owner fest.");
-    }
+    assertCanLeaveAsOwner(count ?? 0);
   }
 
   const { error } = await supabase
@@ -395,6 +553,112 @@ export const leaveHousehold = async (householdId: string, userId: string) => {
     .delete()
     .eq("household_id", validatedHouseholdId)
     .eq("user_id", validatedUserId);
+
+  if (error) throw error;
+};
+
+export const dissolveHousehold = async (householdId: string, userId: string) => {
+  const validatedHouseholdId = z.string().uuid().parse(householdId);
+  const validatedUserId = z.string().uuid().parse(userId);
+
+  const { data: memberRow, error: memberError } = await supabase
+    .from("household_members")
+    .select("role")
+    .eq("household_id", validatedHouseholdId)
+    .eq("user_id", validatedUserId)
+    .single();
+
+  if (memberError) throw memberError;
+
+  const role = String(memberRow.role ?? "member");
+
+  const { count, error: memberCountError } = await supabase
+    .from("household_members")
+    .select("user_id", { count: "exact", head: true })
+    .eq("household_id", validatedHouseholdId);
+
+  if (memberCountError) throw memberCountError;
+  assertCanDissolveHousehold(role, count ?? 0);
+
+  const { error } = await supabase
+    .from("households")
+    .delete()
+    .eq("id", validatedHouseholdId);
+
+  if (error) throw error;
+};
+
+export const setHouseholdMemberRole = async (
+  householdId: string,
+  targetUserId: string,
+  role: "owner" | "member"
+) => {
+  const validatedHouseholdId = z.string().uuid().parse(householdId);
+  const validatedTargetUserId = z.string().uuid().parse(targetUserId);
+  const nextRole = z.enum(["owner", "member"]).parse(role);
+
+  if (nextRole === "member") {
+    const { data: targetMember, error: targetMemberError } = await supabase
+      .from("household_members")
+      .select("role")
+      .eq("household_id", validatedHouseholdId)
+      .eq("user_id", validatedTargetUserId)
+      .single();
+
+    if (targetMemberError) throw targetMemberError;
+
+    const currentRole = String(targetMember.role ?? "member");
+    if (currentRole === "owner") {
+      const { count, error: ownerCountError } = await supabase
+        .from("household_members")
+        .select("user_id", { count: "exact", head: true })
+        .eq("household_id", validatedHouseholdId)
+        .eq("role", "owner");
+
+      if (ownerCountError) throw ownerCountError;
+      assertCanDemoteOwner(count ?? 0);
+    }
+  }
+
+  const { error } = await supabase
+    .from("household_members")
+    .update({ role: nextRole })
+    .eq("household_id", validatedHouseholdId)
+    .eq("user_id", validatedTargetUserId);
+
+  if (error) throw error;
+};
+
+export const removeHouseholdMember = async (householdId: string, targetUserId: string) => {
+  const validatedHouseholdId = z.string().uuid().parse(householdId);
+  const validatedTargetUserId = z.string().uuid().parse(targetUserId);
+
+  const { data: targetMember, error: targetMemberError } = await supabase
+    .from("household_members")
+    .select("role")
+    .eq("household_id", validatedHouseholdId)
+    .eq("user_id", validatedTargetUserId)
+    .single();
+
+  if (targetMemberError) throw targetMemberError;
+
+  const targetRole = String(targetMember.role ?? "member");
+  if (targetRole === "owner") {
+    const { count, error: ownerCountError } = await supabase
+      .from("household_members")
+      .select("user_id", { count: "exact", head: true })
+      .eq("household_id", validatedHouseholdId)
+      .eq("role", "owner");
+
+    if (ownerCountError) throw ownerCountError;
+    assertCanRemoveOwner(count ?? 0);
+  }
+
+  const { error } = await supabase
+    .from("household_members")
+    .delete()
+    .eq("household_id", validatedHouseholdId)
+    .eq("user_id", validatedTargetUserId);
 
   if (error) throw error;
 };
@@ -421,20 +685,25 @@ export const addShoppingItem = async (
   householdId: string,
   title: string,
   tags: string[],
-  recurrenceIntervalMinutes: number | null,
+  recurrenceInterval: { value: number; unit: ShoppingRecurrenceUnit } | null,
   userId: string
 ): Promise<ShoppingItem> => {
   const parsedInput = z.object({
     householdId: z.string().uuid(),
     title: z.string().trim().min(1).max(200),
     tags: z.array(z.string().trim().min(1).max(40)).max(10),
-    recurrenceIntervalMinutes: z.coerce.number().int().positive().nullable(),
+    recurrenceInterval: z
+      .object({
+        value: z.coerce.number().int().positive(),
+        unit: shoppingRecurrenceUnitSchema
+      })
+      .nullable(),
     userId: z.string().uuid()
   }).parse({
     householdId,
     title,
     tags: tags.map((entry) => entry.trim()).filter((entry) => entry.length > 0),
-    recurrenceIntervalMinutes,
+    recurrenceInterval,
     userId
   });
 
@@ -445,7 +714,8 @@ export const addShoppingItem = async (
       household_id: parsedInput.householdId,
       title: parsedInput.title,
       tags: parsedInput.tags,
-      recurrence_interval_minutes: parsedInput.recurrenceIntervalMinutes,
+      recurrence_interval_value: parsedInput.recurrenceInterval?.value ?? null,
+      recurrence_interval_unit: parsedInput.recurrenceInterval?.unit ?? null,
       done: false,
       created_by: parsedInput.userId
     })
@@ -658,28 +928,49 @@ export const getFinanceEntries = async (householdId: string): Promise<FinanceEnt
   return (data ?? []).map((entry) => normalizeFinanceEntry(entry as Record<string, unknown>));
 };
 
+export const getCashAuditRequests = async (householdId: string): Promise<CashAuditRequest[]> => {
+  const { data, error } = await supabase
+    .from("cash_audit_requests")
+    .select("*")
+    .eq("household_id", householdId)
+    .order("created_at", { ascending: false });
+
+  if (error) throw error;
+
+  return (data ?? []).map((entry) => normalizeCashAuditRequest(entry as Record<string, unknown>));
+};
+
 export const addFinanceEntry = async (
   householdId: string,
-  description: string,
-  amount: number,
-  category: string,
-  userId: string
+  input: {
+    description: string;
+    amount: number;
+    category: string;
+    paidByUserIds: string[];
+    beneficiaryUserIds: string[];
+    entryDate?: string | null;
+  }
 ): Promise<FinanceEntry> => {
   const parsedInput = z.object({
     householdId: z.string().uuid(),
-    userId: z.string().uuid(),
     description: z.string().trim().min(1).max(200),
     amount: z.coerce.number().finite().nonnegative(),
-    category: z.string().trim().max(80)
+    category: z.string().trim().max(80),
+    paidByUserIds: z.array(z.string().uuid()).min(1),
+    beneficiaryUserIds: z.array(z.string().uuid()).min(1),
+    entryDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional()
   }).parse({
     householdId,
-    userId,
-    description,
-    amount,
-    category
+    description: input.description,
+    amount: input.amount,
+    category: input.category,
+    paidByUserIds: input.paidByUserIds.filter((entry, index, all) => all.indexOf(entry) === index),
+    beneficiaryUserIds: input.beneficiaryUserIds.filter((entry, index, all) => all.indexOf(entry) === index),
+    entryDate: input.entryDate ?? null
   });
 
   const normalizedCategory = parsedInput.category || "general";
+  const normalizedEntryDate = parsedInput.entryDate ?? new Date().toISOString().slice(0, 10);
 
   const { data, error } = await supabase
     .from("finance_entries")
@@ -689,13 +980,77 @@ export const addFinanceEntry = async (
       description: parsedInput.description,
       category: normalizedCategory,
       amount: parsedInput.amount,
-      paid_by: parsedInput.userId
+      paid_by: parsedInput.paidByUserIds[0],
+      paid_by_user_ids: parsedInput.paidByUserIds,
+      beneficiary_user_ids: parsedInput.beneficiaryUserIds,
+      entry_date: normalizedEntryDate,
+      created_at: `${normalizedEntryDate}T12:00:00.000Z`
     })
     .select("*")
     .single();
 
   if (error) throw error;
   return normalizeFinanceEntry(data as Record<string, unknown>);
+};
+
+export const updateFinanceEntry = async (
+  id: string,
+  input: {
+    description: string;
+    amount: number;
+    category: string;
+    paidByUserIds: string[];
+    beneficiaryUserIds: string[];
+    entryDate?: string | null;
+  }
+): Promise<FinanceEntry> => {
+  const parsedInput = z
+    .object({
+      id: z.string().uuid(),
+      description: z.string().trim().min(1).max(200),
+      amount: z.coerce.number().finite().nonnegative(),
+      category: z.string().trim().max(80),
+      paidByUserIds: z.array(z.string().uuid()).min(1),
+      beneficiaryUserIds: z.array(z.string().uuid()).min(1),
+      entryDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional()
+    })
+    .parse({
+      id,
+      description: input.description,
+      amount: input.amount,
+      category: input.category,
+      paidByUserIds: input.paidByUserIds.filter((entry, index, all) => all.indexOf(entry) === index),
+      beneficiaryUserIds: input.beneficiaryUserIds.filter((entry, index, all) => all.indexOf(entry) === index),
+      entryDate: input.entryDate ?? null
+    });
+
+  const normalizedCategory = parsedInput.category || "general";
+  const normalizedEntryDate = parsedInput.entryDate ?? new Date().toISOString().slice(0, 10);
+
+  const { data, error } = await supabase
+    .from("finance_entries")
+    .update({
+      description: parsedInput.description,
+      category: normalizedCategory,
+      amount: parsedInput.amount,
+      paid_by: parsedInput.paidByUserIds[0],
+      paid_by_user_ids: parsedInput.paidByUserIds,
+      beneficiary_user_ids: parsedInput.beneficiaryUserIds,
+      entry_date: normalizedEntryDate,
+      created_at: `${normalizedEntryDate}T12:00:00.000Z`
+    })
+    .eq("id", parsedInput.id)
+    .select("*")
+    .single();
+
+  if (error) throw error;
+  return normalizeFinanceEntry(data as Record<string, unknown>);
+};
+
+export const deleteFinanceEntry = async (id: string): Promise<void> => {
+  const validatedId = z.string().uuid().parse(id);
+  const { error } = await supabase.from("finance_entries").delete().eq("id", validatedId);
+  if (error) throw error;
 };
 
 export const requestCashAudit = async (householdId: string, userId: string) => {

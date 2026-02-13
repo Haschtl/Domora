@@ -1,5 +1,6 @@
 import { LaptopMinimal, Moon, Sun } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { persistLanguagePreference } from "../i18n";
 import { Button } from "./ui/button";
 import { cn } from "../lib/utils";
 import { useTheme, type ThemePreference } from "../lib/use-theme";
@@ -83,6 +84,7 @@ export const ThemeLanguageControls = ({ surface = "brand" }: ThemeLanguageContro
               currentLanguage === language ? activeButtonClass : inactiveButtonClass
             )}
             onClick={() => {
+              persistLanguagePreference(language);
               void i18n.changeLanguage(language);
             }}
             aria-label={t(`language.${language}`)}

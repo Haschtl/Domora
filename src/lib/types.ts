@@ -1,4 +1,5 @@
 export type AppTab = "home" | "shopping" | "tasks" | "finances" | "settings";
+export type ShoppingRecurrenceUnit = "days" | "weeks" | "months";
 
 export interface Household {
   id: string;
@@ -17,6 +18,8 @@ export interface HouseholdMember {
   household_id: string;
   user_id: string;
   role: "owner" | "member";
+  display_name?: string | null;
+  avatar_url?: string | null;
   room_size_sqm: number | null;
   common_area_factor: number;
   created_at: string;
@@ -34,7 +37,8 @@ export interface ShoppingItem {
   household_id: string;
   title: string;
   tags: string[];
-  recurrence_interval_minutes: number | null;
+  recurrence_interval_value: number | null;
+  recurrence_interval_unit: ShoppingRecurrenceUnit | null;
   done: boolean;
   done_at: string | null;
   done_by: string | null;
@@ -96,5 +100,16 @@ export interface FinanceEntry {
   category: string;
   amount: number;
   paid_by: string;
+  paid_by_user_ids: string[];
+  beneficiary_user_ids: string[];
+  entry_date: string;
+  created_at: string;
+}
+
+export interface CashAuditRequest {
+  id: string;
+  household_id: string;
+  requested_by: string;
+  status: "queued" | "sent" | "failed";
   created_at: string;
 }

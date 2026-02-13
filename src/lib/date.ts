@@ -1,5 +1,6 @@
-import { addMinutes, format, isBefore, isValid, parseISO } from "date-fns";
+import { addDays, addMinutes, addMonths, addWeeks, format, isBefore, isValid, parseISO } from "date-fns";
 import { de, enGB } from "date-fns/locale";
+import type { ShoppingRecurrenceUnit } from "./types";
 
 const resolveDateFnsLocale = (language: string) => (language.startsWith("de") ? de : enGB);
 
@@ -30,6 +31,23 @@ export const addMinutesToIso = (iso: string, minutes: number): Date | null => {
   const date = toDate(iso);
   if (!date) return null;
   return addMinutes(date, minutes);
+};
+
+export const addRecurringIntervalToIso = (iso: string, value: number, unit: ShoppingRecurrenceUnit): Date | null => {
+  const date = toDate(iso);
+  if (!date) return null;
+  if (!Number.isFinite(value) || value <= 0) return null;
+
+  switch (unit) {
+    case "days":
+      return addDays(date, value);
+    case "weeks":
+      return addWeeks(date, value);
+    case "months":
+      return addMonths(date, value);
+    default:
+      return null;
+  }
 };
 
 export const isDueNow = (iso: string) => {

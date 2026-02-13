@@ -14,6 +14,7 @@ interface HouseholdSetupViewProps {
   onCreate: (name: string) => Promise<void>;
   onJoin: (inviteCode: string) => Promise<void>;
   onSelect: (household: Household) => void;
+  onSignOut: () => Promise<void>;
 }
 
 export const HouseholdSetupView = ({
@@ -21,7 +22,8 @@ export const HouseholdSetupView = ({
   busy,
   onCreate,
   onJoin,
-  onSelect
+  onSelect,
+  onSignOut
 }: HouseholdSetupViewProps) => {
   const { t } = useTranslation();
   const createSchema = z.object({
@@ -160,6 +162,19 @@ export const HouseholdSetupView = ({
           </CardContent>
         </Card>
       ) : null}
+
+      <div className="md:col-span-2">
+        <Button
+          type="button"
+          variant="ghost"
+          disabled={busy}
+          onClick={() => {
+            void onSignOut();
+          }}
+        >
+          {t("common.logout")}
+        </Button>
+      </div>
     </div>
   );
 };

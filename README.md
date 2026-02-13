@@ -61,6 +61,7 @@ cp .env.example .env
 Hinweis:
 - Im Frontend nur `publishable` verwenden.
 - `secret` Key nur serverseitig (z. B. Edge Functions), niemals als `VITE_` Variable.
+- Fuer lokale Seed-Skripte: `SUPABASE_URL` + `SUPABASE_SECRET_KEY` in `.env` setzen.
 
 4. Supabase Schema ausfuehren:
 
@@ -148,6 +149,39 @@ pnpm test:unit:watch
 pnpm test:e2e:ui
 pnpm test
 ```
+
+## Dummy Daten Seed
+
+Zum schnellen Befuellen der DB mit Demo-Daten (5 Mitglieder, Tasks, Finanzen):
+
+1. In `.env` setzen:
+- `SUPABASE_URL`
+- `SUPABASE_SECRET_KEY`
+
+2. Seed starten:
+
+```bash
+pnpm seed:dummy
+```
+
+Optional anpassbar:
+- `DUMMY_MEMBER_COUNT` (default `5`)
+- `DUMMY_TASK_COUNT` (default `8`)
+- `DUMMY_FINANCE_COUNT` (default `10`)
+
+Das Skript erstellt:
+- neue Auth-User (Demo-Emails)
+- eine neue Demo-WG + Memberships
+- Task-Rotation + Task-Completion-Historie
+- Finanzeintraege
+
+Automatischer Test fuer die Seed-Generierung:
+
+```bash
+npm run test:unit
+```
+
+Abgedeckt in `scripts/seed-dummy-data.test.mjs`.
 
 ## CI/CD
 

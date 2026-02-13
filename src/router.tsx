@@ -23,6 +23,21 @@ const homeRoute = createRoute({
 const shoppingRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "shopping",
+  beforeLoad: () => {
+    throw redirect({ to: "/shopping/list" });
+  },
+  component: () => null
+});
+
+const shoppingListRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "shopping/list",
+  component: () => null
+});
+
+const shoppingHistoryRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "shopping/history",
   component: () => null
 });
 
@@ -89,6 +104,21 @@ const financesSubscriptionsRoute = createRoute({
 const settingsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "settings",
+  beforeLoad: () => {
+    throw redirect({ to: "/settings/me" });
+  },
+  component: () => null
+});
+
+const settingsMeRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "settings/me",
+  component: () => null
+});
+
+const settingsHouseholdRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "settings/household",
   component: () => null
 });
 
@@ -96,6 +126,8 @@ const routeTree = rootRoute.addChildren([
   indexRoute,
   homeRoute,
   shoppingRoute,
+  shoppingListRoute,
+  shoppingHistoryRoute,
   tasksRoute,
   tasksOverviewRoute,
   tasksStatsRoute,
@@ -105,7 +137,9 @@ const routeTree = rootRoute.addChildren([
   financesStatsRoute,
   financesArchiveRoute,
   financesSubscriptionsRoute,
-  settingsRoute
+  settingsRoute,
+  settingsMeRoute,
+  settingsHouseholdRoute
 ]);
 
 export const router = createRouter({

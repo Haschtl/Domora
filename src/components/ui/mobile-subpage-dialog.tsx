@@ -37,8 +37,8 @@ export const MobileSubpageDialog = ({
     <DialogTrigger asChild>{trigger}</DialogTrigger>
     <DialogContent
       className={cn(
-        "inset-0 h-[100dvh] w-screen max-w-none translate-x-0 translate-y-0 rounded-none p-0",
-        "left-0 top-0 sm:left-1/2 sm:top-1/2 sm:h-auto sm:max-h-[88dvh] sm:w-[calc(100%-2rem)] sm:max-w-2xl",
+        "left-2 right-2 top-24 bottom-[4.5rem] h-auto w-auto max-w-none translate-x-0 translate-y-0 rounded-2xl p-0",
+        "sm:left-1/2 sm:right-auto sm:top-1/2 sm:bottom-auto sm:h-auto sm:max-h-[88dvh] sm:w-[calc(100%-2rem)] sm:max-w-2xl",
         "sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-2xl sm:p-0",
         contentClassName
       )}
