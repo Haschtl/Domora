@@ -84,6 +84,48 @@ pnpm dev
 - Manifest und Icons liegen in `public/`.
 - App kann auf mobilen Geraeten als Homescreen-App installiert werden.
 
+## Android App (Capacitor)
+
+Domora ist als Android-App ueber Capacitor vorbereitet.
+
+1. Capacitor-Dependencies installieren:
+
+```bash
+pnpm install
+```
+
+2. Android-Projekt einmalig erzeugen (nur beim ersten Mal):
+
+```bash
+pnpm cap add android
+```
+
+3. Web-App bauen + Android-Projekt synchronisieren:
+
+```bash
+pnpm mobile:sync:android
+```
+
+4. Android Studio oeffnen:
+
+```bash
+pnpm mobile:open:android
+```
+
+5. APK in Android Studio bauen:
+- `Build > Build Bundle(s) / APK(s) > Build APK(s)`
+
+Nuetzliche Befehle:
+
+```bash
+pnpm mobile:copy:android
+pnpm mobile:sync:android
+```
+
+Hinweise:
+- Bei Aenderungen im Web-Code immer erneut `pnpm mobile:sync:android` ausfuehren.
+- Das generierte `android/` Projekt kann ins Repo committed werden.
+
 ## Tests
 
 Unit-Tests (Vitest):
