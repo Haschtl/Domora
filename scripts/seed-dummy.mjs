@@ -11,6 +11,7 @@ import {
   buildRotationRows,
   buildTaskRows,
   buildCashAuditRows,
+  buildSubscriptionRows,
   memberProfiles,
   randomCode,
   toInt
@@ -65,6 +66,7 @@ const runId = `${now.getTime().toString(36)}${Math.random().toString(36).slice(2
 
 const appTablesToClear = [
   { table: "cash_audit_requests", markerColumn: "id" },
+  { table: "finance_subscriptions", markerColumn: "id" },
   { table: "finance_entries", markerColumn: "id" },
   { table: "task_completions", markerColumn: "id" },
   { table: "task_rotation_members", markerColumn: "task_id" },
@@ -79,7 +81,7 @@ const appTablesToClear = [
 
 const clearApplicationData = async () => {
   console.warn("WARNING: This will clear existing Domora data before inserting new dummy data.");
-  console.warn("WARNING: Tables affected: cash_audit_requests, finance_entries, tasks, shopping_items, households, user_profiles, ...");
+  console.warn("WARNING: Tables affected: cash_audit_requests, finance_subscriptions, finance_entries, tasks, shopping_items, households, user_profiles, ...");
   console.warn("WARNING: Continuing in 3 seconds. Press Ctrl+C to abort.");
   await new Promise((resolveTimeout) => setTimeout(resolveTimeout, 3000));
 
@@ -206,6 +208,17 @@ const run = async () => {
     throw new Error(`Failed to upsert user profiles: ${profileError.message}`);
   }
 
+  const subscriptionRows = buildSubscriptionRows({
+    householdId,
+    ownerId: owner.id,
+    users,
+    now
+  });
+  const { error: subscriptionError } = await supabase.from("finance_subscriptions").insert(subscriptionRows);
+  if (subscriptionError) {
+    throw new Error(`Failed to insert finance subscriptions: ${subscriptionError.message}`);
+  }
+
   const taskRows = buildTaskRows({
     taskCount,
     users,
@@ -299,6 +312,7 @@ const run = async () => {
   });
   console.log(`Tasks created: ${insertedTasks.length}`);
   console.log(`Finance entries created: ${financeRows.length}`);
+  console.log(`Finance subscriptions created: ${subscriptionRows.length}`);
   console.log(`Cash audits created: ${cashAuditRows.length}`);
   console.log(`Shopping items created: ${insertedShoppingItems.length}`);
   console.log(`Shopping completions created: ${shoppingCompletionRows.length}`);

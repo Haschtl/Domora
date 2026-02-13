@@ -169,6 +169,35 @@ export const buildFinanceRows = ({ financeCount, users, householdId, now, random
   const allUserIds = users.map((entry) => entry.id);
   const historyDays = Math.max(60, Math.ceil((financeCount * 210) / Math.max(financeCount, 1)));
 
+  const pickUsersByMode = (mode, anchorIndex) => {
+    if (allUserIds.length === 0) return [];
+    if (allUserIds.length === 1) return [allUserIds[0]];
+
+    if (mode === "single") {
+      return [allUserIds[anchorIndex % allUserIds.length]];
+    }
+
+    if (mode === "pair") {
+      const first = anchorIndex % allUserIds.length;
+      const second = (anchorIndex + 1) % allUserIds.length;
+      return [...new Set([allUserIds[first], allUserIds[second]])];
+    }
+
+    if (mode === "allExceptOne") {
+      const excluded = allUserIds[anchorIndex % allUserIds.length];
+      const subset = allUserIds.filter((id) => id !== excluded);
+      return subset.length > 0 ? subset : [excluded];
+    }
+
+    if (mode === "triple") {
+      if (allUserIds.length <= 3) return [...allUserIds];
+      const start = anchorIndex % allUserIds.length;
+      return [0, 1, 2].map((offset) => allUserIds[(start + offset) % allUserIds.length]);
+    }
+
+    return [...allUserIds];
+  };
+
   for (let i = 0; i < financeCount; i += 1) {
     const payer = users[i % users.length];
     const progress = i / Math.max(financeCount - 1, 1);
@@ -176,6 +205,31 @@ export const buildFinanceRows = ({ financeCount, users, householdId, now, random
     const jitterHours = (i % 5) * 3 + 1;
     const createdAt = new Date(now.getTime() - dayOffset * 24 * 60 * 60 * 1000 - jitterHours * 60 * 60 * 1000);
     const amount = Number((8 + random() * 120).toFixed(2));
+    const variant = i % 6;
+
+    let paidByUserIds = [payer.id];
+    if (variant === 1) {
+      paidByUserIds = pickUsersByMode("pair", i);
+      if (!paidByUserIds.includes(payer.id)) paidByUserIds = [payer.id, ...paidByUserIds].slice(0, 2);
+    } else if (variant === 4) {
+      paidByUserIds = pickUsersByMode("triple", i);
+      if (!paidByUserIds.includes(payer.id)) paidByUserIds = [payer.id, ...paidByUserIds];
+    }
+
+    let beneficiaryUserIds;
+    if (variant === 0) {
+      beneficiaryUserIds = pickUsersByMode("all", i);
+    } else if (variant === 1) {
+      beneficiaryUserIds = pickUsersByMode("pair", i + 1);
+    } else if (variant === 2) {
+      beneficiaryUserIds = pickUsersByMode("allExceptOne", i);
+    } else if (variant === 3) {
+      beneficiaryUserIds = pickUsersByMode("single", i + 2);
+    } else if (variant === 4) {
+      beneficiaryUserIds = pickUsersByMode("triple", i + 1);
+    } else {
+      beneficiaryUserIds = pickUsersByMode("all", i);
+    }
 
     rows.push({
       household_id: householdId,
@@ -183,14 +237,48 @@ export const buildFinanceRows = ({ financeCount, users, householdId, now, random
       category: financeCategories[i % financeCategories.length],
       amount,
       paid_by: payer.id,
-      paid_by_user_ids: [payer.id],
-      beneficiary_user_ids: allUserIds.length > 0 ? allUserIds : [payer.id],
+      paid_by_user_ids: paidByUserIds.length > 0 ? [...new Set(paidByUserIds)] : [payer.id],
+      beneficiary_user_ids: beneficiaryUserIds.length > 0 ? [...new Set(beneficiaryUserIds)] : [payer.id],
       entry_date: createdAt.toISOString().slice(0, 10),
       created_at: createdAt.toISOString()
     });
   }
 
   return rows;
+};
+
+export const buildSubscriptionRows = ({ householdId, ownerId, users, now }) => {
+  const allUserIds = users.map((entry) => entry.id);
+  const firstUser = users[0]?.id ?? ownerId;
+  const secondUser = users[1]?.id ?? firstUser;
+  const lastUser = users[users.length - 1]?.id ?? firstUser;
+
+  return [
+    {
+      household_id: householdId,
+      name: "Rundfunkbeitrag",
+      category: "utilities",
+      amount: 18.36,
+      paid_by_user_ids: [firstUser],
+      beneficiary_user_ids: allUserIds.length > 0 ? allUserIds : [firstUser],
+      cron_pattern: "0 9 1 */3 *",
+      created_by: ownerId,
+      created_at: new Date(now.getTime() - 110 * 24 * 60 * 60 * 1000).toISOString(),
+      updated_at: new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000).toISOString()
+    },
+    {
+      household_id: householdId,
+      name: "Internet",
+      category: "internet",
+      amount: 44.99,
+      paid_by_user_ids: [...new Set([firstUser, secondUser])],
+      beneficiary_user_ids: users.length > 2 ? allUserIds.filter((id) => id !== lastUser) : [...allUserIds],
+      cron_pattern: "0 9 1 * *",
+      created_by: ownerId,
+      created_at: new Date(now.getTime() - 140 * 24 * 60 * 60 * 1000).toISOString(),
+      updated_at: new Date(now.getTime() - 1 * 24 * 60 * 60 * 1000).toISOString()
+    }
+  ];
 };
 
 export const buildShoppingRows = ({ shoppingCount, users, householdId, ownerId, now }) => {
