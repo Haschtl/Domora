@@ -1,4 +1,5 @@
 import { v4 as uuid } from "uuid";
+import { z } from "zod";
 import { supabase } from "./supabase";
 import type {
   FinanceEntry,
@@ -14,96 +15,134 @@ import type {
 
 const buildInviteCode = () => Math.random().toString(36).slice(2, 8).toUpperCase();
 
-const toNumberOrNull = (value: unknown): number | null => {
-  if (value === null || value === undefined) return null;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : null;
-};
+const optionalNumberSchema = z.preprocess(
+  (value) => {
+    if (value === null || value === undefined || value === "") return null;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : Number.NaN;
+  },
+  z.number().finite().nullable()
+);
+
+const positiveOptionalNumberSchema = optionalNumberSchema.refine(
+  (value) => value === null || value > 0,
+  "Expected a positive number or null"
+);
+
+const nonNegativeOptionalNumberSchema = optionalNumberSchema.refine(
+  (value) => value === null || value >= 0,
+  "Expected a non-negative number or null"
+);
+
+const householdSchema = z.object({
+  id: z.string().uuid(),
+  name: z.string().trim().min(1),
+  image_url: z.string().nullable().optional().transform((value) => value ?? null),
+  address: z.string().default(""),
+  currency: z.string().length(3).transform((value) => value.toUpperCase()),
+  apartment_size_sqm: positiveOptionalNumberSchema,
+  warm_rent_monthly: nonNegativeOptionalNumberSchema,
+  invite_code: z.string().min(1),
+  created_by: z.string().uuid(),
+  created_at: z.string().min(1)
+});
+
+const householdMemberSchema = z.object({
+  household_id: z.string().uuid(),
+  user_id: z.string().uuid(),
+  role: z.enum(["owner", "member"]),
+  room_size_sqm: positiveOptionalNumberSchema,
+  common_area_factor: z.coerce.number().finite().positive(),
+  created_at: z.string().min(1)
+});
+
+const shoppingItemSchema = z.object({
+  id: z.string().uuid(),
+  household_id: z.string().uuid(),
+  title: z.string().min(1),
+  tags: z.array(z.string()).default([]),
+  recurrence_interval_minutes: z.coerce.number().int().positive().nullable().optional().transform((value) => value ?? null),
+  done: z.coerce.boolean(),
+  done_at: z.string().nullable().optional().transform((value) => value ?? null),
+  done_by: z.string().uuid().nullable().optional().transform((value) => value ?? null),
+  created_by: z.string().uuid(),
+  created_at: z.string().min(1)
+});
+
+const taskSchema = z.object({
+  id: z.string().uuid(),
+  household_id: z.string().uuid(),
+  title: z.string().min(1),
+  description: z.string().default(""),
+  start_date: z.string().min(1),
+  due_at: z.string().min(1),
+  frequency_days: z.coerce.number().int().positive(),
+  effort_pimpers: z.coerce.number().int().positive(),
+  done: z.coerce.boolean(),
+  done_at: z.string().nullable().optional().transform((value) => value ?? null),
+  done_by: z.string().uuid().nullable().optional().transform((value) => value ?? null),
+  assignee_id: z.string().uuid().nullable().optional().transform((value) => value ?? null),
+  created_by: z.string().uuid(),
+  created_at: z.string().min(1)
+});
+
+const shoppingCompletionSchema = z.object({
+  id: z.string().uuid(),
+  shopping_item_id: z.string().uuid(),
+  household_id: z.string().uuid(),
+  title_snapshot: z.string().default(""),
+  tags_snapshot: z.array(z.string()).default([]),
+  completed_by: z.string().uuid(),
+  completed_at: z.string().min(1)
+});
+
+const taskCompletionSchema = z.object({
+  id: z.string().uuid(),
+  task_id: z.string().uuid(),
+  household_id: z.string().uuid(),
+  task_title_snapshot: z.string().default(""),
+  user_id: z.string().uuid(),
+  pimpers_earned: z.coerce.number().int().positive(),
+  completed_at: z.string().min(1)
+});
+
+const financeEntrySchema = z.object({
+  id: z.string().uuid(),
+  household_id: z.string().uuid(),
+  description: z.string().min(1),
+  category: z.string().min(1),
+  amount: z.coerce.number().finite().nonnegative(),
+  paid_by: z.string().uuid(),
+  created_at: z.string().min(1)
+});
 
 const normalizeHousehold = (row: Record<string, unknown>): Household => ({
-  id: String(row.id),
-  name: String(row.name ?? ""),
-  image_url: row.image_url ? String(row.image_url) : null,
-  address: String(row.address ?? ""),
-  currency: String(row.currency ?? "EUR"),
-  apartment_size_sqm: toNumberOrNull(row.apartment_size_sqm),
-  warm_rent_monthly: toNumberOrNull(row.warm_rent_monthly),
-  invite_code: String(row.invite_code),
-  created_by: String(row.created_by),
-  created_at: String(row.created_at)
+  ...householdSchema.parse(row)
 });
 
 const normalizeHouseholdMember = (row: Record<string, unknown>): HouseholdMember => ({
-  household_id: String(row.household_id),
-  user_id: String(row.user_id),
-  role: (String(row.role ?? "member") as HouseholdMember["role"]) ?? "member",
-  room_size_sqm: toNumberOrNull(row.room_size_sqm),
-  common_area_factor: Number(row.common_area_factor ?? 1),
-  created_at: String(row.created_at)
+  ...householdMemberSchema.parse(row)
 });
 
 const normalizeShoppingItem = (row: Record<string, unknown>): ShoppingItem => ({
-  id: String(row.id),
-  household_id: String(row.household_id),
-  title: String(row.title ?? ""),
-  tags: Array.isArray(row.tags) ? row.tags.map((entry) => String(entry)) : [],
-  recurrence_interval_minutes:
-    row.recurrence_interval_minutes === null || row.recurrence_interval_minutes === undefined
-      ? null
-      : Number(row.recurrence_interval_minutes),
-  done: Boolean(row.done),
-  done_at: row.done_at ? String(row.done_at) : null,
-  done_by: row.done_by ? String(row.done_by) : null,
-  created_by: String(row.created_by),
-  created_at: String(row.created_at)
+  ...shoppingItemSchema.parse(row)
 });
 
 const normalizeTask = (row: Record<string, unknown>, rotationUserIds: string[]): TaskItem => ({
-  id: String(row.id),
-  household_id: String(row.household_id),
-  title: String(row.title ?? ""),
-  description: String(row.description ?? ""),
-  start_date: String(row.start_date ?? ""),
-  due_at: String(row.due_at),
-  frequency_days: Number(row.frequency_days ?? 7),
-  effort_pimpers: Number(row.effort_pimpers ?? 1),
-  done: Boolean(row.done),
-  done_at: row.done_at ? String(row.done_at) : null,
-  done_by: row.done_by ? String(row.done_by) : null,
-  assignee_id: row.assignee_id ? String(row.assignee_id) : null,
-  created_by: String(row.created_by),
-  created_at: String(row.created_at),
+  ...taskSchema.parse(row),
   rotation_user_ids: rotationUserIds
 });
 
 const normalizeShoppingCompletion = (row: Record<string, unknown>): ShoppingItemCompletion => ({
-  id: String(row.id),
-  shopping_item_id: String(row.shopping_item_id),
-  household_id: String(row.household_id),
-  title_snapshot: String(row.title_snapshot ?? ""),
-  tags_snapshot: Array.isArray(row.tags_snapshot) ? row.tags_snapshot.map((entry) => String(entry)) : [],
-  completed_by: String(row.completed_by),
-  completed_at: String(row.completed_at)
+  ...shoppingCompletionSchema.parse(row)
 });
 
 const normalizeTaskCompletion = (row: Record<string, unknown>): TaskCompletion => ({
-  id: String(row.id),
-  task_id: String(row.task_id),
-  household_id: String(row.household_id),
-  task_title_snapshot: String(row.task_title_snapshot ?? ""),
-  user_id: String(row.user_id),
-  pimpers_earned: Number(row.pimpers_earned ?? 0),
-  completed_at: String(row.completed_at)
+  ...taskCompletionSchema.parse(row)
 });
 
 const normalizeFinanceEntry = (row: Record<string, unknown>): FinanceEntry => ({
-  id: String(row.id),
-  household_id: String(row.household_id),
-  description: String(row.description ?? ""),
-  category: String(row.category ?? "general"),
-  amount: Number(row.amount ?? 0),
-  paid_by: String(row.paid_by),
-  created_at: String(row.created_at)
+  ...financeEntrySchema.parse(row)
 });
 
 const getDueAtFromStartDate = (startDate: string) => {
@@ -147,7 +186,7 @@ export const getCurrentSession = async () => {
 };
 
 export const updateUserAvatar = async (avatarUrl: string) => {
-  const normalizedAvatar = avatarUrl.trim();
+  const normalizedAvatar = z.string().trim().parse(avatarUrl);
 
   const { error } = await supabase.auth.updateUser({
     data: {
@@ -203,13 +242,16 @@ export const getHouseholdMemberPimpers = async (householdId: string): Promise<Ho
 };
 
 export const createHousehold = async (name: string, userId: string): Promise<Household> => {
+  const validatedName = z.string().trim().min(1).max(120).parse(name);
+  const validatedUserId = z.string().uuid().parse(userId);
+
   const { data, error } = await supabase
     .from("households")
     .insert({
       id: uuid(),
-      name,
+      name: validatedName,
       invite_code: buildInviteCode(),
-      created_by: userId
+      created_by: validatedUserId
     })
     .select("*")
     .single();
@@ -222,16 +264,23 @@ export const createHousehold = async (name: string, userId: string): Promise<Hou
     role: "owner"
   });
 
-  if (membershipError) throw membershipError;
+  if (membershipError) {
+    // Avoid leaving orphan households if owner membership insert fails.
+    await supabase.from("households").delete().eq("id", data.id);
+    throw membershipError;
+  }
 
   return normalizeHousehold(data as Record<string, unknown>);
 };
 
 export const joinHouseholdByInvite = async (inviteCode: string, userId: string): Promise<Household> => {
+  const validatedInviteCode = z.string().trim().min(1).max(32).parse(inviteCode).toUpperCase();
+  const validatedUserId = z.string().uuid().parse(userId);
+
   const { data: household, error } = await supabase
     .from("households")
     .select("*")
-    .eq("invite_code", inviteCode.trim().toUpperCase())
+    .eq("invite_code", validatedInviteCode)
     .single();
 
   if (error) throw error;
@@ -239,7 +288,7 @@ export const joinHouseholdByInvite = async (inviteCode: string, userId: string):
   const { error: membershipError } = await supabase.from("household_members").upsert(
     {
       household_id: household.id,
-      user_id: userId,
+      user_id: validatedUserId,
       role: "member"
     },
     { onConflict: "household_id,user_id" }
@@ -260,24 +309,25 @@ export const updateHouseholdSettings = async (
     warmRentMonthly: number | null;
   }
 ): Promise<Household> => {
-  const normalizedImageUrl = input.imageUrl.trim();
-  const normalizedAddress = input.address.trim();
-  const normalizedCurrency = input.currency.trim().toUpperCase().slice(0, 3);
-
-  if (normalizedCurrency.length !== 3) {
-    throw new Error("Currency muss genau 3 Zeichen haben.");
-  }
+  const validatedHouseholdId = z.string().uuid().parse(householdId);
+  const parsedInput = z.object({
+    imageUrl: z.string().trim(),
+    address: z.string().trim().max(300),
+    currency: z.string().trim().toUpperCase().length(3),
+    apartmentSizeSqm: positiveOptionalNumberSchema,
+    warmRentMonthly: nonNegativeOptionalNumberSchema
+  }).parse(input);
 
   const { data, error } = await supabase
     .from("households")
     .update({
-      image_url: normalizedImageUrl.length > 0 ? normalizedImageUrl : null,
-      address: normalizedAddress,
-      currency: normalizedCurrency,
-      apartment_size_sqm: input.apartmentSizeSqm,
-      warm_rent_monthly: input.warmRentMonthly
+      image_url: parsedInput.imageUrl.length > 0 ? parsedInput.imageUrl : null,
+      address: parsedInput.address,
+      currency: parsedInput.currency,
+      apartment_size_sqm: parsedInput.apartmentSizeSqm,
+      warm_rent_monthly: parsedInput.warmRentMonthly
     })
-    .eq("id", householdId)
+    .eq("id", validatedHouseholdId)
     .select("*")
     .single();
 
@@ -290,19 +340,21 @@ export const updateMemberSettings = async (
   userId: string,
   input: { roomSizeSqm: number | null; commonAreaFactor: number }
 ): Promise<HouseholdMember> => {
-  const commonAreaFactor = Number(input.commonAreaFactor);
-  if (!Number.isFinite(commonAreaFactor) || commonAreaFactor <= 0) {
-    throw new Error("Gemeinschaftsfaktor muss groesser als 0 sein.");
-  }
+  const validatedHouseholdId = z.string().uuid().parse(householdId);
+  const validatedUserId = z.string().uuid().parse(userId);
+  const parsedInput = z.object({
+    roomSizeSqm: positiveOptionalNumberSchema,
+    commonAreaFactor: z.coerce.number().finite().positive()
+  }).parse(input);
 
   const { data, error } = await supabase
     .from("household_members")
     .update({
-      room_size_sqm: input.roomSizeSqm,
-      common_area_factor: commonAreaFactor
+      room_size_sqm: parsedInput.roomSizeSqm,
+      common_area_factor: parsedInput.commonAreaFactor
     })
-    .eq("household_id", householdId)
-    .eq("user_id", userId)
+    .eq("household_id", validatedHouseholdId)
+    .eq("user_id", validatedUserId)
     .select("*")
     .single();
 
@@ -311,11 +363,14 @@ export const updateMemberSettings = async (
 };
 
 export const leaveHousehold = async (householdId: string, userId: string) => {
+  const validatedHouseholdId = z.string().uuid().parse(householdId);
+  const validatedUserId = z.string().uuid().parse(userId);
+
   const { data: memberRow, error: memberError } = await supabase
     .from("household_members")
     .select("role")
-    .eq("household_id", householdId)
-    .eq("user_id", userId)
+    .eq("household_id", validatedHouseholdId)
+    .eq("user_id", validatedUserId)
     .single();
 
   if (memberError) throw memberError;
@@ -325,7 +380,7 @@ export const leaveHousehold = async (householdId: string, userId: string) => {
     const { count, error: ownerCountError } = await supabase
       .from("household_members")
       .select("user_id", { count: "exact", head: true })
-      .eq("household_id", householdId)
+      .eq("household_id", validatedHouseholdId)
       .eq("role", "owner");
 
     if (ownerCountError) throw ownerCountError;
@@ -338,8 +393,8 @@ export const leaveHousehold = async (householdId: string, userId: string) => {
   const { error } = await supabase
     .from("household_members")
     .delete()
-    .eq("household_id", householdId)
-    .eq("user_id", userId);
+    .eq("household_id", validatedHouseholdId)
+    .eq("user_id", validatedUserId);
 
   if (error) throw error;
 };
@@ -369,21 +424,30 @@ export const addShoppingItem = async (
   recurrenceIntervalMinutes: number | null,
   userId: string
 ): Promise<ShoppingItem> => {
-  const normalizedTags = tags
-    .map((entry) => entry.trim())
-    .filter((entry) => entry.length > 0)
-    .slice(0, 10);
+  const parsedInput = z.object({
+    householdId: z.string().uuid(),
+    title: z.string().trim().min(1).max(200),
+    tags: z.array(z.string().trim().min(1).max(40)).max(10),
+    recurrenceIntervalMinutes: z.coerce.number().int().positive().nullable(),
+    userId: z.string().uuid()
+  }).parse({
+    householdId,
+    title,
+    tags: tags.map((entry) => entry.trim()).filter((entry) => entry.length > 0),
+    recurrenceIntervalMinutes,
+    userId
+  });
 
   const { data, error } = await supabase
     .from("shopping_items")
     .insert({
       id: uuid(),
-      household_id: householdId,
-      title: title.trim(),
-      tags: normalizedTags,
-      recurrence_interval_minutes: recurrenceIntervalMinutes,
+      household_id: parsedInput.householdId,
+      title: parsedInput.title,
+      tags: parsedInput.tags,
+      recurrence_interval_minutes: parsedInput.recurrenceIntervalMinutes,
       done: false,
-      created_by: userId
+      created_by: parsedInput.userId
     })
     .select("*")
     .single();
@@ -393,11 +457,14 @@ export const addShoppingItem = async (
 };
 
 export const updateShoppingItemStatus = async (id: string, done: boolean, userId: string) => {
+  const validatedId = z.string().uuid().parse(id);
+  const validatedUserId = z.string().uuid().parse(userId);
+
   if (done) {
     const { data: sourceItem, error: sourceItemError } = await supabase
       .from("shopping_items")
       .select("id,household_id,title,tags,done")
-      .eq("id", id)
+      .eq("id", validatedId)
       .single();
 
     if (sourceItemError) throw sourceItemError;
@@ -408,7 +475,7 @@ export const updateShoppingItemStatus = async (id: string, done: boolean, userId
         household_id: sourceItem.household_id,
         title_snapshot: sourceItem.title,
         tags_snapshot: sourceItem.tags ?? [],
-        completed_by: userId,
+        completed_by: validatedUserId,
         completed_at: new Date().toISOString()
       });
 
@@ -420,7 +487,7 @@ export const updateShoppingItemStatus = async (id: string, done: boolean, userId
     ? {
         done: true,
         done_at: new Date().toISOString(),
-        done_by: userId
+        done_by: validatedUserId
       }
     : {
         done: false,
@@ -428,7 +495,7 @@ export const updateShoppingItemStatus = async (id: string, done: boolean, userId
         done_by: null
       };
 
-  const { error } = await supabase.from("shopping_items").update(payload).eq("id", id);
+  const { error } = await supabase.from("shopping_items").update(payload).eq("id", validatedId);
   if (error) throw error;
 };
 
@@ -445,7 +512,8 @@ export const getShoppingCompletions = async (householdId: string): Promise<Shopp
 };
 
 export const deleteShoppingItem = async (id: string) => {
-  const { error } = await supabase.from("shopping_items").delete().eq("id", id);
+  const validatedId = z.string().uuid().parse(id);
+  const { error } = await supabase.from("shopping_items").delete().eq("id", validatedId);
   if (error) throw error;
 };
 
@@ -494,31 +562,45 @@ export const addTask = async (
   input: NewTaskInput,
   userId: string
 ): Promise<TaskItem> => {
-  const cleanedTitle = input.title.trim();
-  const cleanedDescription = input.description.trim();
-  const rotationUserIds = input.rotationUserIds.filter((entry, index, all) => all.indexOf(entry) === index);
+  const parsedInput = z.object({
+    householdId: z.string().uuid(),
+    userId: z.string().uuid(),
+    title: z.string().trim().min(1).max(200),
+    description: z.string().trim().max(2000),
+    startDate: z.string().min(1),
+    frequencyDays: z.coerce.number().int().positive(),
+    effortPimpers: z.coerce.number().int().positive(),
+    rotationUserIds: z.array(z.string().uuid()).min(1)
+  }).parse({
+    householdId,
+    userId,
+    title: input.title,
+    description: input.description,
+    startDate: input.startDate,
+    frequencyDays: input.frequencyDays,
+    effortPimpers: input.effortPimpers,
+    rotationUserIds: input.rotationUserIds.filter((entry, index, all) => all.indexOf(entry) === index)
+  });
 
-  if (rotationUserIds.length === 0) {
-    throw new Error("Task braucht mindestens eine Person in der Rotation.");
-  }
+  const rotationUserIds = parsedInput.rotationUserIds;
 
   const taskId = uuid();
-  const dueAt = getDueAtFromStartDate(input.startDate);
+  const dueAt = getDueAtFromStartDate(parsedInput.startDate);
 
   const { data, error } = await supabase
     .from("tasks")
     .insert({
       id: taskId,
-      household_id: householdId,
-      title: cleanedTitle,
-      description: cleanedDescription,
-      start_date: input.startDate,
+      household_id: parsedInput.householdId,
+      title: parsedInput.title,
+      description: parsedInput.description,
+      start_date: parsedInput.startDate,
       due_at: dueAt,
-      frequency_days: Math.max(1, Math.floor(input.frequencyDays)),
-      effort_pimpers: Math.max(1, Math.floor(input.effortPimpers)),
+      frequency_days: parsedInput.frequencyDays,
+      effort_pimpers: parsedInput.effortPimpers,
       assignee_id: rotationUserIds[0],
       done: false,
-      created_by: userId
+      created_by: parsedInput.userId
     })
     .select("*")
     .single();
@@ -541,9 +623,12 @@ export const addTask = async (
 };
 
 export const completeTask = async (taskId: string, userId: string) => {
+  const validatedTaskId = z.string().uuid().parse(taskId);
+  const validatedUserId = z.string().uuid().parse(userId);
+
   const { error } = await supabase.rpc("complete_task", {
-    p_task_id: taskId,
-    p_user_id: userId
+    p_task_id: validatedTaskId,
+    p_user_id: validatedUserId
   });
 
   if (error) throw error;
@@ -580,17 +665,31 @@ export const addFinanceEntry = async (
   category: string,
   userId: string
 ): Promise<FinanceEntry> => {
-  const normalizedCategory = category.trim() || "general";
+  const parsedInput = z.object({
+    householdId: z.string().uuid(),
+    userId: z.string().uuid(),
+    description: z.string().trim().min(1).max(200),
+    amount: z.coerce.number().finite().nonnegative(),
+    category: z.string().trim().max(80)
+  }).parse({
+    householdId,
+    userId,
+    description,
+    amount,
+    category
+  });
+
+  const normalizedCategory = parsedInput.category || "general";
 
   const { data, error } = await supabase
     .from("finance_entries")
     .insert({
       id: uuid(),
-      household_id: householdId,
-      description: description.trim(),
+      household_id: parsedInput.householdId,
+      description: parsedInput.description,
       category: normalizedCategory,
-      amount,
-      paid_by: userId
+      amount: parsedInput.amount,
+      paid_by: parsedInput.userId
     })
     .select("*")
     .single();
@@ -600,10 +699,13 @@ export const addFinanceEntry = async (
 };
 
 export const requestCashAudit = async (householdId: string, userId: string) => {
+  const validatedHouseholdId = z.string().uuid().parse(householdId);
+  const validatedUserId = z.string().uuid().parse(userId);
+
   const { error } = await supabase.from("cash_audit_requests").insert({
     id: uuid(),
-    household_id: householdId,
-    requested_by: userId,
+    household_id: validatedHouseholdId,
+    requested_by: validatedUserId,
     status: "queued"
   });
 

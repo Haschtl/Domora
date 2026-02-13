@@ -9,8 +9,14 @@ const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
   beforeLoad: () => {
-    throw redirect({ to: "/shopping" });
+    throw redirect({ to: "/home" });
   },
+  component: () => null
+});
+
+const homeRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "home",
   component: () => null
 });
 
@@ -23,12 +29,60 @@ const shoppingRoute = createRoute({
 const tasksRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "tasks",
+  beforeLoad: () => {
+    throw redirect({ to: "/tasks/overview" });
+  },
   component: () => null
 });
 
 const financesRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "finances",
+  beforeLoad: () => {
+    throw redirect({ to: "/finances/overview" });
+  },
+  component: () => null
+});
+
+const tasksOverviewRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "tasks/overview",
+  component: () => null
+});
+
+const tasksStatsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "tasks/stats",
+  component: () => null
+});
+
+const tasksHistoryRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "tasks/history",
+  component: () => null
+});
+
+const financesOverviewRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "finances/overview",
+  component: () => null
+});
+
+const financesStatsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "finances/stats",
+  component: () => null
+});
+
+const financesArchiveRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "finances/archive",
+  component: () => null
+});
+
+const financesSubscriptionsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "finances/subscriptions",
   component: () => null
 });
 
@@ -38,7 +92,21 @@ const settingsRoute = createRoute({
   component: () => null
 });
 
-const routeTree = rootRoute.addChildren([indexRoute, shoppingRoute, tasksRoute, financesRoute, settingsRoute]);
+const routeTree = rootRoute.addChildren([
+  indexRoute,
+  homeRoute,
+  shoppingRoute,
+  tasksRoute,
+  tasksOverviewRoute,
+  tasksStatsRoute,
+  tasksHistoryRoute,
+  financesRoute,
+  financesOverviewRoute,
+  financesStatsRoute,
+  financesArchiveRoute,
+  financesSubscriptionsRoute,
+  settingsRoute
+]);
 
 export const router = createRouter({
   routeTree,

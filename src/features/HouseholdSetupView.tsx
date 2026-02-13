@@ -1,5 +1,6 @@
-import { FormEvent, useState } from "react";
+import { useForm } from "@tanstack/react-form";
 import { useTranslation } from "react-i18next";
+import { z } from "zod";
 import type { Household } from "../lib/types";
 import { Button } from "../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card";
@@ -23,20 +24,46 @@ export const HouseholdSetupView = ({
   onSelect
 }: HouseholdSetupViewProps) => {
   const { t } = useTranslation();
-  const [newName, setNewName] = useState("");
-  const [inviteCode, setInviteCode] = useState("");
+  const createSchema = z.object({
+    newName: z.string().trim().min(1)
+  });
+  const joinSchema = z.object({
+    inviteCode: z.string().trim().min(1)
+  });
 
-  const submitCreate = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    await onCreate(newName);
-    setNewName("");
-  };
+  const createForm = useForm({
+    defaultValues: {
+      newName: ""
+    },
+    onSubmit: async ({
+      value,
+      formApi
+    }: {
+      value: { newName: string };
+      formApi: { setFieldValue: (name: "newName", value: string) => void };
+    }) => {
+      const parsed = createSchema.parse(value);
+      await onCreate(parsed.newName);
+      formApi.setFieldValue("newName", "");
+    }
+  });
 
-  const submitJoin = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    await onJoin(inviteCode);
-    setInviteCode("");
-  };
+  const joinForm = useForm({
+    defaultValues: {
+      inviteCode: ""
+    },
+    onSubmit: async ({
+      value,
+      formApi
+    }: {
+      value: { inviteCode: string };
+      formApi: { setFieldValue: (name: "inviteCode", value: string) => void };
+    }) => {
+      const parsed = joinSchema.parse(value);
+      await onJoin(parsed.inviteCode);
+      formApi.setFieldValue("inviteCode", "");
+    }
+  });
 
   return (
     <div className="grid gap-4 md:grid-cols-2">
@@ -46,15 +73,27 @@ export const HouseholdSetupView = ({
           <CardDescription>{t("household.createDescription")}</CardDescription>
         </CardHeader>
         <CardContent>
-          <form className="space-y-3" onSubmit={submitCreate}>
+          <form
+            className="space-y-3"
+            onSubmit={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              void createForm.handleSubmit();
+            }}
+          >
             <div className="space-y-1">
               <Label htmlFor="wg-name">{t("household.nameLabel")}</Label>
-              <Input
-                id="wg-name"
-                value={newName}
-                onChange={(event) => setNewName(event.target.value)}
-                placeholder={t("household.namePlaceholder")}
-                required
+              <createForm.Field
+                name="newName"
+                children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
+                  <Input
+                    id="wg-name"
+                    value={field.state.value}
+                    onChange={(event) => field.handleChange(event.target.value)}
+                    placeholder={t("household.namePlaceholder")}
+                    required
+                  />
+                )}
               />
             </div>
             <Button className="w-full" type="submit" disabled={busy}>
@@ -70,15 +109,27 @@ export const HouseholdSetupView = ({
           <CardDescription>{t("household.joinDescription")}</CardDescription>
         </CardHeader>
         <CardContent>
-          <form className="space-y-3" onSubmit={submitJoin}>
+          <form
+            className="space-y-3"
+            onSubmit={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              void joinForm.handleSubmit();
+            }}
+          >
             <div className="space-y-1">
               <Label htmlFor="invite-code">{t("household.inviteLabel")}</Label>
-              <Input
-                id="invite-code"
-                value={inviteCode}
-                onChange={(event) => setInviteCode(event.target.value)}
-                placeholder={t("household.invitePlaceholder")}
-                required
+              <joinForm.Field
+                name="inviteCode"
+                children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
+                  <Input
+                    id="invite-code"
+                    value={field.state.value}
+                    onChange={(event) => field.handleChange(event.target.value)}
+                    placeholder={t("household.invitePlaceholder")}
+                    required
+                  />
+                )}
               />
             </div>
             <Button className="w-full" type="submit" variant="outline" disabled={busy}>

@@ -1,4 +1,4 @@
-export type AppTab = "shopping" | "tasks" | "finances" | "settings";
+export type AppTab = "home" | "shopping" | "tasks" | "finances" | "settings";
 
 export interface Household {
   id: string;

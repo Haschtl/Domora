@@ -215,6 +215,8 @@ create or replace function is_household_member(hid uuid)
 returns boolean
 language sql
 stable
+security definer
+set search_path = public
 as $$
   select exists (
     select 1
@@ -228,6 +230,8 @@ create or replace function is_household_owner(hid uuid)
 returns boolean
 language sql
 stable
+security definer
+set search_path = public
 as $$
   select exists (
     select 1
@@ -431,6 +435,12 @@ for update
 to authenticated
 using (is_household_owner(id))
 with check (is_household_owner(id));
+
+drop policy if exists households_delete on households;
+create policy households_delete on households
+for delete
+to authenticated
+using (is_household_owner(id) or auth.uid() = created_by);
 
 drop policy if exists household_members_select on household_members;
 create policy household_members_select on household_members

@@ -1,6 +1,6 @@
 # Domora
 
-Domora ist ein Flatastic-inspirierter WG-Organizer mit React, Tailwind, Radix-UI-Primitives, Supabase und PWA-Support.
+Domora ist ein WG-Organizer mit React, Tailwind, Radix-UI-Primitives, Supabase und PWA-Support.
 
 ## Stack
 
@@ -9,6 +9,7 @@ Domora ist ein Flatastic-inspirierter WG-Organizer mit React, Tailwind, Radix-UI
 - TailwindCSS
 - Custom UI components auf Basis von Radix UI
 - Framer Motion (Route-Transitions)
+- Chart.js (History-Plots)
 - Supabase (Auth + Postgres)
 - PWA via `vite-plugin-pwa`
 
@@ -19,6 +20,7 @@ Domora ist ein Flatastic-inspirierter WG-Organizer mit React, Tailwind, Radix-UI
 - Login / Registrierung via Supabase Auth
 - Dark / Light / System Theme Umschaltung mit Persistenz
 - i18n mit Deutsch / Englisch Umschaltung
+- Home Tab (WG-Uebersicht)
 - Einkaufen Tab (Shopping-Liste mit Tags + optionaler Wiederholung)
   - Completion-Historie mit Zeitstempel, User und Tag-Snapshot
 - Aufgaben Tab:
@@ -34,7 +36,7 @@ Domora ist ein Flatastic-inspirierter WG-Organizer mit React, Tailwind, Radix-UI
   - Kassensturz-Request
 - Settings Tab
   - Client-Settings (Theme + Sprache)
-  - WG-Verwaltung (Ausziehen, WG-Bild, User-Bild, Adresse, Waehrung, Wohnungs-qm, Warm-Miete)
+  - WG-Verwaltung (Ausziehen, WG-Bild-Upload, User-Bild-Upload, Adresse, Waehrung, Wohnungs-qm, Warm-Miete)
   - Mitglied-Werte (Zimmer-qm + Gemeinschaftsfaktor)
 
 ## Setup
@@ -81,6 +83,43 @@ pnpm dev
 - Service Worker wird automatisch registriert.
 - Manifest und Icons liegen in `public/`.
 - App kann auf mobilen Geraeten als Homescreen-App installiert werden.
+
+## Tests
+
+Unit-Tests (Vitest):
+
+```bash
+pnpm test:unit
+```
+
+E2E-Tests (Playwright):
+
+```bash
+pnpm playwright install
+pnpm test:e2e
+```
+
+Nuetzliche Varianten:
+
+```bash
+pnpm test:unit:watch
+pnpm test:e2e:ui
+pnpm test
+```
+
+## CI/CD
+
+GitHub Actions Workflows:
+
+- `CI` (`.github/workflows/ci.yml`)
+  - lint
+  - typecheck
+  - unit tests (Vitest)
+  - e2e tests (Playwright, Chromium)
+  - build
+- `CD` (`.github/workflows/cd.yml`)
+  - bei Push auf `main`
+  - baut `dist/` und laedt ein Delivery-Artefakt hoch
 
 ## Push und Email Benachrichtigungen
 

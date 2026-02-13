@@ -2,7 +2,7 @@ import { LaptopMinimal, Moon, Sun } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Button } from "./ui/button";
 import { cn } from "../lib/utils";
-import { useTheme, type ThemePreference } from "../lib/theme";
+import { useTheme, type ThemePreference } from "../lib/use-theme";
 import type { SupportedLanguage } from "../lib/translations";
 
 const themeItems: { id: ThemePreference; icon: typeof Sun }[] = [
