@@ -88,6 +88,9 @@ interface TasksTabProps {
   onEnableNotifications: () => Promise<void>;
   onAdd: (input: NewTaskInput) => Promise<void>;
   onComplete: (task: TaskItem) => Promise<void>;
+  onSkip: (task: TaskItem) => Promise<void>;
+  onTakeover: (task: TaskItem) => Promise<void>;
+  onToggleActive: (task: TaskItem) => Promise<void>;
   onUpdate: (task: TaskItem, input: NewTaskInput) => Promise<void>;
   onDelete: (task: TaskItem) => Promise<void>;
 }
@@ -193,6 +196,9 @@ export const TasksTab = ({
   onEnableNotifications,
   onAdd,
   onComplete,
+  onSkip,
+  onTakeover,
+  onToggleActive,
   onUpdate,
   onDelete
 }: TasksTabProps) => {
@@ -355,7 +361,7 @@ export const TasksTab = ({
 
   const overdueCount = useMemo(() => {
     const now = Date.now();
-    return tasks.filter((task) => !task.done && new Date(task.due_at).getTime() <= now).length;
+    return tasks.filter((task) => task.is_active && !task.done && new Date(task.due_at).getTime() <= now).length;
   }, [tasks]);
 
   const pimperByUserId = useMemo(() => {
@@ -574,6 +580,7 @@ export const TasksTab = ({
     >();
 
     tasks.forEach((task) => {
+      if (!task.is_active) return;
       const taskDueDate = new Date(task.due_at);
       if (Number.isNaN(taskDueDate.getTime())) return;
       const key = dayKey(taskDueDate);
@@ -998,11 +1005,13 @@ export const TasksTab = ({
 
             <ul className="space-y-2">
               {tasks.map((task) => {
-                const isDue = !task.done && isDueNow(task.due_at);
+                const isDue = task.is_active && !task.done && isDueNow(task.due_at);
                 const isAssignedToCurrentUser = task.assignee_id === userId;
                 const canComplete = isDue && isAssignedToCurrentUser && !busy;
+                const canSkip = isDue && isAssignedToCurrentUser && !busy;
+                const canTakeover = isDue && task.assignee_id !== null && !isAssignedToCurrentUser && !busy;
                 const dueText = dueLabel(task.due_at, language, t("tasks.noDate"));
-                  const assigneeText = task.assignee_id
+                const assigneeText = task.assignee_id
                   ? userLabel(task.assignee_id)
                   : t("tasks.unassigned");
 
@@ -1058,6 +1067,13 @@ export const TasksTab = ({
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
+                            <DropdownMenuItem
+                              onClick={() => {
+                                void onToggleActive(task);
+                              }}
+                            >
+                              {task.is_active ? t("tasks.deactivate") : t("tasks.activate")}
+                            </DropdownMenuItem>
                             <DropdownMenuItem onClick={() => onStartEditTask(task)}>
                               {t("tasks.editTask")}
                             </DropdownMenuItem>
@@ -1070,7 +1086,11 @@ export const TasksTab = ({
                           </DropdownMenuContent>
                         </DropdownMenu>
 
-                        {isDue ? (
+                        {!task.is_active ? (
+                          <Badge className="bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                            {t("tasks.statusInactive")}
+                          </Badge>
+                        ) : isDue ? (
                           <Badge className="bg-rose-100 text-rose-800 dark:bg-rose-900 dark:text-rose-100">
                             {t("tasks.statusDue")}
                           </Badge>
@@ -1084,14 +1104,26 @@ export const TasksTab = ({
                           </Badge>
                         )}
 
-                        <Button type="button" size="sm" disabled={!canComplete} onClick={() => onComplete(task)}>
-                          <CheckCircle2 className="mr-1 h-4 w-4" />
-                          {t("tasks.complete")}
-                        </Button>
+                        <div className="flex flex-wrap justify-end gap-2">
+                          {canTakeover ? (
+                            <Button type="button" size="sm" variant="outline" onClick={() => onTakeover(task)}>
+                              {t("tasks.takeOver")}
+                            </Button>
+                          ) : null}
+                          <Button type="button" size="sm" variant="outline" disabled={!canSkip} onClick={() => onSkip(task)}>
+                            {t("tasks.skip")}
+                          </Button>
+                          <Button type="button" size="sm" disabled={!canComplete} onClick={() => onComplete(task)}>
+                            <CheckCircle2 className="mr-1 h-4 w-4" />
+                            {t("tasks.complete")}
+                          </Button>
+                        </div>
 
                         {!canComplete ? (
                           <p className="text-xs text-slate-500 dark:text-slate-400">
-                            {task.done
+                            {!task.is_active
+                              ? t("tasks.inactiveHint")
+                              : task.done
                               ? t("tasks.waitingUntil", { value: dueText })
                               : !isAssignedToCurrentUser
                                 ? t("tasks.onlyAssignee", { value: assigneeText })

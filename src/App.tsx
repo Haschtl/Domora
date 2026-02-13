@@ -145,6 +145,9 @@ const App = () => {
     onDeleteShoppingItem,
     onAddTask,
     onCompleteTask,
+    onSkipTask,
+    onTakeoverTask,
+    onToggleTaskActive,
     onUpdateTask,
     onDeleteTask,
     onAddFinanceEntry,
@@ -155,6 +158,7 @@ const App = () => {
     onDeleteFinanceSubscription,
     onRequestCashAudit,
     onEnableNotifications,
+    onUpdateHomeMarkdown,
     onUpdateHousehold,
     onUpdateMemberSettings,
     onUpdateUserAvatar,
@@ -172,7 +176,7 @@ const App = () => {
   const settingsSubTab = useMemo(() => resolveSettingsSubTabFromPathname(location.pathname), [location.pathname]);
   const dueTasksCount = useMemo(() => {
     const now = Date.now();
-    return tasks.filter((task) => !task.done && new Date(task.due_at).getTime() <= now).length;
+    return tasks.filter((task) => task.is_active && !task.done && new Date(task.due_at).getTime() <= now).length;
   }, [tasks]);
 
   const onTabChange = (value: string) => {
@@ -433,13 +437,23 @@ const App = () => {
                     <HomeTab
                       household={activeHousehold}
                       households={households}
+                      currentMember={currentMember}
+                      userId={userId!}
+                      members={householdMembers}
                       userLabel={userDisplayName ?? userEmail}
+                      busy={busy}
                       completedTasks={completedTasks}
                       totalTasks={tasks.length}
+                      tasks={tasks}
+                      taskCompletions={taskCompletions}
+                      shoppingCompletions={shoppingCompletions}
+                      financeEntries={finances}
+                      cashAuditRequests={cashAuditRequests}
                       onSelectHousehold={(householdId) => {
                         const next = households.find((entry: { id: string }) => entry.id === householdId);
                         if (next) setActiveHousehold(next);
                       }}
+                      onSaveLandingMarkdown={onUpdateHomeMarkdown}
                     />
                   ) : null}
 
@@ -470,6 +484,9 @@ const App = () => {
                       onEnableNotifications={onEnableNotifications}
                       onAdd={onAddTask}
                       onComplete={onCompleteTask}
+                      onSkip={onSkipTask}
+                      onTakeover={onTakeoverTask}
+                      onToggleActive={onToggleTaskActive}
                       onUpdate={onUpdateTask}
                       onDelete={onDeleteTask}
                     />

@@ -26,7 +26,11 @@ import {
   updateFinanceEntry,
   updateFinanceSubscription,
   updateHouseholdSettings,
+  updateHouseholdLandingPage,
+  updateTaskActiveState,
   updateTask,
+  takeoverTask,
+  skipTask,
   updateMemberSettings,
   updateShoppingItemStatus,
   updateUserAvatar,
@@ -40,6 +44,7 @@ import type {
   NewFinanceSubscriptionInput,
   Household,
   NewTaskInput,
+  UpdateHouseholdInput,
   ShoppingRecurrenceUnit,
   ShoppingItem,
   TaskItem
@@ -216,6 +221,46 @@ export const useWorkspaceController = () => {
     [activeHousehold, runWithWorkspaceInvalidation, t, userId]
   );
 
+  const onSkipTask = useCallback(
+    async (task: TaskItem) => {
+      if (!activeHousehold || !userId) return;
+
+      await runWithWorkspaceInvalidation(async () => {
+        await skipTask(task.id, userId);
+        setMessage(t("tasks.skippedMessage", { title: task.title }));
+      });
+    },
+    [activeHousehold, runWithWorkspaceInvalidation, t, userId]
+  );
+
+  const onTakeoverTask = useCallback(
+    async (task: TaskItem) => {
+      if (!activeHousehold || !userId) return;
+
+      await runWithWorkspaceInvalidation(async () => {
+        await takeoverTask(task.id, userId);
+        setMessage(t("tasks.takenOverMessage", { title: task.title }));
+      });
+    },
+    [activeHousehold, runWithWorkspaceInvalidation, t, userId]
+  );
+
+  const onToggleTaskActive = useCallback(
+    async (task: TaskItem) => {
+      if (!activeHousehold) return;
+
+      await runWithWorkspaceInvalidation(async () => {
+        await updateTaskActiveState(task.id, !task.is_active);
+        setMessage(
+          task.is_active
+            ? t("tasks.deactivatedMessage", { title: task.title })
+            : t("tasks.activatedMessage", { title: task.title })
+        );
+      });
+    },
+    [activeHousehold, runWithWorkspaceInvalidation, t]
+  );
+
   const onUpdateTask = useCallback(
     async (task: TaskItem, input: NewTaskInput) => {
       if (!activeHousehold || !userId) return;
@@ -342,15 +387,7 @@ export const useWorkspaceController = () => {
   }, [executeAction, requestPermission, t]);
 
   const onUpdateHousehold = useCallback(
-    async (input: {
-      name: string;
-      imageUrl: string;
-      address: string;
-      currency: string;
-      apartmentSizeSqm: number | null;
-      coldRentMonthly: number | null;
-      utilitiesMonthly: number | null;
-    }) => {
+    async (input: UpdateHouseholdInput) => {
       if (!activeHousehold || !userId) return;
 
       await executeAction(async () => {
@@ -360,6 +397,22 @@ export const useWorkspaceController = () => {
         );
         await invalidateWorkspace();
         setMessage(t("settings.householdSaved"));
+      });
+    },
+    [activeHousehold, executeAction, invalidateWorkspace, queryClient, t, userId]
+  );
+
+  const onUpdateHomeMarkdown = useCallback(
+    async (markdown: string) => {
+      if (!activeHousehold || !userId) return;
+
+      await executeAction(async () => {
+        const updated = await updateHouseholdLandingPage(activeHousehold.id, markdown);
+        queryClient.setQueryData(queryKeys.households(userId), (current: Household[] | undefined) =>
+          (current ?? []).map((entry) => (entry.id === updated.id ? updated : entry))
+        );
+        await invalidateWorkspace();
+        setMessage(t("home.saved"));
       });
     },
     [activeHousehold, executeAction, invalidateWorkspace, queryClient, t, userId]
@@ -485,6 +538,9 @@ export const useWorkspaceController = () => {
     onDeleteShoppingItem,
     onAddTask,
     onCompleteTask,
+    onSkipTask,
+    onTakeoverTask,
+    onToggleTaskActive,
     onUpdateTask,
     onDeleteTask,
     onAddFinanceEntry,
@@ -495,6 +551,7 @@ export const useWorkspaceController = () => {
     onDeleteFinanceSubscription,
     onRequestCashAudit,
     onEnableNotifications,
+    onUpdateHomeMarkdown,
     onUpdateHousehold,
     onUpdateMemberSettings,
     onUpdateUserAvatar,

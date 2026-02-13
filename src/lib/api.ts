@@ -19,6 +19,7 @@ import type {
   HouseholdMemberPimpers,
   NewFinanceSubscriptionInput,
   NewTaskInput,
+  UpdateHouseholdInput,
   ShoppingRecurrenceUnit,
   ShoppingItem,
   ShoppingItemCompletion,
@@ -58,6 +59,7 @@ const householdSchema = z.object({
   apartment_size_sqm: positiveOptionalNumberSchema,
   cold_rent_monthly: nonNegativeOptionalNumberSchema,
   utilities_monthly: nonNegativeOptionalNumberSchema,
+  landing_page_markdown: z.string().default(""),
   invite_code: z.string().min(1),
   created_by: z.string().uuid(),
   created_at: z.string().min(1)
@@ -103,6 +105,7 @@ const taskSchema = z.object({
   cron_pattern: z.string().min(1).default("0 9 */7 * *"),
   frequency_days: z.coerce.number().int().positive(),
   effort_pimpers: z.coerce.number().int().positive(),
+  is_active: z.coerce.boolean().default(true),
   done: z.coerce.boolean(),
   done_at: z.string().nullable().optional().transform((value) => value ?? null),
   done_by: z.string().uuid().nullable().optional().transform((value) => value ?? null),
@@ -464,15 +467,7 @@ export const joinHouseholdByInvite = async (inviteCode: string, userId: string):
 
 export const updateHouseholdSettings = async (
   householdId: string,
-  input: {
-    name: string;
-    imageUrl: string;
-    address: string;
-    currency: string;
-    apartmentSizeSqm: number | null;
-    coldRentMonthly: number | null;
-    utilitiesMonthly: number | null;
-  }
+  input: UpdateHouseholdInput
 ): Promise<Household> => {
   const validatedHouseholdId = z.string().uuid().parse(householdId);
   const parsedInput = z.object({
@@ -495,6 +490,26 @@ export const updateHouseholdSettings = async (
       apartment_size_sqm: parsedInput.apartmentSizeSqm,
       cold_rent_monthly: parsedInput.coldRentMonthly,
       utilities_monthly: parsedInput.utilitiesMonthly
+    })
+    .eq("id", validatedHouseholdId)
+    .select("*")
+    .single();
+
+  if (error) throw error;
+  return normalizeHousehold(data as Record<string, unknown>);
+};
+
+export const updateHouseholdLandingPage = async (
+  householdId: string,
+  markdown: string
+): Promise<Household> => {
+  const validatedHouseholdId = z.string().uuid().parse(householdId);
+  const parsedMarkdown = z.string().max(120_000).parse(markdown);
+
+  const { data, error } = await supabase
+    .from("households")
+    .update({
+      landing_page_markdown: parsedMarkdown
     })
     .eq("id", validatedHouseholdId)
     .select("*")
@@ -1018,6 +1033,56 @@ export const completeTask = async (taskId: string, userId: string) => {
     p_user_id: validatedUserId
   });
 
+  if (error) throw error;
+};
+
+export const skipTask = async (taskId: string, userId: string) => {
+  const validatedTaskId = z.string().uuid().parse(taskId);
+  const validatedUserId = z.string().uuid().parse(userId);
+
+  const { error } = await supabase.rpc("skip_task", {
+    p_task_id: validatedTaskId,
+    p_user_id: validatedUserId
+  });
+
+  if (error) throw error;
+};
+
+export const takeoverTask = async (taskId: string, userId: string): Promise<void> => {
+  const validatedTaskId = z.string().uuid().parse(taskId);
+  const validatedUserId = z.string().uuid().parse(userId);
+
+  const { data, error } = await supabase
+    .from("tasks")
+    .select("assignee_id,done,is_active")
+    .eq("id", validatedTaskId)
+    .single();
+  if (error) throw error;
+
+  if (data?.done) {
+    throw new Error("Task is already completed for this round");
+  }
+  if (data?.is_active === false) {
+    throw new Error("Task is inactive");
+  }
+
+  const { error: updateError } = await supabase
+    .from("tasks")
+    .update({ assignee_id: validatedUserId })
+    .eq("id", validatedTaskId);
+  if (updateError) throw updateError;
+};
+
+export const updateTaskActiveState = async (taskId: string, isActive: boolean): Promise<void> => {
+  const validatedTaskId = z.string().uuid().parse(taskId);
+  const parsedIsActive = z.coerce.boolean().parse(isActive);
+
+  const { error } = await supabase
+    .from("tasks")
+    .update({
+      is_active: parsedIsActive
+    })
+    .eq("id", validatedTaskId);
   if (error) throw error;
 };
 

@@ -34,6 +34,7 @@ export const useTaskNotifications = (tasks: TaskItem[], userId: string | undefin
 
       tasks.forEach((task) => {
         if (task.done) return;
+        if (!task.is_active) return;
         if (task.assignee_id !== userId) return;
 
         const dueTime = new Date(task.due_at).getTime();

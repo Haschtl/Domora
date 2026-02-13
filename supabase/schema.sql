@@ -10,6 +10,7 @@ create table if not exists households (
   apartment_size_sqm numeric(8, 2) check (apartment_size_sqm is null or apartment_size_sqm > 0),
   cold_rent_monthly numeric(12, 2) check (cold_rent_monthly is null or cold_rent_monthly >= 0),
   utilities_monthly numeric(12, 2) check (utilities_monthly is null or utilities_monthly >= 0),
+  landing_page_markdown text not null default '',
   invite_code text not null unique,
   created_by uuid not null references auth.users(id) on delete cascade,
   created_at timestamptz not null default now()
@@ -70,6 +71,7 @@ create table if not exists tasks (
   cron_pattern text not null default '0 9 */7 * *',
   frequency_days integer not null default 7,
   effort_pimpers integer not null default 1,
+  is_active boolean not null default true,
   done boolean not null default false,
   done_at timestamptz,
   done_by uuid references auth.users(id) on delete set null,
@@ -153,6 +155,11 @@ alter table households add column if not exists currency text not null default '
 alter table households add column if not exists apartment_size_sqm numeric(8, 2);
 alter table households add column if not exists cold_rent_monthly numeric(12, 2);
 alter table households add column if not exists utilities_monthly numeric(12, 2);
+alter table households add column if not exists landing_page_markdown text not null default '';
+
+update households
+set landing_page_markdown = ''
+where landing_page_markdown is null;
 
 do $$
 begin
@@ -466,6 +473,7 @@ alter table tasks add column if not exists start_date date not null default curr
 alter table tasks add column if not exists cron_pattern text not null default '0 9 */7 * *';
 alter table tasks add column if not exists frequency_days integer not null default 7;
 alter table tasks add column if not exists effort_pimpers integer not null default 1;
+alter table tasks add column if not exists is_active boolean not null default true;
 alter table tasks add column if not exists done_at timestamptz;
 alter table tasks add column if not exists done_by uuid references auth.users(id) on delete set null;
 
@@ -636,6 +644,10 @@ begin
     raise exception 'Task is already completed for this round';
   end if;
 
+  if not v_task.is_active then
+    raise exception 'Task is inactive';
+  end if;
+
   if v_task.assignee_id is not null and v_task.assignee_id is distinct from p_user_id then
     raise exception 'Only the assigned person can complete this task';
   end if;
@@ -710,10 +722,66 @@ begin
     done_by = null
   where household_id = p_household_id
     and done = true
+    and is_active = true
     and due_at <= now();
 
   get diagnostics affected = row_count;
   return affected;
+end;
+$$;
+
+create or replace function skip_task(p_task_id uuid, p_user_id uuid)
+returns void
+language plpgsql
+security invoker
+as $$
+declare
+  v_task tasks%rowtype;
+  v_next_due timestamptz;
+  v_next_assignee uuid;
+  v_interval_days integer;
+begin
+  if auth.uid() is distinct from p_user_id then
+    raise exception 'Authenticated user does not match p_user_id';
+  end if;
+
+  select *
+  into v_task
+  from tasks
+  where id = p_task_id;
+
+  if not found then
+    raise exception 'Unknown task id: %', p_task_id;
+  end if;
+
+  if not is_household_member(v_task.household_id) then
+    raise exception 'Not allowed to skip task in this household';
+  end if;
+
+  if not v_task.is_active then
+    raise exception 'Task is inactive';
+  end if;
+
+  if v_task.assignee_id is not null and v_task.assignee_id is distinct from p_user_id then
+    raise exception 'Only the assigned person can skip this task';
+  end if;
+
+  if v_task.due_at > now() then
+    raise exception 'Task is not due yet';
+  end if;
+
+  v_interval_days := task_cron_interval_days(v_task.cron_pattern, v_task.frequency_days);
+  v_next_due := greatest(v_task.due_at, now()) + make_interval(days => greatest(v_interval_days, 1));
+  v_next_assignee := choose_next_task_assignee(v_task.id);
+
+  update tasks
+  set
+    done = false,
+    done_at = null,
+    done_by = null,
+    due_at = v_next_due,
+    assignee_id = coalesce(v_next_assignee, assignee_id)
+  where id = v_task.id;
 end;
 $$;
 
@@ -735,7 +803,7 @@ drop policy if exists households_select on households;
 create policy households_select on households
 for select
 to authenticated
-using (true);
+using (is_household_member(id));
 
 drop policy if exists households_insert on households;
 create policy households_insert on households

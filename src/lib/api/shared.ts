@@ -45,6 +45,7 @@ const householdSchema = z.object({
   apartment_size_sqm: positiveOptionalNumberSchema,
   cold_rent_monthly: nonNegativeOptionalNumberSchema,
   utilities_monthly: nonNegativeOptionalNumberSchema,
+  landing_page_markdown: z.string().default(""),
   invite_code: z.string().min(1),
   created_by: z.string().uuid(),
   created_at: z.string().min(1)
@@ -91,6 +92,7 @@ const taskSchema = z.object({
   cron_pattern: z.string().min(1).default("0 9 */7 * *"),
   frequency_days: z.coerce.number().int().positive(),
   effort_pimpers: z.coerce.number().int().positive(),
+  is_active: z.coerce.boolean().default(true),
   done: z.coerce.boolean(),
   done_at: z.string().nullable().optional().transform((value) => value ?? null),
   done_by: z.string().uuid().nullable().optional().transform((value) => value ?? null),

@@ -11,9 +11,20 @@ export interface Household {
   apartment_size_sqm: number | null;
   cold_rent_monthly: number | null;
   utilities_monthly: number | null;
+  landing_page_markdown: string;
   invite_code: string;
   created_by: string;
   created_at: string;
+}
+
+export interface UpdateHouseholdInput {
+  name: string;
+  imageUrl: string;
+  address: string;
+  currency: string;
+  apartmentSizeSqm: number | null;
+  coldRentMonthly: number | null;
+  utilitiesMonthly: number | null;
 }
 
 export interface HouseholdMember {
@@ -68,6 +79,7 @@ export interface TaskItem {
   cron_pattern: string;
   frequency_days: number;
   effort_pimpers: number;
+  is_active: boolean;
   done: boolean;
   done_at: string | null;
   done_by: string | null;

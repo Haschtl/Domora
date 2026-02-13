@@ -32,7 +32,8 @@ import type {
   FinanceSubscriptionRecurrence,
   Household,
   HouseholdMember,
-  NewFinanceSubscriptionInput
+  NewFinanceSubscriptionInput,
+  UpdateHouseholdInput
 } from "../../lib/types";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
@@ -100,15 +101,7 @@ interface FinancesTabProps {
   onAddSubscription: (input: NewFinanceSubscriptionInput) => Promise<void>;
   onUpdateSubscription: (subscription: FinanceSubscription, input: NewFinanceSubscriptionInput) => Promise<void>;
   onDeleteSubscription: (subscription: FinanceSubscription) => Promise<void>;
-  onUpdateHousehold: (input: {
-    name: string;
-    imageUrl: string;
-    address: string;
-    currency: string;
-    apartmentSizeSqm: number | null;
-    coldRentMonthly: number | null;
-    utilitiesMonthly: number | null;
-  }) => Promise<void>;
+  onUpdateHousehold: (input: UpdateHouseholdInput) => Promise<void>;
   onUpdateMemberSettings: (input: { roomSizeSqm: number | null; commonAreaFactor: number }) => Promise<void>;
   onRequestCashAudit: () => Promise<void>;
 }
@@ -142,6 +135,45 @@ const parseOptionalNumber = (value: string) => {
   const parsed = Number(trimmed);
   return Number.isFinite(parsed) ? parsed : Number.NaN;
 };
+
+interface MemberMultiSelectFieldProps {
+  label: string;
+  members: HouseholdMember[];
+  value: string[];
+  onChange: (value: string[]) => void;
+  currentUserId: string;
+  youLabel: string;
+  placeholder: string;
+  compactLabel?: boolean;
+}
+
+const MemberMultiSelectField = ({
+  label,
+  members,
+  value,
+  onChange,
+  currentUserId,
+  youLabel,
+  placeholder,
+  compactLabel = false
+}: MemberMultiSelectFieldProps) => (
+  <div className="space-y-1">
+    {compactLabel ? (
+      <p className="text-xs font-medium text-slate-600 dark:text-slate-300">{label}</p>
+    ) : (
+      <Label>{label}</Label>
+    )}
+    <PersonSelect
+      mode="multiple"
+      members={members}
+      value={value}
+      onChange={onChange}
+      currentUserId={currentUserId}
+      youLabel={youLabel}
+      placeholder={placeholder}
+    />
+  </div>
+);
 
 const cronPatternToFinanceRecurrence = (cronPattern: string): FinanceSubscriptionRecurrence => {
   if (cronPattern === "0 9 * * 1") return "weekly";
@@ -542,7 +574,7 @@ export const FinancesTab = ({
       householdMemberIds.length > 0 &&
       householdMemberIds.every((memberId) => normalizedInHousehold.includes(memberId));
     if (isAllMembers) return allMembersLabel;
-    if (householdMemberIds.length > 1 && normalizedInHousehold.length === householdMemberIds.length - 1) {
+    if (householdMemberIds.length >= 4 && normalizedInHousehold.length === householdMemberIds.length - 1) {
       const missingMemberId = householdMemberIds.find((memberId) => !normalizedInHousehold.includes(memberId));
       if (missingMemberId) return allExceptMemberLabel(missingMemberId, labelCase);
     }
@@ -609,6 +641,148 @@ export const FinancesTab = ({
       paidBy: formatMemberGroupLabel(subscription.paid_by_user_ids, "dative"),
       forMembers: formatMemberGroupLabel(subscription.beneficiary_user_ids, "accusative")
     });
+  const renderSubscriptionFormFields = (
+    form: typeof subscriptionForm | typeof editSubscriptionForm
+  ) => (
+    <>
+      <div className="grid gap-2 sm:grid-cols-2">
+        <form.Field
+          name="name"
+          children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
+            <div className="space-y-1">
+              <Label>{t("finances.subscriptionNameLabel")}</Label>
+              <Input
+                value={field.state.value}
+                onChange={(event) => field.handleChange(event.target.value)}
+                placeholder={t("finances.subscriptionNamePlaceholder")}
+                required
+              />
+            </div>
+          )}
+        />
+        <form.Field
+          name="amount"
+          children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
+            <div className="space-y-1">
+              <Label>{t("finances.entryAmountLabel")}</Label>
+              <InputWithSuffix
+                suffix="€"
+                type="number"
+                inputMode="decimal"
+                step="0.01"
+                min="0"
+                value={field.state.value}
+                onChange={(event) => field.handleChange(event.target.value)}
+                placeholder={t("finances.amountPlaceholder")}
+                required
+                inputClassName="pr-7"
+              />
+            </div>
+          )}
+        />
+        <form.Field
+          name="category"
+          children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
+            <div className="space-y-1">
+              <Label>{t("finances.subscriptionCategoryLabel")}</Label>
+              <Input
+                value={field.state.value}
+                onChange={(event) => field.handleChange(event.target.value)}
+                placeholder={t("finances.categoryPlaceholder")}
+              />
+            </div>
+          )}
+        />
+        <form.Field
+          name="recurrence"
+          children={(field: { state: { value: FinanceSubscriptionRecurrence }; handleChange: (value: FinanceSubscriptionRecurrence) => void }) => (
+            <div className="space-y-1">
+              <Label>{t("finances.subscriptionRecurrenceLabel")}</Label>
+              <Select value={field.state.value} onValueChange={field.handleChange}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {recurrenceOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+        />
+      </div>
+      <div className="grid gap-2 sm:grid-cols-2">
+        <form.Field
+          name="paidByUserIds"
+          children={(field: { state: { value: string[] }; handleChange: (value: string[]) => void }) => (
+            <MemberMultiSelectField
+              label={t("finances.paidByLabel")}
+              members={members}
+              value={field.state.value}
+              onChange={field.handleChange}
+              currentUserId={userId}
+              youLabel={t("common.you")}
+              placeholder={t("finances.paidByLabel")}
+            />
+          )}
+        />
+        <form.Field
+          name="beneficiaryUserIds"
+          children={(field: { state: { value: string[] }; handleChange: (value: string[]) => void }) => (
+            <MemberMultiSelectField
+              label={t("finances.forWhomLabel")}
+              members={members}
+              value={field.state.value}
+              onChange={field.handleChange}
+              currentUserId={userId}
+              youLabel={t("common.you")}
+              placeholder={t("finances.forWhomLabel")}
+            />
+          )}
+        />
+      </div>
+    </>
+  );
+  const renderEntryMemberFields = (
+    form: typeof addEntryForm | typeof editEntryForm,
+    compactLabel: boolean
+  ) => (
+    <>
+      <form.Field
+        name="paidByUserIds"
+        children={(field: { state: { value: string[] }; handleChange: (value: string[]) => void }) => (
+          <MemberMultiSelectField
+            compactLabel={compactLabel}
+            label={t("finances.paidByLabel")}
+            members={members}
+            value={field.state.value}
+            onChange={field.handleChange}
+            currentUserId={userId}
+            youLabel={t("common.you")}
+            placeholder={t("finances.paidByLabel")}
+          />
+        )}
+      />
+      <form.Field
+        name="beneficiaryUserIds"
+        children={(field: { state: { value: string[] }; handleChange: (value: string[]) => void }) => (
+          <MemberMultiSelectField
+            compactLabel={compactLabel}
+            label={t("finances.forWhomLabel")}
+            members={members}
+            value={field.state.value}
+            onChange={field.handleChange}
+            currentUserId={userId}
+            youLabel={t("common.you")}
+            placeholder={t("finances.forWhomLabel")}
+          />
+        )}
+      />
+    </>
+  );
   const onStartEditEntry = (entry: FinanceEntry) => {
     setEntryBeingEdited(entry);
     editEntryForm.setFieldValue("description", entry.description);
@@ -782,40 +956,7 @@ export const FinancesTab = ({
                             </div>
                           )}
                         />
-                        <addEntryForm.Field
-                          name="paidByUserIds"
-                          children={(field: { state: { value: string[] }; handleChange: (value: string[]) => void }) => (
-                            <div className="space-y-1">
-                              <p className="text-xs font-medium text-slate-600 dark:text-slate-300">{t("finances.paidByLabel")}</p>
-                              <PersonSelect
-                                mode="multiple"
-                                members={members}
-                                value={field.state.value}
-                                onChange={field.handleChange}
-                                currentUserId={userId}
-                                youLabel={t("common.you")}
-                                placeholder={t("finances.paidByLabel")}
-                              />
-                            </div>
-                          )}
-                        />
-                        <addEntryForm.Field
-                          name="beneficiaryUserIds"
-                          children={(field: { state: { value: string[] }; handleChange: (value: string[]) => void }) => (
-                            <div className="space-y-1">
-                              <p className="text-xs font-medium text-slate-600 dark:text-slate-300">{t("finances.forWhomLabel")}</p>
-                              <PersonSelect
-                                mode="multiple"
-                                members={members}
-                                value={field.state.value}
-                                onChange={field.handleChange}
-                                currentUserId={userId}
-                                youLabel={t("common.you")}
-                                placeholder={t("finances.forWhomLabel")}
-                              />
-                            </div>
-                          )}
-                        />
+                        {renderEntryMemberFields(addEntryForm, true)}
                       </PopoverContent>
                     </Popover>
                     <Button type="submit" disabled={busy}>
@@ -1510,115 +1651,7 @@ export const FinancesTab = ({
               void subscriptionForm.handleSubmit();
             }}
           >
-            <div className="grid gap-2 sm:grid-cols-2">
-              <subscriptionForm.Field
-                name="name"
-                children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
-                  <div className="space-y-1">
-                    <Label>{t("finances.subscriptionNameLabel")}</Label>
-                    <Input
-                      value={field.state.value}
-                      onChange={(event) => field.handleChange(event.target.value)}
-                      placeholder={t("finances.subscriptionNamePlaceholder")}
-                      required
-                    />
-                  </div>
-                )}
-              />
-              <subscriptionForm.Field
-                name="amount"
-                children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
-                  <div className="space-y-1">
-                    <Label>{t("finances.entryAmountLabel")}</Label>
-                    <div className="relative">
-                      <Input
-                        className="pr-7"
-                        type="number"
-                        inputMode="decimal"
-                        step="0.01"
-                        min="0"
-                        value={field.state.value}
-                        onChange={(event) => field.handleChange(event.target.value)}
-                        placeholder={t("finances.amountPlaceholder")}
-                        required
-                      />
-                      <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-500 dark:text-slate-400">
-                        €
-                      </span>
-                    </div>
-                  </div>
-                )}
-              />
-              <subscriptionForm.Field
-                name="category"
-                children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
-                  <div className="space-y-1">
-                    <Label>{t("finances.subscriptionCategoryLabel")}</Label>
-                    <Input
-                      value={field.state.value}
-                      onChange={(event) => field.handleChange(event.target.value)}
-                      placeholder={t("finances.categoryPlaceholder")}
-                    />
-                  </div>
-                )}
-              />
-              <subscriptionForm.Field
-                name="recurrence"
-                children={(field: { state: { value: FinanceSubscriptionRecurrence }; handleChange: (value: FinanceSubscriptionRecurrence) => void }) => (
-                  <div className="space-y-1">
-                    <Label>{t("finances.subscriptionRecurrenceLabel")}</Label>
-                    <Select value={field.state.value} onValueChange={field.handleChange}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {recurrenceOptions.map((option) => (
-                          <SelectItem key={option.value} value={option.value}>
-                            {option.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                )}
-              />
-            </div>
-            <div className="grid gap-2 sm:grid-cols-2">
-              <subscriptionForm.Field
-                name="paidByUserIds"
-                children={(field: { state: { value: string[] }; handleChange: (value: string[]) => void }) => (
-                  <div className="space-y-1">
-                    <Label>{t("finances.paidByLabel")}</Label>
-                    <PersonSelect
-                      mode="multiple"
-                      members={members}
-                      value={field.state.value}
-                      onChange={field.handleChange}
-                      currentUserId={userId}
-                      youLabel={t("common.you")}
-                      placeholder={t("finances.paidByLabel")}
-                    />
-                  </div>
-                )}
-              />
-              <subscriptionForm.Field
-                name="beneficiaryUserIds"
-                children={(field: { state: { value: string[] }; handleChange: (value: string[]) => void }) => (
-                  <div className="space-y-1">
-                    <Label>{t("finances.forWhomLabel")}</Label>
-                    <PersonSelect
-                      mode="multiple"
-                      members={members}
-                      value={field.state.value}
-                      onChange={field.handleChange}
-                      currentUserId={userId}
-                      youLabel={t("common.you")}
-                      placeholder={t("finances.forWhomLabel")}
-                    />
-                  </div>
-                )}
-              />
-            </div>
+            {renderSubscriptionFormFields(subscriptionForm)}
             <div className="flex justify-end gap-2">
               <DialogClose asChild>
                 <Button variant="ghost">{t("common.cancel")}</Button>
@@ -1651,115 +1684,7 @@ export const FinancesTab = ({
               void editSubscriptionForm.handleSubmit();
             }}
           >
-            <div className="grid gap-2 sm:grid-cols-2">
-              <editSubscriptionForm.Field
-                name="name"
-                children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
-                  <div className="space-y-1">
-                    <Label>{t("finances.subscriptionNameLabel")}</Label>
-                    <Input
-                      value={field.state.value}
-                      onChange={(event) => field.handleChange(event.target.value)}
-                      placeholder={t("finances.subscriptionNamePlaceholder")}
-                      required
-                    />
-                  </div>
-                )}
-              />
-              <editSubscriptionForm.Field
-                name="amount"
-                children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
-                  <div className="space-y-1">
-                    <Label>{t("finances.entryAmountLabel")}</Label>
-                    <div className="relative">
-                      <Input
-                        className="pr-7"
-                        type="number"
-                        inputMode="decimal"
-                        step="0.01"
-                        min="0"
-                        value={field.state.value}
-                        onChange={(event) => field.handleChange(event.target.value)}
-                        placeholder={t("finances.amountPlaceholder")}
-                        required
-                      />
-                      <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-500 dark:text-slate-400">
-                        €
-                      </span>
-                    </div>
-                  </div>
-                )}
-              />
-              <editSubscriptionForm.Field
-                name="category"
-                children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
-                  <div className="space-y-1">
-                    <Label>{t("finances.subscriptionCategoryLabel")}</Label>
-                    <Input
-                      value={field.state.value}
-                      onChange={(event) => field.handleChange(event.target.value)}
-                      placeholder={t("finances.categoryPlaceholder")}
-                    />
-                  </div>
-                )}
-              />
-              <editSubscriptionForm.Field
-                name="recurrence"
-                children={(field: { state: { value: FinanceSubscriptionRecurrence }; handleChange: (value: FinanceSubscriptionRecurrence) => void }) => (
-                  <div className="space-y-1">
-                    <Label>{t("finances.subscriptionRecurrenceLabel")}</Label>
-                    <Select value={field.state.value} onValueChange={field.handleChange}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {recurrenceOptions.map((option) => (
-                          <SelectItem key={option.value} value={option.value}>
-                            {option.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                )}
-              />
-            </div>
-            <div className="grid gap-2 sm:grid-cols-2">
-              <editSubscriptionForm.Field
-                name="paidByUserIds"
-                children={(field: { state: { value: string[] }; handleChange: (value: string[]) => void }) => (
-                  <div className="space-y-1">
-                    <Label>{t("finances.paidByLabel")}</Label>
-                    <PersonSelect
-                      mode="multiple"
-                      members={members}
-                      value={field.state.value}
-                      onChange={field.handleChange}
-                      currentUserId={userId}
-                      youLabel={t("common.you")}
-                      placeholder={t("finances.paidByLabel")}
-                    />
-                  </div>
-                )}
-              />
-              <editSubscriptionForm.Field
-                name="beneficiaryUserIds"
-                children={(field: { state: { value: string[] }; handleChange: (value: string[]) => void }) => (
-                  <div className="space-y-1">
-                    <Label>{t("finances.forWhomLabel")}</Label>
-                    <PersonSelect
-                      mode="multiple"
-                      members={members}
-                      value={field.state.value}
-                      onChange={field.handleChange}
-                      currentUserId={userId}
-                      youLabel={t("common.you")}
-                      placeholder={t("finances.forWhomLabel")}
-                    />
-                  </div>
-                )}
-              />
-            </div>
+            {renderSubscriptionFormFields(editSubscriptionForm)}
             <div className="flex justify-end gap-2">
               <DialogClose asChild>
                 <Button variant="ghost">{t("common.cancel")}</Button>
@@ -1811,22 +1736,18 @@ export const FinancesTab = ({
               children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
                 <div className="space-y-1">
                   <Label>{t("finances.entryAmountLabel")}</Label>
-                  <div className="relative">
-                    <Input
-                      className="pr-7"
-                      type="number"
-                      inputMode="decimal"
-                      step="0.01"
-                      min="0"
-                      value={field.state.value}
-                      onChange={(event) => field.handleChange(event.target.value)}
-                      placeholder={t("finances.amountPlaceholder")}
-                      required
-                    />
-                    <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-500 dark:text-slate-400">
-                      €
-                    </span>
-                  </div>
+                  <InputWithSuffix
+                    suffix="€"
+                    type="number"
+                    inputMode="decimal"
+                    step="0.01"
+                    min="0"
+                    value={field.state.value}
+                    onChange={(event) => field.handleChange(event.target.value)}
+                    placeholder={t("finances.amountPlaceholder")}
+                    required
+                    inputClassName="pr-7"
+                  />
                 </div>
               )}
             />
@@ -1844,40 +1765,7 @@ export const FinancesTab = ({
                 </div>
               )}
             />
-            <editEntryForm.Field
-              name="paidByUserIds"
-              children={(field: { state: { value: string[] }; handleChange: (value: string[]) => void }) => (
-                <div className="space-y-1">
-                  <Label>{t("finances.paidByLabel")}</Label>
-                  <PersonSelect
-                    mode="multiple"
-                    members={members}
-                    value={field.state.value}
-                    onChange={field.handleChange}
-                    currentUserId={userId}
-                    youLabel={t("common.you")}
-                    placeholder={t("finances.paidByLabel")}
-                  />
-                </div>
-              )}
-            />
-            <editEntryForm.Field
-              name="beneficiaryUserIds"
-              children={(field: { state: { value: string[] }; handleChange: (value: string[]) => void }) => (
-                <div className="space-y-1">
-                  <Label>{t("finances.forWhomLabel")}</Label>
-                  <PersonSelect
-                    mode="multiple"
-                    members={members}
-                    value={field.state.value}
-                    onChange={field.handleChange}
-                    currentUserId={userId}
-                    youLabel={t("common.you")}
-                    placeholder={t("finances.forWhomLabel")}
-                  />
-                </div>
-              )}
-            />
+            {renderEntryMemberFields(editEntryForm, false)}
             <div className="flex justify-end gap-2">
               <DialogClose asChild>
                 <Button variant="ghost">{t("common.cancel")}</Button>

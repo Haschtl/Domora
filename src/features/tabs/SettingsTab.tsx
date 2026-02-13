@@ -3,7 +3,7 @@ import { useForm } from "@tanstack/react-form";
 import imageCompression from "browser-image-compression";
 import { Camera, Check, Crown, UserMinus, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import type { Household, HouseholdMember } from "../../lib/types";
+import type { Household, HouseholdMember, UpdateHouseholdInput } from "../../lib/types";
 import { createDiceBearAvatarDataUri } from "../../lib/avatar";
 import { createMemberLabelGetter } from "../../lib/member-label";
 import { ThemeLanguageControls } from "../../components/theme-language-controls";
@@ -33,15 +33,7 @@ interface SettingsTabProps {
   userAvatarUrl: string | null;
   userDisplayName: string | null;
   busy: boolean;
-  onUpdateHousehold: (input: {
-    name: string;
-    imageUrl: string;
-    address: string;
-    currency: string;
-    apartmentSizeSqm: number | null;
-    coldRentMonthly: number | null;
-    utilitiesMonthly: number | null;
-  }) => Promise<void>;
+  onUpdateHousehold: (input: UpdateHouseholdInput) => Promise<void>;
   onUpdateUserAvatar: (avatarUrl: string) => Promise<void>;
   onUpdateUserDisplayName: (displayName: string) => Promise<void>;
   onSetMemberRole: (targetUserId: string, role: "owner" | "member") => Promise<void>;
