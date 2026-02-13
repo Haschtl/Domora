@@ -46,6 +46,7 @@ import {
   DialogTitle
 } from "../../components/ui/dialog";
 import { Input } from "../../components/ui/input";
+import { InputWithSuffix } from "../../components/ui/input-with-suffix";
 import { Label } from "../../components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "../../components/ui/popover";
 import { SectionPanel } from "../../components/ui/section-panel";
@@ -739,22 +740,18 @@ export const FinancesTab = ({
                       children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
                         <div className="w-36 space-y-1">
                           <Label>{t("finances.entryAmountLabel")}</Label>
-                          <div className="relative">
-                            <Input
-                              className="pr-7"
-                              type="number"
-                              inputMode="decimal"
-                              step="0.01"
-                              min="0"
-                              value={field.state.value}
-                              onChange={(event) => field.handleChange(event.target.value)}
-                              placeholder={t("finances.amountPlaceholder")}
-                              required
-                            />
-                            <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-500 dark:text-slate-400">
-                              €
-                            </span>
-                          </div>
+                          <InputWithSuffix
+                            suffix="€"
+                            type="number"
+                            inputMode="decimal"
+                            step="0.01"
+                            min="0"
+                            value={field.state.value}
+                            onChange={(event) => field.handleChange(event.target.value)}
+                            placeholder={t("finances.amountPlaceholder")}
+                            required
+                            inputClassName="pr-7"
+                          />
                         </div>
                       )}
                     />
@@ -1214,21 +1211,16 @@ export const FinancesTab = ({
                   children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
                     <div className="space-y-1">
                       <Label>{t("settings.householdSizeLabel")}</Label>
-                      <div className="relative">
-                        <Input
-                          className="pr-10"
-                          type="number"
-                          min="0.1"
-                          step="0.1"
-                          disabled={!canEditApartment}
-                          value={field.state.value}
-                          onChange={(event) => field.handleChange(event.target.value)}
-                          placeholder={t("settings.householdSizeLabel")}
-                        />
-                        <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-500 dark:text-slate-400">
-                          qm
-                        </span>
-                      </div>
+                      <InputWithSuffix
+                        suffix="qm"
+                        type="number"
+                        min="0.1"
+                        step="0.1"
+                        disabled={!canEditApartment}
+                        value={field.state.value}
+                        onChange={(event) => field.handleChange(event.target.value)}
+                        placeholder={t("settings.householdSizeLabel")}
+                      />
                     </div>
                   )}
                 />
@@ -1237,21 +1229,17 @@ export const FinancesTab = ({
                   children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
                     <div className="space-y-1">
                       <Label>{t("settings.coldRentLabel")}</Label>
-                      <div className="relative">
-                        <Input
-                          className="pr-7"
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          disabled={!canEditApartment}
-                          value={field.state.value}
-                          onChange={(event) => field.handleChange(event.target.value)}
-                          placeholder={t("settings.coldRentLabel")}
-                        />
-                        <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-500 dark:text-slate-400">
-                          €
-                        </span>
-                      </div>
+                      <InputWithSuffix
+                        suffix="€"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        disabled={!canEditApartment}
+                        value={field.state.value}
+                        onChange={(event) => field.handleChange(event.target.value)}
+                        placeholder={t("settings.coldRentLabel")}
+                        inputClassName="pr-7"
+                      />
                     </div>
                   )}
                 />
@@ -1260,21 +1248,17 @@ export const FinancesTab = ({
                   children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
                     <div className="space-y-1">
                       <Label>{t("settings.utilitiesLabel")}</Label>
-                      <div className="relative">
-                        <Input
-                          className="pr-7"
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          disabled={!canEditApartment}
-                          value={field.state.value}
-                          onChange={(event) => field.handleChange(event.target.value)}
-                          placeholder={t("settings.utilitiesLabel")}
-                        />
-                        <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-500 dark:text-slate-400">
-                          €
-                        </span>
-                      </div>
+                      <InputWithSuffix
+                        suffix="€"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        disabled={!canEditApartment}
+                        value={field.state.value}
+                        onChange={(event) => field.handleChange(event.target.value)}
+                        placeholder={t("settings.utilitiesLabel")}
+                        inputClassName="pr-7"
+                      />
                     </div>
                   )}
                 />
@@ -1311,20 +1295,15 @@ export const FinancesTab = ({
                   children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
                     <div className="space-y-1">
                       <Label>{t("settings.roomSizeLabel")}</Label>
-                      <div className="relative">
-                        <Input
-                          className="pr-10"
-                          type="number"
-                          min="0.1"
-                          step="0.1"
-                          value={field.state.value}
-                          onChange={(event) => field.handleChange(event.target.value)}
-                          placeholder={t("settings.roomSizeLabel")}
-                        />
-                        <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-500 dark:text-slate-400">
-                          qm
-                        </span>
-                      </div>
+                      <InputWithSuffix
+                        suffix="qm"
+                        type="number"
+                        min="0.1"
+                        step="0.1"
+                        value={field.state.value}
+                        onChange={(event) => field.handleChange(event.target.value)}
+                        placeholder={t("settings.roomSizeLabel")}
+                      />
                     </div>
                   )}
                 />

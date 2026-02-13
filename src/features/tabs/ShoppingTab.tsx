@@ -19,6 +19,7 @@ import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
 import { Input } from "../../components/ui/input";
+import { InputWithSuffix } from "../../components/ui/input-with-suffix";
 import { Label } from "../../components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
 import { useSmartSuggestions } from "../../hooks/use-smart-suggestions";
@@ -283,20 +284,16 @@ export const ShoppingTab = ({
                 children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
                   <div className="space-y-1">
                     <Label>{t("shopping.recurrenceValueLabel")}</Label>
-                    <div className="relative">
-                      <Input
-                        className="pr-16"
-                        type="number"
-                        min="1"
-                        inputMode="numeric"
-                        value={field.state.value}
-                        onChange={(event) => field.handleChange(event.target.value)}
-                        placeholder={t("shopping.recurrenceValuePlaceholder")}
-                      />
-                      <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-500 dark:text-slate-400">
-                        {recurrenceUnitLabel}
-                      </span>
-                    </div>
+                    <InputWithSuffix
+                      suffix={recurrenceUnitLabel}
+                      type="number"
+                      min="1"
+                      inputMode="numeric"
+                      value={field.state.value}
+                      onChange={(event) => field.handleChange(event.target.value)}
+                      placeholder={t("shopping.recurrenceValuePlaceholder")}
+                      inputClassName="pr-16"
+                    />
                   </div>
                 )}
               />
