@@ -114,6 +114,11 @@ export const ShoppingTab = ({
         members,
         currentUserId: userId,
         youLabel: t("common.you"),
+        youLabels: {
+          nominative: t("common.youNominative"),
+          dative: t("common.youDative"),
+          accusative: t("common.youAccusative")
+        },
         fallbackLabel: t("common.memberFallback")
       }),
     [members, t, userId]

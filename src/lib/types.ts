@@ -1,5 +1,6 @@
 export type AppTab = "home" | "shopping" | "tasks" | "finances" | "settings";
 export type ShoppingRecurrenceUnit = "days" | "weeks" | "months";
+export type FinanceSubscriptionRecurrence = "weekly" | "monthly" | "quarterly";
 
 export interface Household {
   id: string;
@@ -8,7 +9,8 @@ export interface Household {
   address: string;
   currency: string;
   apartment_size_sqm: number | null;
-  warm_rent_monthly: number | null;
+  cold_rent_monthly: number | null;
+  utilities_monthly: number | null;
   invite_code: string;
   created_by: string;
   created_at: string;
@@ -63,6 +65,7 @@ export interface TaskItem {
   description: string;
   start_date: string;
   due_at: string;
+  cron_pattern: string;
   frequency_days: number;
   effort_pimpers: number;
   done: boolean;
@@ -112,4 +115,27 @@ export interface CashAuditRequest {
   requested_by: string;
   status: "queued" | "sent" | "failed";
   created_at: string;
+}
+
+export interface FinanceSubscription {
+  id: string;
+  household_id: string;
+  name: string;
+  category: string;
+  amount: number;
+  paid_by_user_ids: string[];
+  beneficiary_user_ids: string[];
+  cron_pattern: string;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface NewFinanceSubscriptionInput {
+  name: string;
+  category: string;
+  amount: number;
+  paidByUserIds: string[];
+  beneficiaryUserIds: string[];
+  recurrence: FinanceSubscriptionRecurrence;
 }

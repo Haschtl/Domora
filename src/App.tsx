@@ -17,6 +17,7 @@ import { useTranslation } from "react-i18next";
 import { toast } from "react-toastify";
 import { isSupabaseConfigured } from "./lib/supabase";
 import type { AppTab } from "./lib/types";
+import { AppParticlesBackground } from "./components/app-particles-background";
 import { Card, CardDescription, CardHeader, CardTitle } from "./components/ui/card";
 import { AuthView } from "./features/AuthView";
 import { HouseholdSetupView } from "./features/HouseholdSetupView";
@@ -121,6 +122,7 @@ const App = () => {
     tasks,
     taskCompletions,
     finances,
+    financeSubscriptions,
     cashAuditRequests,
     householdMembers,
     memberPimpers,
@@ -143,9 +145,14 @@ const App = () => {
     onDeleteShoppingItem,
     onAddTask,
     onCompleteTask,
+    onUpdateTask,
+    onDeleteTask,
     onAddFinanceEntry,
     onUpdateFinanceEntry,
     onDeleteFinanceEntry,
+    onAddFinanceSubscription,
+    onUpdateFinanceSubscription,
+    onDeleteFinanceSubscription,
     onRequestCashAudit,
     onEnableNotifications,
     onUpdateHousehold,
@@ -275,7 +282,9 @@ const App = () => {
   }, [activeHousehold?.name, t]);
 
   return (
-    <div className="mx-auto min-h-screen w-full max-w-7xl p-4 pb-10 text-slate-900 dark:text-slate-100 sm:p-6">
+    <div className="relative min-h-screen">
+      <AppParticlesBackground />
+      <div className="relative z-10 mx-auto min-h-screen w-full max-w-7xl p-4 pb-10 text-slate-900 dark:text-slate-100 sm:p-6">
       {!isSupabaseConfigured ? (
         <Card className="mb-4 border border-amber-200 bg-amber-50/80 dark:border-amber-900 dark:bg-amber-950/60">
           <CardHeader>
@@ -461,6 +470,8 @@ const App = () => {
                       onEnableNotifications={onEnableNotifications}
                       onAdd={onAddTask}
                       onComplete={onCompleteTask}
+                      onUpdate={onUpdateTask}
+                      onDelete={onDeleteTask}
                     />
                   ) : null}
 
@@ -468,6 +479,7 @@ const App = () => {
                     <FinancesTab
                       section={financeSubTab}
                       entries={finances}
+                      subscriptions={financeSubscriptions}
                       cashAuditRequests={cashAuditRequests}
                       household={activeHousehold}
                       currentMember={currentMember}
@@ -477,6 +489,9 @@ const App = () => {
                       onAdd={onAddFinanceEntry}
                       onUpdateEntry={onUpdateFinanceEntry}
                       onDeleteEntry={onDeleteFinanceEntry}
+                      onAddSubscription={onAddFinanceSubscription}
+                      onUpdateSubscription={onUpdateFinanceSubscription}
+                      onDeleteSubscription={onDeleteFinanceSubscription}
                       onUpdateHousehold={onUpdateHousehold}
                       onUpdateMemberSettings={onUpdateMemberSettings}
                       onRequestCashAudit={onRequestCashAudit}
@@ -499,6 +514,7 @@ const App = () => {
                       onUpdateUserDisplayName={onUpdateUserDisplayName}
                       onSetMemberRole={onSetMemberRole}
                       onRemoveMember={onRemoveMember}
+                      onSignOut={onSignOut}
                       onLeaveHousehold={onLeaveHouseholdWithRedirect}
                       onDissolveHousehold={onDissolveHouseholdWithRedirect}
                     />
@@ -541,6 +557,7 @@ const App = () => {
           </nav>
         </section>
       ) : null}
+      </div>
     </div>
   );
 };

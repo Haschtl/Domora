@@ -39,12 +39,14 @@ interface SettingsTabProps {
     address: string;
     currency: string;
     apartmentSizeSqm: number | null;
-    warmRentMonthly: number | null;
+    coldRentMonthly: number | null;
+    utilitiesMonthly: number | null;
   }) => Promise<void>;
   onUpdateUserAvatar: (avatarUrl: string) => Promise<void>;
   onUpdateUserDisplayName: (displayName: string) => Promise<void>;
   onSetMemberRole: (targetUserId: string, role: "owner" | "member") => Promise<void>;
   onRemoveMember: (targetUserId: string) => Promise<void>;
+  onSignOut: () => Promise<void>;
   onLeaveHousehold: () => Promise<void>;
   onDissolveHousehold: () => Promise<void>;
 }
@@ -110,6 +112,7 @@ export const SettingsTab = ({
   onUpdateUserDisplayName,
   onSetMemberRole,
   onRemoveMember,
+  onSignOut,
   onLeaveHousehold,
   onDissolveHousehold
 }: SettingsTabProps) => {
@@ -177,7 +180,8 @@ export const SettingsTab = ({
         address: value.address,
         currency: normalized,
         apartmentSizeSqm: household.apartment_size_sqm,
-        warmRentMonthly: household.warm_rent_monthly
+        coldRentMonthly: household.cold_rent_monthly,
+        utilitiesMonthly: household.utilities_monthly
       });
     }
   });
@@ -270,6 +274,11 @@ export const SettingsTab = ({
         members: uniqueMembers,
         currentUserId: userId,
         youLabel: t("common.you"),
+        youLabels: {
+          nominative: t("common.youNominative"),
+          dative: t("common.youDative"),
+          accusative: t("common.youAccusative")
+        },
         fallbackLabel: t("common.memberFallback")
       }),
     [t, uniqueMembers, userId]
@@ -620,6 +629,17 @@ export const SettingsTab = ({
           </CardHeader>
           <CardContent>
             <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              disabled={busy}
+              onClick={() => {
+                void onSignOut();
+              }}
+            >
+              {t("common.logout")}
+            </Button>
+
             <Dialog>
               <DialogTrigger asChild>
                 <Button type="button" variant="outline" className="border-rose-300 text-rose-700 hover:bg-rose-50 dark:border-rose-800 dark:text-rose-300">

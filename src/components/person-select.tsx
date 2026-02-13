@@ -14,6 +14,11 @@ interface PersonSelectCommonProps {
   members: HouseholdMember[];
   currentUserId?: string;
   youLabel?: string;
+  youLabels?: {
+    nominative?: string;
+    dative?: string;
+    accusative?: string;
+  };
   disabled?: boolean;
   className?: string;
 }
@@ -46,16 +51,21 @@ export const PersonSelect = (props: PersonSelectProps) => {
     return [...dedup.values()];
   }, [props.members]);
 
-  const youLabel = props.youLabel ?? "You";
+  const youLabel = props.youLabel ?? t("common.youNominative");
   const getMemberLabel = useMemo(
     () =>
       createMemberLabelGetter({
         members,
         currentUserId: props.currentUserId,
         youLabel,
+        youLabels: props.youLabels ?? {
+          nominative: t("common.youNominative"),
+          dative: t("common.youDative"),
+          accusative: t("common.youAccusative")
+        },
         fallbackLabel: t("common.memberFallback")
       }),
-    [members, props.currentUserId, t, youLabel]
+    [members, props.currentUserId, props.youLabels, t, youLabel]
   );
   const getMemberAvatar = (member: HouseholdMember) =>
     member.avatar_url?.trim() || createDiceBearAvatarDataUri(member.display_name?.trim() || member.user_id);

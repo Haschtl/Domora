@@ -22,7 +22,17 @@ import {
   PointElement,
   Tooltip as ChartTooltip
 } from "chart.js";
-import { BellRing, CheckCircle2, ChevronLeft, ChevronRight, CircleUserRound, GripVertical, Medal, Plus } from "lucide-react";
+import {
+  BellRing,
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  CircleUserRound,
+  GripVertical,
+  Medal,
+  MoreHorizontal,
+  Plus
+} from "lucide-react";
 import { Bar, Line } from "react-chartjs-2";
 import { useTranslation } from "react-i18next";
 import type {
@@ -35,6 +45,13 @@ import type {
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../../components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger
+} from "../../components/ui/dropdown-menu";
 import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
 import { MobileSubpageDialog } from "../../components/ui/mobile-subpage-dialog";
@@ -70,6 +87,8 @@ interface TasksTabProps {
   onEnableNotifications: () => Promise<void>;
   onAdd: (input: NewTaskInput) => Promise<void>;
   onComplete: (task: TaskItem) => Promise<void>;
+  onUpdate: (task: TaskItem, input: NewTaskInput) => Promise<void>;
+  onDelete: (task: TaskItem) => Promise<void>;
 }
 
 const toDateInputValue = (date: Date) => {
@@ -172,14 +191,22 @@ export const TasksTab = ({
   notificationPermission,
   onEnableNotifications,
   onAdd,
-  onComplete
+  onComplete,
+  onUpdate,
+  onDelete
 }: TasksTabProps) => {
   const { t, i18n } = useTranslation();
   const language = i18n.resolvedLanguage ?? i18n.language;
 
   const [rotationUserIds, setRotationUserIds] = useState<string[]>([userId]);
+  const [editRotationUserIds, setEditRotationUserIds] = useState<string[]>([]);
   const [formError, setFormError] = useState<string | null>(null);
+  const [editFormError, setEditFormError] = useState<string | null>(null);
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [taskBeingEdited, setTaskBeingEdited] = useState<TaskItem | null>(null);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [taskPendingDelete, setTaskPendingDelete] = useState<TaskItem | null>(null);
   const [calendarMonthDate, setCalendarMonthDate] = useState(() => startOfMonth(new Date()));
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -243,6 +270,59 @@ export const TasksTab = ({
     }
   });
 
+  const editTaskForm = useForm({
+    defaultValues: {
+      title: "",
+      description: "",
+      startDate: toDateInputValue(new Date()),
+      frequencyDays: "7",
+      effortPimpers: "1"
+    },
+    onSubmit: async ({
+      value
+    }: {
+      value: {
+        title: string;
+        description: string;
+        startDate: string;
+        frequencyDays: string;
+        effortPimpers: string;
+      };
+    }) => {
+      if (!taskBeingEdited) return;
+
+      const trimmedTitle = value.title.trim();
+      if (!trimmedTitle) return;
+
+      if (!value.startDate) {
+        setEditFormError(t("tasks.noStartDate"));
+        return;
+      }
+
+      if (editRotationUserIds.length === 0) {
+        setEditFormError(t("tasks.noAssigneesError"));
+        return;
+      }
+
+      const parsedFrequencyDays = Number(value.frequencyDays);
+      const parsedEffort = Number(value.effortPimpers);
+
+      const input: NewTaskInput = {
+        title: trimmedTitle,
+        description: value.description.trim(),
+        startDate: value.startDate,
+        frequencyDays: Number.isFinite(parsedFrequencyDays) ? Math.max(1, Math.floor(parsedFrequencyDays)) : 7,
+        effortPimpers: Number.isFinite(parsedEffort) ? Math.max(1, Math.floor(parsedEffort)) : 1,
+        rotationUserIds: editRotationUserIds
+      };
+
+      setEditFormError(null);
+      await onUpdate(taskBeingEdited, input);
+      setTaskBeingEdited(null);
+      setIsEditDialogOpen(false);
+    }
+  });
+
   useEffect(() => {
     const validUserIds = new Set(members.map((entry) => entry.user_id));
 
@@ -256,6 +336,21 @@ export const TasksTab = ({
       return firstMember ? [firstMember] : [];
     });
   }, [members, userId]);
+
+  useEffect(() => {
+    if (!taskBeingEdited) return;
+    const validUserIds = new Set(members.map((entry) => entry.user_id));
+    setEditRotationUserIds((current) => {
+      const filtered = current.filter((entry) => validUserIds.has(entry));
+      if (filtered.length > 0) return filtered;
+      if (taskBeingEdited.assignee_id && validUserIds.has(taskBeingEdited.assignee_id)) {
+        return [taskBeingEdited.assignee_id];
+      }
+      if (validUserIds.has(userId)) return [userId];
+      const firstMember = members[0]?.user_id;
+      return firstMember ? [firstMember] : [];
+    });
+  }, [members, taskBeingEdited, userId]);
 
   const overdueCount = useMemo(() => {
     const now = Date.now();
@@ -298,6 +393,11 @@ export const TasksTab = ({
         members,
         currentUserId: userId,
         youLabel: t("common.you"),
+        youLabels: {
+          nominative: t("common.youNominative"),
+          dative: t("common.youDative"),
+          accusative: t("common.youAccusative")
+        },
         fallbackLabel: t("common.memberFallback")
       }),
     [members, t, userId]
@@ -374,8 +474,24 @@ export const TasksTab = ({
     });
   };
 
+  const toggleEditRotationMember = (targetUserId: string) => {
+    setEditRotationUserIds((current) => {
+      if (current.includes(targetUserId)) {
+        return current.filter((entry) => entry !== targetUserId);
+      }
+      return [...current, targetUserId];
+    });
+  };
+
   const removeRotationMember = (targetUserId: string) => {
     setRotationUserIds((current) => {
+      if (!current.includes(targetUserId)) return current;
+      return current.filter((entry) => entry !== targetUserId);
+    });
+  };
+
+  const removeEditRotationMember = (targetUserId: string) => {
+    setEditRotationUserIds((current) => {
       if (!current.includes(targetUserId)) return current;
       return current.filter((entry) => entry !== targetUserId);
     });
@@ -391,6 +507,48 @@ export const TasksTab = ({
       if (oldIndex < 0 || newIndex < 0) return current;
       return arrayMove(current, oldIndex, newIndex);
     });
+  };
+
+  const onEditRotationDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    setEditRotationUserIds((current) => {
+      const oldIndex = current.indexOf(String(active.id));
+      const newIndex = current.indexOf(String(over.id));
+      if (oldIndex < 0 || newIndex < 0) return current;
+      return arrayMove(current, oldIndex, newIndex);
+    });
+  };
+
+  const onStartEditTask = (task: TaskItem) => {
+    setTaskBeingEdited(task);
+    editTaskForm.setFieldValue("title", task.title);
+    editTaskForm.setFieldValue("description", task.description ?? "");
+    editTaskForm.setFieldValue("startDate", task.start_date);
+    editTaskForm.setFieldValue("frequencyDays", String(task.frequency_days));
+    editTaskForm.setFieldValue("effortPimpers", String(task.effort_pimpers));
+
+    const nextRotation = task.rotation_user_ids.length > 0
+      ? task.rotation_user_ids
+      : task.assignee_id
+        ? [task.assignee_id]
+        : [];
+    setEditRotationUserIds(nextRotation);
+    setEditFormError(null);
+    setIsEditDialogOpen(true);
+  };
+
+  const onStartDeleteTask = (task: TaskItem) => {
+    setTaskPendingDelete(task);
+    setIsDeleteDialogOpen(true);
+  };
+
+  const onConfirmDeleteTask = async () => {
+    if (!taskPendingDelete) return;
+    await onDelete(taskPendingDelete);
+    setTaskPendingDelete(null);
+    setIsDeleteDialogOpen(false);
   };
 
   const weekdayLabels = useMemo(() => {
@@ -895,6 +1053,32 @@ export const TasksTab = ({
                       </div>
 
                       <div className="flex min-w-[170px] flex-col items-start gap-2 sm:items-end">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="ghost"
+                              className="h-8 w-8 p-0"
+                              aria-label={t("tasks.taskActions")}
+                              disabled={busy}
+                            >
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => onStartEditTask(task)}>
+                              {t("tasks.editTask")}
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => onStartDeleteTask(task)}
+                              className="text-rose-600 dark:text-rose-300"
+                            >
+                              {t("tasks.deleteTask")}
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+
                         {isDue ? (
                           <Badge className="bg-rose-100 text-rose-800 dark:bg-rose-900 dark:text-rose-100">
                             {t("tasks.statusDue")}
@@ -1093,6 +1277,229 @@ export const TasksTab = ({
             ) : null}
           </SectionPanel>
         ) : null}
+
+        <Dialog
+          open={isEditDialogOpen}
+          onOpenChange={(open) => {
+            setIsEditDialogOpen(open);
+            if (!open) {
+              setTaskBeingEdited(null);
+            }
+          }}
+        >
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>{t("tasks.editTaskTitle")}</DialogTitle>
+              <DialogDescription>{t("tasks.editTaskDescription")}</DialogDescription>
+            </DialogHeader>
+            <form
+              className="space-y-3"
+              onSubmit={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                void editTaskForm.handleSubmit();
+              }}
+            >
+              <editTaskForm.Field
+                name="title"
+                children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
+                  <div className="space-y-1">
+                    <Label>{t("tasks.titleLabel")}</Label>
+                    <Input
+                      value={field.state.value}
+                      onChange={(event) => field.handleChange(event.target.value)}
+                      placeholder={t("tasks.placeholder")}
+                      required
+                    />
+                  </div>
+                )}
+              />
+
+              <editTaskForm.Field
+                name="description"
+                children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
+                  <div className="space-y-1">
+                    <Label>{t("tasks.descriptionLabel")}</Label>
+                    <textarea
+                      className="min-h-[90px] w-full rounded-xl border border-brand-200 bg-white p-3 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-400"
+                      placeholder={t("tasks.descriptionPlaceholder")}
+                      value={field.state.value}
+                      onChange={(event) => field.handleChange(event.target.value)}
+                    />
+                  </div>
+                )}
+              />
+
+              <div className="grid gap-2 sm:grid-cols-3">
+                <editTaskForm.Field
+                  name="startDate"
+                  children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
+                    <div className="space-y-1">
+                      <Label>{t("tasks.startDate")}</Label>
+                      <Input
+                        type="date"
+                        value={field.state.value}
+                        onChange={(event) => field.handleChange(event.target.value)}
+                        title={t("tasks.startDate")}
+                        required
+                      />
+                    </div>
+                  )}
+                />
+                <editTaskForm.Field
+                  name="frequencyDays"
+                  children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
+                    <div className="space-y-1">
+                      <Label>{t("tasks.frequencyDays")}</Label>
+                      <div className="relative">
+                        <Input
+                          className="pr-10"
+                          type="number"
+                          min="1"
+                          inputMode="numeric"
+                          value={field.state.value}
+                          onChange={(event) => field.handleChange(event.target.value)}
+                          placeholder={t("tasks.frequencyDays")}
+                        />
+                        <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-500 dark:text-slate-400">
+                          d
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                />
+                <editTaskForm.Field
+                  name="effortPimpers"
+                  children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
+                    <div className="space-y-1">
+                      <Label>{t("tasks.effortPimpers")}</Label>
+                      <div className="relative">
+                        <Input
+                          className="pr-10"
+                          type="number"
+                          min="1"
+                          inputMode="numeric"
+                          value={field.state.value}
+                          onChange={(event) => field.handleChange(event.target.value)}
+                          placeholder={t("tasks.effortPimpers")}
+                        />
+                        <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-500 dark:text-slate-400">
+                          P
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                />
+              </div>
+
+              <SectionPanel className="bg-brand-50/40">
+                <p className="mb-2 text-sm font-semibold text-slate-900 dark:text-slate-100">{t("tasks.rotationTitle")}</p>
+                <p className="mb-3 text-xs text-slate-600 dark:text-slate-300">{t("tasks.rotationHint")}</p>
+
+                {members.length === 0 ? <p className="text-sm text-slate-500 dark:text-slate-400">{t("tasks.noMembers")}</p> : null}
+
+                <div className="space-y-2">
+                  {members.map((member) => {
+                    const isSelected = editRotationUserIds.includes(member.user_id);
+
+                    return (
+                      <div
+                        key={`edit-${member.user_id}`}
+                        className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-brand-100 bg-white/90 p-2 dark:border-slate-700 dark:bg-slate-900"
+                      >
+                        <button
+                          type="button"
+                          className={
+                            isSelected
+                              ? "rounded-lg bg-brand-700 px-3 py-1 text-xs font-semibold text-white"
+                              : "rounded-lg border border-brand-300 px-3 py-1 text-xs font-semibold text-slate-700 dark:border-slate-600 dark:text-slate-200"
+                          }
+                          onClick={() => toggleEditRotationMember(member.user_id)}
+                        >
+                          {isSelected ? t("tasks.inRotation") : t("tasks.addToRotation")} {userLabel(member.user_id)}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {editRotationUserIds.length > 0 ? (
+                  <div className="mt-3 space-y-2">
+                    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onEditRotationDragEnd}>
+                      <SortableContext items={editRotationUserIds} strategy={verticalListSortingStrategy}>
+                        {editRotationUserIds.map((rotationUserId) => {
+                          const score = pimperByUserId.get(rotationUserId) ?? 0;
+                          return (
+                            <SortableRotationItem
+                              key={`edit-row-${rotationUserId}`}
+                              id={rotationUserId}
+                              label={userLabel(rotationUserId)}
+                              onRemove={removeEditRotationMember}
+                              removeLabel={t("tasks.removeFromRotation")}
+                              pimperText={t("tasks.pimpersValue", { count: score })}
+                              dragHandleLabel={t("tasks.dragHandle")}
+                            />
+                          );
+                        })}
+                      </SortableContext>
+                    </DndContext>
+                  </div>
+                ) : null}
+              </SectionPanel>
+
+              {editFormError ? (
+                <p className="rounded-lg border border-rose-300 bg-rose-50 px-3 py-2 text-xs text-rose-700 dark:border-rose-900 dark:bg-rose-950/60 dark:text-rose-200">
+                  {editFormError}
+                </p>
+              ) : null}
+
+              <div className="flex justify-end">
+                <Button type="submit" disabled={busy}>
+                  {t("tasks.saveTask")}
+                </Button>
+              </div>
+            </form>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog
+          open={isDeleteDialogOpen}
+          onOpenChange={(open) => {
+            setIsDeleteDialogOpen(open);
+            if (!open) setTaskPendingDelete(null);
+          }}
+        >
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>{t("tasks.deleteTaskConfirmTitle")}</DialogTitle>
+              <DialogDescription>
+                {t("tasks.deleteTaskConfirmDescription", {
+                  title: taskPendingDelete?.title ?? t("tasks.fallbackTitle")
+                })}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex justify-end gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setIsDeleteDialogOpen(false);
+                  setTaskPendingDelete(null);
+                }}
+              >
+                {t("common.cancel")}
+              </Button>
+              <Button
+                type="button"
+                disabled={busy}
+                className="bg-rose-600 text-white hover:bg-rose-700 dark:bg-rose-700 dark:hover:bg-rose-600"
+                onClick={() => void onConfirmDeleteTask()}
+              >
+                {t("tasks.deleteTask")}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
       </CardContent>
       </Card>
 

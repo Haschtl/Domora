@@ -1,9 +1,12 @@
 import type { HouseholdMember } from "./types";
 
+export type MemberLabelCase = "nominative" | "dative" | "accusative";
+
 export const createMemberLabelGetter = (input: {
   members: HouseholdMember[];
   currentUserId?: string;
   youLabel: string;
+  youLabels?: Partial<Record<MemberLabelCase, string>>;
   fallbackLabel: string;
 }) => {
   const byUserId = new Map<string, HouseholdMember>();
@@ -18,8 +21,14 @@ export const createMemberLabelGetter = (input: {
     }
   });
 
-  return (memberId: string) => {
-    if (memberId === input.currentUserId) return input.youLabel;
+  const pronounByCase: Record<MemberLabelCase, string> = {
+    nominative: input.youLabels?.nominative ?? input.youLabel,
+    dative: input.youLabels?.dative ?? input.youLabel,
+    accusative: input.youLabels?.accusative ?? input.youLabel
+  };
+
+  return (memberId: string, labelCase: MemberLabelCase = "nominative") => {
+    if (memberId === input.currentUserId) return pronounByCase[labelCase];
     const displayName = byUserId.get(memberId)?.display_name?.trim();
     if (displayName) return displayName;
     const fallbackIndex = fallbackIndexByUserId.get(memberId);

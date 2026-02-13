@@ -3,12 +3,15 @@ import { useMutation } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import {
   addFinanceEntry,
+  addFinanceSubscription,
   addShoppingItem,
   addTask,
+  deleteTask,
   dissolveHousehold,
   completeTask,
   createHousehold,
   deleteFinanceEntry,
+  deleteFinanceSubscription,
   deleteShoppingItem,
   getCurrentSession,
   joinHouseholdByInvite,
@@ -21,7 +24,9 @@ import {
   signInWithGoogle,
   signUp,
   updateFinanceEntry,
+  updateFinanceSubscription,
   updateHouseholdSettings,
+  updateTask,
   updateMemberSettings,
   updateShoppingItemStatus,
   updateUserAvatar,
@@ -31,6 +36,8 @@ import { setActiveHouseholdId } from "../lib/app-store";
 import { queryKeys } from "../lib/query-keys";
 import type {
   FinanceEntry,
+  FinanceSubscription,
+  NewFinanceSubscriptionInput,
   Household,
   NewTaskInput,
   ShoppingRecurrenceUnit,
@@ -209,6 +216,28 @@ export const useWorkspaceController = () => {
     [activeHousehold, runWithWorkspaceInvalidation, t, userId]
   );
 
+  const onUpdateTask = useCallback(
+    async (task: TaskItem, input: NewTaskInput) => {
+      if (!activeHousehold || !userId) return;
+
+      await runWithWorkspaceInvalidation(async () => {
+        await updateTask(task.id, input);
+      });
+    },
+    [activeHousehold, runWithWorkspaceInvalidation, userId]
+  );
+
+  const onDeleteTask = useCallback(
+    async (task: TaskItem) => {
+      if (!activeHousehold) return;
+
+      await runWithWorkspaceInvalidation(async () => {
+        await deleteTask(task.id);
+      });
+    },
+    [activeHousehold, runWithWorkspaceInvalidation]
+  );
+
   const onAddFinanceEntry = useCallback(
     async (input: {
       description: string;
@@ -259,6 +288,39 @@ export const useWorkspaceController = () => {
     [activeHousehold, runWithWorkspaceInvalidation]
   );
 
+  const onAddFinanceSubscription = useCallback(
+    async (input: NewFinanceSubscriptionInput) => {
+      if (!activeHousehold || !userId) return;
+
+      await runWithWorkspaceInvalidation(async () => {
+        await addFinanceSubscription(activeHousehold.id, userId, input);
+      });
+    },
+    [activeHousehold, runWithWorkspaceInvalidation, userId]
+  );
+
+  const onUpdateFinanceSubscription = useCallback(
+    async (subscription: FinanceSubscription, input: NewFinanceSubscriptionInput) => {
+      if (!activeHousehold || !userId) return;
+
+      await runWithWorkspaceInvalidation(async () => {
+        await updateFinanceSubscription(subscription.id, input);
+      });
+    },
+    [activeHousehold, runWithWorkspaceInvalidation, userId]
+  );
+
+  const onDeleteFinanceSubscription = useCallback(
+    async (subscription: FinanceSubscription) => {
+      if (!activeHousehold) return;
+
+      await runWithWorkspaceInvalidation(async () => {
+        await deleteFinanceSubscription(subscription.id);
+      });
+    },
+    [activeHousehold, runWithWorkspaceInvalidation]
+  );
+
   const onRequestCashAudit = useCallback(async () => {
     if (!activeHousehold || !userId) return;
 
@@ -286,7 +348,8 @@ export const useWorkspaceController = () => {
       address: string;
       currency: string;
       apartmentSizeSqm: number | null;
-      warmRentMonthly: number | null;
+      coldRentMonthly: number | null;
+      utilitiesMonthly: number | null;
     }) => {
       if (!activeHousehold || !userId) return;
 
@@ -399,6 +462,7 @@ export const useWorkspaceController = () => {
     tasks: workspace.tasks,
     taskCompletions: workspace.taskCompletions,
     finances: workspace.finances,
+    financeSubscriptions: workspace.financeSubscriptions,
     cashAuditRequests: workspace.cashAuditRequests,
     householdMembers: workspace.householdMembers,
     memberPimpers: workspace.memberPimpers,
@@ -421,9 +485,14 @@ export const useWorkspaceController = () => {
     onDeleteShoppingItem,
     onAddTask,
     onCompleteTask,
+    onUpdateTask,
+    onDeleteTask,
     onAddFinanceEntry,
     onUpdateFinanceEntry,
     onDeleteFinanceEntry,
+    onAddFinanceSubscription,
+    onUpdateFinanceSubscription,
+    onDeleteFinanceSubscription,
     onRequestCashAudit,
     onEnableNotifications,
     onUpdateHousehold,

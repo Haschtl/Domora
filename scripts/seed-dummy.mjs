@@ -175,7 +175,8 @@ const run = async () => {
       address: "Musterstrasse 12, 1010 Wien",
       currency: "EUR",
       apartment_size_sqm: 103.5,
-      warm_rent_monthly: 2090,
+      cold_rent_monthly: 1690,
+      utilities_monthly: 400,
       invite_code: inviteCode,
       created_by: owner.id
     })

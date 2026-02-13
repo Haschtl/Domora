@@ -15,6 +15,9 @@ interface FinanceEntriesListProps {
   entries: FinanceEntry[];
   formatMoney: (value: number) => string;
   paidByText: (entry: FinanceEntry) => string;
+  entryChipText?: (entry: FinanceEntry) => string | null;
+  entryChipClassName?: (entry: FinanceEntry) => string | undefined;
+  amountClassName?: string;
   onEdit?: (entry: FinanceEntry) => void;
   onDelete?: (entry: FinanceEntry) => void;
   actionsLabel?: string;
@@ -29,6 +32,9 @@ export const FinanceEntriesList = ({
   entries,
   formatMoney,
   paidByText,
+  entryChipText,
+  entryChipClassName,
+  amountClassName = "text-sm font-semibold text-brand-800 dark:text-brand-200",
   onEdit,
   onDelete,
   actionsLabel = "Actions",
@@ -54,7 +60,15 @@ export const FinanceEntriesList = ({
           <Badge className="w-fit text-[10px]">{entry.category}</Badge>
         </div>
         <div className="flex items-center gap-1">
-          <p className="text-sm font-semibold text-brand-800 dark:text-brand-200">{formatMoney(entry.amount)}</p>
+          <div className="flex flex-col items-end gap-1">
+            {entryChipText ? (
+              (() => {
+                const chipText = entryChipText(entry);
+                return chipText ? <Badge className={entryChipClassName?.(entry)}>{chipText}</Badge> : null;
+              })()
+            ) : null}
+            <p className={amountClassName}>{formatMoney(entry.amount)}</p>
+          </div>
           {onEdit || onDelete ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>

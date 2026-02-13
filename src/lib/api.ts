@@ -12,9 +12,12 @@ import { supabase } from "./supabase";
 import type {
   CashAuditRequest,
   FinanceEntry,
+  FinanceSubscription,
+  FinanceSubscriptionRecurrence,
   Household,
   HouseholdMember,
   HouseholdMemberPimpers,
+  NewFinanceSubscriptionInput,
   NewTaskInput,
   ShoppingRecurrenceUnit,
   ShoppingItem,
@@ -44,6 +47,7 @@ const nonNegativeOptionalNumberSchema = optionalNumberSchema.refine(
   "Expected a non-negative number or null"
 );
 const shoppingRecurrenceUnitSchema = z.enum(["days", "weeks", "months"]);
+const financeSubscriptionRecurrenceSchema = z.enum(["weekly", "monthly", "quarterly"]);
 
 const householdSchema = z.object({
   id: z.string().uuid(),
@@ -52,7 +56,8 @@ const householdSchema = z.object({
   address: z.string().default(""),
   currency: z.string().length(3).transform((value) => value.toUpperCase()),
   apartment_size_sqm: positiveOptionalNumberSchema,
-  warm_rent_monthly: nonNegativeOptionalNumberSchema,
+  cold_rent_monthly: nonNegativeOptionalNumberSchema,
+  utilities_monthly: nonNegativeOptionalNumberSchema,
   invite_code: z.string().min(1),
   created_by: z.string().uuid(),
   created_at: z.string().min(1)
@@ -95,6 +100,7 @@ const taskSchema = z.object({
   description: z.string().default(""),
   start_date: z.string().min(1),
   due_at: z.string().min(1),
+  cron_pattern: z.string().min(1).default("0 9 */7 * *"),
   frequency_days: z.coerce.number().int().positive(),
   effort_pimpers: z.coerce.number().int().positive(),
   done: z.coerce.boolean(),
@@ -146,6 +152,20 @@ const cashAuditRequestSchema = z.object({
   created_at: z.string().min(1)
 });
 
+const financeSubscriptionSchema = z.object({
+  id: z.string().uuid(),
+  household_id: z.string().uuid(),
+  name: z.string().min(1),
+  category: z.string().min(1),
+  amount: z.coerce.number().finite().nonnegative(),
+  paid_by_user_ids: z.array(z.string().uuid()).default([]),
+  beneficiary_user_ids: z.array(z.string().uuid()).default([]),
+  cron_pattern: z.string().min(1),
+  created_by: z.string().uuid(),
+  created_at: z.string().min(1),
+  updated_at: z.string().min(1)
+});
+
 const normalizeHousehold = (row: Record<string, unknown>): Household => ({
   ...householdSchema.parse(row)
 });
@@ -158,10 +178,22 @@ const normalizeShoppingItem = (row: Record<string, unknown>): ShoppingItem => ({
   ...shoppingItemSchema.parse(row)
 });
 
-const normalizeTask = (row: Record<string, unknown>, rotationUserIds: string[]): TaskItem => ({
-  ...taskSchema.parse(row),
-  rotation_user_ids: rotationUserIds
-});
+const normalizeTask = (row: Record<string, unknown>, rotationUserIds: string[]): TaskItem => {
+  const parsed = taskSchema.parse(row);
+  const dayPart = parsed.cron_pattern.trim().split(/\s+/)[2] ?? "";
+  const cronFrequencyDays = dayPart.startsWith("*/") ? Number(dayPart.slice(2)) : Number.NaN;
+  const normalizedFrequencyDays =
+    Number.isFinite(cronFrequencyDays) && cronFrequencyDays > 0
+      ? Math.max(1, Math.floor(cronFrequencyDays))
+      : Math.max(1, Math.floor(parsed.frequency_days));
+
+  return {
+    ...parsed,
+    cron_pattern: parsed.cron_pattern || `0 9 */${Math.max(1, Math.floor(parsed.frequency_days))} * *`,
+    frequency_days: normalizedFrequencyDays,
+    rotation_user_ids: rotationUserIds
+  };
+};
 
 const normalizeShoppingCompletion = (row: Record<string, unknown>): ShoppingItemCompletion => ({
   ...shoppingCompletionSchema.parse(row)
@@ -188,6 +220,26 @@ const normalizeFinanceEntry = (row: Record<string, unknown>): FinanceEntry => ({
 const normalizeCashAuditRequest = (row: Record<string, unknown>): CashAuditRequest => ({
   ...cashAuditRequestSchema.parse(row)
 });
+
+const recurrenceToCronPattern = (recurrence: FinanceSubscriptionRecurrence) => {
+  if (recurrence === "weekly") return "0 9 * * 1";
+  if (recurrence === "quarterly") return "0 9 1 */3 *";
+  return "0 9 1 * *";
+};
+
+const taskFrequencyDaysToCronPattern = (frequencyDays: number) => {
+  const normalized = Math.max(1, Math.floor(frequencyDays));
+  return `0 9 */${normalized} * *`;
+};
+
+const normalizeFinanceSubscription = (row: Record<string, unknown>): FinanceSubscription => {
+  const parsed = financeSubscriptionSchema.parse(row);
+  return {
+    ...parsed,
+    paid_by_user_ids: parsed.paid_by_user_ids,
+    beneficiary_user_ids: parsed.beneficiary_user_ids
+  };
+};
 
 const getDueAtFromStartDate = (startDate: string) => {
   const asDate = new Date(`${startDate}T09:00:00`);
@@ -418,7 +470,8 @@ export const updateHouseholdSettings = async (
     address: string;
     currency: string;
     apartmentSizeSqm: number | null;
-    warmRentMonthly: number | null;
+    coldRentMonthly: number | null;
+    utilitiesMonthly: number | null;
   }
 ): Promise<Household> => {
   const validatedHouseholdId = z.string().uuid().parse(householdId);
@@ -428,7 +481,8 @@ export const updateHouseholdSettings = async (
     address: z.string().trim().max(300),
     currency: z.string().trim().toUpperCase().length(3),
     apartmentSizeSqm: positiveOptionalNumberSchema,
-    warmRentMonthly: nonNegativeOptionalNumberSchema
+    coldRentMonthly: nonNegativeOptionalNumberSchema,
+    utilitiesMonthly: nonNegativeOptionalNumberSchema
   }).parse(input);
 
   const { data, error } = await supabase
@@ -439,7 +493,8 @@ export const updateHouseholdSettings = async (
       address: parsedInput.address,
       currency: parsedInput.currency,
       apartment_size_sqm: parsedInput.apartmentSizeSqm,
-      warm_rent_monthly: parsedInput.warmRentMonthly
+      cold_rent_monthly: parsedInput.coldRentMonthly,
+      utilities_monthly: parsedInput.utilitiesMonthly
     })
     .eq("id", validatedHouseholdId)
     .select("*")
@@ -856,6 +911,7 @@ export const addTask = async (
 
   const taskId = uuid();
   const dueAt = getDueAtFromStartDate(parsedInput.startDate);
+  const cronPattern = taskFrequencyDaysToCronPattern(parsedInput.frequencyDays);
 
   const { data, error } = await supabase
     .from("tasks")
@@ -866,6 +922,7 @@ export const addTask = async (
       description: parsedInput.description,
       start_date: parsedInput.startDate,
       due_at: dueAt,
+      cron_pattern: cronPattern,
       frequency_days: parsedInput.frequencyDays,
       effort_pimpers: parsedInput.effortPimpers,
       assignee_id: rotationUserIds[0],
@@ -890,6 +947,66 @@ export const addTask = async (
   }
 
   return normalizeTask(data as Record<string, unknown>, rotationUserIds);
+};
+
+export const updateTask = async (taskId: string, input: NewTaskInput): Promise<void> => {
+  const parsedInput = z.object({
+    taskId: z.string().uuid(),
+    title: z.string().trim().min(1).max(200),
+    description: z.string().trim().max(2000),
+    startDate: z.string().min(1),
+    frequencyDays: z.coerce.number().int().positive(),
+    effortPimpers: z.coerce.number().int().positive(),
+    rotationUserIds: z.array(z.string().uuid()).min(1)
+  }).parse({
+    taskId,
+    title: input.title,
+    description: input.description,
+    startDate: input.startDate,
+    frequencyDays: input.frequencyDays,
+    effortPimpers: input.effortPimpers,
+    rotationUserIds: input.rotationUserIds.filter((entry, index, all) => all.indexOf(entry) === index)
+  });
+
+  const dueAt = getDueAtFromStartDate(parsedInput.startDate);
+  const cronPattern = taskFrequencyDaysToCronPattern(parsedInput.frequencyDays);
+  const assigneeId = parsedInput.rotationUserIds[0];
+
+  const { error: taskError } = await supabase
+    .from("tasks")
+    .update({
+      title: parsedInput.title,
+      description: parsedInput.description,
+      start_date: parsedInput.startDate,
+      due_at: dueAt,
+      cron_pattern: cronPattern,
+      frequency_days: parsedInput.frequencyDays,
+      effort_pimpers: parsedInput.effortPimpers,
+      assignee_id: assigneeId
+    })
+    .eq("id", parsedInput.taskId);
+
+  if (taskError) throw taskError;
+
+  const { error: deleteRotationError } = await supabase
+    .from("task_rotation_members")
+    .delete()
+    .eq("task_id", parsedInput.taskId);
+  if (deleteRotationError) throw deleteRotationError;
+
+  const rotationRows = parsedInput.rotationUserIds.map((rotationUserId, index) => ({
+    task_id: parsedInput.taskId,
+    user_id: rotationUserId,
+    position: index
+  }));
+  const { error: rotationError } = await supabase.from("task_rotation_members").insert(rotationRows);
+  if (rotationError) throw rotationError;
+};
+
+export const deleteTask = async (taskId: string): Promise<void> => {
+  const validatedTaskId = z.string().uuid().parse(taskId);
+  const { error } = await supabase.from("tasks").delete().eq("id", validatedTaskId);
+  if (error) throw error;
 };
 
 export const completeTask = async (taskId: string, userId: string) => {
@@ -938,6 +1055,17 @@ export const getCashAuditRequests = async (householdId: string): Promise<CashAud
   if (error) throw error;
 
   return (data ?? []).map((entry) => normalizeCashAuditRequest(entry as Record<string, unknown>));
+};
+
+export const getFinanceSubscriptions = async (householdId: string): Promise<FinanceSubscription[]> => {
+  const { data, error } = await supabase
+    .from("finance_subscriptions")
+    .select("*")
+    .eq("household_id", householdId)
+    .order("created_at", { ascending: false });
+
+  if (error) throw error;
+  return (data ?? []).map((entry) => normalizeFinanceSubscription(entry as Record<string, unknown>));
 };
 
 export const addFinanceEntry = async (
@@ -1064,5 +1192,97 @@ export const requestCashAudit = async (householdId: string, userId: string) => {
     status: "queued"
   });
 
+  if (error) throw error;
+};
+
+export const addFinanceSubscription = async (
+  householdId: string,
+  userId: string,
+  input: NewFinanceSubscriptionInput
+): Promise<FinanceSubscription> => {
+  const parsedInput = z.object({
+    householdId: z.string().uuid(),
+    userId: z.string().uuid(),
+    name: z.string().trim().min(1).max(200),
+    amount: z.coerce.number().finite().nonnegative(),
+    category: z.string().trim().max(80),
+    paidByUserIds: z.array(z.string().uuid()).min(1),
+    beneficiaryUserIds: z.array(z.string().uuid()).min(1),
+    recurrence: financeSubscriptionRecurrenceSchema
+  }).parse({
+    householdId,
+    userId,
+    name: input.name,
+    amount: input.amount,
+    category: input.category,
+    paidByUserIds: input.paidByUserIds.filter((entry, index, all) => all.indexOf(entry) === index),
+    beneficiaryUserIds: input.beneficiaryUserIds.filter((entry, index, all) => all.indexOf(entry) === index),
+    recurrence: input.recurrence
+  });
+
+  const { data, error } = await supabase
+    .from("finance_subscriptions")
+    .insert({
+      id: uuid(),
+      household_id: parsedInput.householdId,
+      name: parsedInput.name,
+      category: parsedInput.category || "general",
+      amount: parsedInput.amount,
+      paid_by_user_ids: parsedInput.paidByUserIds,
+      beneficiary_user_ids: parsedInput.beneficiaryUserIds,
+      cron_pattern: recurrenceToCronPattern(parsedInput.recurrence),
+      created_by: parsedInput.userId
+    })
+    .select("*")
+    .single();
+
+  if (error) throw error;
+  return normalizeFinanceSubscription(data as Record<string, unknown>);
+};
+
+export const updateFinanceSubscription = async (
+  id: string,
+  input: NewFinanceSubscriptionInput
+): Promise<FinanceSubscription> => {
+  const parsedInput = z.object({
+    id: z.string().uuid(),
+    name: z.string().trim().min(1).max(200),
+    amount: z.coerce.number().finite().nonnegative(),
+    category: z.string().trim().max(80),
+    paidByUserIds: z.array(z.string().uuid()).min(1),
+    beneficiaryUserIds: z.array(z.string().uuid()).min(1),
+    recurrence: financeSubscriptionRecurrenceSchema
+  }).parse({
+    id,
+    name: input.name,
+    amount: input.amount,
+    category: input.category,
+    paidByUserIds: input.paidByUserIds.filter((entry, index, all) => all.indexOf(entry) === index),
+    beneficiaryUserIds: input.beneficiaryUserIds.filter((entry, index, all) => all.indexOf(entry) === index),
+    recurrence: input.recurrence
+  });
+
+  const { data, error } = await supabase
+    .from("finance_subscriptions")
+    .update({
+      name: parsedInput.name,
+      category: parsedInput.category || "general",
+      amount: parsedInput.amount,
+      paid_by_user_ids: parsedInput.paidByUserIds,
+      beneficiary_user_ids: parsedInput.beneficiaryUserIds,
+      cron_pattern: recurrenceToCronPattern(parsedInput.recurrence),
+      updated_at: new Date().toISOString()
+    })
+    .eq("id", parsedInput.id)
+    .select("*")
+    .single();
+
+  if (error) throw error;
+  return normalizeFinanceSubscription(data as Record<string, unknown>);
+};
+
+export const deleteFinanceSubscription = async (id: string): Promise<void> => {
+  const validatedId = z.string().uuid().parse(id);
+  const { error } = await supabase.from("finance_subscriptions").delete().eq("id", validatedId);
   if (error) throw error;
 };

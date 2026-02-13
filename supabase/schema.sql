@@ -8,7 +8,8 @@ create table if not exists households (
   address text not null default '',
   currency text not null default 'EUR' check (char_length(currency) = 3 and currency = upper(currency)),
   apartment_size_sqm numeric(8, 2) check (apartment_size_sqm is null or apartment_size_sqm > 0),
-  warm_rent_monthly numeric(12, 2) check (warm_rent_monthly is null or warm_rent_monthly >= 0),
+  cold_rent_monthly numeric(12, 2) check (cold_rent_monthly is null or cold_rent_monthly >= 0),
+  utilities_monthly numeric(12, 2) check (utilities_monthly is null or utilities_monthly >= 0),
   invite_code text not null unique,
   created_by uuid not null references auth.users(id) on delete cascade,
   created_at timestamptz not null default now()
@@ -66,6 +67,7 @@ create table if not exists tasks (
   description text not null default '',
   start_date date not null default current_date,
   due_at timestamptz not null,
+  cron_pattern text not null default '0 9 */7 * *',
   frequency_days integer not null default 7,
   effort_pimpers integer not null default 1,
   done boolean not null default false,
@@ -128,12 +130,49 @@ create table if not exists cash_audit_requests (
   created_at timestamptz not null default now()
 );
 
+create table if not exists finance_subscriptions (
+  id uuid primary key default gen_random_uuid(),
+  household_id uuid not null references households(id) on delete cascade,
+  name text not null,
+  category text not null default 'general',
+  amount numeric(12, 2) not null check (amount >= 0),
+  paid_by_user_ids uuid[] not null default '{}',
+  beneficiary_user_ids uuid[] not null default '{}',
+  cron_pattern text not null,
+  created_by uuid not null references auth.users(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  check (cardinality(paid_by_user_ids) > 0),
+  check (cardinality(beneficiary_user_ids) > 0)
+);
+
 -- backward compatible upgrades if tables already existed
 alter table households add column if not exists image_url text;
 alter table households add column if not exists address text not null default '';
 alter table households add column if not exists currency text not null default 'EUR';
 alter table households add column if not exists apartment_size_sqm numeric(8, 2);
-alter table households add column if not exists warm_rent_monthly numeric(12, 2);
+alter table households add column if not exists cold_rent_monthly numeric(12, 2);
+alter table households add column if not exists utilities_monthly numeric(12, 2);
+
+do $$
+begin
+  if exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'households'
+      and column_name = 'warm_rent_monthly'
+  ) then
+    update households
+    set
+      cold_rent_monthly = coalesce(cold_rent_monthly, warm_rent_monthly),
+      utilities_monthly = coalesce(utilities_monthly, 0)
+    where warm_rent_monthly is not null
+      and cold_rent_monthly is null
+      and utilities_monthly is null;
+  end if;
+end;
+$$;
 
 do $$
 begin
@@ -150,11 +189,21 @@ begin
   if not exists (
     select 1
     from pg_constraint
-    where conname = 'households_warm_rent_monthly_non_negative_check'
+    where conname = 'households_cold_rent_monthly_non_negative_check'
   ) then
     alter table households
-      add constraint households_warm_rent_monthly_non_negative_check
-      check (warm_rent_monthly is null or warm_rent_monthly >= 0);
+      add constraint households_cold_rent_monthly_non_negative_check
+      check (cold_rent_monthly is null or cold_rent_monthly >= 0);
+  end if;
+
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'households_utilities_monthly_non_negative_check'
+  ) then
+    alter table households
+      add constraint households_utilities_monthly_non_negative_check
+      check (utilities_monthly is null or utilities_monthly >= 0);
   end if;
 end;
 $$;
@@ -235,6 +284,11 @@ alter table finance_entries add column if not exists category text not null defa
 alter table finance_entries add column if not exists paid_by_user_ids uuid[] not null default '{}';
 alter table finance_entries add column if not exists beneficiary_user_ids uuid[] not null default '{}';
 alter table finance_entries add column if not exists entry_date date not null default current_date;
+alter table finance_subscriptions add column if not exists category text not null default 'general';
+alter table finance_subscriptions add column if not exists paid_by_user_ids uuid[] not null default '{}';
+alter table finance_subscriptions add column if not exists beneficiary_user_ids uuid[] not null default '{}';
+alter table finance_subscriptions add column if not exists cron_pattern text not null default '0 9 1 * *';
+alter table finance_subscriptions add column if not exists updated_at timestamptz not null default now();
 
 update finance_entries
 set paid_by_user_ids = array[paid_by]
@@ -294,6 +348,30 @@ begin
     end
     where recurrence_interval_unit is null
       and recurrence_interval_minutes is not null;
+  end if;
+end;
+$$;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'finance_subscriptions_paid_by_user_ids_not_empty_check'
+  ) then
+    alter table finance_subscriptions
+      add constraint finance_subscriptions_paid_by_user_ids_not_empty_check
+      check (cardinality(paid_by_user_ids) > 0);
+  end if;
+
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'finance_subscriptions_beneficiary_user_ids_not_empty_check'
+  ) then
+    alter table finance_subscriptions
+      add constraint finance_subscriptions_beneficiary_user_ids_not_empty_check
+      check (cardinality(beneficiary_user_ids) > 0);
   end if;
 end;
 $$;
@@ -385,16 +463,41 @@ $$;
 
 alter table tasks add column if not exists description text not null default '';
 alter table tasks add column if not exists start_date date not null default current_date;
+alter table tasks add column if not exists cron_pattern text not null default '0 9 */7 * *';
 alter table tasks add column if not exists frequency_days integer not null default 7;
 alter table tasks add column if not exists effort_pimpers integer not null default 1;
 alter table tasks add column if not exists done_at timestamptz;
 alter table tasks add column if not exists done_by uuid references auth.users(id) on delete set null;
+
+update tasks
+set cron_pattern = format('0 9 */%s * *', greatest(frequency_days, 1))
+where cron_pattern is null
+   or char_length(trim(cron_pattern)) = 0;
+
+create or replace function task_cron_interval_days(p_cron_pattern text, p_fallback_days integer default 7)
+returns integer
+language sql
+stable
+as $$
+  select coalesce(
+    case
+      when split_part(trim(coalesce(p_cron_pattern, '')), ' ', 3) ~ '^\\*/[0-9]+$' then
+        greatest(
+          replace(split_part(trim(coalesce(p_cron_pattern, '')), ' ', 3), '*/', '')::integer,
+          1
+        )
+      else null
+    end,
+    greatest(coalesce(p_fallback_days, 7), 1)
+  );
+$$;
 
 create index if not exists idx_shopping_items_household_created_at on shopping_items (household_id, created_at desc);
 create index if not exists idx_shopping_item_completions_household_completed_at on shopping_item_completions (household_id, completed_at desc);
 create index if not exists idx_tasks_household_due_at on tasks (household_id, due_at asc);
 create index if not exists idx_task_completions_household_completed_at on task_completions (household_id, completed_at desc);
 create index if not exists idx_finance_entries_household_entry_date on finance_entries (household_id, entry_date desc);
+create index if not exists idx_finance_subscriptions_household_created_at on finance_subscriptions (household_id, created_at desc);
 
 create or replace function is_household_member(hid uuid)
 returns boolean
@@ -510,6 +613,7 @@ declare
   v_task tasks%rowtype;
   v_next_due timestamptz;
   v_next_assignee uuid;
+  v_interval_days integer;
 begin
   if auth.uid() is distinct from p_user_id then
     raise exception 'Authenticated user does not match p_user_id';
@@ -540,7 +644,8 @@ begin
     raise exception 'Task is not due yet';
   end if;
 
-  v_next_due := greatest(v_task.due_at, now()) + make_interval(days => greatest(v_task.frequency_days, 1));
+  v_interval_days := task_cron_interval_days(v_task.cron_pattern, v_task.frequency_days);
+  v_next_due := greatest(v_task.due_at, now()) + make_interval(days => greatest(v_interval_days, 1));
 
   insert into task_completions (
     task_id,
@@ -623,6 +728,7 @@ alter table household_member_pimpers enable row level security;
 alter table task_completions enable row level security;
 alter table finance_entries enable row level security;
 alter table cash_audit_requests enable row level security;
+alter table finance_subscriptions enable row level security;
 
 -- Prototype-friendly policy: authenticated users can read households.
 drop policy if exists households_select on households;
@@ -769,6 +875,13 @@ with check (is_household_member(household_id));
 
 drop policy if exists cash_audit_requests_all on cash_audit_requests;
 create policy cash_audit_requests_all on cash_audit_requests
+for all
+to authenticated
+using (is_household_member(household_id))
+with check (is_household_member(household_id));
+
+drop policy if exists finance_subscriptions_all on finance_subscriptions;
+create policy finance_subscriptions_all on finance_subscriptions
 for all
 to authenticated
 using (is_household_member(household_id))

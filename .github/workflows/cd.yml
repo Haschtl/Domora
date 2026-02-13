@@ -10,9 +10,14 @@ concurrency:
   group: cd-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
 jobs:
-  deliver:
-    name: Build Delivery Artifact
+  build:
+    name: Build Pages Artifact
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -32,12 +37,27 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Setup GitHub Pages
+        uses: actions/configure-pages@v5
+
       - name: Build
+        env:
+          GITHUB_PAGES: "true"
         run: pnpm build
 
-      - name: Upload production artifact
-        uses: actions/upload-artifact@v4
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
         with:
-          name: domora-dist-${{ github.sha }}
           path: dist
-          if-no-files-found: error
+
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4

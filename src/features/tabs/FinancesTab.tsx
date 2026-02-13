@@ -25,10 +25,18 @@ import {
 import { Doughnut, Line } from "react-chartjs-2";
 import { useTranslation } from "react-i18next";
 import { PersonSelect } from "../../components/person-select";
-import type { CashAuditRequest, FinanceEntry, Household, HouseholdMember } from "../../lib/types";
+import type {
+  CashAuditRequest,
+  FinanceEntry,
+  FinanceSubscription,
+  FinanceSubscriptionRecurrence,
+  Household,
+  HouseholdMember,
+  NewFinanceSubscriptionInput
+} from "../../lib/types";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import {
   Dialog,
   DialogClose,
@@ -42,12 +50,18 @@ import { Label } from "../../components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "../../components/ui/popover";
 import { SectionPanel } from "../../components/ui/section-panel";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger
+} from "../../components/ui/dropdown-menu";
 import { getDateLocale } from "../../i18n";
 import { createDiceBearAvatarDataUri } from "../../lib/avatar";
 import { formatDateOnly, formatShortDay } from "../../lib/date";
-import { calculateSettlementTransfers } from "../../lib/finance-math";
-import { createMemberLabelGetter } from "../../lib/member-label";
-import { FinanceEntriesList } from "./components/FinanceEntriesList";
+import { calculateSettlementTransfers, splitAmountEvenly } from "../../lib/finance-math";
+import { createMemberLabelGetter, type MemberLabelCase } from "../../lib/member-label";
+import { FinanceHistoryCard } from "./components/FinanceHistoryCard";
 import { useFinancesDerivedData } from "./hooks/use-finances-derived-data";
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, ArcElement, Tooltip, Legend);
@@ -55,6 +69,7 @@ ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, ArcEleme
 interface FinancesTabProps {
   section?: "overview" | "stats" | "archive" | "subscriptions";
   entries: FinanceEntry[];
+  subscriptions: FinanceSubscription[];
   cashAuditRequests: CashAuditRequest[];
   household: Household;
   currentMember: HouseholdMember | null;
@@ -81,13 +96,17 @@ interface FinancesTabProps {
     }
   ) => Promise<void>;
   onDeleteEntry: (entry: FinanceEntry) => Promise<void>;
+  onAddSubscription: (input: NewFinanceSubscriptionInput) => Promise<void>;
+  onUpdateSubscription: (subscription: FinanceSubscription, input: NewFinanceSubscriptionInput) => Promise<void>;
+  onDeleteSubscription: (subscription: FinanceSubscription) => Promise<void>;
   onUpdateHousehold: (input: {
     name: string;
     imageUrl: string;
     address: string;
     currency: string;
     apartmentSizeSqm: number | null;
-    warmRentMonthly: number | null;
+    coldRentMonthly: number | null;
+    utilitiesMonthly: number | null;
   }) => Promise<void>;
   onUpdateMemberSettings: (input: { roomSizeSqm: number | null; commonAreaFactor: number }) => Promise<void>;
   onRequestCashAudit: () => Promise<void>;
@@ -123,9 +142,16 @@ const parseOptionalNumber = (value: string) => {
   return Number.isFinite(parsed) ? parsed : Number.NaN;
 };
 
+const cronPatternToFinanceRecurrence = (cronPattern: string): FinanceSubscriptionRecurrence => {
+  if (cronPattern === "0 9 * * 1") return "weekly";
+  if (cronPattern === "0 9 1 */3 *") return "quarterly";
+  return "monthly";
+};
+
 export const FinancesTab = ({
   section = "overview",
   entries,
+  subscriptions,
   cashAuditRequests,
   household,
   currentMember,
@@ -135,6 +161,9 @@ export const FinancesTab = ({
   onAdd,
   onUpdateEntry,
   onDeleteEntry,
+  onAddSubscription,
+  onUpdateSubscription,
+  onDeleteSubscription,
   onUpdateHousehold,
   onUpdateMemberSettings,
   onRequestCashAudit
@@ -144,6 +173,9 @@ export const FinancesTab = ({
   const [archiveFilterDialogOpen, setArchiveFilterDialogOpen] = useState(false);
   const [editEntryDialogOpen, setEditEntryDialogOpen] = useState(false);
   const [entryBeingEdited, setEntryBeingEdited] = useState<FinanceEntry | null>(null);
+  const [subscriptionDialogOpen, setSubscriptionDialogOpen] = useState(false);
+  const [editSubscriptionDialogOpen, setEditSubscriptionDialogOpen] = useState(false);
+  const [subscriptionBeingEdited, setSubscriptionBeingEdited] = useState<FinanceSubscription | null>(null);
   const [rentFormError, setRentFormError] = useState<string | null>(null);
   const [memberRentFormError, setMemberRentFormError] = useState<string | null>(null);
   const language = i18n.resolvedLanguage ?? i18n.language;
@@ -253,21 +285,119 @@ export const FinancesTab = ({
       setEntryBeingEdited(null);
     }
   });
+  const subscriptionForm = useForm({
+    defaultValues: {
+      name: "",
+      category: "general",
+      amount: "",
+      paidByUserIds: [userId],
+      beneficiaryUserIds: [] as string[],
+      recurrence: "monthly" as FinanceSubscriptionRecurrence
+    },
+    onSubmit: async ({
+      value,
+      formApi
+    }: {
+      value: {
+        name: string;
+        category: string;
+        amount: string;
+        paidByUserIds: string[];
+        beneficiaryUserIds: string[];
+        recurrence: FinanceSubscriptionRecurrence;
+      };
+      formApi: { reset: () => void };
+    }) => {
+      const parsedAmount = Number(value.amount);
+      if (
+        !value.name.trim() ||
+        Number.isNaN(parsedAmount) ||
+        parsedAmount < 0 ||
+        value.paidByUserIds.length === 0 ||
+        value.beneficiaryUserIds.length === 0
+      ) {
+        return;
+      }
+
+      await onAddSubscription({
+        name: value.name.trim(),
+        category: value.category.trim(),
+        amount: parsedAmount,
+        paidByUserIds: value.paidByUserIds,
+        beneficiaryUserIds: value.beneficiaryUserIds,
+        recurrence: value.recurrence
+      });
+      formApi.reset();
+      setSubscriptionDialogOpen(false);
+    }
+  });
+  const editSubscriptionForm = useForm({
+    defaultValues: {
+      name: "",
+      category: "general",
+      amount: "",
+      paidByUserIds: [userId],
+      beneficiaryUserIds: [] as string[],
+      recurrence: "monthly" as FinanceSubscriptionRecurrence
+    },
+    onSubmit: async ({
+      value
+    }: {
+      value: {
+        name: string;
+        category: string;
+        amount: string;
+        paidByUserIds: string[];
+        beneficiaryUserIds: string[];
+        recurrence: FinanceSubscriptionRecurrence;
+      };
+    }) => {
+      if (!subscriptionBeingEdited) return;
+      const parsedAmount = Number(value.amount);
+      if (
+        !value.name.trim() ||
+        Number.isNaN(parsedAmount) ||
+        parsedAmount < 0 ||
+        value.paidByUserIds.length === 0 ||
+        value.beneficiaryUserIds.length === 0
+      ) {
+        return;
+      }
+
+      await onUpdateSubscription(subscriptionBeingEdited, {
+        name: value.name.trim(),
+        category: value.category.trim(),
+        amount: parsedAmount,
+        paidByUserIds: value.paidByUserIds,
+        beneficiaryUserIds: value.beneficiaryUserIds,
+        recurrence: value.recurrence
+      });
+      setEditSubscriptionDialogOpen(false);
+      setSubscriptionBeingEdited(null);
+    }
+  });
   const rentHouseholdForm = useForm({
     defaultValues: {
       apartmentSizeSqm: toNumericInputValue(household.apartment_size_sqm),
-      warmRentMonthly: toNumericInputValue(household.warm_rent_monthly)
+      coldRentMonthly: toNumericInputValue(household.cold_rent_monthly),
+      utilitiesMonthly: toNumericInputValue(household.utilities_monthly)
     },
-    onSubmit: async ({ value }: { value: { apartmentSizeSqm: string; warmRentMonthly: string } }) => {
+    onSubmit: async ({ value }: { value: { apartmentSizeSqm: string; coldRentMonthly: string; utilitiesMonthly: string } }) => {
       const parsedHouseholdSize = parseOptionalNumber(value.apartmentSizeSqm);
       if (Number.isNaN(parsedHouseholdSize) || (parsedHouseholdSize !== null && parsedHouseholdSize <= 0)) {
         setRentFormError(t("settings.householdSizeError"));
         return;
       }
 
-      const parsedWarmRent = parseOptionalNumber(value.warmRentMonthly);
-      if (Number.isNaN(parsedWarmRent) || (parsedWarmRent !== null && parsedWarmRent < 0)) {
-        setRentFormError(t("settings.warmRentError"));
+      const parsedColdRent = parseOptionalNumber(value.coldRentMonthly);
+      if (Number.isNaN(parsedColdRent) || (parsedColdRent !== null && parsedColdRent < 0)) {
+        setRentFormError(t("settings.coldRentError"));
+        return;
+      }
+
+      const parsedUtilities = parseOptionalNumber(value.utilitiesMonthly);
+      if (Number.isNaN(parsedUtilities) || (parsedUtilities !== null && parsedUtilities < 0)) {
+        setRentFormError(t("settings.utilitiesError"));
         return;
       }
 
@@ -278,7 +408,8 @@ export const FinancesTab = ({
         address: household.address ?? "",
         currency: household.currency ?? "EUR",
         apartmentSizeSqm: parsedHouseholdSize,
-        warmRentMonthly: parsedWarmRent
+        coldRentMonthly: parsedColdRent,
+        utilitiesMonthly: parsedUtilities
       });
     }
   });
@@ -326,9 +457,23 @@ export const FinancesTab = ({
   }, [addEntryBeneficiaries, addEntryForm, addEntryPayers, members, userId]);
 
   useEffect(() => {
+    const memberIds = members.map((member) => member.user_id);
+    const currentPayers = subscriptionForm.state.values.paidByUserIds;
+    const currentBeneficiaries = subscriptionForm.state.values.beneficiaryUserIds;
+
+    if (currentPayers.length === 0) {
+      subscriptionForm.setFieldValue("paidByUserIds", [userId]);
+    }
+    if (currentBeneficiaries.length === 0 && memberIds.length > 0) {
+      subscriptionForm.setFieldValue("beneficiaryUserIds", memberIds);
+    }
+  }, [members, subscriptionForm, userId]);
+
+  useEffect(() => {
     rentHouseholdForm.setFieldValue("apartmentSizeSqm", toNumericInputValue(household.apartment_size_sqm));
-    rentHouseholdForm.setFieldValue("warmRentMonthly", toNumericInputValue(household.warm_rent_monthly));
-  }, [household.apartment_size_sqm, household.id, household.warm_rent_monthly, rentHouseholdForm]);
+    rentHouseholdForm.setFieldValue("coldRentMonthly", toNumericInputValue(household.cold_rent_monthly));
+    rentHouseholdForm.setFieldValue("utilitiesMonthly", toNumericInputValue(household.utilities_monthly));
+  }, [household.apartment_size_sqm, household.cold_rent_monthly, household.id, household.utilities_monthly, rentHouseholdForm]);
 
   useEffect(() => {
     rentMemberForm.setFieldValue("roomSizeSqm", toNumericInputValue(currentMember?.room_size_sqm ?? null));
@@ -364,6 +509,11 @@ export const FinancesTab = ({
         members,
         currentUserId: userId,
         youLabel: t("common.you"),
+        youLabels: {
+          nominative: t("common.youNominative"),
+          dative: t("common.youDative"),
+          accusative: t("common.youAccusative")
+        },
         fallbackLabel: t("common.memberFallback")
       }),
     [members, t, userId]
@@ -378,18 +528,85 @@ export const FinancesTab = ({
   };
   const moneyLabel = (value: number) => formatMoney(value, locale);
   const settlementTransfers = useMemo(() => calculateSettlementTransfers(balancesByMember), [balancesByMember]);
+  const householdMemberIds = useMemo(() => [...new Set(members.map((member) => member.user_id))], [members]);
+  const allMembersLabel = t("finances.allMembers");
+  const allExceptMemberLabel = (memberId: string, labelCase: MemberLabelCase) =>
+    t("finances.allExceptMember", {
+      member: memberLabel(memberId, labelCase)
+    });
+  const formatMemberGroupLabel = (ids: string[], labelCase: MemberLabelCase) => {
+    const normalizedIds = [...new Set(ids)];
+    const normalizedInHousehold = normalizedIds.filter((memberId) => householdMemberIds.includes(memberId));
+    const isAllMembers =
+      householdMemberIds.length > 0 &&
+      householdMemberIds.every((memberId) => normalizedInHousehold.includes(memberId));
+    if (isAllMembers) return allMembersLabel;
+    if (householdMemberIds.length > 1 && normalizedInHousehold.length === householdMemberIds.length - 1) {
+      const missingMemberId = householdMemberIds.find((memberId) => !normalizedInHousehold.includes(memberId));
+      if (missingMemberId) return allExceptMemberLabel(missingMemberId, labelCase);
+    }
+    return normalizedIds.map((memberId) => memberLabel(memberId, labelCase)).join(", ");
+  };
   const personalBalance = useMemo(
     () => balancesByMember.find((entry) => entry.memberId === userId)?.balance ?? 0,
     [balancesByMember, userId]
   );
   const personalBalanceLabel = `${personalBalance > 0.004 ? "+" : ""}${moneyLabel(personalBalance)}`;
+  const totalRoomAreaSqm = useMemo(
+    () => members.reduce((sum, member) => sum + (member.room_size_sqm ?? 0), 0),
+    [members]
+  );
+  const sharedAreaSqm = useMemo(() => {
+    if (household.apartment_size_sqm === null) return null;
+    return household.apartment_size_sqm - totalRoomAreaSqm;
+  }, [household.apartment_size_sqm, totalRoomAreaSqm]);
+  const formatSqm = (value: number | null) =>
+    value === null ? "-" : `${Number(value.toFixed(2)).toString()} qm`;
+  const personalEntryDelta = (entry: FinanceEntry) => {
+    const payerIds = entry.paid_by_user_ids.length > 0 ? entry.paid_by_user_ids : [entry.paid_by];
+    const beneficiaryIds = entry.beneficiary_user_ids.length > 0 ? entry.beneficiary_user_ids : householdMemberIds;
+    const paidByUser = splitAmountEvenly(entry.amount, payerIds).get(userId) ?? 0;
+    const consumedByUser = splitAmountEvenly(entry.amount, beneficiaryIds).get(userId) ?? 0;
+    return paidByUser - consumedByUser;
+  };
+  const personalEntryDeltaLabel = (entry: FinanceEntry) => {
+    const delta = personalEntryDelta(entry);
+    const sign = delta > 0.004 ? "+" : "";
+    return t("finances.personalEntryImpactChip", {
+      value: `${sign}${moneyLabel(delta)}`
+    });
+  };
+  const personalEntryDeltaChipClassName = (entry: FinanceEntry) => {
+    const delta = personalEntryDelta(entry);
+    if (delta > 0.004) return "bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-100";
+    if (delta < -0.004) return "bg-rose-100 text-rose-800 dark:bg-rose-900 dark:text-rose-100";
+    return "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200";
+  };
   const paidByText = (entry: FinanceEntry) =>
     t("finances.paidByMembers", {
-      members: (entry.paid_by_user_ids.length > 0 ? entry.paid_by_user_ids : [entry.paid_by]).map(memberLabel).join(", "),
-      forMembers: (entry.beneficiary_user_ids.length > 0 ? entry.beneficiary_user_ids : members.map((member) => member.user_id))
-        .map(memberLabel)
-        .join(", "),
+      members: formatMemberGroupLabel(
+        entry.paid_by_user_ids.length > 0 ? entry.paid_by_user_ids : [entry.paid_by],
+        "dative"
+      ),
+      forMembers: formatMemberGroupLabel(
+        entry.beneficiary_user_ids.length > 0 ? entry.beneficiary_user_ids : householdMemberIds,
+        "accusative"
+      ),
       date: formatDateOnly(parseDateFallback(entry), language, parseDateFallback(entry))
+    });
+  const recurrenceOptions: Array<{ value: FinanceSubscriptionRecurrence; label: string }> = [
+    { value: "weekly", label: t("finances.subscriptionRecurrenceWeekly") },
+    { value: "monthly", label: t("finances.subscriptionRecurrenceMonthly") },
+    { value: "quarterly", label: t("finances.subscriptionRecurrenceQuarterly") }
+  ];
+  const recurrenceLabel = (subscription: FinanceSubscription) => {
+    const recurrence = cronPatternToFinanceRecurrence(subscription.cron_pattern);
+    return recurrenceOptions.find((entry) => entry.value === recurrence)?.label ?? recurrenceOptions[1].label;
+  };
+  const subscriptionParticipantsText = (subscription: FinanceSubscription) =>
+    t("finances.subscriptionParticipants", {
+      paidBy: formatMemberGroupLabel(subscription.paid_by_user_ids, "dative"),
+      forMembers: formatMemberGroupLabel(subscription.beneficiary_user_ids, "accusative")
     });
   const onStartEditEntry = (entry: FinanceEntry) => {
     setEntryBeingEdited(entry);
@@ -406,6 +623,16 @@ export const FinancesTab = ({
       entry.beneficiary_user_ids.length > 0 ? entry.beneficiary_user_ids : members.map((member) => member.user_id)
     );
     setEditEntryDialogOpen(true);
+  };
+  const onStartEditSubscription = (subscription: FinanceSubscription) => {
+    setSubscriptionBeingEdited(subscription);
+    editSubscriptionForm.setFieldValue("name", subscription.name);
+    editSubscriptionForm.setFieldValue("category", subscription.category || "general");
+    editSubscriptionForm.setFieldValue("amount", String(subscription.amount));
+    editSubscriptionForm.setFieldValue("paidByUserIds", subscription.paid_by_user_ids);
+    editSubscriptionForm.setFieldValue("beneficiaryUserIds", subscription.beneficiary_user_ids);
+    editSubscriptionForm.setFieldValue("recurrence", cronPatternToFinanceRecurrence(subscription.cron_pattern));
+    setEditSubscriptionDialogOpen(true);
   };
   const sortedFilteredEntries = useMemo(
     () =>
@@ -480,134 +707,140 @@ export const FinancesTab = ({
     <div className="space-y-4">
       {showOverview ? (
           <>
-            <form
-              className="mb-4"
-              onSubmit={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                void addEntryForm.handleSubmit();
-              }}
-            >
-              <div className="flex flex-wrap items-end gap-2">
-                <addEntryForm.Field
-                  name="description"
-                  children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
-                    <div className="min-w-[220px] flex-1 space-y-1">
-                      <Label>{t("finances.entryNameLabel")}</Label>
-                      <Input
-                        value={field.state.value}
-                        onChange={(event) => field.handleChange(event.target.value)}
-                        placeholder={t("finances.descriptionPlaceholder")}
-                        required
-                      />
-                    </div>
-                  )}
-                />
-                <addEntryForm.Field
-                  name="amount"
-                  children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
-                    <div className="w-36 space-y-1">
-                      <Label>{t("finances.entryAmountLabel")}</Label>
-                      <div className="relative">
-                        <Input
-                          className="pr-7"
-                          type="number"
-                          inputMode="decimal"
-                          step="0.01"
-                          min="0"
-                          value={field.state.value}
-                          onChange={(event) => field.handleChange(event.target.value)}
-                          placeholder={t("finances.amountPlaceholder")}
-                          required
-                        />
-                        <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-500 dark:text-slate-400">
-                          €
-                        </span>
-                      </div>
-                    </div>
-                  )}
-                />
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="h-10 w-10 p-0"
-                      aria-label={t("finances.moreOptions")}
-                    >
-                      <MoreHorizontal className="h-4 w-4" />
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent align="end" className="w-[320px] space-y-3">
+            <Card className="mb-4">
+              <CardHeader>
+                <CardTitle>{t("finances.newEntryTitle")}</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <form
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    void addEntryForm.handleSubmit();
+                  }}
+                >
+                  <div className="flex flex-wrap items-end gap-2">
                     <addEntryForm.Field
-                      name="entryDate"
+                      name="description"
                       children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
-                        <div className="space-y-1">
-                          <p className="text-xs font-medium text-slate-600 dark:text-slate-300">{t("finances.entryDate")}</p>
+                        <div className="min-w-[220px] flex-1 space-y-1">
+                          <Label>{t("finances.entryNameLabel")}</Label>
                           <Input
-                            type="date"
                             value={field.state.value}
                             onChange={(event) => field.handleChange(event.target.value)}
-                            title={t("finances.entryDate")}
+                            placeholder={t("finances.descriptionPlaceholder")}
+                            required
                           />
                         </div>
                       )}
                     />
                     <addEntryForm.Field
-                      name="paidByUserIds"
-                      children={(field: { state: { value: string[] }; handleChange: (value: string[]) => void }) => (
-                        <div className="space-y-1">
-                          <p className="text-xs font-medium text-slate-600 dark:text-slate-300">{t("finances.paidByLabel")}</p>
-                          <PersonSelect
-                            mode="multiple"
-                            members={members}
-                            value={field.state.value}
-                            onChange={field.handleChange}
-                            currentUserId={userId}
-                            youLabel={t("common.you")}
-                            placeholder={t("finances.paidByLabel")}
-                          />
+                      name="amount"
+                      children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
+                        <div className="w-36 space-y-1">
+                          <Label>{t("finances.entryAmountLabel")}</Label>
+                          <div className="relative">
+                            <Input
+                              className="pr-7"
+                              type="number"
+                              inputMode="decimal"
+                              step="0.01"
+                              min="0"
+                              value={field.state.value}
+                              onChange={(event) => field.handleChange(event.target.value)}
+                              placeholder={t("finances.amountPlaceholder")}
+                              required
+                            />
+                            <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-500 dark:text-slate-400">
+                              €
+                            </span>
+                          </div>
                         </div>
                       )}
                     />
-                    <addEntryForm.Field
-                      name="beneficiaryUserIds"
-                      children={(field: { state: { value: string[] }; handleChange: (value: string[]) => void }) => (
-                        <div className="space-y-1">
-                          <p className="text-xs font-medium text-slate-600 dark:text-slate-300">{t("finances.forWhomLabel")}</p>
-                          <PersonSelect
-                            mode="multiple"
-                            members={members}
-                            value={field.state.value}
-                            onChange={field.handleChange}
-                            currentUserId={userId}
-                            youLabel={t("common.you")}
-                            placeholder={t("finances.forWhomLabel")}
-                          />
-                        </div>
-                      )}
-                    />
-                  </PopoverContent>
-                </Popover>
-                <Button type="submit" disabled={busy}>
-                  {t("common.add")}
-                </Button>
-              </div>
-            </form>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-10 w-10 p-0"
+                          aria-label={t("finances.moreOptions")}
+                        >
+                          <MoreHorizontal className="h-4 w-4" />
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent align="end" className="w-[320px] space-y-3">
+                        <addEntryForm.Field
+                          name="entryDate"
+                          children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
+                            <div className="space-y-1">
+                              <p className="text-xs font-medium text-slate-600 dark:text-slate-300">{t("finances.entryDate")}</p>
+                              <Input
+                                type="date"
+                                value={field.state.value}
+                                onChange={(event) => field.handleChange(event.target.value)}
+                                title={t("finances.entryDate")}
+                              />
+                            </div>
+                          )}
+                        />
+                        <addEntryForm.Field
+                          name="paidByUserIds"
+                          children={(field: { state: { value: string[] }; handleChange: (value: string[]) => void }) => (
+                            <div className="space-y-1">
+                              <p className="text-xs font-medium text-slate-600 dark:text-slate-300">{t("finances.paidByLabel")}</p>
+                              <PersonSelect
+                                mode="multiple"
+                                members={members}
+                                value={field.state.value}
+                                onChange={field.handleChange}
+                                currentUserId={userId}
+                                youLabel={t("common.you")}
+                                placeholder={t("finances.paidByLabel")}
+                              />
+                            </div>
+                          )}
+                        />
+                        <addEntryForm.Field
+                          name="beneficiaryUserIds"
+                          children={(field: { state: { value: string[] }; handleChange: (value: string[]) => void }) => (
+                            <div className="space-y-1">
+                              <p className="text-xs font-medium text-slate-600 dark:text-slate-300">{t("finances.forWhomLabel")}</p>
+                              <PersonSelect
+                                mode="multiple"
+                                members={members}
+                                value={field.state.value}
+                                onChange={field.handleChange}
+                                currentUserId={userId}
+                                youLabel={t("common.you")}
+                                placeholder={t("finances.forWhomLabel")}
+                              />
+                            </div>
+                          )}
+                        />
+                      </PopoverContent>
+                    </Popover>
+                    <Button type="submit" disabled={busy}>
+                      {t("common.add")}
+                    </Button>
+                  </div>
+                </form>
 
-            {reimbursementPreview.length > 0 ? (
-              <p className="mb-3 text-sm text-slate-600 dark:text-slate-300">
-                {reimbursementPreview
-                  .map((entry) =>
-                    t("finances.reimbursementLine", {
-                      member: memberLabel(entry.memberId),
-                      amount: moneyLabel(entry.value)
-                    })
-                  )
-                  .join(" • ")}
-              </p>
-            ) : null}
+                {reimbursementPreview.length > 0 ? (
+                  <p className="mt-3 text-sm text-slate-600 dark:text-slate-300">
+                    {reimbursementPreview
+                      .map((entry) =>
+                        t("finances.reimbursementLine", {
+                          member: memberLabel(entry.memberId),
+                          amount: moneyLabel(entry.value)
+                        })
+                      )
+                      .join(" • ")}
+                  </p>
+                ) : null}
+              </CardContent>
+            </Card>
 
           </>
         ) : null}
@@ -928,49 +1161,36 @@ export const FinancesTab = ({
             </Dialog>
 
             {archiveGroups.map((group) => (
-              <SectionPanel key={group.id} className="mt-4">
-                <details className="group">
-                  <summary className="flex cursor-pointer list-none items-center justify-between gap-2 rounded-lg px-1 py-1 [&::-webkit-details-marker]:hidden">
-                    <div>
-                      <p className="text-sm font-semibold text-brand-900 dark:text-brand-100">{group.title}</p>
-                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                        {t("finances.filteredTotal", { value: moneyLabel(group.total), count: group.entries.length })}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Badge>{moneyLabel(group.total)}</Badge>
-                      <span className="text-xs text-slate-500 transition-transform group-open:rotate-180 dark:text-slate-400">
-                        ▼
-                      </span>
-                    </div>
-                  </summary>
-                  <div className="mt-2">
-                    <FinanceEntriesList
-                      entries={group.entries}
-                      formatMoney={moneyLabel}
-                      paidByText={paidByText}
-                      virtualized
-                      virtualHeight={420}
-                      onEdit={
-                        group.isEditable
-                          ? onStartEditEntry
-                          : undefined
+              <FinanceHistoryCard
+                key={group.id}
+                className="mt-4"
+                collapsible
+                defaultOpen={false}
+                title={group.title}
+                summaryText={t("finances.filteredTotal", {
+                  value: moneyLabel(group.total),
+                  count: group.entries.length
+                })}
+                totalBadgeText={moneyLabel(group.total)}
+                entries={group.entries}
+                emptyText={t("finances.emptyFiltered")}
+                paidByText={paidByText}
+                formatMoney={moneyLabel}
+                virtualized
+                virtualHeight={420}
+                onEdit={group.isEditable ? onStartEditEntry : undefined}
+                onDelete={
+                  group.isEditable
+                    ? (entry) => {
+                        void onDeleteEntry(entry);
                       }
-                      onDelete={
-                        group.isEditable
-                          ? (entry) => {
-                              void onDeleteEntry(entry);
-                            }
-                          : undefined
-                      }
-                      actionsLabel={t("finances.entryActions")}
-                      editLabel={t("finances.editEntry")}
-                      deleteLabel={t("finances.deleteEntry")}
-                      busy={busy}
-                    />
-                  </div>
-                </details>
-              </SectionPanel>
+                    : undefined
+                }
+                actionsLabel={t("finances.entryActions")}
+                editLabel={t("finances.editEntry")}
+                deleteLabel={t("finances.deleteEntry")}
+                busy={busy}
+              />
             ))}
           </>
         ) : null}
@@ -982,7 +1202,7 @@ export const FinancesTab = ({
               <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{t("finances.rentApartmentDescription")}</p>
 
               <form
-                className="mt-3 grid gap-2 sm:grid-cols-[1fr_1fr_auto]"
+                className="mt-3 grid gap-2 sm:grid-cols-[1fr_1fr_1fr_auto]"
                 onSubmit={(event) => {
                   event.preventDefault();
                   event.stopPropagation();
@@ -1013,10 +1233,10 @@ export const FinancesTab = ({
                   )}
                 />
                 <rentHouseholdForm.Field
-                  name="warmRentMonthly"
+                  name="coldRentMonthly"
                   children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
                     <div className="space-y-1">
-                      <Label>{t("settings.warmRentLabel")}</Label>
+                      <Label>{t("settings.coldRentLabel")}</Label>
                       <div className="relative">
                         <Input
                           className="pr-7"
@@ -1026,7 +1246,30 @@ export const FinancesTab = ({
                           disabled={!canEditApartment}
                           value={field.state.value}
                           onChange={(event) => field.handleChange(event.target.value)}
-                          placeholder={t("settings.warmRentLabel")}
+                          placeholder={t("settings.coldRentLabel")}
+                        />
+                        <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-500 dark:text-slate-400">
+                          €
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                />
+                <rentHouseholdForm.Field
+                  name="utilitiesMonthly"
+                  children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
+                    <div className="space-y-1">
+                      <Label>{t("settings.utilitiesLabel")}</Label>
+                      <div className="relative">
+                        <Input
+                          className="pr-7"
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          disabled={!canEditApartment}
+                          value={field.state.value}
+                          onChange={(event) => field.handleChange(event.target.value)}
+                          placeholder={t("settings.utilitiesLabel")}
                         />
                         <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-500 dark:text-slate-400">
                           €
@@ -1141,38 +1384,104 @@ export const FinancesTab = ({
                   {memberRentFormError}
                 </p>
               ) : null}
-
-              <div className="mt-4">
-                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                  {t("finances.rentAreaOverviewTitle")}
-                </p>
-                <ul className="mt-2 space-y-2">
-                  {members.map((member) => (
-                    <li
-                      key={member.user_id}
-                      className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 rounded-lg border border-brand-100 bg-brand-50/40 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800/60"
-                    >
-                      <span className={member.user_id === userId ? "font-semibold" : "text-slate-700 dark:text-slate-300"}>
-                        {memberLabel(member.user_id)}
-                      </span>
-                      <span className="text-slate-600 dark:text-slate-300">
-                        {member.room_size_sqm === null ? "-" : `${member.room_size_sqm} qm`}
-                      </span>
-                      <span className="text-slate-600 dark:text-slate-300">
-                        {t("finances.rentFactorValue", { value: member.common_area_factor.toFixed(2) })}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-                {members.length === 0 ? (
-                  <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">{t("finances.rentAreaOverviewEmpty")}</p>
-                ) : null}
-              </div>
             </SectionPanel>
 
             <SectionPanel className="mt-4">
-              <p className="text-sm font-semibold text-brand-900 dark:text-brand-100">{t("finances.subscriptionsTitle")}</p>
-              <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{t("finances.subscriptionsDescription")}</p>
+              <p className="text-sm font-semibold text-brand-900 dark:text-brand-100">{t("finances.rentOverviewTitle")}</p>
+              <ul className="mt-2 space-y-2">
+                {members.map((member) => (
+                  <li
+                    key={member.user_id}
+                    className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 rounded-lg border border-brand-100 bg-brand-50/40 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800/60"
+                  >
+                    <span className={member.user_id === userId ? "font-semibold" : "text-slate-700 dark:text-slate-300"}>
+                      {memberLabel(member.user_id)}
+                    </span>
+                    <span className="text-slate-600 dark:text-slate-300">
+                      {formatSqm(member.room_size_sqm)}
+                    </span>
+                    <span className="text-slate-600 dark:text-slate-300">
+                      {t("finances.rentFactorValue", { value: member.common_area_factor.toFixed(2) })}
+                    </span>
+                  </li>
+                ))}
+                <li className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 rounded-lg border border-dashed border-brand-200 bg-brand-50/20 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800/40">
+                  <span className="font-semibold text-slate-700 dark:text-slate-300">{t("finances.sharedAreaLabel")}</span>
+                  <span className="text-slate-600 dark:text-slate-300">{formatSqm(sharedAreaSqm)}</span>
+                  <span className="text-slate-500 dark:text-slate-400">-</span>
+                </li>
+              </ul>
+              {members.length === 0 ? (
+                <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">{t("finances.rentAreaOverviewEmpty")}</p>
+              ) : null}
+            </SectionPanel>
+
+            <SectionPanel className="mt-4">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <p className="text-sm font-semibold text-brand-900 dark:text-brand-100">{t("finances.subscriptionListTitle")}</p>
+                  <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{t("finances.subscriptionsDescription")}</p>
+                </div>
+                <Button type="button" onClick={() => setSubscriptionDialogOpen(true)} disabled={busy}>
+                  {t("finances.addSubscriptionAction")}
+                </Button>
+              </div>
+
+              {subscriptions.length === 0 ? (
+                <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">{t("finances.subscriptionEmpty")}</p>
+              ) : (
+                <ul className="mt-3 space-y-2">
+                  {subscriptions.map((subscription) => (
+                    <li
+                      key={subscription.id}
+                      className="rounded-xl border border-brand-100 bg-white p-3 dark:border-slate-700 dark:bg-slate-900"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <p className="font-medium text-slate-900 dark:text-slate-100">{subscription.name}</p>
+                            <Badge className="text-[10px]">{subscription.category}</Badge>
+                          </div>
+                          <p className="text-xs text-slate-500 dark:text-slate-400">
+                            {t("finances.subscriptionRecursLabel", { value: recurrenceLabel(subscription) })}
+                          </p>
+                          <p className="text-xs text-slate-500 dark:text-slate-400">{subscriptionParticipantsText(subscription)}</p>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <p className="text-sm font-semibold text-brand-800 dark:text-brand-200">{moneyLabel(subscription.amount)}</p>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="h-8 w-8 p-0"
+                                aria-label={t("finances.subscriptionActions")}
+                                disabled={busy}
+                              >
+                                <MoreHorizontal className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem onClick={() => onStartEditSubscription(subscription)}>
+                                {t("finances.editSubscriptionAction")}
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() => {
+                                  void onDeleteSubscription(subscription);
+                                }}
+                                className="text-rose-600 dark:text-rose-300"
+                              >
+                                {t("finances.deleteSubscriptionAction")}
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </SectionPanel>
           </>
         ) : null}
@@ -1182,38 +1491,307 @@ export const FinancesTab = ({
         ) : null}
 
       {showOverview ? (
-        <Card>
-          <CardHeader>
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <CardTitle>{t("finances.currentEntriesTitle")}</CardTitle>
-                <CardDescription>{t("finances.currentEntriesDescription")}</CardDescription>
-              </div>
-              <Badge className="text-xs">
-                {t("finances.personalBalanceChip", { value: personalBalanceLabel })}
-              </Badge>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <FinanceEntriesList
-              entries={entriesSinceLastAudit}
-              formatMoney={moneyLabel}
-              paidByText={paidByText}
-              onEdit={onStartEditEntry}
-              onDelete={(entry) => {
-                void onDeleteEntry(entry);
-              }}
-              actionsLabel={t("finances.entryActions")}
-              editLabel={t("finances.editEntry")}
-              deleteLabel={t("finances.deleteEntry")}
-              busy={busy}
-            />
-            {entriesSinceLastAudit.length === 0 ? (
-              <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">{t("finances.empty")}</p>
-            ) : null}
-          </CardContent>
-        </Card>
+        <FinanceHistoryCard
+          title={t("finances.currentEntriesTitle")}
+          description={t("finances.currentEntriesDescription")}
+          headerRight={
+            <Badge className="text-xs">
+              {t("finances.personalBalanceChip", { value: personalBalanceLabel })}
+            </Badge>
+          }
+          entries={entriesSinceLastAudit}
+          emptyText={t("finances.empty")}
+          paidByText={paidByText}
+          formatMoney={moneyLabel}
+          entryChipText={personalEntryDeltaLabel}
+          entryChipClassName={personalEntryDeltaChipClassName}
+          amountClassName="text-xs text-slate-500 dark:text-slate-400"
+          onEdit={onStartEditEntry}
+          onDelete={(entry) => {
+            void onDeleteEntry(entry);
+          }}
+          actionsLabel={t("finances.entryActions")}
+          editLabel={t("finances.editEntry")}
+          deleteLabel={t("finances.deleteEntry")}
+          busy={busy}
+        />
       ) : null}
+
+      <Dialog open={subscriptionDialogOpen} onOpenChange={setSubscriptionDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("finances.addSubscriptionAction")}</DialogTitle>
+            <DialogDescription>{t("finances.subscriptionsDescription")}</DialogDescription>
+          </DialogHeader>
+          <form
+            className="space-y-3"
+            onSubmit={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              void subscriptionForm.handleSubmit();
+            }}
+          >
+            <div className="grid gap-2 sm:grid-cols-2">
+              <subscriptionForm.Field
+                name="name"
+                children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
+                  <div className="space-y-1">
+                    <Label>{t("finances.subscriptionNameLabel")}</Label>
+                    <Input
+                      value={field.state.value}
+                      onChange={(event) => field.handleChange(event.target.value)}
+                      placeholder={t("finances.subscriptionNamePlaceholder")}
+                      required
+                    />
+                  </div>
+                )}
+              />
+              <subscriptionForm.Field
+                name="amount"
+                children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
+                  <div className="space-y-1">
+                    <Label>{t("finances.entryAmountLabel")}</Label>
+                    <div className="relative">
+                      <Input
+                        className="pr-7"
+                        type="number"
+                        inputMode="decimal"
+                        step="0.01"
+                        min="0"
+                        value={field.state.value}
+                        onChange={(event) => field.handleChange(event.target.value)}
+                        placeholder={t("finances.amountPlaceholder")}
+                        required
+                      />
+                      <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-500 dark:text-slate-400">
+                        €
+                      </span>
+                    </div>
+                  </div>
+                )}
+              />
+              <subscriptionForm.Field
+                name="category"
+                children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
+                  <div className="space-y-1">
+                    <Label>{t("finances.subscriptionCategoryLabel")}</Label>
+                    <Input
+                      value={field.state.value}
+                      onChange={(event) => field.handleChange(event.target.value)}
+                      placeholder={t("finances.categoryPlaceholder")}
+                    />
+                  </div>
+                )}
+              />
+              <subscriptionForm.Field
+                name="recurrence"
+                children={(field: { state: { value: FinanceSubscriptionRecurrence }; handleChange: (value: FinanceSubscriptionRecurrence) => void }) => (
+                  <div className="space-y-1">
+                    <Label>{t("finances.subscriptionRecurrenceLabel")}</Label>
+                    <Select value={field.state.value} onValueChange={field.handleChange}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {recurrenceOptions.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+              />
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <subscriptionForm.Field
+                name="paidByUserIds"
+                children={(field: { state: { value: string[] }; handleChange: (value: string[]) => void }) => (
+                  <div className="space-y-1">
+                    <Label>{t("finances.paidByLabel")}</Label>
+                    <PersonSelect
+                      mode="multiple"
+                      members={members}
+                      value={field.state.value}
+                      onChange={field.handleChange}
+                      currentUserId={userId}
+                      youLabel={t("common.you")}
+                      placeholder={t("finances.paidByLabel")}
+                    />
+                  </div>
+                )}
+              />
+              <subscriptionForm.Field
+                name="beneficiaryUserIds"
+                children={(field: { state: { value: string[] }; handleChange: (value: string[]) => void }) => (
+                  <div className="space-y-1">
+                    <Label>{t("finances.forWhomLabel")}</Label>
+                    <PersonSelect
+                      mode="multiple"
+                      members={members}
+                      value={field.state.value}
+                      onChange={field.handleChange}
+                      currentUserId={userId}
+                      youLabel={t("common.you")}
+                      placeholder={t("finances.forWhomLabel")}
+                    />
+                  </div>
+                )}
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <DialogClose asChild>
+                <Button variant="ghost">{t("common.cancel")}</Button>
+              </DialogClose>
+              <Button type="submit" disabled={busy}>
+                {t("finances.addSubscriptionAction")}
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={editSubscriptionDialogOpen}
+        onOpenChange={(open) => {
+          setEditSubscriptionDialogOpen(open);
+          if (!open) setSubscriptionBeingEdited(null);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("finances.editSubscriptionTitle")}</DialogTitle>
+            <DialogDescription>{t("finances.editSubscriptionDescription")}</DialogDescription>
+          </DialogHeader>
+          <form
+            className="space-y-3"
+            onSubmit={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              void editSubscriptionForm.handleSubmit();
+            }}
+          >
+            <div className="grid gap-2 sm:grid-cols-2">
+              <editSubscriptionForm.Field
+                name="name"
+                children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
+                  <div className="space-y-1">
+                    <Label>{t("finances.subscriptionNameLabel")}</Label>
+                    <Input
+                      value={field.state.value}
+                      onChange={(event) => field.handleChange(event.target.value)}
+                      placeholder={t("finances.subscriptionNamePlaceholder")}
+                      required
+                    />
+                  </div>
+                )}
+              />
+              <editSubscriptionForm.Field
+                name="amount"
+                children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
+                  <div className="space-y-1">
+                    <Label>{t("finances.entryAmountLabel")}</Label>
+                    <div className="relative">
+                      <Input
+                        className="pr-7"
+                        type="number"
+                        inputMode="decimal"
+                        step="0.01"
+                        min="0"
+                        value={field.state.value}
+                        onChange={(event) => field.handleChange(event.target.value)}
+                        placeholder={t("finances.amountPlaceholder")}
+                        required
+                      />
+                      <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-500 dark:text-slate-400">
+                        €
+                      </span>
+                    </div>
+                  </div>
+                )}
+              />
+              <editSubscriptionForm.Field
+                name="category"
+                children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
+                  <div className="space-y-1">
+                    <Label>{t("finances.subscriptionCategoryLabel")}</Label>
+                    <Input
+                      value={field.state.value}
+                      onChange={(event) => field.handleChange(event.target.value)}
+                      placeholder={t("finances.categoryPlaceholder")}
+                    />
+                  </div>
+                )}
+              />
+              <editSubscriptionForm.Field
+                name="recurrence"
+                children={(field: { state: { value: FinanceSubscriptionRecurrence }; handleChange: (value: FinanceSubscriptionRecurrence) => void }) => (
+                  <div className="space-y-1">
+                    <Label>{t("finances.subscriptionRecurrenceLabel")}</Label>
+                    <Select value={field.state.value} onValueChange={field.handleChange}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {recurrenceOptions.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+              />
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <editSubscriptionForm.Field
+                name="paidByUserIds"
+                children={(field: { state: { value: string[] }; handleChange: (value: string[]) => void }) => (
+                  <div className="space-y-1">
+                    <Label>{t("finances.paidByLabel")}</Label>
+                    <PersonSelect
+                      mode="multiple"
+                      members={members}
+                      value={field.state.value}
+                      onChange={field.handleChange}
+                      currentUserId={userId}
+                      youLabel={t("common.you")}
+                      placeholder={t("finances.paidByLabel")}
+                    />
+                  </div>
+                )}
+              />
+              <editSubscriptionForm.Field
+                name="beneficiaryUserIds"
+                children={(field: { state: { value: string[] }; handleChange: (value: string[]) => void }) => (
+                  <div className="space-y-1">
+                    <Label>{t("finances.forWhomLabel")}</Label>
+                    <PersonSelect
+                      mode="multiple"
+                      members={members}
+                      value={field.state.value}
+                      onChange={field.handleChange}
+                      currentUserId={userId}
+                      youLabel={t("common.you")}
+                      placeholder={t("finances.forWhomLabel")}
+                    />
+                  </div>
+                )}
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <DialogClose asChild>
+                <Button variant="ghost">{t("common.cancel")}</Button>
+              </DialogClose>
+              <Button type="submit" disabled={busy}>
+                {t("finances.saveSubscriptionAction")}
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={editEntryDialogOpen}

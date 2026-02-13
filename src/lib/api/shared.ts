@@ -43,7 +43,8 @@ const householdSchema = z.object({
   address: z.string().default(""),
   currency: z.string().length(3).transform((value) => value.toUpperCase()),
   apartment_size_sqm: positiveOptionalNumberSchema,
-  warm_rent_monthly: nonNegativeOptionalNumberSchema,
+  cold_rent_monthly: nonNegativeOptionalNumberSchema,
+  utilities_monthly: nonNegativeOptionalNumberSchema,
   invite_code: z.string().min(1),
   created_by: z.string().uuid(),
   created_at: z.string().min(1)
@@ -87,6 +88,7 @@ const taskSchema = z.object({
   description: z.string().default(""),
   start_date: z.string().min(1),
   due_at: z.string().min(1),
+  cron_pattern: z.string().min(1).default("0 9 */7 * *"),
   frequency_days: z.coerce.number().int().positive(),
   effort_pimpers: z.coerce.number().int().positive(),
   done: z.coerce.boolean(),
@@ -150,10 +152,22 @@ export const normalizeShoppingItem = (row: Record<string, unknown>): ShoppingIte
   ...shoppingItemSchema.parse(row)
 });
 
-export const normalizeTask = (row: Record<string, unknown>, rotationUserIds: string[]): TaskItem => ({
-  ...taskSchema.parse(row),
-  rotation_user_ids: rotationUserIds
-});
+export const normalizeTask = (row: Record<string, unknown>, rotationUserIds: string[]): TaskItem => {
+  const parsed = taskSchema.parse(row);
+  const dayPart = parsed.cron_pattern.trim().split(/\s+/)[2] ?? "";
+  const cronFrequencyDays = dayPart.startsWith("*/") ? Number(dayPart.slice(2)) : Number.NaN;
+  const normalizedFrequencyDays =
+    Number.isFinite(cronFrequencyDays) && cronFrequencyDays > 0
+      ? Math.max(1, Math.floor(cronFrequencyDays))
+      : Math.max(1, Math.floor(parsed.frequency_days));
+
+  return {
+    ...parsed,
+    cron_pattern: parsed.cron_pattern || `0 9 */${Math.max(1, Math.floor(parsed.frequency_days))} * *`,
+    frequency_days: normalizedFrequencyDays,
+    rotation_user_ids: rotationUserIds
+  };
+};
 
 export const normalizeShoppingCompletion = (row: Record<string, unknown>): ShoppingItemCompletion => ({
   ...shoppingCompletionSchema.parse(row)

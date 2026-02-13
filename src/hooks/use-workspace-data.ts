@@ -7,6 +7,7 @@ import {
   getCashAuditRequests,
   getCurrentSession,
   getFinanceEntries,
+  getFinanceSubscriptions,
   getHouseholdMemberPimpers,
   getHouseholdMembers,
   getHouseholdsForUser,
@@ -20,6 +21,7 @@ import { supabase } from "../lib/supabase";
 import type {
   CashAuditRequest,
   FinanceEntry,
+  FinanceSubscription,
   Household,
   HouseholdMember,
   HouseholdMemberPimpers,
@@ -36,6 +38,7 @@ interface WorkspaceData {
   taskCompletions: TaskCompletion[];
   finances: FinanceEntry[];
   cashAuditRequests: CashAuditRequest[];
+  financeSubscriptions: FinanceSubscription[];
   householdMembers: HouseholdMember[];
   memberPimpers: HouseholdMemberPimpers[];
 }
@@ -47,12 +50,13 @@ const emptyWorkspace: WorkspaceData = {
   taskCompletions: [],
   finances: [],
   cashAuditRequests: [],
+  financeSubscriptions: [],
   householdMembers: [],
   memberPimpers: []
 };
 
 const getWorkspaceData = async (householdId: string): Promise<WorkspaceData> => {
-  const [shoppingItems, shoppingCompletions, tasks, taskCompletions, finances, cashAuditRequests, householdMembers, memberPimpers] =
+  const [shoppingItems, shoppingCompletions, tasks, taskCompletions, finances, cashAuditRequests, financeSubscriptions, householdMembers, memberPimpers] =
     await Promise.all([
       getShoppingItems(householdId),
       getShoppingCompletions(householdId),
@@ -60,6 +64,7 @@ const getWorkspaceData = async (householdId: string): Promise<WorkspaceData> => 
       getTaskCompletions(householdId),
       getFinanceEntries(householdId),
       getCashAuditRequests(householdId),
+      getFinanceSubscriptions(householdId),
       getHouseholdMembers(householdId),
       getHouseholdMemberPimpers(householdId)
     ]);
@@ -71,6 +76,7 @@ const getWorkspaceData = async (householdId: string): Promise<WorkspaceData> => 
     taskCompletions,
     finances,
     cashAuditRequests,
+    financeSubscriptions,
     householdMembers,
     memberPimpers
   };
