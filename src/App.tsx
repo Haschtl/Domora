@@ -29,13 +29,14 @@ import { TasksTab } from "./features/tabs/TasksTab";
 import { useWorkspaceController } from "./hooks/useWorkspaceController";
 
 const tabPathMap: Record<AppTab, string> = {
-  home: "/home",
+  home: "/home/summary",
   shopping: "/shopping/list",
   tasks: "/tasks/overview",
   finances: "/finances/overview",
   settings: "/settings/me"
 };
 
+type HomeSubTab = "summary" | "feed";
 type ShoppingSubTab = "list" | "history";
 type TaskSubTab = "overview" | "stats" | "history";
 type FinanceSubTab = "overview" | "stats" | "archive" | "subscriptions";
@@ -48,6 +49,11 @@ const resolveTabFromPathname = (pathname: string): AppTab => {
   if (pathname.startsWith("/finances")) return "finances";
   if (pathname.startsWith("/settings")) return "settings";
   return "home";
+};
+
+const resolveHomeSubTabFromPathname = (pathname: string): HomeSubTab => {
+  if (pathname.startsWith("/home/feed")) return "feed";
+  return "summary";
 };
 
 const resolveTaskSubTabFromPathname = (pathname: string): TaskSubTab => {
@@ -80,6 +86,11 @@ const tabItems: Array<{ id: AppTab; icon: LucideIcon }> = [
   { id: "finances", icon: Wallet },
   { id: "settings", icon: Settings }
 ];
+
+const homeSubPathMap: Record<HomeSubTab, "/home/summary" | "/home/feed"> = {
+  summary: "/home/summary",
+  feed: "/home/feed"
+};
 
 const taskSubPathMap: Record<TaskSubTab, "/tasks/overview" | "/tasks/stats" | "/tasks/history"> = {
   overview: "/tasks/overview",
@@ -170,6 +181,7 @@ const App = () => {
   } = useWorkspaceController();
 
   const tab = useMemo(() => resolveTabFromPathname(location.pathname), [location.pathname]);
+  const homeSubTab = useMemo(() => resolveHomeSubTabFromPathname(location.pathname), [location.pathname]);
   const shoppingSubTab = useMemo(() => resolveShoppingSubTabFromPathname(location.pathname), [location.pathname]);
   const taskSubTab = useMemo(() => resolveTaskSubTabFromPathname(location.pathname), [location.pathname]);
   const financeSubTab = useMemo(() => resolveFinanceSubTabFromPathname(location.pathname), [location.pathname]);
@@ -178,6 +190,11 @@ const App = () => {
     const now = Date.now();
     return tasks.filter((task) => task.is_active && !task.done && new Date(task.due_at).getTime() <= now).length;
   }, [tasks]);
+  const initialInviteCode = useMemo(() => {
+    if (typeof window === "undefined") return "";
+    const params = new URLSearchParams(window.location.search);
+    return (params.get("invite") ?? "").trim().toUpperCase();
+  }, [location.pathname]);
 
   const onTabChange = (value: string) => {
     const nextTab = value as AppTab;
@@ -202,7 +219,12 @@ const App = () => {
   };
 
   const subItems: Array<{ id: string; icon: LucideIcon; labelKey: string; path: string }> =
-    tab === "shopping"
+    tab === "home"
+      ? [
+          { id: "summary", icon: LayoutList, labelKey: "subnav.home.summary", path: homeSubPathMap.summary },
+          { id: "feed", icon: FileText, labelKey: "subnav.home.feed", path: homeSubPathMap.feed }
+        ]
+      : tab === "shopping"
       ? [
           { id: "list", icon: LayoutList, labelKey: "subnav.shopping.list", path: shoppingSubPathMap.list },
           { id: "history", icon: FileText, labelKey: "subnav.shopping.history", path: shoppingSubPathMap.history }
@@ -248,7 +270,9 @@ const App = () => {
         : [];
 
   const activeSubPath =
-    tab === "shopping"
+    tab === "home"
+      ? homeSubPathMap[homeSubTab]
+      : tab === "shopping"
       ? shoppingSubPathMap[shoppingSubTab]
       : tab === "tasks"
       ? taskSubPathMap[taskSubTab]
@@ -308,6 +332,7 @@ const App = () => {
         <HouseholdSetupView
           households={households}
           busy={busy}
+          initialInviteCode={initialInviteCode}
           onCreate={onCreateHousehold}
           onJoin={onJoinHousehold}
           onSelect={(household) => setActiveHousehold(household)}
@@ -435,6 +460,7 @@ const App = () => {
                 >
                   {tab === "home" ? (
                     <HomeTab
+                      section={homeSubTab}
                       household={activeHousehold}
                       households={households}
                       currentMember={currentMember}

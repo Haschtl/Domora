@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { useForm } from "@tanstack/react-form";
 import { useTranslation } from "react-i18next";
 import { z } from "zod";
@@ -11,6 +12,7 @@ import { Badge } from "../components/ui/badge";
 interface HouseholdSetupViewProps {
   households: Household[];
   busy: boolean;
+  initialInviteCode?: string;
   onCreate: (name: string) => Promise<void>;
   onJoin: (inviteCode: string) => Promise<void>;
   onSelect: (household: Household) => void;
@@ -20,6 +22,7 @@ interface HouseholdSetupViewProps {
 export const HouseholdSetupView = ({
   households,
   busy,
+  initialInviteCode,
   onCreate,
   onJoin,
   onSelect,
@@ -52,7 +55,7 @@ export const HouseholdSetupView = ({
 
   const joinForm = useForm({
     defaultValues: {
-      inviteCode: ""
+      inviteCode: initialInviteCode?.trim() ?? ""
     },
     onSubmit: async ({
       value,
@@ -66,6 +69,13 @@ export const HouseholdSetupView = ({
       formApi.setFieldValue("inviteCode", "");
     }
   });
+
+  useEffect(() => {
+    const nextCode = initialInviteCode?.trim() ?? "";
+    if (!nextCode) return;
+    if (joinForm.state.values.inviteCode.trim() === nextCode) return;
+    joinForm.setFieldValue("inviteCode", nextCode);
+  }, [initialInviteCode, joinForm, joinForm.state.values.inviteCode]);
 
   return (
     <div className="grid gap-4 md:grid-cols-2">

@@ -25,6 +25,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { canEditLandingByRole, getSavedLandingMarkdown, shouldResetDraftOnDialogClose } from "./home-landing.utils";
 
 interface HomeTabProps {
+  section?: "summary" | "feed";
   household: Household;
   households: Household[];
   currentMember: HouseholdMember | null;
@@ -44,6 +45,7 @@ interface HomeTabProps {
 }
 
 export const HomeTab = ({
+  section = "summary",
   household,
   households,
   currentMember,
@@ -63,6 +65,8 @@ export const HomeTab = ({
 }: HomeTabProps) => {
   const { t, i18n } = useTranslation();
   const taskProgress = totalTasks > 0 ? Math.min(100, Math.max(0, (completedTasks / totalTasks) * 100)) : 0;
+  const showSummary = section === "summary";
+  const showFeed = section === "feed";
   const [editorOpen, setEditorOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [markdownDraft, setMarkdownDraft] = useState(getSavedLandingMarkdown(household.landing_page_markdown));
@@ -257,6 +261,7 @@ export const HomeTab = ({
 
   return (
     <div className="space-y-4">
+      {showSummary ? (
       <Card>
         <CardHeader>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -316,7 +321,9 @@ export const HomeTab = ({
           ) : null}
         </CardContent>
       </Card>
+      ) : null}
 
+      {showSummary ? (
       <Card>
         <CardHeader>
           <CardTitle>{t("home.landingTitle")}</CardTitle>
@@ -334,7 +341,9 @@ export const HomeTab = ({
           )}
         </CardContent>
       </Card>
+      ) : null}
 
+      {showSummary ? (
       <Card>
         <CardHeader>
           <CardTitle>{t("home.widgetsTitle")}</CardTitle>
@@ -397,7 +406,9 @@ export const HomeTab = ({
           ) : null}
         </CardContent>
       </Card>
+      ) : null}
 
+      {showFeed ? (
       <Card>
         <CardHeader>
           <CardTitle>{t("home.activityTitle")}</CardTitle>
@@ -430,6 +441,7 @@ export const HomeTab = ({
           )}
         </CardContent>
       </Card>
+      ) : null}
 
       <Dialog open={editorOpen} onOpenChange={onEditorOpenChange}>
         <DialogContent className="max-w-3xl">

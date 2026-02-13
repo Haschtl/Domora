@@ -10,6 +10,10 @@ export const resources = {
       },
       subnav: {
         title: "Unterseiten",
+        home: {
+          summary: "Summary",
+          feed: "Feed"
+        },
         tasks: {
           overview: "Übersicht",
           stats: "Statistik",
@@ -423,7 +427,16 @@ export const resources = {
         tenantsRoleMember: "Mitglied",
         tenantsMakeOwner: "Zum Hauptmieter machen",
         tenantsDemoteOwner: "Hauptmieter zurücknehmen",
-        tenantsKick: "Rauswerfen"
+        tenantsKick: "Rauswerfen",
+        inviteAction: "Einladen",
+        inviteDialogTitle: "Mitbewohner einladen",
+        inviteDialogDescription: "QR-Code scannen oder Link teilen, um der WG beizutreten.",
+        inviteCodeLabel: "Einladungscode",
+        inviteLinkLabel: "Einladungslink",
+        inviteShareAction: "Teilen",
+        inviteShareText: "Tritt meiner WG bei. Einladungscode: {{code}}",
+        inviteQrAlt: "QR-Code zum Beitreten",
+        inviteCopied: "Link kopiert"
       },
       theme: {
         label: "Theme",
@@ -449,6 +462,10 @@ export const resources = {
       },
       subnav: {
         title: "Subpages",
+        home: {
+          summary: "Summary",
+          feed: "Feed"
+        },
         tasks: {
           overview: "Overview",
           stats: "Stats",
@@ -862,7 +879,16 @@ export const resources = {
         tenantsRoleMember: "Member",
         tenantsMakeOwner: "Make owner",
         tenantsDemoteOwner: "Revoke owner",
-        tenantsKick: "Kick"
+        tenantsKick: "Kick",
+        inviteAction: "Invite",
+        inviteDialogTitle: "Invite roommate",
+        inviteDialogDescription: "Scan the QR code or share the link to join this household.",
+        inviteCodeLabel: "Invite code",
+        inviteLinkLabel: "Invite link",
+        inviteShareAction: "Share",
+        inviteShareText: "Join my household. Invite code: {{code}}",
+        inviteQrAlt: "Join QR code",
+        inviteCopied: "Link copied"
       },
       theme: {
         label: "Theme",

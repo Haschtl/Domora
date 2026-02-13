@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useForm } from "@tanstack/react-form";
 import imageCompression from "browser-image-compression";
-import { Camera, Check, Crown, UserMinus, X } from "lucide-react";
+import { Camera, Check, Crown, Share2, UserMinus, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import QRCode from "react-qr-code";
 import type { Household, HouseholdMember, UpdateHouseholdInput } from "../../lib/types";
 import { createDiceBearAvatarDataUri } from "../../lib/avatar";
 import { createMemberLabelGetter } from "../../lib/member-label";
@@ -114,6 +115,7 @@ export const SettingsTab = ({
   const [formError, setFormError] = useState<string | null>(null);
   const [profileUploadError, setProfileUploadError] = useState<string | null>(null);
   const [householdUploadError, setHouseholdUploadError] = useState<string | null>(null);
+  const [inviteCopied, setInviteCopied] = useState(false);
   const profileUploadInputRef = useRef<HTMLInputElement | null>(null);
 
   const profileForm = useForm({
@@ -276,6 +278,33 @@ export const SettingsTab = ({
     [t, uniqueMembers, userId]
   );
   const canDissolveHousehold = isOwner && uniqueMembers.length === 1 && uniqueMembers[0]?.user_id === userId;
+  const inviteUrl = useMemo(() => {
+    if (typeof window === "undefined") return `/?invite=${encodeURIComponent(household.invite_code)}`;
+    return `${window.location.origin}/?invite=${encodeURIComponent(household.invite_code)}`;
+  }, [household.invite_code]);
+  const onShareInvite = async () => {
+    const shareTitle = t("settings.inviteDialogTitle");
+    const shareText = t("settings.inviteShareText", { code: household.invite_code });
+
+    if (typeof navigator !== "undefined" && navigator.share) {
+      try {
+        await navigator.share({
+          title: shareTitle,
+          text: shareText,
+          url: inviteUrl
+        });
+        return;
+      } catch {
+        // fall through to clipboard fallback when share was cancelled/failed.
+      }
+    }
+
+    if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(inviteUrl);
+      setInviteCopied(true);
+      return;
+    }
+  };
   const showMe = section === "me";
   const showHousehold = section === "household";
 
@@ -609,6 +638,69 @@ export const SettingsTab = ({
                 })}
               </ul>
             )}
+
+            <div className="mt-4 border-t border-brand-100 pt-4 dark:border-slate-700">
+              <Dialog
+                onOpenChange={(open) => {
+                  if (!open) setInviteCopied(false);
+                }}
+              >
+                <DialogTrigger asChild>
+                  <Button type="button" disabled={busy || !isOwner}>
+                    {t("settings.inviteAction")}
+                  </Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>{t("settings.inviteDialogTitle")}</DialogTitle>
+                    <DialogDescription>{t("settings.inviteDialogDescription")}</DialogDescription>
+                  </DialogHeader>
+
+                  <div className="space-y-3">
+                    <div className="mx-auto w-fit rounded-xl border border-brand-100 bg-white p-2 dark:border-slate-700 dark:bg-slate-900">
+                      <QRCode
+                        value={inviteUrl}
+                        size={192}
+                        title={t("settings.inviteQrAlt")}
+                        aria-label={t("settings.inviteQrAlt")}
+                        bgColor="#ffffff"
+                        fgColor="#111827"
+                        className="h-48 w-48 rounded-md"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <Label>{t("settings.inviteCodeLabel")}</Label>
+                      <p className="rounded-lg border border-brand-100 bg-brand-50/70 px-3 py-2 text-sm font-semibold tracking-wide dark:border-slate-700 dark:bg-slate-800">
+                        {household.invite_code}
+                      </p>
+                    </div>
+
+                    <div className="space-y-1">
+                      <Label>{t("settings.inviteLinkLabel")}</Label>
+                      <p className="break-all rounded-lg border border-brand-100 bg-white/90 px-3 py-2 text-xs text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
+                        {inviteUrl}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 flex justify-end gap-2">
+                    <DialogClose asChild>
+                      <Button variant="ghost">{t("common.cancel")}</Button>
+                    </DialogClose>
+                    <Button
+                      type="button"
+                      onClick={() => {
+                        void onShareInvite();
+                      }}
+                    >
+                      <Share2 className="mr-1 h-4 w-4" />
+                      {inviteCopied ? t("settings.inviteCopied") : t("settings.inviteShareAction")}
+                    </Button>
+                  </div>
+                </DialogContent>
+              </Dialog>
+            </div>
           </CardContent>
         </Card>
       ) : null}

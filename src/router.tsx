@@ -9,7 +9,7 @@ const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
   beforeLoad: () => {
-    throw redirect({ to: "/home" });
+    throw redirect({ to: "/home/summary" });
   },
   component: () => null
 });
@@ -17,6 +17,21 @@ const indexRoute = createRoute({
 const homeRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "home",
+  beforeLoad: () => {
+    throw redirect({ to: "/home/summary" });
+  },
+  component: () => null
+});
+
+const homeSummaryRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "home/summary",
+  component: () => null
+});
+
+const homeFeedRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "home/feed",
   component: () => null
 });
 
@@ -125,6 +140,8 @@ const settingsHouseholdRoute = createRoute({
 const routeTree = rootRoute.addChildren([
   indexRoute,
   homeRoute,
+  homeSummaryRoute,
+  homeFeedRoute,
   shoppingRoute,
   shoppingListRoute,
   shoppingHistoryRoute,
