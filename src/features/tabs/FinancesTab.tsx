@@ -1,4 +1,4 @@
-import { type CSSProperties, useEffect, useMemo, useState } from "react";
+import { type CSSProperties, useEffect, useId, useMemo, useState } from "react";
 import { useForm } from "@tanstack/react-form";
 import {
   ArcElement,
@@ -61,7 +61,7 @@ import {
 import { getDateLocale } from "../../i18n";
 import { createDiceBearAvatarDataUri } from "../../lib/avatar";
 import { formatDateOnly, formatShortDay } from "../../lib/date";
-import { calculateSettlementTransfers, splitAmountEvenly } from "../../lib/finance-math";
+import { calculateBalancesByMember, calculateSettlementTransfers, splitAmountEvenly } from "../../lib/finance-math";
 import { createMemberLabelGetter, type MemberLabelCase } from "../../lib/member-label";
 import { FinanceHistoryCard } from "./components/FinanceHistoryCard";
 import { useFinancesDerivedData } from "./hooks/use-finances-derived-data";
@@ -147,6 +147,15 @@ interface MemberMultiSelectFieldProps {
   compactLabel?: boolean;
 }
 
+interface CategoryInputFieldProps {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  placeholder: string;
+  suggestionsListId: string;
+  hasSuggestions: boolean;
+}
+
 const MemberMultiSelectField = ({
   label,
   members,
@@ -175,10 +184,35 @@ const MemberMultiSelectField = ({
   </div>
 );
 
+const CategoryInputField = ({
+  label,
+  value,
+  onChange,
+  placeholder,
+  suggestionsListId,
+  hasSuggestions
+}: CategoryInputFieldProps) => (
+  <div className="space-y-1">
+    <Label>{label}</Label>
+    <Input
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+      placeholder={placeholder}
+      list={hasSuggestions ? suggestionsListId : undefined}
+    />
+  </div>
+);
+
 const cronPatternToFinanceRecurrence = (cronPattern: string): FinanceSubscriptionRecurrence => {
   if (cronPattern === "0 9 * * 1") return "weekly";
   if (cronPattern === "0 9 1 */3 *") return "quarterly";
   return "monthly";
+};
+
+const financeRecurrenceToMonthlyFactor = (recurrence: FinanceSubscriptionRecurrence) => {
+  if (recurrence === "weekly") return 52 / 12;
+  if (recurrence === "quarterly") return 1 / 3;
+  return 1;
 };
 
 export const FinancesTab = ({
@@ -202,6 +236,7 @@ export const FinancesTab = ({
   onRequestCashAudit
 }: FinancesTabProps) => {
   const { t, i18n } = useTranslation();
+  const categorySuggestionsListId = useId();
   const [auditDialogOpen, setAuditDialogOpen] = useState(false);
   const [archiveFilterDialogOpen, setArchiveFilterDialogOpen] = useState(false);
   const [editEntryDialogOpen, setEditEntryDialogOpen] = useState(false);
@@ -413,9 +448,17 @@ export const FinancesTab = ({
     defaultValues: {
       apartmentSizeSqm: toNumericInputValue(household.apartment_size_sqm),
       coldRentMonthly: toNumericInputValue(household.cold_rent_monthly),
-      utilitiesMonthly: toNumericInputValue(household.utilities_monthly)
+      utilitiesMonthly: toNumericInputValue(household.utilities_monthly),
+      utilitiesOnRoomSqmPercent: String(household.utilities_on_room_sqm_percent ?? 0)
     },
-    onSubmit: async ({ value }: { value: { apartmentSizeSqm: string; coldRentMonthly: string; utilitiesMonthly: string } }) => {
+    onSubmit: async ({ value }: {
+      value: {
+        apartmentSizeSqm: string;
+        coldRentMonthly: string;
+        utilitiesMonthly: string;
+        utilitiesOnRoomSqmPercent: string;
+      };
+    }) => {
       const parsedHouseholdSize = parseOptionalNumber(value.apartmentSizeSqm);
       if (Number.isNaN(parsedHouseholdSize) || (parsedHouseholdSize !== null && parsedHouseholdSize <= 0)) {
         setRentFormError(t("settings.householdSizeError"));
@@ -434,6 +477,16 @@ export const FinancesTab = ({
         return;
       }
 
+      const parsedUtilitiesOnRoomSqmPercent = Number(value.utilitiesOnRoomSqmPercent);
+      if (
+        !Number.isFinite(parsedUtilitiesOnRoomSqmPercent) ||
+        parsedUtilitiesOnRoomSqmPercent < 0 ||
+        parsedUtilitiesOnRoomSqmPercent > 100
+      ) {
+        setRentFormError(t("settings.utilitiesOnRoomSqmPercentError"));
+        return;
+      }
+
       setRentFormError(null);
       await onUpdateHousehold({
         name: household.name,
@@ -442,7 +495,8 @@ export const FinancesTab = ({
         currency: household.currency ?? "EUR",
         apartmentSizeSqm: parsedHouseholdSize,
         coldRentMonthly: parsedColdRent,
-        utilitiesMonthly: parsedUtilities
+        utilitiesMonthly: parsedUtilities,
+        utilitiesOnRoomSqmPercent: parsedUtilitiesOnRoomSqmPercent
       });
     }
   });
@@ -506,7 +560,15 @@ export const FinancesTab = ({
     rentHouseholdForm.setFieldValue("apartmentSizeSqm", toNumericInputValue(household.apartment_size_sqm));
     rentHouseholdForm.setFieldValue("coldRentMonthly", toNumericInputValue(household.cold_rent_monthly));
     rentHouseholdForm.setFieldValue("utilitiesMonthly", toNumericInputValue(household.utilities_monthly));
-  }, [household.apartment_size_sqm, household.cold_rent_monthly, household.id, household.utilities_monthly, rentHouseholdForm]);
+    rentHouseholdForm.setFieldValue("utilitiesOnRoomSqmPercent", String(household.utilities_on_room_sqm_percent ?? 0));
+  }, [
+    household.apartment_size_sqm,
+    household.cold_rent_monthly,
+    household.id,
+    household.utilities_monthly,
+    household.utilities_on_room_sqm_percent,
+    rentHouseholdForm
+  ]);
 
   useEffect(() => {
     rentMemberForm.setFieldValue("roomSizeSqm", toNumericInputValue(currentMember?.room_size_sqm ?? null));
@@ -595,6 +657,161 @@ export const FinancesTab = ({
   }, [household.apartment_size_sqm, totalRoomAreaSqm]);
   const formatSqm = (value: number | null) =>
     value === null ? "-" : `${Number(value.toFixed(2)).toString()} qm`;
+  const rentColdPerSqm = useMemo(() => {
+    if (household.apartment_size_sqm === null || household.apartment_size_sqm <= 0 || household.cold_rent_monthly === null) return null;
+    return household.cold_rent_monthly / household.apartment_size_sqm;
+  }, [household.apartment_size_sqm, household.cold_rent_monthly]);
+  const rentRoomPerSqmWithUtilities = useMemo(() => {
+    if (totalRoomAreaSqm <= 0 || household.cold_rent_monthly === null || household.utilities_monthly === null) return null;
+    const utilitiesShareOnRoomSqm = household.utilities_monthly * ((household.utilities_on_room_sqm_percent ?? 0) / 100);
+    return (household.cold_rent_monthly + utilitiesShareOnRoomSqm) / totalRoomAreaSqm;
+  }, [
+    household.cold_rent_monthly,
+    household.utilities_monthly,
+    household.utilities_on_room_sqm_percent,
+    totalRoomAreaSqm
+  ]);
+  const rentTotalPerSqm = useMemo(() => {
+    if (
+      household.apartment_size_sqm === null ||
+      household.apartment_size_sqm <= 0 ||
+      household.cold_rent_monthly === null ||
+      household.utilities_monthly === null
+    ) {
+      return null;
+    }
+    return (household.cold_rent_monthly + household.utilities_monthly) / household.apartment_size_sqm;
+  }, [household.apartment_size_sqm, household.cold_rent_monthly, household.utilities_monthly]);
+  const rentTotalMonthly = useMemo(() => {
+    if (household.cold_rent_monthly === null || household.utilities_monthly === null) return null;
+    return household.cold_rent_monthly + household.utilities_monthly;
+  }, [household.cold_rent_monthly, household.utilities_monthly]);
+  const costTableData = useMemo(() => {
+    const apartmentSizeSqm = household.apartment_size_sqm;
+    const coldRentMonthly = household.cold_rent_monthly;
+    const utilitiesMonthly = household.utilities_monthly;
+    const utilitiesOnRoomFactor = (household.utilities_on_room_sqm_percent ?? 0) / 100;
+    const utilitiesOnRoomPool = utilitiesMonthly === null ? null : utilitiesMonthly * utilitiesOnRoomFactor;
+    const coldPerApartmentSqm =
+      apartmentSizeSqm !== null && apartmentSizeSqm > 0 && coldRentMonthly !== null
+        ? coldRentMonthly / apartmentSizeSqm
+        : null;
+    const utilitiesPerRoomSqm =
+      utilitiesOnRoomPool !== null && totalRoomAreaSqm > 0 ? utilitiesOnRoomPool / totalRoomAreaSqm : null;
+
+    const byMember = new Map<
+      string,
+      {
+        coldForRoom: number | null;
+        utilitiesForRoom: number | null;
+        roomSubtotal: number | null;
+        commonCostsShare: number | null;
+        totalBeforeContracts: number | null;
+        extraContracts: number;
+        grandTotal: number | null;
+      }
+    >();
+
+    members.forEach((member) => {
+      const roomSize = member.room_size_sqm ?? 0;
+      const coldForRoom = coldPerApartmentSqm === null ? null : coldPerApartmentSqm * roomSize;
+      const utilitiesForRoom = utilitiesPerRoomSqm === null ? null : utilitiesPerRoomSqm * roomSize;
+      const roomSubtotal =
+        coldForRoom === null || utilitiesForRoom === null ? null : coldForRoom + utilitiesForRoom;
+      byMember.set(member.user_id, {
+        coldForRoom,
+        utilitiesForRoom,
+        roomSubtotal,
+        commonCostsShare: null,
+        totalBeforeContracts: null,
+        extraContracts: 0,
+        grandTotal: null
+      });
+    });
+
+    const sharedAreaSqmRaw = apartmentSizeSqm === null ? null : apartmentSizeSqm - totalRoomAreaSqm;
+    const sharedAreaColdCosts =
+      coldPerApartmentSqm === null || sharedAreaSqmRaw === null ? null : coldPerApartmentSqm * sharedAreaSqmRaw;
+    const sharedUtilitiesCosts =
+      utilitiesMonthly === null || utilitiesOnRoomPool === null ? null : utilitiesMonthly - utilitiesOnRoomPool;
+    const remainingApartmentCosts =
+      sharedAreaColdCosts === null || sharedUtilitiesCosts === null ? null : sharedAreaColdCosts + sharedUtilitiesCosts;
+    const totalCommonWeight = members.reduce((sum, member) => sum + member.common_area_factor, 0);
+
+    members.forEach((member) => {
+      const entry = byMember.get(member.user_id);
+      if (!entry) return;
+      const commonCostsShare =
+        remainingApartmentCosts === null || totalCommonWeight <= 0
+          ? null
+          : (remainingApartmentCosts * member.common_area_factor) / totalCommonWeight;
+      const totalBeforeContracts =
+        entry.roomSubtotal === null || commonCostsShare === null ? null : entry.roomSubtotal + commonCostsShare;
+      entry.commonCostsShare = commonCostsShare;
+      entry.totalBeforeContracts = totalBeforeContracts;
+    });
+
+    subscriptions.forEach((subscription) => {
+      const recurrence = cronPatternToFinanceRecurrence(subscription.cron_pattern);
+      const monthlyAmount = subscription.amount * financeRecurrenceToMonthlyFactor(recurrence);
+      const beneficiaryIds = subscription.beneficiary_user_ids.filter((memberId) => householdMemberIds.includes(memberId));
+      const normalizedBeneficiaryIds = beneficiaryIds.length > 0 ? beneficiaryIds : householdMemberIds;
+      if (normalizedBeneficiaryIds.length === 0) return;
+      const contractShareByMember = splitAmountEvenly(monthlyAmount, normalizedBeneficiaryIds);
+      members.forEach((member) => {
+        const entry = byMember.get(member.user_id);
+        if (!entry) return;
+        entry.extraContracts += contractShareByMember.get(member.user_id) ?? 0;
+      });
+    });
+
+    members.forEach((member) => {
+      const entry = byMember.get(member.user_id);
+      if (!entry) return;
+      entry.grandTotal = entry.totalBeforeContracts === null ? null : entry.totalBeforeContracts + entry.extraContracts;
+    });
+
+    return { byMember, remainingApartmentCosts, sharedAreaColdCosts, sharedUtilitiesCosts };
+  }, [
+    household.apartment_size_sqm,
+    household.cold_rent_monthly,
+    household.utilities_monthly,
+    household.utilities_on_room_sqm_percent,
+    householdMemberIds,
+    members,
+    subscriptions,
+    totalRoomAreaSqm
+  ]);
+  const costTableTotals = useMemo(() => {
+    const sumNullable = (values: Array<number | null>) => {
+      if (values.length === 0 || values.some((value) => value === null)) return null;
+      return (values as number[]).reduce((sum, value) => sum + value, 0);
+    };
+    const sumNumeric = (values: number[]) => values.reduce((sum, value) => sum + value, 0);
+    const coldForRoomValues = members.map((member) => costTableData.byMember.get(member.user_id)?.coldForRoom ?? null);
+    const utilitiesForRoomValues = members.map((member) => costTableData.byMember.get(member.user_id)?.utilitiesForRoom ?? null);
+    const roomSubtotalValues = members.map((member) => costTableData.byMember.get(member.user_id)?.roomSubtotal ?? null);
+    const commonCostsShareValues = members.map((member) => costTableData.byMember.get(member.user_id)?.commonCostsShare ?? null);
+    const totalBeforeContractsValues = members.map(
+      (member) => costTableData.byMember.get(member.user_id)?.totalBeforeContracts ?? null
+    );
+    const extraContractsValues = members.map((member) => costTableData.byMember.get(member.user_id)?.extraContracts ?? 0);
+    const grandTotalValues = members.map((member) => costTableData.byMember.get(member.user_id)?.grandTotal ?? null);
+
+    return {
+      coldForRoom: sumNullable(coldForRoomValues),
+      utilitiesForRoom: sumNullable(utilitiesForRoomValues),
+      roomSubtotal: sumNullable(roomSubtotalValues),
+      sharedAreaColdCosts: costTableData.sharedAreaColdCosts,
+      sharedUtilitiesCosts: costTableData.sharedUtilitiesCosts,
+      remainingApartmentCosts: costTableData.remainingApartmentCosts,
+      commonCostsShare: sumNullable(commonCostsShareValues),
+      totalBeforeContracts: sumNullable(totalBeforeContractsValues),
+      extraContracts: sumNumeric(extraContractsValues),
+      grandTotal: sumNullable(grandTotalValues)
+    };
+  }, [costTableData, members]);
+  const formatMoneyPerSqm = (value: number | null) => (value === null ? "-" : `${moneyLabel(value)}/qm`);
   const personalEntryDelta = (entry: FinanceEntry) => {
     const payerIds = entry.paid_by_user_ids.length > 0 ? entry.paid_by_user_ids : [entry.paid_by];
     const beneficiaryIds = entry.beneficiary_user_ids.length > 0 ? entry.beneficiary_user_ids : householdMemberIds;
@@ -615,6 +832,7 @@ export const FinancesTab = ({
     if (delta < -0.004) return "bg-rose-100 text-rose-800 dark:bg-rose-900 dark:text-rose-100";
     return "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200";
   };
+  const canManageFinanceEntry = (entry: FinanceEntry) => entry.created_by === userId;
   const paidByText = (entry: FinanceEntry) =>
     t("finances.paidByMembers", {
       members: formatMemberGroupLabel(
@@ -636,6 +854,21 @@ export const FinancesTab = ({
     const recurrence = cronPatternToFinanceRecurrence(subscription.cron_pattern);
     return recurrenceOptions.find((entry) => entry.value === recurrence)?.label ?? recurrenceOptions[1].label;
   };
+  const categorySuggestions = useMemo(() => {
+    const byKey = new Map<string, string>();
+    const pushCategory = (value: string | null | undefined) => {
+      const normalized = (value ?? "").trim();
+      if (!normalized) return;
+      const key = normalized.toLocaleLowerCase(language);
+      if (!byKey.has(key)) byKey.set(key, normalized);
+    };
+
+    pushCategory("general");
+    entries.forEach((entry) => pushCategory(entry.category));
+    subscriptions.forEach((subscription) => pushCategory(subscription.category));
+
+    return [...byKey.values()].sort((left, right) => left.localeCompare(right, language));
+  }, [entries, language, subscriptions]);
   const subscriptionParticipantsText = (subscription: FinanceSubscription) =>
     t("finances.subscriptionParticipants", {
       paidBy: formatMemberGroupLabel(subscription.paid_by_user_ids, "dative"),
@@ -683,14 +916,14 @@ export const FinancesTab = ({
         <form.Field
           name="category"
           children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
-            <div className="space-y-1">
-              <Label>{t("finances.subscriptionCategoryLabel")}</Label>
-              <Input
-                value={field.state.value}
-                onChange={(event) => field.handleChange(event.target.value)}
-                placeholder={t("finances.categoryPlaceholder")}
-              />
-            </div>
+            <CategoryInputField
+              label={t("finances.subscriptionCategoryLabel")}
+              value={field.state.value}
+              onChange={field.handleChange}
+              placeholder={t("finances.categoryPlaceholder")}
+              suggestionsListId={categorySuggestionsListId}
+              hasSuggestions={categorySuggestions.length > 0}
+            />
           )}
         />
         <form.Field
@@ -877,6 +1110,30 @@ export const FinancesTab = ({
 
     return groups;
   }, [cashAuditRequests, language, parseDateFallback, sortedFilteredEntries, t]);
+  const archiveGroupsWithSettlement = useMemo(() => {
+    const resolveGroupMemberIds = (groupEntries: FinanceEntry[]) => {
+      if (householdMemberIds.length > 0) return householdMemberIds;
+
+      const ids = new Set<string>();
+      groupEntries.forEach((entry) => {
+        const payerIds = entry.paid_by_user_ids.length > 0 ? entry.paid_by_user_ids : [entry.paid_by];
+        const beneficiaryIds = entry.beneficiary_user_ids.length > 0 ? entry.beneficiary_user_ids : payerIds;
+        payerIds.forEach((memberId) => ids.add(memberId));
+        beneficiaryIds.forEach((memberId) => ids.add(memberId));
+      });
+      return [...ids];
+    };
+
+    return archiveGroups.map((group) => {
+      const settlementMemberIdsForGroup = resolveGroupMemberIds(group.entries);
+      const balances = calculateBalancesByMember(group.entries, settlementMemberIdsForGroup);
+      const transfers = calculateSettlementTransfers(balances);
+      return {
+        ...group,
+        settlementTransfers: transfers
+      };
+    });
+  }, [archiveGroups, householdMemberIds]);
 
   return (
     <div className="space-y-4">
@@ -942,6 +1199,19 @@ export const FinancesTab = ({
                         </Button>
                       </PopoverTrigger>
                       <PopoverContent align="end" className="w-[320px] space-y-3">
+                        <addEntryForm.Field
+                          name="category"
+                          children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
+                            <CategoryInputField
+                              label={t("finances.subscriptionCategoryLabel")}
+                              value={field.state.value}
+                              onChange={field.handleChange}
+                              placeholder={t("finances.categoryPlaceholder")}
+                              suggestionsListId={categorySuggestionsListId}
+                              hasSuggestions={categorySuggestions.length > 0}
+                            />
+                          )}
+                        />
                         <addEntryForm.Field
                           name="entryDate"
                           children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
@@ -1298,17 +1568,39 @@ export const FinancesTab = ({
               </DialogContent>
             </Dialog>
 
-            {archiveGroups.map((group) => (
+            {archiveGroupsWithSettlement.map((group) => (
               <FinanceHistoryCard
                 key={group.id}
                 className="mt-4"
                 collapsible
                 defaultOpen={false}
                 title={group.title}
-                summaryText={t("finances.filteredTotal", {
-                  value: moneyLabel(group.total),
-                  count: group.entries.length
-                })}
+                summaryText={
+                  <>
+                    <div>
+                      {t("finances.filteredTotal", {
+                        value: moneyLabel(group.total),
+                        count: group.entries.length
+                      })}
+                    </div>
+                    <div className="mt-1">{t("finances.settlementPlanTitle")}:</div>
+                    {group.settlementTransfers.length > 0 ? (
+                      <div className="mt-1">
+                        {group.settlementTransfers.map((transfer, index) => (
+                          <div key={`${group.id}-transfer-${index}`}>
+                            {t("finances.settlementTransferLine", {
+                              from: memberLabel(transfer.fromMemberId),
+                              to: memberLabel(transfer.toMemberId),
+                              amount: moneyLabel(transfer.amount)
+                            })}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="mt-1">{t("finances.settlementPlanEmpty")}</div>
+                    )}
+                  </>
+                }
                 totalBadgeText={moneyLabel(group.total)}
                 entries={group.entries}
                 emptyText={t("finances.emptyFiltered")}
@@ -1324,6 +1616,8 @@ export const FinancesTab = ({
                       }
                     : undefined
                 }
+                canEditEntry={group.isEditable ? canManageFinanceEntry : undefined}
+                canDeleteEntry={group.isEditable ? canManageFinanceEntry : undefined}
                 actionsLabel={t("finances.entryActions")}
                 editLabel={t("finances.editEntry")}
                 deleteLabel={t("finances.deleteEntry")}
@@ -1340,7 +1634,7 @@ export const FinancesTab = ({
               <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{t("finances.rentApartmentDescription")}</p>
 
               <form
-                className="mt-3 grid gap-2 sm:grid-cols-[1fr_1fr_1fr_auto]"
+                className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-[1fr_1fr_1fr_1fr_auto]"
                 onSubmit={(event) => {
                   event.preventDefault();
                   event.stopPropagation();
@@ -1403,6 +1697,26 @@ export const FinancesTab = ({
                     </div>
                   )}
                 />
+                <rentHouseholdForm.Field
+                  name="utilitiesOnRoomSqmPercent"
+                  children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
+                    <div className="space-y-1">
+                      <Label>{t("settings.utilitiesOnRoomSqmPercentLabel")}</Label>
+                      <InputWithSuffix
+                        suffix="%"
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="0.1"
+                        disabled={!canEditApartment}
+                        value={field.state.value}
+                        onChange={(event) => field.handleChange(event.target.value)}
+                        placeholder={t("settings.utilitiesOnRoomSqmPercentLabel")}
+                        inputClassName="pr-7"
+                      />
+                    </div>
+                  )}
+                />
                 <Button type="submit" disabled={busy || !canEditApartment}>
                   {t("finances.rentSave")}
                 </Button>
@@ -1417,6 +1731,29 @@ export const FinancesTab = ({
                   {rentFormError}
                 </p>
               ) : null}
+
+              <div className="mt-3 rounded-lg border border-brand-100 bg-brand-50/30 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800/40">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-slate-600 dark:text-slate-300">{t("finances.rentColdPerSqmLabel")}</span>
+                  <span className="font-semibold text-slate-900 dark:text-slate-100">{formatMoneyPerSqm(rentColdPerSqm)}</span>
+                </div>
+                <div className="mt-1 flex items-center justify-between gap-2">
+                  <span className="text-slate-600 dark:text-slate-300">{t("finances.rentRoomPerSqmWithUtilitiesLabel")}</span>
+                  <span className="font-semibold text-slate-900 dark:text-slate-100">
+                    {formatMoneyPerSqm(rentRoomPerSqmWithUtilities)}
+                  </span>
+                </div>
+                <div className="mt-1 flex items-center justify-between gap-2">
+                  <span className="text-slate-600 dark:text-slate-300">{t("finances.rentTotalPerSqmLabel")}</span>
+                  <span className="font-semibold text-slate-900 dark:text-slate-100">{formatMoneyPerSqm(rentTotalPerSqm)}</span>
+                </div>
+                <div className="mt-1 flex items-center justify-between gap-2">
+                  <span className="text-slate-600 dark:text-slate-300">{t("finances.rentTotalMonthlyLabel")}</span>
+                  <span className="font-semibold text-slate-900 dark:text-slate-100">
+                    {rentTotalMonthly === null ? "-" : moneyLabel(rentTotalMonthly)}
+                  </span>
+                </div>
+              </div>
             </SectionPanel>
 
             <SectionPanel className="mt-4">
@@ -1603,6 +1940,173 @@ export const FinancesTab = ({
                 </ul>
               )}
             </SectionPanel>
+
+            <SectionPanel className="mt-4">
+              <p className="text-sm font-semibold text-brand-900 dark:text-brand-100">
+                {t("finances.costBreakdownTitle")}
+              </p>
+              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                {t("finances.costBreakdownDescription")}
+              </p>
+
+              <div className="mt-3 overflow-x-auto rounded-xl border border-brand-100 dark:border-slate-700">
+                <table className="min-w-[860px] w-full text-sm">
+                  <thead className="bg-brand-50/50 dark:bg-slate-800/60">
+                    <tr>
+                      <th className="px-3 py-2 text-left font-semibold text-slate-700 dark:text-slate-200">
+                        {t("finances.costBreakdownRowLabel")}
+                      </th>
+                      {members.map((member) => (
+                        <th
+                          key={`cost-breakdown-head-${member.user_id}`}
+                          className="px-3 py-2 text-right font-semibold text-slate-700 dark:text-slate-200"
+                        >
+                          {memberLabel(member.user_id)}
+                        </th>
+                      ))}
+                      <th className="px-3 py-2 text-right font-semibold text-slate-700 dark:text-slate-200">
+                        {t("finances.costBreakdownTotalColumn")}
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr className="border-t border-brand-100 dark:border-slate-700">
+                      <td className="px-3 py-2 text-slate-600 dark:text-slate-300">{t("finances.costBreakdownColdRoom")}</td>
+                      {members.map((member) => {
+                        const value = costTableData.byMember.get(member.user_id)?.coldForRoom ?? null;
+                        return (
+                          <td key={`cost-breakdown-cold-${member.user_id}`} className="px-3 py-2 text-right font-medium text-slate-900 dark:text-slate-100">
+                            {value === null ? "-" : moneyLabel(value)}
+                          </td>
+                        );
+                      })}
+                      <td className="px-3 py-2 text-right font-semibold text-slate-900 dark:text-slate-100">
+                        {costTableTotals.coldForRoom === null ? "-" : moneyLabel(costTableTotals.coldForRoom)}
+                      </td>
+                    </tr>
+                    <tr className="border-t border-brand-100 dark:border-slate-700">
+                      <td className="px-3 py-2 text-slate-600 dark:text-slate-300">{t("finances.costBreakdownUtilitiesRoom")}</td>
+                      {members.map((member) => {
+                        const value = costTableData.byMember.get(member.user_id)?.utilitiesForRoom ?? null;
+                        return (
+                          <td key={`cost-breakdown-utilities-${member.user_id}`} className="px-3 py-2 text-right font-medium text-slate-900 dark:text-slate-100">
+                            {value === null ? "-" : moneyLabel(value)}
+                          </td>
+                        );
+                      })}
+                      <td className="px-3 py-2 text-right font-semibold text-slate-900 dark:text-slate-100">
+                        {costTableTotals.utilitiesForRoom === null ? "-" : moneyLabel(costTableTotals.utilitiesForRoom)}
+                      </td>
+                    </tr>
+                    <tr className="border-t border-brand-100 dark:border-slate-700 bg-brand-50/20 dark:bg-slate-800/30">
+                      <td className="px-3 py-2 font-semibold text-slate-700 dark:text-slate-200">{t("finances.costBreakdownRoomSubtotal")}</td>
+                      {members.map((member) => {
+                        const value = costTableData.byMember.get(member.user_id)?.roomSubtotal ?? null;
+                        return (
+                          <td key={`cost-breakdown-subtotal-${member.user_id}`} className="px-3 py-2 text-right font-semibold text-slate-900 dark:text-slate-100">
+                            {value === null ? "-" : moneyLabel(value)}
+                          </td>
+                        );
+                      })}
+                      <td className="px-3 py-2 text-right font-semibold text-slate-900 dark:text-slate-100">
+                        {costTableTotals.roomSubtotal === null ? "-" : moneyLabel(costTableTotals.roomSubtotal)}
+                      </td>
+                    </tr>
+                    <tr className="border-t border-brand-100 dark:border-slate-700">
+                      <td className="px-3 py-2 font-medium text-slate-600 dark:text-slate-300">{t("finances.costBreakdownSharedAreaCosts")}</td>
+                      {members.map((member) => (
+                        <td key={`cost-breakdown-shared-area-empty-${member.user_id}`} className="px-3 py-2 text-right font-medium text-slate-500 dark:text-slate-300">
+                          -
+                        </td>
+                      ))}
+                      <td className="px-3 py-2 text-right font-semibold text-slate-900 dark:text-slate-100">
+                        {costTableTotals.sharedAreaColdCosts === null ? "-" : moneyLabel(costTableTotals.sharedAreaColdCosts)}
+                      </td>
+                    </tr>
+                    <tr className="border-t border-brand-100 dark:border-slate-700">
+                      <td className="px-3 py-2 font-medium text-slate-600 dark:text-slate-300">{t("finances.costBreakdownSharedUtilitiesCosts")}</td>
+                      {members.map((member) => (
+                        <td key={`cost-breakdown-shared-utilities-empty-${member.user_id}`} className="px-3 py-2 text-right font-medium text-slate-500 dark:text-slate-300">
+                          -
+                        </td>
+                      ))}
+                      <td className="px-3 py-2 text-right font-semibold text-slate-900 dark:text-slate-100">
+                        {costTableTotals.sharedUtilitiesCosts === null ? "-" : moneyLabel(costTableTotals.sharedUtilitiesCosts)}
+                      </td>
+                    </tr>
+                    <tr className="border-t border-brand-100 dark:border-slate-700">
+                      <td className="px-3 py-2 font-medium text-slate-600 dark:text-slate-300">{t("finances.costBreakdownRemainingApartment")}</td>
+                      {members.map((member) => (
+                        <td key={`cost-breakdown-remaining-empty-${member.user_id}`} className="px-3 py-2 text-right font-medium text-slate-500 dark:text-slate-300">
+                          -
+                        </td>
+                      ))}
+                      <td className="px-3 py-2 text-right font-semibold text-slate-900 dark:text-slate-100">
+                        {costTableTotals.remainingApartmentCosts === null ? "-" : moneyLabel(costTableTotals.remainingApartmentCosts)}
+                      </td>
+                    </tr>
+                    <tr className="border-t border-brand-100 dark:border-slate-700">
+                      <td className="px-3 py-2 text-slate-600 dark:text-slate-300">{t("finances.costBreakdownCommonShare")}</td>
+                      {members.map((member) => {
+                        const value = costTableData.byMember.get(member.user_id)?.commonCostsShare ?? null;
+                        return (
+                          <td key={`cost-breakdown-common-${member.user_id}`} className="px-3 py-2 text-right font-medium text-slate-900 dark:text-slate-100">
+                            {value === null ? "-" : moneyLabel(value)}
+                          </td>
+                        );
+                      })}
+                      <td className="px-3 py-2 text-right font-semibold text-slate-900 dark:text-slate-100">
+                        {costTableTotals.commonCostsShare === null ? "-" : moneyLabel(costTableTotals.commonCostsShare)}
+                      </td>
+                    </tr>
+                    <tr className="border-t-4 border-double border-brand-300 dark:border-slate-500 bg-brand-50/20 dark:bg-slate-800/30">
+                      <td className="px-3 py-2 font-semibold text-slate-700 dark:text-slate-200">{t("finances.costBreakdownTotal")}</td>
+                      {members.map((member) => {
+                        const value = costTableData.byMember.get(member.user_id)?.totalBeforeContracts ?? null;
+                        return (
+                          <td key={`cost-breakdown-total-${member.user_id}`} className="px-3 py-2 text-right font-semibold text-slate-900 dark:text-slate-100">
+                            {value === null ? "-" : moneyLabel(value)}
+                          </td>
+                        );
+                      })}
+                      <td className="px-3 py-2 text-right font-semibold text-slate-900 dark:text-slate-100">
+                        {costTableTotals.totalBeforeContracts === null ? "-" : moneyLabel(costTableTotals.totalBeforeContracts)}
+                      </td>
+                    </tr>
+                  </tbody>
+                  <tbody className="border-t-2 border-brand-200 dark:border-slate-600">
+                    <tr className="border-t border-brand-100 dark:border-slate-700">
+                      <td className="px-3 py-2 text-slate-600 dark:text-slate-300">{t("finances.costBreakdownExtraContracts")}</td>
+                      {members.map((member) => {
+                        const value = costTableData.byMember.get(member.user_id)?.extraContracts ?? 0;
+                        return (
+                          <td key={`cost-breakdown-contracts-${member.user_id}`} className="px-3 py-2 text-right font-medium text-slate-900 dark:text-slate-100">
+                            {moneyLabel(value)}
+                          </td>
+                        );
+                      })}
+                      <td className="px-3 py-2 text-right font-semibold text-slate-900 dark:text-slate-100">
+                        {moneyLabel(costTableTotals.extraContracts)}
+                      </td>
+                    </tr>
+                    <tr className="border-t border-brand-100 bg-brand-100/40 dark:border-slate-700 dark:bg-slate-700/30">
+                      <td className="px-3 py-2 font-semibold text-slate-800 dark:text-slate-100">{t("finances.costBreakdownGrandTotal")}</td>
+                      {members.map((member) => {
+                        const value = costTableData.byMember.get(member.user_id)?.grandTotal ?? null;
+                        return (
+                          <td key={`cost-breakdown-grand-${member.user_id}`} className="px-3 py-2 text-right font-semibold text-slate-900 dark:text-slate-100">
+                            {value === null ? "-" : moneyLabel(value)}
+                          </td>
+                        );
+                      })}
+                      <td className="px-3 py-2 text-right font-semibold text-slate-900 dark:text-slate-100">
+                        {costTableTotals.grandTotal === null ? "-" : moneyLabel(costTableTotals.grandTotal)}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </SectionPanel>
           </>
         ) : null}
 
@@ -1630,6 +2134,8 @@ export const FinancesTab = ({
           onDelete={(entry) => {
             void onDeleteEntry(entry);
           }}
+          canEditEntry={canManageFinanceEntry}
+          canDeleteEntry={canManageFinanceEntry}
           actionsLabel={t("finances.entryActions")}
           editLabel={t("finances.editEntry")}
           deleteLabel={t("finances.deleteEntry")}
@@ -1752,6 +2258,19 @@ export const FinancesTab = ({
               )}
             />
             <editEntryForm.Field
+              name="category"
+              children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
+                <CategoryInputField
+                  label={t("finances.subscriptionCategoryLabel")}
+                  value={field.state.value}
+                  onChange={field.handleChange}
+                  placeholder={t("finances.categoryPlaceholder")}
+                  suggestionsListId={categorySuggestionsListId}
+                  hasSuggestions={categorySuggestions.length > 0}
+                />
+              )}
+            />
+            <editEntryForm.Field
               name="entryDate"
               children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
                 <div className="space-y-1">
@@ -1777,6 +2296,13 @@ export const FinancesTab = ({
           </form>
         </DialogContent>
       </Dialog>
+      {categorySuggestions.length > 0 ? (
+        <datalist id={categorySuggestionsListId}>
+          {categorySuggestions.map((category) => (
+            <option key={category} value={category} />
+          ))}
+        </datalist>
+      ) : null}
     </div>
   );
 };

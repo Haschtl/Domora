@@ -11,6 +11,7 @@ export interface Household {
   apartment_size_sqm: number | null;
   cold_rent_monthly: number | null;
   utilities_monthly: number | null;
+  utilities_on_room_sqm_percent: number;
   landing_page_markdown: string;
   invite_code: string;
   created_by: string;
@@ -25,6 +26,7 @@ export interface UpdateHouseholdInput {
   apartmentSizeSqm: number | null;
   coldRentMonthly: number | null;
   utilitiesMonthly: number | null;
+  utilitiesOnRoomSqmPercent: number;
 }
 
 export interface HouseholdMember {
@@ -118,6 +120,7 @@ export interface FinanceEntry {
   paid_by_user_ids: string[];
   beneficiary_user_ids: string[];
   entry_date: string;
+  created_by: string;
   created_at: string;
 }
 

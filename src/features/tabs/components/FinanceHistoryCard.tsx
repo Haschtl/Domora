@@ -8,7 +8,7 @@ import { FinanceEntriesList } from "./FinanceEntriesList";
 interface FinanceHistoryCardProps {
   title: string;
   description?: string;
-  summaryText?: string;
+  summaryText?: ReactNode;
   totalBadgeText?: string;
   entries: FinanceEntry[];
   emptyText: string;
@@ -20,6 +20,8 @@ interface FinanceHistoryCardProps {
   amountClassName?: string;
   onEdit?: (entry: FinanceEntry) => void;
   onDelete?: (entry: FinanceEntry) => void;
+  canEditEntry?: (entry: FinanceEntry) => boolean;
+  canDeleteEntry?: (entry: FinanceEntry) => boolean;
   actionsLabel?: string;
   editLabel?: string;
   deleteLabel?: string;
@@ -46,6 +48,8 @@ export const FinanceHistoryCard = ({
   amountClassName,
   onEdit,
   onDelete,
+  canEditEntry,
+  canDeleteEntry,
   actionsLabel,
   editLabel,
   deleteLabel,
@@ -67,6 +71,8 @@ export const FinanceHistoryCard = ({
         amountClassName={amountClassName}
         onEdit={onEdit}
         onDelete={onDelete}
+        canEditEntry={canEditEntry}
+        canDeleteEntry={canDeleteEntry}
         actionsLabel={actionsLabel}
         editLabel={editLabel}
         deleteLabel={deleteLabel}
@@ -85,7 +91,7 @@ export const FinanceHistoryCard = ({
           <summary className="flex cursor-pointer list-none items-center justify-between gap-2 rounded-lg px-1 py-1 [&::-webkit-details-marker]:hidden">
             <div>
               <p className="text-sm font-semibold text-brand-900 dark:text-brand-100">{title}</p>
-              {summaryText ? <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{summaryText}</p> : null}
+              {summaryText ? <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">{summaryText}</div> : null}
             </div>
             <div className="flex items-center gap-2">
               {totalBadgeText ? <Badge>{totalBadgeText}</Badge> : null}
@@ -108,7 +114,7 @@ export const FinanceHistoryCard = ({
           </div>
           {headerRight}
         </div>
-        {summaryText ? <p className="text-xs text-slate-500 dark:text-slate-400">{summaryText}</p> : null}
+        {summaryText ? <div className="text-xs text-slate-500 dark:text-slate-400">{summaryText}</div> : null}
       </CardHeader>
       <CardContent>{list}</CardContent>
     </Card>

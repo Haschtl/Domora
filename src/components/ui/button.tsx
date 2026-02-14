@@ -8,8 +8,8 @@ type ButtonSize = "default" | "sm";
 const variantClasses: Record<ButtonVariant, string> = {
   default: "bg-brand-700 text-white shadow-card hover:bg-brand-800 dark:bg-brand-600 dark:hover:bg-brand-500",
   outline:
-    "border border-brand-300 bg-white text-brand-900 hover:bg-brand-50 dark:border-brand-700 dark:bg-slate-900 dark:text-brand-100 dark:hover:bg-slate-800",
-  ghost: "text-brand-800 hover:bg-brand-100 dark:text-brand-100 dark:hover:bg-slate-800",
+    "border border-slate-300 bg-white text-slate-900 hover:bg-slate-100 dark:border-brand-700 dark:bg-slate-900 dark:text-brand-100 dark:hover:bg-slate-800",
+  ghost: "text-slate-800 hover:bg-slate-200/80 dark:text-brand-100 dark:hover:bg-slate-800",
   danger: "bg-rose-600 text-white hover:bg-rose-700"
 };
 

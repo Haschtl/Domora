@@ -47,6 +47,7 @@ const nonNegativeOptionalNumberSchema = optionalNumberSchema.refine(
   (value) => value === null || value >= 0,
   "Expected a non-negative number or null"
 );
+const percentageNumberSchema = z.coerce.number().finite().min(0).max(100);
 const shoppingRecurrenceUnitSchema = z.enum(["days", "weeks", "months"]);
 const financeSubscriptionRecurrenceSchema = z.enum(["weekly", "monthly", "quarterly"]);
 
@@ -59,6 +60,7 @@ const householdSchema = z.object({
   apartment_size_sqm: positiveOptionalNumberSchema,
   cold_rent_monthly: nonNegativeOptionalNumberSchema,
   utilities_monthly: nonNegativeOptionalNumberSchema,
+  utilities_on_room_sqm_percent: percentageNumberSchema.default(0),
   landing_page_markdown: z.string().default(""),
   invite_code: z.string().min(1),
   created_by: z.string().uuid(),
@@ -144,6 +146,7 @@ const financeEntrySchema = z.object({
   paid_by_user_ids: z.array(z.string().uuid()).default([]),
   beneficiary_user_ids: z.array(z.string().uuid()).default([]),
   entry_date: z.string().min(1).default(""),
+  created_by: z.string().uuid(),
   created_at: z.string().min(1)
 });
 
@@ -282,6 +285,14 @@ export const getCurrentSession = async () => {
   const { data, error } = await supabase.auth.getSession();
   if (error) throw error;
   return data.session;
+};
+
+const requireAuthenticatedUserId = async () => {
+  const { data, error } = await supabase.auth.getUser();
+  if (error) throw error;
+  const userId = data.user?.id;
+  if (!userId) throw new Error("Not authenticated");
+  return z.string().uuid().parse(userId);
 };
 
 export const updateUserAvatar = async (avatarUrl: string) => {
@@ -477,7 +488,8 @@ export const updateHouseholdSettings = async (
     currency: z.string().trim().toUpperCase().length(3),
     apartmentSizeSqm: positiveOptionalNumberSchema,
     coldRentMonthly: nonNegativeOptionalNumberSchema,
-    utilitiesMonthly: nonNegativeOptionalNumberSchema
+    utilitiesMonthly: nonNegativeOptionalNumberSchema,
+    utilitiesOnRoomSqmPercent: percentageNumberSchema
   }).parse(input);
 
   const { data, error } = await supabase
@@ -489,7 +501,8 @@ export const updateHouseholdSettings = async (
       currency: parsedInput.currency,
       apartment_size_sqm: parsedInput.apartmentSizeSqm,
       cold_rent_monthly: parsedInput.coldRentMonthly,
-      utilities_monthly: parsedInput.utilitiesMonthly
+      utilities_monthly: parsedInput.utilitiesMonthly,
+      utilities_on_room_sqm_percent: parsedInput.utilitiesOnRoomSqmPercent
     })
     .eq("id", validatedHouseholdId)
     .select("*")
@@ -1144,6 +1157,7 @@ export const addFinanceEntry = async (
     entryDate?: string | null;
   }
 ): Promise<FinanceEntry> => {
+  const creatorId = await requireAuthenticatedUserId();
   const parsedInput = z.object({
     householdId: z.string().uuid(),
     description: z.string().trim().min(1).max(200),
@@ -1177,6 +1191,7 @@ export const addFinanceEntry = async (
       paid_by_user_ids: parsedInput.paidByUserIds,
       beneficiary_user_ids: parsedInput.beneficiaryUserIds,
       entry_date: normalizedEntryDate,
+      created_by: creatorId,
       created_at: `${normalizedEntryDate}T12:00:00.000Z`
     })
     .select("*")
@@ -1197,6 +1212,7 @@ export const updateFinanceEntry = async (
     entryDate?: string | null;
   }
 ): Promise<FinanceEntry> => {
+  const creatorId = await requireAuthenticatedUserId();
   const parsedInput = z
     .object({
       id: z.string().uuid(),
@@ -1233,6 +1249,7 @@ export const updateFinanceEntry = async (
       created_at: `${normalizedEntryDate}T12:00:00.000Z`
     })
     .eq("id", parsedInput.id)
+    .eq("created_by", creatorId)
     .select("*")
     .single();
 
@@ -1242,7 +1259,12 @@ export const updateFinanceEntry = async (
 
 export const deleteFinanceEntry = async (id: string): Promise<void> => {
   const validatedId = z.string().uuid().parse(id);
-  const { error } = await supabase.from("finance_entries").delete().eq("id", validatedId);
+  const creatorId = await requireAuthenticatedUserId();
+  const { error } = await supabase
+    .from("finance_entries")
+    .delete()
+    .eq("id", validatedId)
+    .eq("created_by", creatorId);
   if (error) throw error;
 };
 

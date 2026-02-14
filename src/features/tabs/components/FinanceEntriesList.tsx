@@ -20,6 +20,8 @@ interface FinanceEntriesListProps {
   amountClassName?: string;
   onEdit?: (entry: FinanceEntry) => void;
   onDelete?: (entry: FinanceEntry) => void;
+  canEditEntry?: (entry: FinanceEntry) => boolean;
+  canDeleteEntry?: (entry: FinanceEntry) => boolean;
   actionsLabel?: string;
   editLabel?: string;
   deleteLabel?: string;
@@ -37,6 +39,8 @@ export const FinanceEntriesList = ({
   amountClassName = "text-sm font-semibold text-brand-800 dark:text-brand-200",
   onEdit,
   onDelete,
+  canEditEntry,
+  canDeleteEntry,
   actionsLabel = "Actions",
   editLabel = "Edit",
   deleteLabel = "Delete",
@@ -69,7 +73,7 @@ export const FinanceEntriesList = ({
             ) : null}
             <p className={amountClassName}>{formatMoney(entry.amount)}</p>
           </div>
-          {onEdit || onDelete ? (
+          {(onEdit || onDelete) && ((onEdit && (canEditEntry?.(entry) ?? true)) || (onDelete && (canDeleteEntry?.(entry) ?? true))) ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
@@ -84,12 +88,12 @@ export const FinanceEntriesList = ({
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                {onEdit ? (
+                {onEdit && (canEditEntry?.(entry) ?? true) ? (
                   <DropdownMenuItem onClick={() => onEdit(entry)}>
                     {editLabel}
                   </DropdownMenuItem>
                 ) : null}
-                {onDelete ? (
+                {onDelete && (canDeleteEntry?.(entry) ?? true) ? (
                   <DropdownMenuItem onClick={() => onDelete(entry)} className="text-rose-600 dark:text-rose-300">
                     {deleteLabel}
                   </DropdownMenuItem>

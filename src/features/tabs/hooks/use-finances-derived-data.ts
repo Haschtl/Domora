@@ -23,6 +23,20 @@ const parseDateFallback = (entry: FinanceEntry) => {
   return entry.created_at.slice(0, 10);
 };
 
+const startOfWeekKey = (day: string) => {
+  const [yearRaw, monthRaw, dateRaw] = day.split("-");
+  const year = Number(yearRaw);
+  const month = Number(monthRaw);
+  const date = Number(dateRaw);
+  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(date)) return day;
+
+  const utc = new Date(Date.UTC(year, month - 1, date));
+  const dayOfWeek = utc.getUTCDay();
+  const daysToSubtract = (dayOfWeek + 6) % 7; // Monday = 0, Sunday = 6
+  utc.setUTCDate(utc.getUTCDate() - daysToSubtract);
+  return utc.toISOString().slice(0, 10);
+};
+
 export const useFinancesDerivedData = ({
   entries,
   members,
@@ -103,13 +117,14 @@ export const useFinancesDerivedData = ({
   }, [filteredEntries]);
 
   const historySeries = useMemo(() => {
-    const byDay = new Map<string, number>();
+    const byWeek = new Map<string, number>();
     filteredEntries.forEach((entry) => {
       const day = parseDateFallback(entry);
-      byDay.set(day, (byDay.get(day) ?? 0) + entry.amount);
+      const weekStart = startOfWeekKey(day);
+      byWeek.set(weekStart, (byWeek.get(weekStart) ?? 0) + entry.amount);
     });
-    const labels = [...byDay.keys()].sort();
-    const values = labels.map((label) => byDay.get(label) ?? 0);
+    const labels = [...byWeek.keys()].sort();
+    const values = labels.map((label) => byWeek.get(label) ?? 0);
 
     return { labels, values };
   }, [filteredEntries]);

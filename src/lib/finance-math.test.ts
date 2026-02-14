@@ -16,6 +16,7 @@ const createEntry = (partial: Partial<FinanceEntry>): FinanceEntry => ({
   paid_by_user_ids: partial.paid_by_user_ids ?? [],
   beneficiary_user_ids: partial.beneficiary_user_ids ?? [],
   entry_date: partial.entry_date ?? "2026-02-13",
+  created_by: partial.created_by ?? "u-1",
   created_at: partial.created_at ?? "2026-02-13T12:00:00.000Z"
 });
 

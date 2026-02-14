@@ -33,6 +33,7 @@ export const nonNegativeOptionalNumberSchema = optionalNumberSchema.refine(
   (value) => value === null || value >= 0,
   "Expected a non-negative number or null"
 );
+export const percentageNumberSchema = z.coerce.number().finite().min(0).max(100);
 
 export const shoppingRecurrenceUnitSchema = z.enum(["days", "weeks", "months"]);
 
@@ -45,6 +46,7 @@ const householdSchema = z.object({
   apartment_size_sqm: positiveOptionalNumberSchema,
   cold_rent_monthly: nonNegativeOptionalNumberSchema,
   utilities_monthly: nonNegativeOptionalNumberSchema,
+  utilities_on_room_sqm_percent: percentageNumberSchema.default(0),
   landing_page_markdown: z.string().default(""),
   invite_code: z.string().min(1),
   created_by: z.string().uuid(),
@@ -131,6 +133,7 @@ const financeEntrySchema = z.object({
   paid_by_user_ids: z.array(z.string().uuid()).default([]),
   beneficiary_user_ids: z.array(z.string().uuid()).default([]),
   entry_date: z.string().min(1).default(""),
+  created_by: z.string().uuid(),
   created_at: z.string().min(1)
 });
 

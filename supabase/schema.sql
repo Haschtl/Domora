@@ -10,6 +10,8 @@ create table if not exists households (
   apartment_size_sqm numeric(8, 2) check (apartment_size_sqm is null or apartment_size_sqm > 0),
   cold_rent_monthly numeric(12, 2) check (cold_rent_monthly is null or cold_rent_monthly >= 0),
   utilities_monthly numeric(12, 2) check (utilities_monthly is null or utilities_monthly >= 0),
+  utilities_on_room_sqm_percent numeric(5, 2) not null default 0
+    check (utilities_on_room_sqm_percent >= 0 and utilities_on_room_sqm_percent <= 100),
   landing_page_markdown text not null default '',
   invite_code text not null unique,
   created_by uuid not null references auth.users(id) on delete cascade,
@@ -121,6 +123,7 @@ create table if not exists finance_entries (
   paid_by_user_ids uuid[] not null default '{}',
   beneficiary_user_ids uuid[] not null default '{}',
   entry_date date not null default current_date,
+  created_by uuid not null references auth.users(id) on delete cascade,
   created_at timestamptz not null default now()
 );
 
@@ -155,11 +158,19 @@ alter table households add column if not exists currency text not null default '
 alter table households add column if not exists apartment_size_sqm numeric(8, 2);
 alter table households add column if not exists cold_rent_monthly numeric(12, 2);
 alter table households add column if not exists utilities_monthly numeric(12, 2);
+alter table households add column if not exists utilities_on_room_sqm_percent numeric(5, 2) not null default 0;
 alter table households add column if not exists landing_page_markdown text not null default '';
 
 update households
 set landing_page_markdown = ''
 where landing_page_markdown is null;
+
+update households
+set utilities_on_room_sqm_percent = 0
+where utilities_on_room_sqm_percent is null;
+
+alter table households
+alter column utilities_on_room_sqm_percent set not null;
 
 do $$
 begin
@@ -211,6 +222,16 @@ begin
     alter table households
       add constraint households_utilities_monthly_non_negative_check
       check (utilities_monthly is null or utilities_monthly >= 0);
+  end if;
+
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'households_utilities_on_room_sqm_percent_range_check'
+  ) then
+    alter table households
+      add constraint households_utilities_on_room_sqm_percent_range_check
+      check (utilities_on_room_sqm_percent >= 0 and utilities_on_room_sqm_percent <= 100);
   end if;
 end;
 $$;
@@ -291,6 +312,7 @@ alter table finance_entries add column if not exists category text not null defa
 alter table finance_entries add column if not exists paid_by_user_ids uuid[] not null default '{}';
 alter table finance_entries add column if not exists beneficiary_user_ids uuid[] not null default '{}';
 alter table finance_entries add column if not exists entry_date date not null default current_date;
+alter table finance_entries add column if not exists created_by uuid references auth.users(id) on delete cascade;
 alter table finance_subscriptions add column if not exists category text not null default 'general';
 alter table finance_subscriptions add column if not exists paid_by_user_ids uuid[] not null default '{}';
 alter table finance_subscriptions add column if not exists beneficiary_user_ids uuid[] not null default '{}';
@@ -317,6 +339,13 @@ where beneficiary_user_ids is null
 update finance_entries
 set entry_date = created_at::date
 where entry_date is null;
+
+update finance_entries
+set created_by = paid_by
+where created_by is null;
+
+alter table finance_entries
+alter column created_by set not null;
 
 update shopping_items
 set recurrence_interval_unit = lower(recurrence_interval_unit)
@@ -935,11 +964,31 @@ to authenticated
 with check (is_household_member(household_id) and auth.uid() = user_id);
 
 drop policy if exists finance_entries_all on finance_entries;
-create policy finance_entries_all on finance_entries
-for all
+drop policy if exists finance_entries_select on finance_entries;
+drop policy if exists finance_entries_insert on finance_entries;
+drop policy if exists finance_entries_update_own on finance_entries;
+drop policy if exists finance_entries_delete_own on finance_entries;
+
+create policy finance_entries_select on finance_entries
+for select
 to authenticated
-using (is_household_member(household_id))
-with check (is_household_member(household_id));
+using (is_household_member(household_id));
+
+create policy finance_entries_insert on finance_entries
+for insert
+to authenticated
+with check (is_household_member(household_id) and auth.uid() = created_by);
+
+create policy finance_entries_update_own on finance_entries
+for update
+to authenticated
+using (is_household_member(household_id) and auth.uid() = created_by)
+with check (is_household_member(household_id) and auth.uid() = created_by);
+
+create policy finance_entries_delete_own on finance_entries
+for delete
+to authenticated
+using (is_household_member(household_id) and auth.uid() = created_by);
 
 drop policy if exists cash_audit_requests_all on cash_audit_requests;
 create policy cash_audit_requests_all on cash_audit_requests

@@ -175,7 +175,8 @@ export const SettingsTab = ({
         currency: normalized,
         apartmentSizeSqm: household.apartment_size_sqm,
         coldRentMonthly: household.cold_rent_monthly,
-        utilitiesMonthly: household.utilities_monthly
+        utilitiesMonthly: household.utilities_monthly,
+        utilitiesOnRoomSqmPercent: household.utilities_on_room_sqm_percent
       });
     }
   });

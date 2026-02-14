@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { Suspense, lazy, useEffect, useMemo } from "react";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import { AnimatePresence, motion } from "framer-motion";
 import {
@@ -19,14 +19,23 @@ import { isSupabaseConfigured } from "./lib/supabase";
 import type { AppTab } from "./lib/types";
 import { AppParticlesBackground } from "./components/app-particles-background";
 import { Card, CardDescription, CardHeader, CardTitle } from "./components/ui/card";
-import { AuthView } from "./features/AuthView";
-import { HouseholdSetupView } from "./features/HouseholdSetupView";
-import { FinancesTab } from "./features/tabs/FinancesTab";
-import { HomeTab } from "./features/tabs/HomeTab";
-import { SettingsTab } from "./features/tabs/SettingsTab";
-import { ShoppingTab } from "./features/tabs/ShoppingTab";
-import { TasksTab } from "./features/tabs/TasksTab";
 import { useWorkspaceController } from "./hooks/useWorkspaceController";
+
+const AuthView = lazy(() => import("./features/AuthView").then((module) => ({ default: module.AuthView })));
+const HouseholdSetupView = lazy(() =>
+  import("./features/HouseholdSetupView").then((module) => ({ default: module.HouseholdSetupView }))
+);
+const HomeTab = lazy(() => import("./features/tabs/HomeTab").then((module) => ({ default: module.HomeTab })));
+const ShoppingTab = lazy(() =>
+  import("./features/tabs/ShoppingTab").then((module) => ({ default: module.ShoppingTab }))
+);
+const TasksTab = lazy(() => import("./features/tabs/TasksTab").then((module) => ({ default: module.TasksTab })));
+const FinancesTab = lazy(() =>
+  import("./features/tabs/FinancesTab").then((module) => ({ default: module.FinancesTab }))
+);
+const SettingsTab = lazy(() =>
+  import("./features/tabs/SettingsTab").then((module) => ({ default: module.SettingsTab }))
+);
 
 const tabPathMap: Record<AppTab, string> = {
   home: "/home/summary",
@@ -142,7 +151,6 @@ const App = () => {
     userAvatarUrl,
     userDisplayName,
     currentMember,
-    completedTasks,
     notificationPermission,
     setActiveHousehold,
     onSignIn,
@@ -294,6 +302,14 @@ const App = () => {
         ];
   const activeMobileSubPath = subItems.length > 0 ? activeSubPath : tabPathMap[tab];
   const hasSingleMobileSubItem = mobileSubItems.length === 1;
+  const viewLoadingFallback = (
+    <Card>
+      <CardHeader>
+        <CardTitle>{t("app.loadingSession")}</CardTitle>
+        <CardDescription>{t("app.brand")}</CardDescription>
+      </CardHeader>
+    </Card>
+  );
 
   useEffect(() => {
     if (error) toast.error(error);
@@ -325,19 +341,23 @@ const App = () => {
       {loadingSession ? <p className="text-sm text-slate-700 dark:text-slate-300">{t("app.loadingSession")}</p> : null}
 
       {!loadingSession && !session ? (
-        <AuthView busy={busy} onSignIn={onSignIn} onSignUp={onSignUp} onGoogleSignIn={onGoogleSignIn} />
+        <Suspense fallback={viewLoadingFallback}>
+          <AuthView busy={busy} onSignIn={onSignIn} onSignUp={onSignUp} onGoogleSignIn={onGoogleSignIn} />
+        </Suspense>
       ) : null}
 
       {!loadingSession && session && !activeHousehold ? (
-        <HouseholdSetupView
-          households={households}
-          busy={busy}
-          initialInviteCode={initialInviteCode}
-          onCreate={onCreateHousehold}
-          onJoin={onJoinHousehold}
-          onSelect={(household) => setActiveHousehold(household)}
-          onSignOut={onSignOut}
-        />
+        <Suspense fallback={viewLoadingFallback}>
+          <HouseholdSetupView
+            households={households}
+            busy={busy}
+            initialInviteCode={initialInviteCode}
+            onCreate={onCreateHousehold}
+            onJoin={onJoinHousehold}
+            onSelect={(household) => setActiveHousehold(household)}
+            onSignOut={onSignOut}
+          />
+        </Suspense>
       ) : null}
 
       {!loadingSession && session && activeHousehold ? (
@@ -458,110 +478,110 @@ const App = () => {
                   exit={{ opacity: 0, y: -8 }}
                   transition={{ duration: 0.2, ease: "easeOut" }}
                 >
-                  {tab === "home" ? (
-                    <HomeTab
-                      section={homeSubTab}
-                      household={activeHousehold}
-                      households={households}
-                      currentMember={currentMember}
-                      userId={userId!}
-                      members={householdMembers}
-                      userLabel={userDisplayName ?? userEmail}
-                      busy={busy}
-                      completedTasks={completedTasks}
-                      totalTasks={tasks.length}
-                      tasks={tasks}
-                      taskCompletions={taskCompletions}
-                      shoppingCompletions={shoppingCompletions}
-                      financeEntries={finances}
-                      cashAuditRequests={cashAuditRequests}
-                      onSelectHousehold={(householdId) => {
-                        const next = households.find((entry: { id: string }) => entry.id === householdId);
-                        if (next) setActiveHousehold(next);
-                      }}
-                      onSaveLandingMarkdown={onUpdateHomeMarkdown}
-                    />
-                  ) : null}
+                  <Suspense fallback={viewLoadingFallback}>
+                    {tab === "home" ? (
+                      <HomeTab
+                        section={homeSubTab}
+                        household={activeHousehold}
+                        households={households}
+                        currentMember={currentMember}
+                        userId={userId!}
+                        members={householdMembers}
+                        userLabel={userDisplayName ?? userEmail}
+                        busy={busy}
+                        tasks={tasks}
+                        taskCompletions={taskCompletions}
+                        shoppingCompletions={shoppingCompletions}
+                        financeEntries={finances}
+                        cashAuditRequests={cashAuditRequests}
+                        onSelectHousehold={(householdId) => {
+                          const next = households.find((entry: { id: string }) => entry.id === householdId);
+                          if (next) setActiveHousehold(next);
+                        }}
+                        onSaveLandingMarkdown={onUpdateHomeMarkdown}
+                      />
+                    ) : null}
 
-                  {tab === "shopping" ? (
-                    <ShoppingTab
-                      section={shoppingSubTab}
-                      items={shoppingItems}
-                      completions={shoppingCompletions}
-                      members={householdMembers}
-                      userId={userId!}
-                      busy={busy}
-                      onAdd={onAddShoppingItem}
-                      onToggle={onToggleShoppingItem}
-                      onDelete={onDeleteShoppingItem}
-                    />
-                  ) : null}
+                    {tab === "shopping" ? (
+                      <ShoppingTab
+                        section={shoppingSubTab}
+                        items={shoppingItems}
+                        completions={shoppingCompletions}
+                        members={householdMembers}
+                        userId={userId!}
+                        busy={busy}
+                        onAdd={onAddShoppingItem}
+                        onToggle={onToggleShoppingItem}
+                        onDelete={onDeleteShoppingItem}
+                      />
+                    ) : null}
 
-                  {tab === "tasks" ? (
-                    <TasksTab
-                      section={taskSubTab}
-                      tasks={tasks}
-                      completions={taskCompletions}
-                      members={householdMembers}
-                      memberPimpers={memberPimpers}
-                      userId={userId!}
-                      busy={busy}
-                      notificationPermission={notificationPermission}
-                      onEnableNotifications={onEnableNotifications}
-                      onAdd={onAddTask}
-                      onComplete={onCompleteTask}
-                      onSkip={onSkipTask}
-                      onTakeover={onTakeoverTask}
-                      onToggleActive={onToggleTaskActive}
-                      onUpdate={onUpdateTask}
-                      onDelete={onDeleteTask}
-                    />
-                  ) : null}
+                    {tab === "tasks" ? (
+                      <TasksTab
+                        section={taskSubTab}
+                        tasks={tasks}
+                        completions={taskCompletions}
+                        members={householdMembers}
+                        memberPimpers={memberPimpers}
+                        userId={userId!}
+                        busy={busy}
+                        notificationPermission={notificationPermission}
+                        onEnableNotifications={onEnableNotifications}
+                        onAdd={onAddTask}
+                        onComplete={onCompleteTask}
+                        onSkip={onSkipTask}
+                        onTakeover={onTakeoverTask}
+                        onToggleActive={onToggleTaskActive}
+                        onUpdate={onUpdateTask}
+                        onDelete={onDeleteTask}
+                      />
+                    ) : null}
 
-                  {tab === "finances" ? (
-                    <FinancesTab
-                      section={financeSubTab}
-                      entries={finances}
-                      subscriptions={financeSubscriptions}
-                      cashAuditRequests={cashAuditRequests}
-                      household={activeHousehold}
-                      currentMember={currentMember}
-                      members={householdMembers}
-                      busy={busy}
-                      userId={userId!}
-                      onAdd={onAddFinanceEntry}
-                      onUpdateEntry={onUpdateFinanceEntry}
-                      onDeleteEntry={onDeleteFinanceEntry}
-                      onAddSubscription={onAddFinanceSubscription}
-                      onUpdateSubscription={onUpdateFinanceSubscription}
-                      onDeleteSubscription={onDeleteFinanceSubscription}
-                      onUpdateHousehold={onUpdateHousehold}
-                      onUpdateMemberSettings={onUpdateMemberSettings}
-                      onRequestCashAudit={onRequestCashAudit}
-                    />
-                  ) : null}
+                    {tab === "finances" ? (
+                      <FinancesTab
+                        section={financeSubTab}
+                        entries={finances}
+                        subscriptions={financeSubscriptions}
+                        cashAuditRequests={cashAuditRequests}
+                        household={activeHousehold}
+                        currentMember={currentMember}
+                        members={householdMembers}
+                        busy={busy}
+                        userId={userId!}
+                        onAdd={onAddFinanceEntry}
+                        onUpdateEntry={onUpdateFinanceEntry}
+                        onDeleteEntry={onDeleteFinanceEntry}
+                        onAddSubscription={onAddFinanceSubscription}
+                        onUpdateSubscription={onUpdateFinanceSubscription}
+                        onDeleteSubscription={onDeleteFinanceSubscription}
+                        onUpdateHousehold={onUpdateHousehold}
+                        onUpdateMemberSettings={onUpdateMemberSettings}
+                        onRequestCashAudit={onRequestCashAudit}
+                      />
+                    ) : null}
 
-                  {tab === "settings" ? (
-                    <SettingsTab
-                      section={settingsSubTab}
-                      household={activeHousehold}
-                      members={householdMembers}
-                      currentMember={currentMember}
-                      userId={userId!}
-                      userEmail={userEmail}
-                      userAvatarUrl={userAvatarUrl}
-                      userDisplayName={userDisplayName}
-                      busy={busy}
-                      onUpdateHousehold={onUpdateHousehold}
-                      onUpdateUserAvatar={onUpdateUserAvatar}
-                      onUpdateUserDisplayName={onUpdateUserDisplayName}
-                      onSetMemberRole={onSetMemberRole}
-                      onRemoveMember={onRemoveMember}
-                      onSignOut={onSignOut}
-                      onLeaveHousehold={onLeaveHouseholdWithRedirect}
-                      onDissolveHousehold={onDissolveHouseholdWithRedirect}
-                    />
-                  ) : null}
+                    {tab === "settings" ? (
+                      <SettingsTab
+                        section={settingsSubTab}
+                        household={activeHousehold}
+                        members={householdMembers}
+                        currentMember={currentMember}
+                        userId={userId!}
+                        userEmail={userEmail}
+                        userAvatarUrl={userAvatarUrl}
+                        userDisplayName={userDisplayName}
+                        busy={busy}
+                        onUpdateHousehold={onUpdateHousehold}
+                        onUpdateUserAvatar={onUpdateUserAvatar}
+                        onUpdateUserDisplayName={onUpdateUserDisplayName}
+                        onSetMemberRole={onSetMemberRole}
+                        onRemoveMember={onRemoveMember}
+                        onSignOut={onSignOut}
+                        onLeaveHousehold={onLeaveHouseholdWithRedirect}
+                        onDissolveHousehold={onDissolveHouseholdWithRedirect}
+                      />
+                    ) : null}
+                  </Suspense>
                 </motion.div>
               </AnimatePresence>
             </div>

@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { CalendarCheck2, Receipt, ShoppingCart, Wallet } from "lucide-react";
+import { CalendarCheck2, Pencil, Receipt, ShoppingCart, Wallet } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import trianglify from "trianglify";
 import { useTranslation } from "react-i18next";
 import type { Components } from "react-markdown";
 import { formatDateTime } from "../../lib/date";
@@ -15,14 +16,20 @@ import type {
   TaskCompletion,
   TaskItem
 } from "../../lib/types";
-import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../../components/ui/dialog";
 import { Label } from "../../components/ui/label";
-import { Progress } from "../../components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
-import { canEditLandingByRole, getSavedLandingMarkdown, shouldResetDraftOnDialogClose } from "./home-landing.utils";
+import {
+  LANDING_WIDGET_KEYS,
+  type LandingWidgetKey,
+  canEditLandingByRole,
+  getEffectiveLandingMarkdown,
+  getMissingLandingWidgetKeys,
+  getSavedLandingMarkdown,
+  shouldResetDraftOnDialogClose
+} from "./home-landing.utils";
 
 interface HomeTabProps {
   section?: "summary" | "feed";
@@ -38,11 +45,27 @@ interface HomeTabProps {
   cashAuditRequests: CashAuditRequest[];
   userLabel: string | undefined | null;
   busy: boolean;
-  completedTasks: number;
-  totalTasks: number;
   onSelectHousehold: (householdId: string) => void;
   onSaveLandingMarkdown: (markdown: string) => Promise<void>;
 }
+
+const createTrianglifyBannerDataUrl = (seed: string) => {
+  try {
+    const pattern = trianglify({
+      width: 1600,
+      height: 420,
+      cellSize: 92,
+      variance: 0.8,
+      seed
+    });
+    const svg = pattern.toSVG();
+    const serializer = typeof XMLSerializer !== "undefined" ? new XMLSerializer() : null;
+    const svgMarkup = serializer ? serializer.serializeToString(svg) : svg.outerHTML;
+    return `url("data:image/svg+xml,${encodeURIComponent(svgMarkup)}")`;
+  } catch {
+    return "linear-gradient(135deg, #0f766e 0%, #1d4ed8 100%)";
+  }
+};
 
 export const HomeTab = ({
   section = "summary",
@@ -58,21 +81,46 @@ export const HomeTab = ({
   cashAuditRequests,
   userLabel,
   busy,
-  completedTasks,
-  totalTasks,
   onSelectHousehold,
   onSaveLandingMarkdown
 }: HomeTabProps) => {
   const { t, i18n } = useTranslation();
-  const taskProgress = totalTasks > 0 ? Math.min(100, Math.max(0, (completedTasks / totalTasks) * 100)) : 0;
+  const defaultLandingMarkdown = useMemo(
+    () =>
+      [
+        `# ${t("home.defaultLandingHeading", { household: household.name })}`,
+        "",
+        t("home.defaultLandingIntro"),
+        "",
+        `## ${t("home.defaultLandingWidgetsHeading")}`,
+        "",
+        "{{widget:tasks-overview}}",
+        "",
+        "{{widget:fairness-score}}",
+        "",
+        "{{widget:expenses-by-month}}",
+        "",
+        "{{widget:fairness-by-member}}"
+      ].join("\n"),
+    [household.name, t]
+  );
   const showSummary = section === "summary";
   const showFeed = section === "feed";
   const [editorOpen, setEditorOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [markdownDraft, setMarkdownDraft] = useState(getSavedLandingMarkdown(household.landing_page_markdown));
   const savedMarkdown = getSavedLandingMarkdown(household.landing_page_markdown);
+  const effectiveMarkdown = getEffectiveLandingMarkdown(savedMarkdown, defaultLandingMarkdown);
+  const [markdownDraft, setMarkdownDraft] = useState(effectiveMarkdown);
   const canEdit = canEditLandingByRole(currentMember?.role ?? null);
-  const hasContent = savedMarkdown.trim().length > 0;
+  const hasContent = effectiveMarkdown.trim().length > 0;
+  const missingWidgetKeys = useMemo(() => getMissingLandingWidgetKeys(effectiveMarkdown), [effectiveMarkdown]);
+  const missingWidgetKeySet = useMemo(() => new Set(missingWidgetKeys), [missingWidgetKeys]);
+  const hasAllWidgetsInMarkdown = missingWidgetKeys.length === 0;
+  const householdImageUrl = household.image_url?.trim() ?? "";
+  const bannerBackgroundImage = useMemo(
+    () => (householdImageUrl ? `url("${householdImageUrl}")` : createTrianglifyBannerDataUrl(household.name)),
+    [household.name, householdImageUrl]
+  );
   const language = i18n.resolvedLanguage ?? i18n.language;
   const memberLabel = useMemo(
     () =>
@@ -247,14 +295,114 @@ export const HomeTab = ({
     }),
     []
   );
+  const landingContentSegments = useMemo(() => {
+    const segments: Array<{ type: "markdown"; content: string } | { type: "widget"; key: LandingWidgetKey }> = [];
+    const widgetTokenPattern = /\{\{\s*widget:([a-z-]+)\s*\}\}/g;
+    let lastIndex = 0;
+
+    for (const match of effectiveMarkdown.matchAll(widgetTokenPattern)) {
+      const index = match.index ?? 0;
+      if (index > lastIndex) {
+        segments.push({ type: "markdown", content: effectiveMarkdown.slice(lastIndex, index) });
+      }
+
+      const key = match[1];
+      if ((LANDING_WIDGET_KEYS as readonly string[]).includes(key)) {
+        segments.push({ type: "widget", key: key as LandingWidgetKey });
+      } else {
+        segments.push({ type: "markdown", content: match[0] });
+      }
+      lastIndex = index + match[0].length;
+    }
+
+    if (lastIndex < effectiveMarkdown.length) {
+      segments.push({ type: "markdown", content: effectiveMarkdown.slice(lastIndex) });
+    }
+
+    if (segments.length === 0) {
+      segments.push({ type: "markdown", content: effectiveMarkdown });
+    }
+
+    return segments;
+  }, [effectiveMarkdown]);
+
+  const renderLandingWidget = (key: LandingWidgetKey) => {
+    if (key === "tasks-overview") {
+      return (
+        <div className="rounded-xl border border-brand-100 bg-brand-50/60 p-3 dark:border-slate-700 dark:bg-slate-800/60">
+          <p className="text-xs text-slate-500 dark:text-slate-400">{t("home.widgetTasksDue")}</p>
+          <p className="mt-1 text-lg font-semibold text-slate-900 dark:text-slate-100">{dueTasksCount}</p>
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            {t("home.widgetTasksOpen", { count: openTasksCount })}
+          </p>
+        </div>
+      );
+    }
+
+    if (key === "fairness-score") {
+      return (
+        <div className="rounded-xl border border-brand-100 bg-brand-50/60 p-3 dark:border-slate-700 dark:bg-slate-800/60">
+          <p className="text-xs text-slate-500 dark:text-slate-400">{t("home.widgetFairness")}</p>
+          <p className="mt-1 text-lg font-semibold text-slate-900 dark:text-slate-100">{taskFairness.overallScore} / 100</p>
+          <p className="text-xs text-slate-500 dark:text-slate-400">{t("home.widgetFairnessHint")}</p>
+        </div>
+      );
+    }
+
+    if (key === "expenses-by-month") {
+      return monthlyExpenseRows.length > 0 ? (
+        <div className="rounded-xl border border-brand-100 bg-white/80 p-3 dark:border-slate-700 dark:bg-slate-900/70">
+          <p className="mb-2 text-xs font-semibold text-slate-600 dark:text-slate-300">{t("home.widgetExpensesByMonth")}</p>
+          <ul className="space-y-2">
+            {monthlyExpenseRows.map((entry) => (
+              <li key={entry.month} className="flex items-center justify-between gap-2 text-sm">
+                <div className="min-w-0">
+                  <p className="text-slate-700 dark:text-slate-300">{entry.month}</p>
+                  <p className="truncate text-xs text-slate-500 dark:text-slate-400">
+                    {entry.categories.map((categoryRow) => `${categoryRow.category}: ${categoryRow.value.toFixed(2)} €`).join(" • ")}
+                  </p>
+                </div>
+                <span className="font-semibold text-slate-900 dark:text-slate-100">{entry.total.toFixed(2)} €</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null;
+    }
+
+    if (key === "fairness-by-member") {
+      return taskFairness.rows.length > 0 ? (
+        <div className="rounded-xl border border-brand-100 bg-white/80 p-3 dark:border-slate-700 dark:bg-slate-900/70">
+          <p className="mb-2 text-xs font-semibold text-slate-600 dark:text-slate-300">{t("home.widgetFairnessByMember")}</p>
+          <ul className="space-y-2">
+            {taskFairness.rows.map((row) => (
+              <li key={row.memberId} className="space-y-1">
+                <div className="flex items-center justify-between gap-2 text-xs">
+                  <span className="text-slate-700 dark:text-slate-300">{memberLabel(row.memberId)}</span>
+                  <span className="text-slate-500 dark:text-slate-400">
+                    {row.score} / 100 · {row.completions}
+                  </span>
+                </div>
+                <div className="h-1.5 rounded-full bg-slate-200 dark:bg-slate-700">
+                  <div className="h-1.5 rounded-full bg-brand-500" style={{ width: `${row.score}%` }} />
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null;
+    }
+
+    return null;
+  };
 
   useEffect(() => {
-    setMarkdownDraft(getSavedLandingMarkdown(household.landing_page_markdown));
-  }, [household.id, household.landing_page_markdown]);
+    setMarkdownDraft(getEffectiveLandingMarkdown(getSavedLandingMarkdown(household.landing_page_markdown), defaultLandingMarkdown));
+  }, [defaultLandingMarkdown, household.id, household.landing_page_markdown]);
 
   const onEditorOpenChange = (open: boolean) => {
     if (shouldResetDraftOnDialogClose(open, isSaving)) {
-      setMarkdownDraft(savedMarkdown);
+      setMarkdownDraft(effectiveMarkdown);
     }
     setEditorOpen(open);
   };
@@ -262,79 +410,65 @@ export const HomeTab = ({
   return (
     <div className="space-y-4">
       {showSummary ? (
-      <Card>
-        <CardHeader>
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <CardTitle>{t("home.title")}</CardTitle>
-              <CardDescription>{userLabel ?? t("app.noUserLabel")}</CardDescription>
-            </div>
-            <Badge>{t("app.codeBadge", { code: household.invite_code })}</Badge>
+      <div className="relative overflow-hidden rounded-2xl border border-brand-200 shadow-card dark:border-slate-700">
+        <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: bannerBackgroundImage }} />
+        <div className="absolute inset-0 bg-gradient-to-r from-slate-900/45 via-slate-900/25 to-slate-900/55" />
+        <div className="relative flex min-h-44 items-end p-5 sm:min-h-56 sm:p-7">
+          <div className="min-w-0">
+            <p className="truncate text-xs font-medium uppercase tracking-[0.12em] text-white/80">{userLabel ?? t("app.noUserLabel")}</p>
+            <h1 className="mt-1 truncate text-2xl font-semibold text-white sm:text-3xl">{household.name}</h1>
           </div>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {households.length > 1 ? (
-            <div className="space-y-1">
-              <p className="text-xs font-medium text-slate-500 dark:text-slate-400">{t("home.switchHousehold")}</p>
-              <Select value={household.id} onValueChange={onSelectHousehold}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                {households.map((entry) => (
-                  <SelectItem key={entry.id} value={entry.id}>
-                    {entry.name}
-                  </SelectItem>
-                ))}
-                </SelectContent>
-              </Select>
-            </div>
-          ) : null}
-
-          <div className="grid gap-3 sm:grid-cols-3">
-            <div className="rounded-xl border border-brand-100 bg-brand-50/60 p-3 dark:border-slate-700 dark:bg-slate-800/60">
-              <p className="text-xs text-slate-500 dark:text-slate-400">{t("home.household")}</p>
-              <p className="mt-1 text-sm font-semibold text-slate-900 dark:text-slate-100">{household.name}</p>
-            </div>
-
-            <div className="rounded-xl border border-brand-100 bg-brand-50/60 p-3 dark:border-slate-700 dark:bg-slate-800/60">
-              <p className="text-xs text-slate-500 dark:text-slate-400">{t("home.tasksProgress")}</p>
-              <p className="mt-1 text-sm font-semibold text-slate-900 dark:text-slate-100">
-                {completedTasks} / {totalTasks}
-              </p>
-              <Progress className="mt-2" value={taskProgress} />
-            </div>
-
-            <div className="rounded-xl border border-brand-100 bg-brand-50/60 p-3 dark:border-slate-700 dark:bg-slate-800/60">
-              <p className="text-xs text-slate-500 dark:text-slate-400">{t("home.currency")}</p>
-              <p className="mt-1 text-sm font-semibold text-slate-900 dark:text-slate-100">{household.currency}</p>
-            </div>
-          </div>
-
-          <div className="flex justify-end">
-            <Button type="button" variant="outline" onClick={() => setEditorOpen(true)} disabled={!canEdit}>
-              {t("home.editLanding")}
-            </Button>
-          </div>
-          {!canEdit ? (
-            <p className="text-xs text-slate-500 dark:text-slate-400">{t("home.editLandingOwnerOnly")}</p>
-          ) : null}
-        </CardContent>
-      </Card>
+        </div>
+      </div>
       ) : null}
 
       {showSummary ? (
       <Card>
-        <CardHeader>
-          <CardTitle>{t("home.landingTitle")}</CardTitle>
-          <CardDescription>{t("home.landingDescription")}</CardDescription>
-        </CardHeader>
-        <CardContent>
+        <CardContent className="relative pt-6">
+          {households.length > 1 ? (
+            <div className="mb-4 pr-12 sm:max-w-[280px]">
+              <Select value={household.id} onValueChange={onSelectHousehold}>
+                <SelectTrigger>
+                  <SelectValue placeholder={t("home.switchHousehold")} />
+                </SelectTrigger>
+                <SelectContent>
+                  {households.map((entry) => (
+                    <SelectItem key={entry.id} value={entry.id}>
+                      {entry.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          ) : null}
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="absolute right-0 top-0 z-10 h-9 w-9 rounded-full border-brand-200 bg-white/95 px-0 shadow-sm hover:bg-brand-50 dark:border-slate-700 dark:bg-slate-900/95 dark:hover:bg-slate-800"
+            onClick={() => setEditorOpen(true)}
+            disabled={!canEdit}
+            aria-label={t("home.editLanding")}
+            title={t("home.editLanding")}
+          >
+            <Pencil className="h-4 w-4" />
+          </Button>
+          {!canEdit ? (
+            <p className="mb-3 pr-12 text-xs text-slate-500 dark:text-slate-400">{t("home.editLandingOwnerOnly")}</p>
+          ) : null}
           {hasContent ? (
-            <div className="prose prose-slate max-w-none dark:prose-invert [&_*]:break-words">
-              <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-                {savedMarkdown}
-              </ReactMarkdown>
+            <div className="prose prose-slate max-w-none pr-12 dark:prose-invert [&_*]:break-words">
+              {landingContentSegments.map((segment, index) =>
+                segment.type === "markdown" ? (
+                  <ReactMarkdown key={`md-${index}`} remarkPlugins={[remarkGfm]} components={markdownComponents}>
+                    {segment.content}
+                  </ReactMarkdown>
+                ) : (
+                  <div key={`widget-${segment.key}-${index}`} className="not-prose mt-4">
+                    {renderLandingWidget(segment.key)}
+                  </div>
+                )
+              )}
             </div>
           ) : (
             <p className="text-sm text-slate-500 dark:text-slate-400">{t("home.landingEmpty")}</p>
@@ -343,67 +477,22 @@ export const HomeTab = ({
       </Card>
       ) : null}
 
-      {showSummary ? (
+      {showSummary && !hasAllWidgetsInMarkdown ? (
       <Card>
         <CardHeader>
           <CardTitle>{t("home.widgetsTitle")}</CardTitle>
           <CardDescription>{t("home.widgetsDescription")}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="rounded-xl border border-brand-100 bg-brand-50/60 p-3 dark:border-slate-700 dark:bg-slate-800/60">
-              <p className="text-xs text-slate-500 dark:text-slate-400">{t("home.widgetTasksDue")}</p>
-              <p className="mt-1 text-lg font-semibold text-slate-900 dark:text-slate-100">{dueTasksCount}</p>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                {t("home.widgetTasksOpen", { count: openTasksCount })}
-              </p>
-            </div>
-            <div className="rounded-xl border border-brand-100 bg-brand-50/60 p-3 dark:border-slate-700 dark:bg-slate-800/60">
-              <p className="text-xs text-slate-500 dark:text-slate-400">{t("home.widgetFairness")}</p>
-              <p className="mt-1 text-lg font-semibold text-slate-900 dark:text-slate-100">{taskFairness.overallScore} / 100</p>
-              <p className="text-xs text-slate-500 dark:text-slate-400">{t("home.widgetFairnessHint")}</p>
-            </div>
-          </div>
-
-          {monthlyExpenseRows.length > 0 ? (
-            <div className="rounded-xl border border-brand-100 bg-white/80 p-3 dark:border-slate-700 dark:bg-slate-900/70">
-              <p className="mb-2 text-xs font-semibold text-slate-600 dark:text-slate-300">{t("home.widgetExpensesByMonth")}</p>
-              <ul className="space-y-2">
-                {monthlyExpenseRows.map((entry) => (
-                  <li key={entry.month} className="flex items-center justify-between gap-2 text-sm">
-                    <div className="min-w-0">
-                      <p className="text-slate-700 dark:text-slate-300">{entry.month}</p>
-                      <p className="truncate text-xs text-slate-500 dark:text-slate-400">
-                        {entry.categories.map((categoryRow) => `${categoryRow.category}: ${categoryRow.value.toFixed(2)} €`).join(" • ")}
-                      </p>
-                    </div>
-                    <span className="font-semibold text-slate-900 dark:text-slate-100">{entry.total.toFixed(2)} €</span>
-                  </li>
-                ))}
-              </ul>
+          {missingWidgetKeySet.has("tasks-overview") || missingWidgetKeySet.has("fairness-score") ? (
+            <div className="grid gap-3 sm:grid-cols-2">
+              {missingWidgetKeySet.has("tasks-overview") ? renderLandingWidget("tasks-overview") : null}
+              {missingWidgetKeySet.has("fairness-score") ? renderLandingWidget("fairness-score") : null}
             </div>
           ) : null}
 
-          {taskFairness.rows.length > 0 ? (
-            <div className="rounded-xl border border-brand-100 bg-white/80 p-3 dark:border-slate-700 dark:bg-slate-900/70">
-              <p className="mb-2 text-xs font-semibold text-slate-600 dark:text-slate-300">{t("home.widgetFairnessByMember")}</p>
-              <ul className="space-y-2">
-                {taskFairness.rows.map((row) => (
-                  <li key={row.memberId} className="space-y-1">
-                    <div className="flex items-center justify-between gap-2 text-xs">
-                      <span className="text-slate-700 dark:text-slate-300">{memberLabel(row.memberId)}</span>
-                      <span className="text-slate-500 dark:text-slate-400">
-                        {row.score} / 100 · {row.completions}
-                      </span>
-                    </div>
-                    <div className="h-1.5 rounded-full bg-slate-200 dark:bg-slate-700">
-                      <div className="h-1.5 rounded-full bg-brand-500" style={{ width: `${row.score}%` }} />
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
+          {missingWidgetKeySet.has("expenses-by-month") ? renderLandingWidget("expenses-by-month") : null}
+          {missingWidgetKeySet.has("fairness-by-member") ? renderLandingWidget("fairness-by-member") : null}
         </CardContent>
       </Card>
       ) : null}

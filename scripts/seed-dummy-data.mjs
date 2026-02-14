@@ -200,6 +200,7 @@ export const buildFinanceRows = ({ financeCount, users, householdId, now, random
 
   for (let i = 0; i < financeCount; i += 1) {
     const payer = users[i % users.length];
+    const creator = users[(i + 1) % users.length] ?? payer;
     const progress = i / Math.max(financeCount - 1, 1);
     const dayOffset = Math.round(progress * historyDays);
     const jitterHours = (i % 5) * 3 + 1;
@@ -240,6 +241,7 @@ export const buildFinanceRows = ({ financeCount, users, householdId, now, random
       paid_by_user_ids: paidByUserIds.length > 0 ? [...new Set(paidByUserIds)] : [payer.id],
       beneficiary_user_ids: beneficiaryUserIds.length > 0 ? [...new Set(beneficiaryUserIds)] : [payer.id],
       entry_date: createdAt.toISOString().slice(0, 10),
+      created_by: creator.id,
       created_at: createdAt.toISOString()
     });
   }
