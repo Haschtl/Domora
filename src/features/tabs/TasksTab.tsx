@@ -677,9 +677,8 @@ export const TasksTab = ({
     return (
       <span className="relative inline-flex h-4 w-4 items-center justify-center">
         {icon}
-        <span className="pointer-events-none absolute inset-0">
           <SparklesEffect
-            color="currentColor"
+            color="white"
             count={6}
             minSize={2}
             maxSize={4}
@@ -687,7 +686,6 @@ export const TasksTab = ({
             fadeOutSpeed={8}
             flicker={false}
           />
-        </span>
       </span>
     );
   };
@@ -2155,6 +2153,7 @@ export const TasksTab = ({
               {podiumRows.length > 0 ? (
                 <div className="mb-4 rounded-xl border border-brand-100 bg-white/90 p-3 dark:border-slate-700 dark:bg-slate-900">
                   <div className="grid grid-cols-3 items-end gap-2">
+
                     {[1, 0, 2].map((index) => {
                       const member = podiumRows[index];
                       if (!member) return <div key={`podium-empty-${index}`} />;
@@ -2186,8 +2185,17 @@ export const TasksTab = ({
                       return (
                         <div
                           key={member.user_id}
-                          className="flex flex-col items-center"
+                          className="relative flex flex-col items-center"
                         >
+                          <SparklesEffect
+                            color="currentColor"
+                            count={(3-rank)*6}
+                            minSize={2}
+                            maxSize={4}
+                            overflowPx={4}
+                            fadeOutSpeed={8}
+                            flicker={false}
+                          />
                           <img
                             src={
                               member.avatar_url?.trim() ||

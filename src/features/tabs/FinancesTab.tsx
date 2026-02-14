@@ -156,7 +156,6 @@ const renderSparkleIcon = (Icon: (props: { className?: string }) => JSX.Element)
   return (
     <span className="relative inline-flex h-4 w-4 items-center justify-center">
       {icon}
-      <span className="pointer-events-none absolute inset-0">
         <SparklesEffect
           color="currentColor"
           count={6}
@@ -166,7 +165,6 @@ const renderSparkleIcon = (Icon: (props: { className?: string }) => JSX.Element)
           fadeOutSpeed={8}
           flicker={false}
         />
-      </span>
     </span>
   );
 };

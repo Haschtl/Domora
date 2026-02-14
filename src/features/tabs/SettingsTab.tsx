@@ -459,7 +459,7 @@ export const SettingsTab = ({
 
             <div className="space-y-1">
               <Label htmlFor="profile-color">{t("settings.profileColorLabel")}</Label>
-              <div className="relative flex items-center gap-2">
+              <div className="relative flex items-center overflow-hidden rounded-xl border border-brand-200 bg-white focus-within:border-brand-500 focus-within:shadow-[inset_0_0_0_1px_rgba(59,130,246,0.45)] dark:border-slate-700 dark:bg-slate-900 dark:focus-within:border-slate-500 dark:focus-within:shadow-[inset_0_0_0_1px_rgba(148,163,184,0.45)]">
                 <profileColorForm.Field
                   name="userColor"
                   children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
@@ -467,12 +467,12 @@ export const SettingsTab = ({
                       <Input
                         id="profile-color"
                         type="color"
-                        className="h-10 w-16 p-1"
+                        className="h-10 w-14 m-1 rounded-l-[8px] rounded-r-[8px] border-0 bg-transparent p-0 shadow-none focus-visible:ring-0"
                         value={normalizeUserColor(field.state.value)}
                         onChange={(event) => field.handleChange(normalizeUserColor(event.target.value))}
                       />
                       <Input
-                        className="pr-11"
+                        className="h-10 flex-1 border-0 bg-transparent px-3 pr-11 shadow-none focus-visible:ring-0"
                         value={normalizeUserColor(field.state.value)}
                         onChange={(event) => field.handleChange(normalizeUserColor(event.target.value))}
                         placeholder="#4f46e5"

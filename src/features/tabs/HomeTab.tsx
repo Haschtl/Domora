@@ -205,7 +205,38 @@ const LandingWidgetEditorShell = ({
   widgetIndex: number;
 }) => (
   <div className="not-prose my-2">
-    <div className="relative">
+    <div
+      className="relative"
+      data-widget-index={widgetIndex}
+      draggable
+      contentEditable={false}
+      onDragStart={(event) => {
+        const sourceWidgetIndex = Number.parseInt(event.currentTarget.dataset.widgetIndex ?? "", 10);
+        if (!Number.isFinite(sourceWidgetIndex)) {
+          event.preventDefault();
+          return;
+        }
+        event.dataTransfer.setData("text/domora-widget-index", String(sourceWidgetIndex));
+        event.dataTransfer.setData("text/plain", String(sourceWidgetIndex));
+        event.dataTransfer.effectAllowed = "move";
+      }}
+      onDragOver={(event) => {
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "move";
+      }}
+      onDrop={(event) => {
+        event.preventDefault();
+        const sourceWidgetIndex = Number.parseInt(
+          event.dataTransfer.getData("text/domora-widget-index") || event.dataTransfer.getData("text/plain"),
+          10
+        );
+        const targetWidgetIndex = Number.parseInt(event.currentTarget.dataset.widgetIndex ?? "", 10);
+        if (!Number.isFinite(sourceWidgetIndex) || !Number.isFinite(targetWidgetIndex)) {
+          return;
+        }
+        onMove(sourceWidgetIndex, targetWidgetIndex);
+      }}
+    >
       <button
         type="button"
         className="absolute left-2 top-2 z-20 inline-flex h-7 w-7 cursor-grab touch-none items-center justify-center rounded-full border border-slate-300 bg-white/95 text-slate-600 shadow-sm hover:bg-slate-100 active:cursor-grabbing dark:border-slate-600 dark:bg-slate-900/95 dark:text-slate-300 dark:hover:bg-slate-800"
@@ -216,30 +247,6 @@ const LandingWidgetEditorShell = ({
           event.preventDefault();
           event.stopPropagation();
         }}
-        onDragStart={(event) => {
-          const sourceWidgetIndex = Number.parseInt(event.currentTarget.dataset.widgetIndex ?? "", 10);
-          if (!Number.isFinite(sourceWidgetIndex)) {
-            event.preventDefault();
-            return;
-          }
-          event.dataTransfer.setData("text/domora-widget-index", String(sourceWidgetIndex));
-          event.dataTransfer.effectAllowed = "move";
-        }}
-        onDragOver={(event) => {
-          event.preventDefault();
-          event.dataTransfer.dropEffect = "move";
-        }}
-        onDrop={(event) => {
-          event.preventDefault();
-          const sourceWidgetIndex = Number.parseInt(event.dataTransfer.getData("text/domora-widget-index"), 10);
-          const targetWidgetIndex = Number.parseInt(event.currentTarget.dataset.widgetIndex ?? "", 10);
-          if (!Number.isFinite(sourceWidgetIndex) || !Number.isFinite(targetWidgetIndex)) {
-            return;
-          }
-          onMove(sourceWidgetIndex, targetWidgetIndex);
-        }}
-        draggable
-        data-widget-index={widgetIndex}
         aria-label={dragHandleLabel}
         title={dragHandleLabel}
       >

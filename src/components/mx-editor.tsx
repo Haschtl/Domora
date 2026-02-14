@@ -137,7 +137,19 @@ export const MXEditor = ({
   ];
 
   return (
-    <div className={containerClassName}>
+    <div
+      className={containerClassName}
+      onDragOver={(event) => {
+        if (!event.dataTransfer.types.includes("text/domora-widget-index")) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "move";
+      }}
+      onDrop={(event) => {
+        if (!event.dataTransfer.types.includes("text/domora-widget-index")) return;
+        event.preventDefault();
+        event.stopPropagation();
+      }}
+    >
       <MDXEditor
         ref={editorRef}
         markdown={value}
