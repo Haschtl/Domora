@@ -1,4 +1,5 @@
 import { useRef } from "react";
+import type { ReactNode } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { FinanceEntry } from "../../../lib/types";
 import { MoreHorizontal } from "lucide-react";
@@ -12,6 +13,7 @@ import {
 } from "../../../components/ui/dropdown-menu";
 
 interface FinanceEntriesListProps {
+  header?: ReactNode;
   entries: FinanceEntry[];
   itemClassName?: string;
   formatMoney: (value: number) => string;
@@ -31,10 +33,11 @@ interface FinanceEntriesListProps {
   deleteLabel?: string;
   busy?: boolean;
   virtualized?: boolean;
-  virtualHeight?: number;
+  virtualHeight?: number | string;
 }
 
 export const FinanceEntriesList = ({
+  header,
   entries,
   itemClassName,
   formatMoney,
@@ -57,10 +60,17 @@ export const FinanceEntriesList = ({
   virtualHeight = 420
 }: FinanceEntriesListProps) => {
   const parentRef = useRef<HTMLDivElement>(null);
+  const virtualCount = header ? entries.length + 1 : entries.length;
   const rowVirtualizer = useVirtualizer({
-    count: entries.length,
+    count: virtualCount,
     getScrollElement: () => parentRef.current,
-    estimateSize: () => 106,
+    getItemKey: (index) => {
+      if (header && index === 0) return "list-header";
+      const entry = entries[header ? index - 1 : index];
+      return entry?.id ?? index;
+    },
+    estimateSize: () => 118,
+    measureElement: (element) => element.getBoundingClientRect().height,
     overscan: 8
   });
 
@@ -136,16 +146,22 @@ export const FinanceEntriesList = ({
     </li>
   );
 
-  if (!virtualized || entries.length < 24) {
-    return <ul className="mt-4 space-y-2">{entries.map((entry) => renderEntry(entry))}</ul>;
+  if (!virtualized) {
+    return (
+      <>
+        {header ? <div className="mt-4">{header}</div> : null}
+        <ul className="mt-4 space-y-2">{entries.map((entry) => renderEntry(entry))}</ul>
+      </>
+    );
   }
 
   return (
     <div
       ref={parentRef}
       className="mt-4 overflow-auto pr-1"
-      style={{ height: `${virtualHeight}px` }}
+      style={{ height: typeof virtualHeight === "number" ? `${virtualHeight}px` : virtualHeight }}
     >
+      {header ? <div className="mb-3">{header}</div> : null}
       <div
         style={{
           height: `${rowVirtualizer.getTotalSize()}px`,
@@ -154,12 +170,30 @@ export const FinanceEntriesList = ({
         }}
       >
         {rowVirtualizer.getVirtualItems().map((virtualItem) => {
-          const entry = entries[virtualItem.index];
+          if (header && virtualItem.index === 0) {
+            return (
+              <div
+                key="list-header"
+                ref={rowVirtualizer.measureElement}
+                className="absolute left-0 top-0 w-full"
+                data-index={virtualItem.index}
+                style={{
+                  transform: `translateY(${virtualItem.start}px)`,
+                  paddingBottom: "0.75rem"
+                }}
+              >
+                {header}
+              </div>
+            );
+          }
+          const entry = entries[header ? virtualItem.index - 1 : virtualItem.index];
           if (!entry) return null;
           return (
             <div
               key={entry.id}
+              ref={rowVirtualizer.measureElement}
               className="absolute left-0 top-0 w-full"
+              data-index={virtualItem.index}
               style={{
                 transform: `translateY(${virtualItem.start}px)`,
                 paddingBottom: "0.5rem"

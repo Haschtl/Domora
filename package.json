@@ -51,6 +51,7 @@
     "@tanstack/store": "^0.8.0",
     "@tsparticles/engine": "^3.9.1",
     "@tsparticles/react": "^3.0.0",
+    "@tsparticles/shape-text": "^3.9.1",
     "@tsparticles/slim": "^3.9.1",
     "browser-image-compression": "^2.0.2",
     "chart.js": "^4.5.1",

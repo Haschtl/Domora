@@ -1785,6 +1785,18 @@ export const getHouseholdEvents = async (householdId: string): Promise<Household
   return (data ?? []).map((entry) => normalizeHouseholdEvent(entry as Record<string, unknown>));
 };
 
+const DEFAULT_PUSH_TOPICS = [
+  "task_due",
+  "task_completed",
+  "task_skipped",
+  "task_taken_over",
+  "finance_created",
+  "shopping_added",
+  "shopping_completed",
+  "bucket_added",
+  "cash_audit_requested"
+];
+
 export const getPushPreferences = async (householdId: string, userId: string): Promise<PushPreferences> => {
   const validatedHouseholdId = z.string().uuid().parse(householdId);
   const validatedUserId = z.string().uuid().parse(userId);
@@ -1800,12 +1812,12 @@ export const getPushPreferences = async (householdId: string, userId: string): P
       household_id: validatedHouseholdId,
       enabled: true,
       quiet_hours: {},
-      topics: []
+      topics: DEFAULT_PUSH_TOPICS
     };
   }
   return {
     ...(data as PushPreferences),
-    topics: Array.isArray((data as PushPreferences).topics) ? (data as PushPreferences).topics : []
+    topics: Array.isArray((data as PushPreferences).topics) ? (data as PushPreferences).topics : DEFAULT_PUSH_TOPICS
   };
 };
 
@@ -1822,7 +1834,7 @@ export const upsertPushPreferences = async (input: {
       userId: z.string().uuid(),
       enabled: z.coerce.boolean(),
       quietHours: z.record(z.string(), z.unknown()).default({}),
-      topics: z.array(z.string()).default([])
+      topics: z.array(z.string()).default(DEFAULT_PUSH_TOPICS)
     })
     .parse(input);
 

@@ -37,7 +37,7 @@ export const registerWebPushToken = async ({
   appVersion?: string;
 }) => {
   if (!isFirebaseConfigured) {
-    throw new Error("Firebase config missing");
+    return;
   }
 
   if (typeof window === "undefined") return;

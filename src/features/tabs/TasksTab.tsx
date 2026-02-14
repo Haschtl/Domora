@@ -66,6 +66,7 @@ import { SectionPanel } from "../../components/ui/section-panel";
 import { StarRating } from "../../components/ui/star-rating";
 import { Switch } from "../../components/ui/switch";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../../components/ui/tooltip";
+import { MemberAvatar } from "../../components/member-avatar";
 import { useSmartSuggestions } from "../../hooks/use-smart-suggestions";
 import { formatDateTime, formatShortDay, isDueNow } from "../../lib/date";
 import { createDiceBearAvatarDataUri } from "../../lib/avatar";
@@ -1126,19 +1127,15 @@ export const TasksTab = ({
             member?.display_name?.trim() || displayName || memberId,
           );
         return (
-          <div
+          <MemberAvatar
             key={`rotation-avatar-${memberId}-${index}`}
-            className={`h-7 w-7 overflow-hidden rounded-full border-2 border-white bg-brand-100 text-[11px] font-semibold text-brand-800 dark:border-slate-900 dark:bg-brand-900 dark:text-brand-100 ${
+            src={avatarSrc}
+            alt={displayName}
+            isVacation={member?.vacation_mode ?? false}
+            className={`h-7 w-7 rounded-full border-2 border-white bg-brand-100 text-[11px] font-semibold text-brand-800 dark:border-slate-900 dark:bg-brand-900 dark:text-brand-100 ${
               index > 0 ? "-ml-2" : ""
             }`}
-            title={displayName}
-          >
-            <img
-              src={avatarSrc}
-              alt={displayName}
-              className="h-full w-full object-cover"
-            />
-          </div>
+          />
         );
       })}
       {memberIds.length > maxCount ? (
@@ -1385,12 +1382,12 @@ export const TasksTab = ({
                                 style={{ backgroundColor: resolveMemberColor(span.userId) }}
                               >
                                 {(span.kind === "end" || span.kind === "single") && avatarSrc ? (
-                                  <div
-                                    className="absolute -right-1 top-1/2 h-3.5 w-3.5 -translate-y-1/2 overflow-hidden rounded-full border border-white bg-white dark:border-slate-900 dark:bg-slate-900"
-                                    title={displayName}
-                                  >
-                                    <img src={avatarSrc} alt={displayName} className="h-full w-full object-cover" />
-                                  </div>
+                                  <MemberAvatar
+                                    src={avatarSrc}
+                                    alt={displayName}
+                                    isVacation={memberById.get(span.userId)?.vacation_mode ?? false}
+                                    className="absolute -right-1 top-1/2 h-3.5 w-3.5 -translate-y-1/2 rounded-full border border-white bg-white dark:border-slate-900 dark:bg-slate-900"
+                                  />
                                 ) : null}
                               </div>
                             );
@@ -1410,25 +1407,26 @@ export const TasksTab = ({
                                 : avatarUrl || createDiceBearAvatarDataUri(member?.display_name?.trim() || displayName || memberId);
 
                             return (
-                              <div
+                              <MemberAvatar
                                 key={`${dayKey(cell.date)}-${memberId}`}
-                                className={`h-6 w-6 overflow-hidden rounded-full border-2 border-white bg-brand-100 text-[10px] font-semibold text-brand-800 dark:border-slate-900 dark:bg-brand-900 dark:text-brand-100 ${
+                                src={avatarSrc}
+                                alt={displayName}
+                                isVacation={member?.vacation_mode ?? false}
+                                className={`h-6 w-6 rounded-full border-2 border-white bg-brand-100 text-[10px] font-semibold text-brand-800 dark:border-slate-900 dark:bg-brand-900 dark:text-brand-100 ${
                                   index > 0 ? "-ml-2" : ""
                                 }`}
-                                title={displayName}
-                              >
-                                {avatarSrc ? (
-                                  <img src={avatarSrc} alt={displayName} className="h-full w-full object-cover" />
-                                ) : memberId === "__unassigned__" ? (
-                                  <div className="flex h-full w-full items-center justify-center">
-                                    <CircleUserRound className="h-3.5 w-3.5" />
-                                  </div>
-                                ) : (
-                                  <div className="flex h-full w-full items-center justify-center">
-                                    {displayName.slice(0, 1).toUpperCase()}
-                                  </div>
-                                )}
-                              </div>
+                                fallback={
+                                  memberId === "__unassigned__" ? (
+                                    <div className="flex h-full w-full items-center justify-center">
+                                      <CircleUserRound className="h-3.5 w-3.5" />
+                                    </div>
+                                  ) : (
+                                    <div className="flex h-full w-full items-center justify-center">
+                                      {displayName.slice(0, 1).toUpperCase()}
+                                    </div>
+                                  )
+                                }
+                              />
                             );
                           })}
                           {overflowCount > 0 ? (
@@ -1859,6 +1857,7 @@ export const TasksTab = ({
                                     id={rotationUserId}
                                     label={userLabel(rotationUserId)}
                                     avatarSrc={avatarSrc}
+                                    isVacation={member?.vacation_mode ?? false}
                                     pimperCount={score}
                                     dragHandleLabel={t("tasks.dragHandle")}
                                   />
@@ -1962,22 +1961,17 @@ export const TasksTab = ({
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0 space-y-1">
                           <div className="flex items-center gap-2">
-                            <div
-                              className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full border border-brand-200 bg-brand-50 dark:border-slate-700 dark:bg-slate-800"
-                              title={assigneeText}
-                            >
-                              {assigneeAvatarSrc ? (
-                                <img
-                                  src={assigneeAvatarSrc}
-                                  alt={assigneeText}
-                                  className="h-full w-full object-cover"
-                                />
-                              ) : (
+                            <MemberAvatar
+                              src={assigneeAvatarSrc}
+                              alt={assigneeText}
+                              isVacation={assigneeMember?.vacation_mode ?? false}
+                              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-brand-200 bg-brand-50 dark:border-slate-700 dark:bg-slate-800"
+                              fallback={
                                 <div className="flex h-full w-full items-center justify-center text-slate-500 dark:text-slate-300">
                                   <CircleUserRound className="h-4 w-4" />
                                 </div>
-                              )}
-                            </div>
+                              }
+                            />
                             <div className="min-w-0">
                               <p
                                 className={
@@ -2215,7 +2209,7 @@ export const TasksTab = ({
                             fadeOutSpeed={8}
                             flicker={false}
                           />
-                          <img
+                          <MemberAvatar
                             src={
                               member.avatar_url?.trim() ||
                               createDiceBearAvatarDataUri(
@@ -2223,7 +2217,8 @@ export const TasksTab = ({
                               )
                             }
                             alt={userLabel(member.user_id)}
-                            className="h-8 w-8 rounded-full border border-brand-200 object-cover dark:border-slate-700"
+                            isVacation={member.vacation_mode ?? false}
+                            className="h-8 w-8 rounded-full border border-brand-200 dark:border-slate-700"
                           />
                           <p className="mt-1 max-w-[90px] truncate text-center text-[11px] text-slate-600 dark:text-slate-300">
                             {userLabel(member.user_id)}

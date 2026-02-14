@@ -45,6 +45,9 @@ const SettingsTab = lazy(() =>
 const AppParticlesBackground = lazy(() =>
   import("./components/app-particles-background").then((module) => ({ default: module.AppParticlesBackground }))
 );
+const VacationOverlay = lazy(() =>
+  import("./components/vacation-overlay").then((module) => ({ default: module.VacationOverlay }))
+);
 
 const tabPathMap: Record<AppTab, string> = {
   home: "/home/summary",
@@ -604,6 +607,11 @@ const App = () => {
       <Suspense fallback={null}>
         <AppParticlesBackground />
       </Suspense>
+      {currentMember?.vacation_mode ? (
+        <Suspense fallback={null}>
+          <VacationOverlay />
+        </Suspense>
+      ) : null}
       <div className="relative z-10 mx-auto min-h-screen w-full max-w-7xl p-4 pb-10 text-slate-900 dark:text-slate-100 sm:p-6">
       {!isSupabaseConfigured ? (
         <Card className="mb-4 border border-amber-200 bg-amber-50/80 dark:border-amber-900 dark:bg-amber-950/60">

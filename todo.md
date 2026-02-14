@@ -1,10 +1,8 @@
-Email-Hints im UI raus, es wird nichts per mail verschickt
 
-liht-mode fixen
 
 texte frecher machen
 
 
-- Push notifications sofort, wenn jemand Finanzeinträge erstellt oder Aufgaben abschließt/skippt/übernimmt, oder jemand was auf die einkaufsliste setzt/abhakt, oder wenn jemand einen Kassensturz macht, oder wenn jemand einen bucketlist eintrag hinzufügt
-- Push notification wenn eine Aufgabe fällig wird und alle drei tage bis die aufgabe abgeschlossen ist, einmal
-
+wie laufen tasks ab. Klären Modi und Pimpers ausgleich und prognose. Bleiben die tasks in der reihenfolge? 
+Ist ausgeschlossen, dass ein fälliger task noch jemand anderem zugewiesen wird?
+Wie leicht ändert sich die Taskzuweisung für zukünfigte tasks, nur weil man andere tasks davor abhakt?

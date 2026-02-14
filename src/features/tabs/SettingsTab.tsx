@@ -28,6 +28,7 @@ import { Label } from "../../components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
 import { Switch } from "../../components/ui/switch";
 import { getPushPreferences, upsertPushPreferences } from "../../lib/api";
+import { MemberAvatar } from "../../components/member-avatar";
 
 interface SettingsTabProps {
   section?: "me" | "household";
@@ -1263,10 +1264,11 @@ export const SettingsTab = ({
                       className="flex items-center justify-between gap-3 rounded-lg border border-brand-100 p-3 dark:border-slate-700"
                     >
                       <div className="flex min-w-0 items-center gap-3">
-                        <img
+                        <MemberAvatar
                           src={avatarUrl}
                           alt={displayLabel}
-                          className="h-9 w-9 shrink-0 rounded-full border border-brand-100 object-cover dark:border-slate-700"
+                          isVacation={member.vacation_mode}
+                          className="h-9 w-9 shrink-0 rounded-full border border-brand-100 dark:border-slate-700"
                         />
                         <div className="min-w-0">
                           <p className="truncate text-sm font-medium text-slate-900 dark:text-slate-100">

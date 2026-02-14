@@ -70,6 +70,7 @@ import { createDiceBearAvatarDataUri } from "../../lib/avatar";
 import { formatDateOnly, formatShortDay } from "../../lib/date";
 import { calculateBalancesByMember, calculateSettlementTransfers, splitAmountEvenly } from "../../lib/finance-math";
 import { createMemberLabelGetter, type MemberLabelCase } from "../../lib/member-label";
+import { MemberAvatar } from "../../components/member-avatar";
 import { FinanceEntriesList } from "./components/FinanceEntriesList";
 import { FinanceHistoryCard } from "./components/FinanceHistoryCard";
 import { useFinancesDerivedData } from "./hooks/use-finances-derived-data";
@@ -412,6 +413,7 @@ export const FinancesTab = ({
   const showArchive = section === "archive";
   const showSubscriptions = section === "subscriptions";
   const canEditApartment = currentMember?.role === "owner";
+  const mobileOverviewListHeight = mobileTabBarVisible ? "calc(100dvh - 15rem)" : "calc(100dvh - 12rem)";
   const addEntryForm = useForm({
     defaultValues: {
       description: "",
@@ -2048,13 +2050,12 @@ export const FinancesTab = ({
                       className="flex items-center justify-between rounded-lg border border-brand-100 bg-white/90 px-3 py-2 dark:border-slate-700 dark:bg-slate-900"
                     >
                       <div className="flex items-center gap-2">
-                        <div className="h-7 w-7 overflow-hidden rounded-full border border-brand-100 bg-brand-50 dark:border-slate-700 dark:bg-slate-800">
-                          <img
-                            src={memberAvatarSrc(entry.memberId)}
-                            alt={memberLabel(entry.memberId)}
-                            className="h-full w-full object-cover"
-                          />
-                        </div>
+                        <MemberAvatar
+                          src={memberAvatarSrc(entry.memberId)}
+                          alt={memberLabel(entry.memberId)}
+                          isVacation={memberById.get(entry.memberId)?.vacation_mode ?? false}
+                          className="h-7 w-7 rounded-full border border-brand-100 bg-brand-50 dark:border-slate-700 dark:bg-slate-800"
+                        />
                         <span
                           className={
                             entry.memberId === userId
@@ -2235,7 +2236,7 @@ export const FinancesTab = ({
                       y: { stacked: true, beginAtZero: true },
                     },
                   }}
-                  height={170}
+                  height={340}
                 />
               </div>
             ) : null}
@@ -3483,41 +3484,43 @@ export const FinancesTab = ({
 
       {showOverview ? (
         <>
-          <Card className="relative z-0">
-            <CardHeader>
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <CardTitle>{t("finances.currentEntriesTitle")}</CardTitle>
-                  <CardDescription>
-                    {t("finances.currentEntriesDescription")}
-                  </CardDescription>
+          {!isMobileAddEntryComposer ? (
+            <Card className="relative z-0">
+              <CardHeader>
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <CardTitle>{t("finances.currentEntriesTitle")}</CardTitle>
+                    <CardDescription>
+                      {t("finances.currentEntriesDescription")}
+                    </CardDescription>
+                  </div>
+                  <Badge
+                    className={
+                      isPersonalBalanceNegative
+                        ? "text-xs border-rose-200 bg-rose-100 text-rose-800 dark:border-rose-800/60 dark:bg-rose-900/40 dark:text-rose-200"
+                        : "text-xs border-emerald-200 bg-emerald-100 text-emerald-800 dark:border-emerald-800/60 dark:bg-emerald-900/40 dark:text-emerald-200"
+                    }
+                  >
+                    {t("finances.personalBalanceChip", {
+                      value: personalBalanceLabel,
+                    })}
+                  </Badge>
                 </div>
-                <Badge
-                  className={
-                    isPersonalBalanceNegative
-                      ? "text-xs border-rose-200 bg-rose-100 text-rose-800 dark:border-rose-800/60 dark:bg-rose-900/40 dark:text-rose-200"
-                      : "text-xs border-emerald-200 bg-emerald-100 text-emerald-800 dark:border-emerald-800/60 dark:bg-emerald-900/40 dark:text-emerald-200"
-                  }
-                >
-                  {t("finances.personalBalanceChip", {
-                    value: personalBalanceLabel,
-                  })}
-                </Badge>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="max-w-sm space-y-1">
-                <Label className="sr-only">
-                  {t("finances.searchLabel")}
-                </Label>
-                <Input
-                  value={overviewEntrySearch}
-                  onChange={(event) => setOverviewEntrySearch(event.target.value)}
-                  placeholder={t("finances.searchPlaceholder")}
-                />
-              </div>
-            </CardContent>
-          </Card>
+              </CardHeader>
+              <CardContent>
+                <div className="max-w-sm space-y-1">
+                  <Label className="sr-only">
+                    {t("finances.searchLabel")}
+                  </Label>
+                  <Input
+                    value={overviewEntrySearch}
+                    onChange={(event) => setOverviewEntrySearch(event.target.value)}
+                    placeholder={t("finances.searchPlaceholder")}
+                  />
+                </div>
+              </CardContent>
+            </Card>
+          ) : null}
           {entriesSinceLastAudit.length > 0 && filteredEntriesSinceLastAudit.length === 0 ? (
             <p className="mt-4 text-sm text-slate-500 dark:text-slate-400">
               {t("finances.emptyFiltered")}
@@ -3525,6 +3528,43 @@ export const FinancesTab = ({
           ) : null}
           {filteredEntriesSinceLastAudit.length > 0 ? (
             <FinanceEntriesList
+              header={
+                isMobileAddEntryComposer ? (
+                  <div className="rounded-xl border border-slate-300 bg-white/95 p-3 text-slate-800 shadow-sm dark:border-slate-700 dark:bg-slate-900/80 dark:text-slate-100">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                          {t("finances.currentEntriesTitle")}
+                        </p>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">
+                          {t("finances.currentEntriesDescription")}
+                        </p>
+                      </div>
+                      <Badge
+                        className={
+                          isPersonalBalanceNegative
+                            ? "text-xs border-rose-200 bg-rose-100 text-rose-800 dark:border-rose-800/60 dark:bg-rose-900/40 dark:text-rose-200"
+                            : "text-xs border-emerald-200 bg-emerald-100 text-emerald-800 dark:border-emerald-800/60 dark:bg-emerald-900/40 dark:text-emerald-200"
+                        }
+                      >
+                        {t("finances.personalBalanceChip", {
+                          value: personalBalanceLabel,
+                        })}
+                      </Badge>
+                    </div>
+                    <div className="mt-2 max-w-sm space-y-1">
+                      <Label className="sr-only">
+                        {t("finances.searchLabel")}
+                      </Label>
+                      <Input
+                        value={overviewEntrySearch}
+                        onChange={(event) => setOverviewEntrySearch(event.target.value)}
+                        placeholder={t("finances.searchPlaceholder")}
+                      />
+                    </div>
+                  </div>
+                ) : undefined
+              }
               entries={filteredEntriesSinceLastAudit}
               itemClassName="relative z-0 rounded-xl border border-slate-300 bg-white/88 p-3 text-slate-800 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-100"
               formatMoney={moneyLabel}
@@ -3546,12 +3586,51 @@ export const FinancesTab = ({
               canDeleteEntry={canManageFinanceEntry}
               busy={busy}
               virtualized
-              virtualHeight={520}
+              virtualHeight={isMobileAddEntryComposer ? mobileOverviewListHeight : 520}
             />
           ) : entriesSinceLastAudit.length === 0 ? (
-            <p className="mt-4 text-sm text-slate-500 dark:text-slate-400">
-              {t("finances.empty")}
-            </p>
+            isMobileAddEntryComposer ? (
+              <div className="mt-4 rounded-xl border border-slate-300 bg-white/95 p-3 text-slate-800 shadow-sm dark:border-slate-700 dark:bg-slate-900/80 dark:text-slate-100">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                      {t("finances.currentEntriesTitle")}
+                    </p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      {t("finances.currentEntriesDescription")}
+                    </p>
+                  </div>
+                  <Badge
+                    className={
+                      isPersonalBalanceNegative
+                        ? "text-xs border-rose-200 bg-rose-100 text-rose-800 dark:border-rose-800/60 dark:bg-rose-900/40 dark:text-rose-200"
+                        : "text-xs border-emerald-200 bg-emerald-100 text-emerald-800 dark:border-emerald-800/60 dark:bg-emerald-900/40 dark:text-emerald-200"
+                    }
+                  >
+                    {t("finances.personalBalanceChip", {
+                      value: personalBalanceLabel,
+                    })}
+                  </Badge>
+                </div>
+                <div className="mt-2 max-w-sm space-y-1">
+                  <Label className="sr-only">
+                    {t("finances.searchLabel")}
+                  </Label>
+                  <Input
+                    value={overviewEntrySearch}
+                    onChange={(event) => setOverviewEntrySearch(event.target.value)}
+                    placeholder={t("finances.searchPlaceholder")}
+                  />
+                </div>
+                <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">
+                  {t("finances.empty")}
+                </p>
+              </div>
+            ) : (
+              <p className="mt-4 text-sm text-slate-500 dark:text-slate-400">
+                {t("finances.empty")}
+              </p>
+            )
           ) : null}
         </>
       ) : null}

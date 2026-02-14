@@ -5,6 +5,7 @@ import { createDiceBearAvatarDataUri } from "../lib/avatar";
 import type { HouseholdMember } from "../lib/types";
 import { createMemberLabelGetter } from "../lib/member-label";
 import { cn } from "../lib/utils";
+import { MemberAvatar } from "./member-avatar";
 import { Button } from "./ui/button";
 import { Checkbox } from "./ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
@@ -106,11 +107,12 @@ export const PersonSelect = (props: PersonSelectProps) => {
                 <span className="flex items-center gap-1.5">
                   <span className="flex -space-x-2">
                     {stackedSelectedMembers.map((member) => (
-                      <img
+                      <MemberAvatar
                         key={member.user_id}
                         src={getMemberAvatar(member)}
                         alt={getMemberName(member.user_id)}
-                        className="h-5 w-5 rounded-full border border-white object-cover dark:border-slate-900"
+                        isVacation={member.vacation_mode}
+                        className="h-5 w-5 rounded-full border border-white dark:border-slate-900"
                       />
                     ))}
                   </span>
@@ -148,10 +150,11 @@ export const PersonSelect = (props: PersonSelectProps) => {
                       }}
                     />
                     <span className="text-sm">{getMemberFirstName(member.user_id)}</span>
-                    <img
+                    <MemberAvatar
                       src={getMemberAvatar(member)}
                       alt={getMemberName(member.user_id)}
-                      className="ml-auto h-4 w-4 rounded-full border border-brand-200 object-cover dark:border-slate-700"
+                      isVacation={member.vacation_mode}
+                      className="ml-auto h-4 w-4 rounded-full border border-brand-200 dark:border-slate-700"
                     />
                   </label>
                 </li>
@@ -184,10 +187,11 @@ export const PersonSelect = (props: PersonSelectProps) => {
         {members.map((member) => (
           <SelectItem key={member.user_id} value={member.user_id}>
             <span className="flex items-center gap-2">
-              <img
+              <MemberAvatar
                 src={getMemberAvatar(member)}
                 alt={getMemberName(member.user_id)}
-                className="h-4 w-4 rounded-full border border-brand-200 object-cover dark:border-slate-700"
+                isVacation={member.vacation_mode}
+                className="h-4 w-4 rounded-full border border-brand-200 dark:border-slate-700"
               />
               {getMemberFirstName(member.user_id)}
             </span>

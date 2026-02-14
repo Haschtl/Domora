@@ -2,12 +2,14 @@ import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { GripVertical } from "lucide-react";
 import { Badge } from "../../../components/ui/badge";
+import { MemberAvatar } from "../../../components/member-avatar";
 import { PimpersIcon } from "../../../components/pimpers-icon";
 
 interface SortableRotationItemProps {
   id: string;
   label: string;
   avatarSrc: string;
+  isVacation?: boolean;
   pimperCount: number;
   dragHandleLabel: string;
 }
@@ -16,6 +18,7 @@ export const SortableRotationItem = ({
   id,
   label,
   avatarSrc,
+  isVacation = false,
   pimperCount,
   dragHandleLabel
 }: SortableRotationItemProps) => {
@@ -54,9 +57,12 @@ export const SortableRotationItem = ({
         >
           <GripVertical className="h-4 w-4" />
         </button>
-        <div className="h-8 w-8 overflow-hidden rounded-full border border-brand-200 bg-brand-50 dark:border-slate-700 dark:bg-slate-800">
-          <img src={avatarSrc} alt={label} className="h-full w-full object-cover" />
-        </div>
+        <MemberAvatar
+          src={avatarSrc}
+          alt={label}
+          isVacation={isVacation}
+          className="h-8 w-8 rounded-full border border-brand-200 bg-brand-50 dark:border-slate-700 dark:bg-slate-800"
+        />
         <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{label}</p>
       </div>
 
