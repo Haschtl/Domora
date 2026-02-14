@@ -20,6 +20,7 @@ import {
   leaveHousehold,
   removeHouseholdMember,
   requestCashAudit,
+  rateTaskCompletion,
   setHouseholdMemberRole,
   signOut,
   signIn,
@@ -367,6 +368,17 @@ export const useWorkspaceController = () => {
     [activeHousehold, runWithWorkspaceInvalidation]
   );
 
+  const onRateTaskCompletion = useCallback(
+    async (taskCompletionId: string, rating: number) => {
+      if (!activeHousehold || !userId) return;
+
+      await runWithWorkspaceInvalidation(async () => {
+        await rateTaskCompletion(taskCompletionId, rating);
+      });
+    },
+    [activeHousehold, runWithWorkspaceInvalidation, userId]
+  );
+
   const onAddFinanceEntry = useCallback(
     async (input: {
       description: string;
@@ -706,6 +718,7 @@ export const useWorkspaceController = () => {
     onToggleTaskActive,
     onUpdateTask,
     onDeleteTask,
+    onRateTaskCompletion,
     onAddFinanceEntry,
     onUpdateFinanceEntry,
     onDeleteFinanceEntry,

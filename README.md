@@ -1,209 +1,338 @@
 # Domora
 
-Domora ist ein WG-Organizer mit React, Tailwind, Radix-UI-Primitives, Supabase und PWA-Support.
+Domora ist ein WG-Organizer als Web-App (PWA) mit Supabase-Backend.
 
-## Stack
+- Frontend: React + TypeScript + Vite
+- Backend: Supabase (Auth, Postgres, RLS, RPC)
+- Mobile: Capacitor (Android)
 
-- React + TypeScript + Vite
-- TanStack Router (Navigation)
-- TailwindCSS
-- Custom UI components auf Basis von Radix UI
-- Framer Motion (Route-Transitions)
-- Chart.js (History-Plots)
-- Supabase (Auth + Postgres)
-- PWA via `vite-plugin-pwa`
+## Inhalt
 
-## Features (MVP)
+1. [Highlights](#highlights)
+2. [Tech Stack](#tech-stack)
+3. [Projektstruktur](#projektstruktur)
+4. [Voraussetzungen](#voraussetzungen)
+5. [Quickstart](#quickstart)
+6. [Konfiguration](#konfiguration)
+7. [Datenbank und Security](#datenbank-und-security)
+8. [Entwicklung](#entwicklung)
+9. [Tests und Qualitaet](#tests-und-qualitaet)
+10. [Dummy-Daten](#dummy-daten)
+11. [PWA](#pwa)
+12. [Android (Capacitor)](#android-capacitor)
+13. [Deployment und CI/CD](#deployment-und-cicd)
+14. [Troubleshooting](#troubleshooting)
 
-- WG erstellen
-- WG per Einladungscode beitreten
-- Login / Registrierung via Supabase Auth
-- Dark / Light / System Theme Umschaltung mit Persistenz
-- i18n mit Deutsch / Englisch Umschaltung
-- Home Tab (WG-Uebersicht)
-- Einkaufen Tab (Shopping-Liste mit Tags + optionaler Wiederholung)
-  - Completion-Historie mit Zeitstempel, User und Tag-Snapshot
-- Aufgaben Tab:
-  - Frequenz in Tagen + Startdatum
-  - Description + Aufwand in Pimpers
-  - Rotationsreihenfolge mit WG-Mitgliedern
-  - Pimpers-Sammlung pro Mitglied und bevorzugte Zuteilung an User mit wenig Pimpers
-  - Lokale taegliche Push-Erinnerung fuer die aktuell faellige, zugewiesene Person
-  - Completion-Historie mit erspielten Pimpers
-- Finanzen Tab
-  - Eintraege mit Kategorie
-  - Historie mit Filtern (Zeitraum, Person, Kategorie, Suchtext)
-  - Kassensturz-Request
-- Settings Tab
-  - Client-Settings (Theme + Sprache)
-  - WG-Verwaltung (Ausziehen, WG-Banner-Upload, User-Bild-Upload, Adresse, Waehrung, Wohnungs-qm, Warm-Miete)
-  - Mitglied-Werte (Zimmer-qm + Gemeinschaftsfaktor)
+## Highlights
 
-## Setup
+### Auth und Haushalte
 
-1. Dependencies installieren:
+- E-Mail/Passwort Login via Supabase Auth
+- Optionaler Google Sign-in
+- Haushalt erstellen
+- Join nur ueber Invite-Code/RPC-Flow (`join_household_by_invite`)
+- Mehrere Haushalte pro User
+
+### Home
+
+- Dashboard mit Kennzahlen
+- Activity Feed
+- Landing Page pro Haushalt (Markdown)
+- Landing Widgets
+- Bucket List inkl. Checkliste, Vorschlagsdaten und Voting
+
+### Shopping
+
+- Einkaufsliste mit Tags
+- Wiederholung (`days|weeks|months`)
+- Historie abgeschlossener Items
+- Trends/Charts
+
+### Tasks
+
+- Rotationsbasierte Aufgaben
+- Frequenz, Startdatum, Pimpers, Fairness-Modi (`actual|projection`)
+- Vacation Mode pro Mitglied
+- Aufgaben-Statistiken und Kalender
+- Task-Historie mit 5-Sterne-Bewertung
+  - keine Selbstbewertung
+  - nur letzter Completion-Eintrag einer Aufgabe ist bewertbar
+- Optionales Bild fuer Ist-/Soll-Zustand
+- Push-Erinnerungen (Browser)
+
+### Finanzen
+
+- Eintraege mit Kategorie, Zeitraum, Beteiligten
+- Historie mit Filtern und Charts
+- Stacked Bars pro Mitglied
+- Saldo und Settlement-Vorschlaege
+- Abos/Vertraege
+- OCR/Kamera-Flow fuer Belege
+- Kassensturz-Requests
+
+### Settings
+
+- Theme (`system|light|dark`)
+- Sprache (`de|en`)
+- Profil (Name, Avatar, Farbe)
+- Payment Handles (PayPal, Revolut, Wero)
+- Haushaltseinstellungen (Adresse, Waehrung, Miete, Flaechen)
+- Mieterverwaltung inkl. Rollen
+
+## Tech Stack
+
+- React 19
+- TypeScript 5
+- Vite 7
+- TanStack Query / Store / Form / Router
+- Tailwind CSS 4
+- Radix UI primitives
+- Framer Motion
+- Chart.js + react-chartjs-2
+- Supabase JS v2
+- Zod
+- Vitest + Playwright
+
+Siehe auch `package.json` fuer exakte Versionen und Skripte.
+
+## Projektstruktur
+
+```text
+src/
+  components/           UI-Bausteine
+  features/tabs/        Home, Shopping, Tasks, Finances, Settings
+  hooks/                Workspace- und Feature-Hooks
+  lib/                  API-Client, Types, Helpers, i18n, Store
+  App.tsx               Shell + Navigation + Routing
+supabase/
+  schema.sql            Vollstaendiges DB-Schema inkl. RLS, Funktionen, Trigger
+scripts/
+  seed-dummy.mjs        Demo-Daten-Generator
+tests/                  Playwright E2E
+```
+
+## Voraussetzungen
+
+- Node.js 20+
+- pnpm 10+ (empfohlen)
+- Supabase Projekt
+
+Optional:
+- Android Studio (fuer Android Build)
+
+## Quickstart
+
+1. Abhaengigkeiten installieren:
 
 ```bash
 pnpm install
 ```
 
-2. Env-Datei anlegen:
+2. Environment vorbereiten:
 
 ```bash
 cp .env.example .env
 ```
 
-3. In `.env` eintragen:
+3. Mindestens folgende Variablen in `.env` setzen:
 
 - `VITE_SUPABASE_URL`
 - `VITE_SUPABASE_PUBLISHABLE_KEY`
 
-Hinweis:
-- Im Frontend nur `publishable` verwenden.
-- `secret` Key nur serverseitig (z. B. Edge Functions), niemals als `VITE_` Variable.
-- Fuer lokale Seed-Skripte: `SUPABASE_URL` + `SUPABASE_SECRET_KEY` in `.env` setzen.
+4. DB-Schema anwenden:
 
-4. Supabase Schema ausfuehren:
+- `supabase/schema.sql` im Supabase SQL Editor ausfuehren
+- bei Updates: das aktuelle `schema.sql` erneut ausfuehren (enthaelt idempotente `if not exists`/Upgrade-Bloecke)
 
-```bash
-# SQL im Supabase SQL editor ausfuehren
-supabase/schema.sql
-```
-
-Wenn du das Schema bereits frueher ausgefuehrt hast:
-- Neues `supabase/schema.sql` erneut im SQL Editor ausfuehren, damit die neuen Felder/Funktionen/Tables angelegt werden.
-
-5. Starten:
+5. App starten:
 
 ```bash
 pnpm dev
 ```
 
+## Konfiguration
+
+### `.env` Variablen
+
+Frontend:
+
+- `VITE_SUPABASE_URL`
+- `VITE_SUPABASE_PUBLISHABLE_KEY`
+
+Seed/Serverseitig:
+
+- `SUPABASE_URL`
+- `SUPABASE_SECRET_KEY`
+
+Wichtig:
+
+- `SUPABASE_SECRET_KEY` niemals als `VITE_*` exponieren.
+
+## Datenbank und Security
+
+Die zentrale Logik liegt in `supabase/schema.sql`:
+
+- Tabellen fuer Haushalte, Mitglieder, Shopping, Bucket, Tasks, Finanzen
+- RLS auf allen relevanten Tabellen
+- RPC-Funktionen fuer geschaeftskritische Aktionen (z. B. Task Complete/Skip, Join via Invite)
+- Trigger/Guards fuer Sicherheitsregeln
+
+### Wichtige Security-Mechanismen
+
+- Join in `household_members` ist auf Invite-RPC-Flow verlagert (`join_household_by_invite`)
+- Rollenwechsel wird zusaetzlich per Trigger abgesichert (`guard_household_member_role_change`)
+- Haushaltswartung (`run_household_data_maintenance`) erzwingt Owner-Rechte fuer normale User
+- Bewertungen in Task-Historie werden serverseitig validiert (`rate_task_completion`)
+
+### Performance-Hinweise im Schema
+
+- mehrere zusammengesetzte Indizes fuer RLS- und Historien-Queries
+- optimierte Berechnung in Task-Assignee-Logik (`choose_next_task_assignee`)
+
+## Entwicklung
+
+### Wichtige Skripte
+
+```bash
+pnpm dev
+pnpm build
+pnpm preview
+pnpm typecheck
+pnpm lint
+pnpm lint:fix
+```
+
+Falls pnpm lokal nicht verfuegbar ist, funktionieren viele Kommandos auch mit `npm run <script>`.
+
+### i18n
+
+- Sprachen in `src/lib/translations.ts`
+- aktuell: `de`, `en`
+
+## Tests und Qualitaet
+
+Unit Tests:
+
+```bash
+pnpm test:unit
+pnpm test:unit:watch
+```
+
+E2E (Playwright):
+
+```bash
+pnpm test:e2e
+pnpm test:e2e:ui
+```
+
+Alles zusammen:
+
+```bash
+pnpm test
+```
+
+Empfohlener lokaler Check vor PR:
+
+```bash
+pnpm lint && pnpm typecheck && pnpm test:unit
+```
+
+## Dummy-Daten
+
+Schneller Demo-Seed:
+
+1. In `.env` setzen:
+
+- `SUPABASE_URL`
+- `SUPABASE_SECRET_KEY`
+
+2. Starten:
+
+```bash
+pnpm seed:dummy
+```
+
+Optionale Parameter:
+
+- `DUMMY_MEMBER_COUNT` (Default `5`)
+- `DUMMY_TASK_COUNT` (Default `14`)
+- `DUMMY_FINANCE_COUNT` (Default `72`)
+- `DUMMY_SHOPPING_COUNT` (Default `48`)
+- `DUMMY_CASH_AUDIT_COUNT` (Default `5`)
+
+Das Script loescht bestehende App-Daten und erzeugt danach konsistente Demo-Daten fuer:
+
+- Demo-User (inkl. `user_profiles` mit `user_color` und Payment Handles)
+- Haushalt inkl. `landing_page_markdown` mit Widget-Tokens
+- Memberships inkl. Rollen, `task_laziness_factor` und `vacation_mode`
+- Tasks inkl. Rotation, Completions, Pimpers und Ist-/Soll-Bild-URLs
+- Task-Historie-Ratings (`task_completion_ratings`)
+- Shopping inkl. Wiederholungen und Completion-Historie
+- Bucket List inkl. Markdown-Beschreibung, Terminvorschlaegen und Votes
+- Finanzeintraege, Subscriptions und Cash-Audit-Requests
+- Household Events inkl. `task_completed`, `task_skipped`, `shopping_completed`, `finance_created`, `role_changed`
+
 ## PWA
 
-- Service Worker wird automatisch registriert.
-- Manifest und Icons liegen in `public/`.
-- App kann auf mobilen Geraeten als Homescreen-App installiert werden.
+- Registrierung ueber `vite-plugin-pwa`
+- Manifest/Icons in `public/`
+- Installierbar als Homescreen-App
 
-## Android App (Capacitor)
+## Android (Capacitor)
 
-Domora ist als Android-App ueber Capacitor vorbereitet.
-
-1. Capacitor-Dependencies installieren:
+Vorbereitung:
 
 ```bash
 pnpm install
 ```
 
-2. Android-Projekt einmalig erzeugen (nur beim ersten Mal):
-
-```bash
-pnpm cap add android
-```
-
-3. Web-App bauen + Android-Projekt synchronisieren:
+Sync:
 
 ```bash
 pnpm mobile:sync:android
 ```
 
-4. Android Studio oeffnen:
+Android Studio oeffnen:
 
 ```bash
 pnpm mobile:open:android
 ```
 
-5. APK in Android Studio bauen:
-- `Build > Build Bundle(s) / APK(s) > Build APK(s)`
-
-Nuetzliche Befehle:
+Nuetzlich:
 
 ```bash
 pnpm mobile:copy:android
 pnpm mobile:sync:android
 ```
 
-Hinweise:
-- Bei Aenderungen im Web-Code immer erneut `pnpm mobile:sync:android` ausfuehren.
-- Das generierte `android/` Projekt kann ins Repo committed werden.
+Bei Web-Aenderungen vor Android-Build immer neu syncen.
 
-## Tests
+## Deployment und CI/CD
 
-Unit-Tests (Vitest):
+GitHub Actions (siehe `.github/workflows/`):
 
-```bash
-pnpm test:unit
-```
+- CI: lint, typecheck, unit, e2e, build
+- CD: Build auf `main` und Artefakt-Upload
 
-E2E-Tests (Playwright):
+## Troubleshooting
 
-```bash
-pnpm playwright install
-pnpm test:e2e
-```
+### "Supabase nicht konfiguriert"
 
-Nuetzliche Varianten:
+- pruefen ob `VITE_SUPABASE_URL` und `VITE_SUPABASE_PUBLISHABLE_KEY` gesetzt sind
+- Dev-Server nach `.env` Aenderungen neu starten
 
-```bash
-pnpm test:unit:watch
-pnpm test:e2e:ui
-pnpm test
-```
+### Join funktioniert nicht
 
-## Dummy Daten Seed
+- Invite-Code validieren
+- sicherstellen, dass `join_household_by_invite` im Schema deployed ist
 
-Zum schnellen Befuellen der DB mit Demo-Daten (5 Mitglieder, Tasks, Finanzen):
+### Schema-Update greift nicht
 
-1. In `.env` setzen:
-- `SUPABASE_URL`
-- `SUPABASE_SECRET_KEY`
+- aktuelles `supabase/schema.sql` erneut komplett ausfuehren
+- bei Fehlern SQL-Reihenfolge und bestehende Constraints/Funktionen pruefen
 
-2. Seed starten:
+### Push/OCR funktionieren nicht
 
-```bash
-pnpm seed:dummy
-```
-
-Optional anpassbar:
-- `DUMMY_MEMBER_COUNT` (default `5`)
-- `DUMMY_TASK_COUNT` (default `8`)
-- `DUMMY_FINANCE_COUNT` (default `10`)
-
-Das Skript erstellt:
-- neue Auth-User (Demo-Emails)
-- eine neue Demo-WG + Memberships
-- Task-Rotation + Task-Completion-Historie
-- Finanzeintraege
-
-Automatischer Test fuer die Seed-Generierung:
-
-```bash
-npm run test:unit
-```
-
-Abgedeckt in `scripts/seed-dummy-data.test.mjs`.
-
-## CI/CD
-
-GitHub Actions Workflows:
-
-- `CI` (`.github/workflows/ci.yml`)
-  - lint
-  - typecheck
-  - unit tests (Vitest)
-  - e2e tests (Playwright, Chromium)
-  - build
-- `CD` (`.github/workflows/cd.yml`)
-  - bei Push auf `main`
-  - baut `dist/` und laedt ein Delivery-Artefakt hoch
-
-## Push und Email Benachrichtigungen
-
-- Aufgaben-Reminders sind browser-lokale Push-Notifications (wenn erlaubt).
-- Beim Kassensturz wird ein Eintrag in `cash_audit_requests` angelegt.
-- Fuer echten Email-Versand kann darauf eine Supabase Edge Function oder ein DB Trigger aufsetzen.
-
-## Production Notes
-
-- Die Household-Select-Policy ist aktuell bewusst prototype-freundlich (authenticated read).
-- Fuer Produktion sollte Invite-Flow restriktiver abgesichert werden.
+- Browser-/Device-Permissions prüfen
+- HTTPS/secure context verwenden
+- nicht jeder Browser unterstuetzt alle Kamera/OCR-Pfade identisch

@@ -23,7 +23,7 @@ import { Dialog, DialogClose, DialogContent, DialogDescription, DialogHeader, Di
 import { Input } from "../../components/ui/input";
 import { InputWithSuffix } from "../../components/ui/input-with-suffix";
 import { Label } from "../../components/ui/label";
-import { Popover, PopoverContent, PopoverTrigger } from "../../components/ui/popover";
+import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "../../components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "../../components/ui/dropdown-menu";
 import { useSmartSuggestions } from "../../hooks/use-smart-suggestions";
@@ -96,6 +96,7 @@ export const ShoppingTab = ({
   const [isMobileComposer, setIsMobileComposer] = useState(() =>
     typeof window !== "undefined" ? window.matchMedia("(max-width: 639px)").matches : false
   );
+  const addItemComposerContainerRef = useRef<HTMLDivElement | null>(null);
   const addItemRowRef = useRef<HTMLDivElement | null>(null);
   const [addItemPopoverWidth, setAddItemPopoverWidth] = useState(320);
   const form = useForm({
@@ -314,7 +315,9 @@ export const ShoppingTab = ({
 
   useEffect(() => {
     const updateWidth = () => {
-      const next = addItemRowRef.current?.getBoundingClientRect().width;
+      const next =
+        addItemComposerContainerRef.current?.getBoundingClientRect().width ??
+        addItemRowRef.current?.getBoundingClientRect().width;
       if (!next || Number.isNaN(next)) return;
       setAddItemPopoverWidth(Math.max(220, Math.round(next)));
     };
@@ -322,12 +325,11 @@ export const ShoppingTab = ({
     updateWidth();
     window.addEventListener("resize", updateWidth);
     return () => window.removeEventListener("resize", updateWidth);
-  }, []);
+  }, [isMobileComposer]);
   useEffect(() => {
     if (typeof window === "undefined") return;
     const mediaQuery = window.matchMedia("(max-width: 639px)");
     const onChange = (event: MediaQueryListEvent) => setIsMobileComposer(event.matches);
-    setIsMobileComposer(mediaQuery.matches);
     mediaQuery.addEventListener("change", onChange);
     return () => mediaQuery.removeEventListener("change", onChange);
   }, []);
@@ -363,45 +365,53 @@ export const ShoppingTab = ({
           children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
             <div className="relative flex-1 space-y-1">
               <Label className={mobile ? "sr-only" : ""}>{t("shopping.itemLabel")}</Label>
-              <div
-                ref={addItemRowRef}
-                className="flex h-10 items-stretch overflow-hidden rounded-xl border border-brand-200 bg-white dark:border-slate-700 dark:bg-slate-900 focus-within:border-brand-500 focus-within:shadow-[inset_0_0_0_1px_rgba(59,130,246,0.45)] dark:focus-within:border-slate-500 dark:focus-within:shadow-[inset_0_0_0_1px_rgba(148,163,184,0.45)]"
-              >
-                <Input
-                  value={field.state.value}
-                  onChange={(event) => {
-                    const nextValue = event.target.value;
-                    field.handleChange(nextValue);
-                    tryAutofillTagsFromTitle(nextValue);
-                  }}
-                  onFocus={onTitleFocus}
-                  onBlur={(event) => {
-                    onTitleBlur();
-                    tryAutofillTagsFromTitle(event.target.value);
-                  }}
-                  onKeyDown={onTitleKeyDown}
-                  placeholder={t("shopping.placeholder")}
-                  autoComplete="off"
-                  className="h-full flex-1 rounded-none border-0 bg-transparent shadow-none focus-visible:ring-0"
-                />
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="h-full w-10 shrink-0 rounded-none border-l border-brand-200 p-0 dark:border-slate-700"
-                      aria-label={t("shopping.moreOptions")}
-                    >
-                      <MoreHorizontal className="h-4 w-4" />
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent
-                    align="start"
-                    side={mobile ? "top" : "bottom"}
-                    className="w-auto space-y-3 rounded-xl border-brand-100 shadow-lg dark:border-slate-700"
-                    style={{ width: `${addItemPopoverWidth}px` }}
+              <Popover>
+                <PopoverAnchor asChild>
+                  <div
+                    ref={addItemRowRef}
+                    className="flex h-10 items-stretch overflow-hidden rounded-xl border border-brand-200 bg-white dark:border-slate-700 dark:bg-slate-900 focus-within:border-brand-500 focus-within:shadow-[inset_0_0_0_1px_rgba(59,130,246,0.45)] dark:focus-within:border-slate-500 dark:focus-within:shadow-[inset_0_0_0_1px_rgba(148,163,184,0.45)]"
                   >
+                    <Input
+                      value={field.state.value}
+                      onChange={(event) => {
+                        const nextValue = event.target.value;
+                        field.handleChange(nextValue);
+                        tryAutofillTagsFromTitle(nextValue);
+                      }}
+                      onFocus={onTitleFocus}
+                      onBlur={(event) => {
+                        onTitleBlur();
+                        tryAutofillTagsFromTitle(event.target.value);
+                      }}
+                      onKeyDown={onTitleKeyDown}
+                      placeholder={t("shopping.placeholder")}
+                      autoComplete="off"
+                      className="h-full flex-1 rounded-none border-0 bg-transparent shadow-none focus-visible:ring-0"
+                    />
+                    <PopoverTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-full w-10 shrink-0 rounded-none border-l border-brand-200 p-0 dark:border-slate-700"
+                        aria-label={t("shopping.moreOptions")}
+                      >
+                        <MoreHorizontal className="h-4 w-4" />
+                      </Button>
+                    </PopoverTrigger>
+                    <Button type="submit" disabled={busy} className="h-full shrink-0 rounded-none border-l border-brand-200 px-3 dark:border-slate-700">
+                      <Plus className="h-4 w-4 sm:hidden" />
+                      <span className="hidden sm:inline">{t("common.add")}</span>
+                    </Button>
+                  </div>
+                </PopoverAnchor>
+                <PopoverContent
+                  align="start"
+                  side={mobile ? "top" : "bottom"}
+                  sideOffset={12}
+                  className="w-auto space-y-3 rounded-xl border-brand-100 shadow-lg dark:border-slate-700"
+                  style={{ width: `${addItemPopoverWidth}px` }}
+                >
                     <form.Field
                       name="tagsInput"
                       children={(tagField: { state: { value: string }; handleChange: (value: string) => void }) => (
@@ -453,17 +463,12 @@ export const ShoppingTab = ({
                         )}
                       />
                     </div>
-                  </PopoverContent>
-                </Popover>
-                <Button type="submit" disabled={busy} className="h-full shrink-0 rounded-none border-l border-brand-200 px-3 dark:border-slate-700">
-                  <Plus className="h-4 w-4 sm:hidden" />
-                  <span className="hidden sm:inline">{t("common.add")}</span>
-                </Button>
-              </div>
+                </PopoverContent>
+              </Popover>
               {titleFocused && suggestions.length > 0 ? (
                 <div
                   className={`absolute left-0 right-0 z-20 rounded-xl border border-brand-100 bg-white p-1 shadow-lg dark:border-slate-700 dark:bg-slate-900 ${
-                    mobile ? "bottom-[calc(100%+0.4rem)]" : "top-[calc(100%+0.4rem)]"
+                    mobile ? "bottom-[calc(100%+0.65rem)]" : "top-[calc(100%+0.65rem)]"
                   }`}
                 >
                   <p className="px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
@@ -742,7 +747,10 @@ export const ShoppingTab = ({
         </Dialog>
         {isMobileComposer ? (
           <div className="fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+4.75rem)] z-40 px-3 sm:hidden">
-            <div className="rounded-2xl border border-brand-200/70 bg-white/75 p-1.5 shadow-xl backdrop-blur-xl dark:border-slate-700/70 dark:bg-slate-900/75">
+            <div
+              ref={addItemComposerContainerRef}
+              className="rounded-2xl border border-brand-200/70 bg-white/75 p-1.5 shadow-xl backdrop-blur-xl dark:border-slate-700/70 dark:bg-slate-900/75"
+            >
               {renderAddItemComposer(true)}
             </div>
           </div>

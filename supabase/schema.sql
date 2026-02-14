@@ -148,6 +148,16 @@ create table if not exists task_completions (
   check (delay_minutes >= 0)
 );
 
+create table if not exists task_completion_ratings (
+  task_completion_id uuid not null references task_completions(id) on delete cascade,
+  household_id uuid not null references households(id) on delete cascade,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  rating smallint not null check (rating >= 1 and rating <= 5),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  primary key (task_completion_id, user_id)
+);
+
 create table if not exists household_events (
   id uuid primary key default gen_random_uuid(),
   household_id uuid not null references households(id) on delete cascade,
@@ -389,6 +399,10 @@ alter table bucket_item_date_votes add column if not exists created_at timestamp
 alter table task_completions add column if not exists task_title_snapshot text not null default '';
 alter table task_completions add column if not exists due_at_snapshot timestamptz;
 alter table task_completions add column if not exists delay_minutes integer not null default 0;
+alter table task_completion_ratings add column if not exists household_id uuid references households(id) on delete cascade;
+alter table task_completion_ratings add column if not exists rating smallint;
+alter table task_completion_ratings add column if not exists created_at timestamptz not null default now();
+alter table task_completion_ratings add column if not exists updated_at timestamptz not null default now();
 alter table finance_entries add column if not exists category text not null default 'general';
 alter table finance_entries add column if not exists receipt_image_url text;
 alter table finance_entries add column if not exists paid_by_user_ids uuid[] not null default '{}';
@@ -449,6 +463,26 @@ set
 where due_at_snapshot is null
    or delay_minutes is null
    or delay_minutes < 0;
+
+update task_completion_ratings tcr
+set household_id = tc.household_id
+from task_completions tc
+where tcr.task_completion_id = tc.id
+  and tcr.household_id is null;
+
+update task_completion_ratings
+set rating = 3
+where rating is null;
+
+update task_completion_ratings
+set updated_at = created_at
+where updated_at is null;
+
+alter table task_completion_ratings
+alter column household_id set not null;
+
+alter table task_completion_ratings
+alter column rating set not null;
 
 update shopping_items
 set recurrence_interval_unit = lower(recurrence_interval_unit)
@@ -607,6 +641,16 @@ begin
   if not exists (
     select 1
     from pg_constraint
+    where conname = 'task_completion_ratings_rating_range_check'
+  ) then
+    alter table task_completion_ratings
+      add constraint task_completion_ratings_rating_range_check
+      check (rating >= 1 and rating <= 5);
+  end if;
+
+  if not exists (
+    select 1
+    from pg_constraint
     where conname = 'shopping_items_recurrence_interval_value_positive_check'
   ) then
     alter table shopping_items
@@ -715,6 +759,8 @@ create index if not exists idx_shopping_item_completions_household_completed_at 
 create index if not exists idx_tasks_household_due_at on tasks (household_id, due_at asc);
 create index if not exists idx_tasks_household_active on tasks (household_id, is_active, id);
 create index if not exists idx_task_completions_household_completed_at on task_completions (household_id, completed_at desc);
+create index if not exists idx_task_completions_task_completed_at on task_completions (task_id, completed_at desc);
+create index if not exists idx_task_completion_ratings_household_completion on task_completion_ratings (household_id, task_completion_id);
 create index if not exists idx_household_events_household_created_at on household_events (household_id, created_at desc);
 create index if not exists idx_finance_entries_household_entry_date on finance_entries (household_id, entry_date desc);
 create index if not exists idx_finance_subscriptions_household_created_at on finance_subscriptions (household_id, created_at desc);
@@ -751,6 +797,79 @@ as $$
       and hm.role = 'owner'
   );
 $$;
+
+create or replace function join_household_by_invite(p_invite_code text)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  normalized_invite_code text;
+  requester_user_id uuid;
+  target_household_id uuid;
+begin
+  requester_user_id := auth.uid();
+  if requester_user_id is null then
+    raise exception 'Not authenticated';
+  end if;
+
+  normalized_invite_code := upper(trim(coalesce(p_invite_code, '')));
+  if char_length(normalized_invite_code) = 0 then
+    raise exception 'Invite code is required';
+  end if;
+
+  select h.id
+  into target_household_id
+  from households h
+  where h.invite_code = normalized_invite_code
+  limit 1;
+
+  if target_household_id is null then
+    raise exception 'Invalid invite code';
+  end if;
+
+  insert into household_members (
+    household_id,
+    user_id,
+    role
+  )
+  values (
+    target_household_id,
+    requester_user_id,
+    'member'
+  )
+  on conflict (household_id, user_id)
+  do update
+  set role = household_members.role;
+
+  return target_household_id;
+end;
+$$;
+
+create or replace function guard_household_member_role_change()
+returns trigger
+language plpgsql
+security invoker
+set search_path = public
+as $$
+begin
+  if new.role is distinct from old.role then
+    if coalesce(auth.role(), 'authenticated') <> 'service_role'
+      and not is_household_owner(new.household_id) then
+      raise exception 'Only household owners can change member roles';
+    end if;
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_guard_household_member_role_change on household_members;
+create trigger trg_guard_household_member_role_change
+before update on household_members
+for each row
+execute function guard_household_member_role_change();
 
 create or replace function reset_due_recurring_shopping_items(p_household_id uuid)
 returns integer
@@ -1324,6 +1443,82 @@ begin
 end;
 $$;
 
+create or replace function rate_task_completion(
+  p_task_completion_id uuid,
+  p_rating integer
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_completion task_completions%rowtype;
+  v_latest_completion_id uuid;
+  v_user_id uuid;
+begin
+  v_user_id := auth.uid();
+
+  if v_user_id is null then
+    raise exception 'Authentication required';
+  end if;
+
+  if p_rating < 1 or p_rating > 5 then
+    raise exception 'Rating must be between 1 and 5';
+  end if;
+
+  select *
+  into v_completion
+  from task_completions
+  where id = p_task_completion_id;
+
+  if not found then
+    raise exception 'Unknown task completion id: %', p_task_completion_id;
+  end if;
+
+  if not is_household_member(v_completion.household_id) then
+    raise exception 'Not allowed to rate this completion';
+  end if;
+
+  if v_completion.user_id = v_user_id then
+    raise exception 'You cannot rate your own completion';
+  end if;
+
+  select tc.id
+  into v_latest_completion_id
+  from task_completions tc
+  where tc.task_id = v_completion.task_id
+  order by tc.completed_at desc, tc.id desc
+  limit 1;
+
+  if v_latest_completion_id is distinct from v_completion.id then
+    raise exception 'Only the latest completion of a task can be rated';
+  end if;
+
+  insert into task_completion_ratings (
+    task_completion_id,
+    household_id,
+    user_id,
+    rating,
+    created_at,
+    updated_at
+  )
+  values (
+    v_completion.id,
+    v_completion.household_id,
+    v_user_id,
+    p_rating::smallint,
+    now(),
+    now()
+  )
+  on conflict (task_completion_id, user_id)
+  do update
+  set
+    rating = excluded.rating,
+    updated_at = now();
+end;
+$$;
+
 revoke all on function run_all_households_data_maintenance(boolean) from public;
 grant execute on function run_all_households_data_maintenance(boolean) to service_role;
 
@@ -1332,6 +1527,12 @@ grant execute on function is_household_member(uuid) to authenticated, service_ro
 
 revoke all on function is_household_owner(uuid) from public;
 grant execute on function is_household_owner(uuid) to authenticated, service_role;
+
+revoke all on function join_household_by_invite(text) from public;
+grant execute on function join_household_by_invite(text) to authenticated, service_role;
+
+revoke all on function rate_task_completion(uuid, integer) from public;
+grant execute on function rate_task_completion(uuid, integer) to authenticated, service_role;
 
 revoke all on function task_cron_interval_days(text, integer) from public;
 grant execute on function task_cron_interval_days(text, integer) to authenticated, service_role;
@@ -1394,6 +1595,7 @@ alter table tasks enable row level security;
 alter table task_rotation_members enable row level security;
 alter table household_member_pimpers enable row level security;
 alter table task_completions enable row level security;
+alter table task_completion_ratings enable row level security;
 alter table household_events enable row level security;
 alter table finance_entries enable row level security;
 alter table cash_audit_requests enable row level security;
@@ -1435,7 +1637,15 @@ drop policy if exists household_members_insert on household_members;
 create policy household_members_insert on household_members
 for insert
 to authenticated
-with check (auth.uid() = user_id);
+with check (
+  auth.uid() = user_id
+  and exists (
+    select 1
+    from households h
+    where h.id = household_members.household_id
+      and h.created_by = auth.uid()
+  )
+);
 
 drop policy if exists household_members_delete on household_members;
 create policy household_members_delete on household_members
@@ -1448,7 +1658,19 @@ create policy household_members_update on household_members
 for update
 to authenticated
 using (auth.uid() = user_id or is_household_owner(household_id))
-with check (auth.uid() = user_id or is_household_owner(household_id));
+with check (
+  is_household_owner(household_id)
+  or (
+    auth.uid() = user_id
+    and exists (
+      select 1
+      from household_members hm
+      where hm.household_id = household_members.household_id
+        and hm.user_id = auth.uid()
+        and hm.role = household_members.role
+    )
+  )
+);
 
 drop policy if exists user_profiles_select on user_profiles;
 create policy user_profiles_select on user_profiles
@@ -1569,6 +1791,12 @@ create policy task_completions_insert on task_completions
 for insert
 to authenticated
 with check (is_household_member(household_id) and auth.uid() = user_id);
+
+drop policy if exists task_completion_ratings_select on task_completion_ratings;
+create policy task_completion_ratings_select on task_completion_ratings
+for select
+to authenticated
+using (is_household_member(household_id));
 
 drop policy if exists household_events_select on household_events;
 create policy household_events_select on household_events

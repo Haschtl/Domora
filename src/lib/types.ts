@@ -125,6 +125,9 @@ export interface TaskCompletion {
   due_at_snapshot: string | null;
   delay_minutes: number;
   completed_at: string;
+  rating_average: number | null;
+  rating_count: number;
+  my_rating: number | null;
 }
 
 export type HouseholdEventType =

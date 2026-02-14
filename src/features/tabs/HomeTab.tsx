@@ -27,7 +27,8 @@ import { Checkbox } from "../../components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../../components/ui/dialog";
 import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
-import { Popover, PopoverContent, PopoverTrigger } from "../../components/ui/popover";
+import { MultiDateCalendarSelect } from "../../components/ui/multi-date-calendar-select";
+import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "../../components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
 import {
   LANDING_WIDGET_KEYS,
@@ -232,8 +233,8 @@ export const HomeTab = ({
   );
   const [bucketTitle, setBucketTitle] = useState("");
   const [bucketDescriptionMarkdown, setBucketDescriptionMarkdown] = useState("");
-  const [bucketDateInput, setBucketDateInput] = useState("");
   const [bucketSuggestedDates, setBucketSuggestedDates] = useState<string[]>([]);
+  const bucketComposerContainerRef = useRef<HTMLDivElement | null>(null);
   const bucketComposerRowRef = useRef<HTMLDivElement | null>(null);
   const [bucketPopoverWidth, setBucketPopoverWidth] = useState(320);
   const [isEditingLanding, setIsEditingLanding] = useState(false);
@@ -524,20 +525,10 @@ export const HomeTab = ({
       });
       setBucketTitle("");
       setBucketDescriptionMarkdown("");
-      setBucketDateInput("");
       setBucketSuggestedDates([]);
     },
     [bucketDescriptionMarkdown, bucketSuggestedDates, bucketTitle, onAddBucketItem]
   );
-  const addBucketSuggestedDate = useCallback(() => {
-    const next = bucketDateInput.trim();
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(next)) return;
-    setBucketSuggestedDates((current) => (current.includes(next) ? current : [...current, next].sort()));
-    setBucketDateInput("");
-  }, [bucketDateInput]);
-  const removeBucketSuggestedDate = useCallback((value: string) => {
-    setBucketSuggestedDates((current) => current.filter((entry) => entry !== value));
-  }, []);
   const formatSuggestedDate = useMemo(
     () => (value: string) => {
       const parsed = new Date(`${value}T12:00:00`);
@@ -765,7 +756,9 @@ export const HomeTab = ({
   }, [defaultLandingMarkdown, household.id, household.landing_page_markdown]);
   useEffect(() => {
     const updateWidth = () => {
-      const next = bucketComposerRowRef.current?.getBoundingClientRect().width;
+      const next =
+        bucketComposerContainerRef.current?.getBoundingClientRect().width ??
+        bucketComposerRowRef.current?.getBoundingClientRect().width;
       if (!next || Number.isNaN(next)) return;
       setBucketPopoverWidth(Math.max(220, Math.round(next)));
     };
@@ -773,7 +766,7 @@ export const HomeTab = ({
     updateWidth();
     window.addEventListener("resize", updateWidth);
     return () => window.removeEventListener("resize", updateWidth);
-  }, []);
+  }, [isMobileBucketComposer]);
   useEffect(() => {
     if (typeof window === "undefined") return;
     const mediaQuery = window.matchMedia("(max-width: 639px)");
@@ -788,36 +781,49 @@ export const HomeTab = ({
       <div className="flex items-end">
         <div className="relative flex-1 space-y-1">
           <Label className={mobile ? "sr-only" : ""}>{t("home.bucketTitle")}</Label>
-          <div
-            ref={bucketComposerRowRef}
-            className="flex h-10 items-stretch overflow-hidden rounded-xl border border-brand-200 bg-white dark:border-slate-700 dark:bg-slate-900 focus-within:border-brand-500 focus-within:shadow-[inset_0_0_0_1px_rgba(59,130,246,0.45)] dark:focus-within:border-slate-500 dark:focus-within:shadow-[inset_0_0_0_1px_rgba(148,163,184,0.45)]"
-          >
-            <Input
-              value={bucketTitle}
-              onChange={(event) => setBucketTitle(event.target.value)}
-              placeholder={t("home.bucketPlaceholder")}
-              maxLength={200}
-              disabled={busy}
-              className="h-full flex-1 rounded-none border-0 bg-transparent shadow-none focus-visible:ring-0"
-            />
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-full w-10 shrink-0 rounded-none border-l border-brand-200 p-0 dark:border-slate-700"
-                  aria-label={t("home.bucketMoreOptions")}
-                >
-                  <MoreHorizontal className="h-4 w-4" />
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent
-                align="start"
-                side={mobile ? "top" : "bottom"}
-                className="w-auto space-y-3 rounded-xl border-brand-100 shadow-lg dark:border-slate-700"
-                style={{ width: `${bucketPopoverWidth}px` }}
+          <Popover>
+            <PopoverAnchor asChild>
+              <div
+                ref={bucketComposerRowRef}
+                className="flex h-10 items-stretch overflow-hidden rounded-xl border border-brand-200 bg-white dark:border-slate-700 dark:bg-slate-900 focus-within:border-brand-500 focus-within:shadow-[inset_0_0_0_1px_rgba(59,130,246,0.45)] dark:focus-within:border-slate-500 dark:focus-within:shadow-[inset_0_0_0_1px_rgba(148,163,184,0.45)]"
               >
+                <Input
+                  value={bucketTitle}
+                  onChange={(event) => setBucketTitle(event.target.value)}
+                  placeholder={t("home.bucketPlaceholder")}
+                  maxLength={200}
+                  disabled={busy}
+                  className="h-full flex-1 rounded-none border-0 bg-transparent shadow-none focus-visible:ring-0"
+                />
+                <PopoverTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-full w-10 shrink-0 rounded-none border-l border-brand-200 p-0 dark:border-slate-700"
+                    aria-label={t("home.bucketMoreOptions")}
+                  >
+                    <MoreHorizontal className="h-4 w-4" />
+                  </Button>
+                </PopoverTrigger>
+                <Button
+                  type="submit"
+                  disabled={busy || bucketTitle.trim().length === 0}
+                  className="h-full shrink-0 rounded-none border-l border-brand-200 px-3 dark:border-slate-700"
+                  aria-label={t("home.bucketAddAction")}
+                >
+                  <Plus className="h-4 w-4 sm:hidden" />
+                  <span className="hidden sm:inline">{t("home.bucketAddAction")}</span>
+                </Button>
+              </div>
+            </PopoverAnchor>
+            <PopoverContent
+              align="start"
+              side={mobile ? "top" : "bottom"}
+              sideOffset={12}
+              className="w-auto space-y-3 -translate-x-1.5 rounded-xl border-brand-100 shadow-lg dark:border-slate-700"
+              style={{ width: `${bucketPopoverWidth}px` }}
+            >
                 <div className="space-y-1">
                   <Label>{t("home.bucketDescriptionPlaceholder")}</Label>
                   <textarea
@@ -832,49 +838,18 @@ export const HomeTab = ({
                 </div>
                 <div className="space-y-2">
                   <p className="text-xs font-medium text-slate-600 dark:text-slate-300">{t("home.bucketDatesLabel")}</p>
-                  <div className="flex items-end gap-2">
-                    <Input
-                      type="date"
-                      value={bucketDateInput}
-                      onChange={(event) => setBucketDateInput(event.target.value)}
-                      disabled={busy}
-                    />
-                    <Button type="button" variant="outline" onClick={addBucketSuggestedDate} disabled={busy || !bucketDateInput}>
-                      {t("home.bucketDateAddAction")}
-                    </Button>
-                  </div>
-                  {bucketSuggestedDates.length > 0 ? (
-                    <ul className="flex flex-wrap gap-2">
-                      {bucketSuggestedDates.map((dateValue) => (
-                        <li key={dateValue}>
-                          <button
-                            type="button"
-                            className="inline-flex items-center gap-1 rounded-full border border-brand-200 bg-brand-50 px-2 py-1 text-xs text-brand-800 dark:border-brand-800 dark:bg-brand-900/30 dark:text-brand-200"
-                            onClick={() => removeBucketSuggestedDate(dateValue)}
-                            aria-label={t("home.bucketDateRemove", { date: formatSuggestedDate(dateValue) })}
-                          >
-                            <span>{formatSuggestedDate(dateValue)}</span>
-                            <X className="h-3 w-3" />
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p className="text-xs text-slate-500 dark:text-slate-400">{t("home.bucketNoDates")}</p>
-                  )}
+                  <MultiDateCalendarSelect
+                    value={bucketSuggestedDates}
+                    onChange={setBucketSuggestedDates}
+                    disabled={busy}
+                    locale={language}
+                    placeholder={t("home.bucketDatePickerPlaceholder")}
+                    clearLabel={t("home.bucketDatePickerClear")}
+                    doneLabel={t("home.bucketDatePickerDone")}
+                  />
                 </div>
-              </PopoverContent>
-            </Popover>
-            <Button
-              type="submit"
-              disabled={busy || bucketTitle.trim().length === 0}
-              className="h-full shrink-0 rounded-none border-l border-brand-200 px-3 dark:border-slate-700"
-              aria-label={t("home.bucketAddAction")}
-            >
-              <Plus className="h-4 w-4 sm:hidden" />
-              <span className="hidden sm:inline">{t("home.bucketAddAction")}</span>
-            </Button>
-          </div>
+            </PopoverContent>
+          </Popover>
         </div>
       </div>
     </form>
@@ -1101,7 +1076,10 @@ export const HomeTab = ({
       </Card>
       {isMobileBucketComposer ? (
         <div className="fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+4.75rem)] z-40 px-3 sm:hidden">
-          <div className="rounded-2xl border border-brand-200/70 bg-white/75 p-1.5 shadow-xl backdrop-blur-xl dark:border-slate-700/70 dark:bg-slate-900/75">
+          <div
+            ref={bucketComposerContainerRef}
+            className="rounded-2xl border border-brand-200/70 bg-white/75 p-1.5 shadow-xl backdrop-blur-xl dark:border-slate-700/70 dark:bg-slate-900/75"
+          >
             {renderBucketComposer(true)}
           </div>
         </div>

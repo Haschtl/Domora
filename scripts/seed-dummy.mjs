@@ -15,6 +15,7 @@ import {
   buildBucketRows,
   buildBucketVoteRows,
   buildSubscriptionRows,
+  buildTaskCompletionRatingRows,
   memberColors,
   memberProfiles,
   randomCode,
@@ -73,6 +74,7 @@ const appTablesToClear = [
   { table: "finance_subscriptions", markerColumn: "id" },
   { table: "finance_entries", markerColumn: "id" },
   { table: "household_events", markerColumn: "id" },
+  { table: "task_completion_ratings", markerColumn: "task_completion_id" },
   { table: "task_completions", markerColumn: "id" },
   { table: "task_rotation_members", markerColumn: "task_id" },
   { table: "tasks", markerColumn: "id" },
@@ -186,6 +188,17 @@ const run = async () => {
       apartment_size_sqm: 103.5,
       cold_rent_monthly: 1690,
       utilities_monthly: 400,
+      landing_page_markdown: [
+        "# Willkommen in der Demo-WG",
+        "",
+        "Dies ist eine automatisch erzeugte Landing Page mit Widgets.",
+        "",
+        "{{widget:tasks-for-you}}",
+        "",
+        "{{widget:bucket-short-list}}",
+        "",
+        "{{widget:recent-activity}}"
+      ].join("\n"),
       invite_code: inviteCode,
       created_by: owner.id
     })
@@ -255,11 +268,31 @@ const run = async () => {
   }
 
   const completionRows = buildCompletionRows({ insertedTasks, householdId });
+  let insertedCompletionRows = [];
 
   if (completionRows.length > 0) {
-    const { error: completionError } = await supabase.from("task_completions").insert(completionRows);
+    const { data, error: completionError } = await supabase
+      .from("task_completions")
+      .insert(completionRows)
+      .select("id, task_id, user_id, completed_at");
     if (completionError) {
       throw new Error(`Failed to insert task completions: ${completionError.message}`);
+    }
+    insertedCompletionRows = data ?? [];
+  }
+
+  const completionRatingRows = buildTaskCompletionRatingRows({
+    insertedCompletionRows,
+    users,
+    householdId
+  });
+
+  if (completionRatingRows.length > 0) {
+    const { error: completionRatingError } = await supabase
+      .from("task_completion_ratings")
+      .insert(completionRatingRows);
+    if (completionRatingError) {
+      throw new Error(`Failed to insert task completion ratings: ${completionRatingError.message}`);
     }
   }
 
@@ -347,7 +380,8 @@ const run = async () => {
     completionRows,
     shoppingCompletionRows,
     financeRows,
-    memberRows
+    memberRows,
+    insertedTasks
   });
   if (eventRows.length > 0) {
     const { error: eventError } = await supabase.from("household_events").insert(eventRows);
@@ -364,6 +398,7 @@ const run = async () => {
     console.log(`- ${user.email} / password: DomoraDemo123!`);
   });
   console.log(`Tasks created: ${insertedTasks.length}`);
+  console.log(`Task completion ratings created: ${completionRatingRows.length}`);
   console.log(`Finance entries created: ${financeRows.length}`);
   console.log(`Finance subscriptions created: ${subscriptionRows.length}`);
   console.log(`Cash audits created: ${cashAuditRows.length}`);

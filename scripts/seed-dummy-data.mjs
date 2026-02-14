@@ -209,7 +209,8 @@ export const buildEventRows = ({
   completionRows,
   shoppingCompletionRows,
   financeRows,
-  memberRows
+  memberRows,
+  insertedTasks = []
 }) => {
   const rows = [];
 
@@ -224,6 +225,24 @@ export const buildEventRows = ({
         title: entry.task_title_snapshot
       },
       created_at: entry.completed_at
+    });
+  });
+
+  insertedTasks.forEach((task, index) => {
+    if (!task?.assignee_id || index % 4 !== 1) return;
+    const dueAt = new Date(task.due_at ?? Date.now());
+    const skippedAt = new Date(dueAt.getTime() + 2 * 60 * 60 * 1000);
+
+    rows.push({
+      household_id: householdId,
+      event_type: "task_skipped",
+      actor_user_id: task.assignee_id,
+      subject_user_id: null,
+      payload: {
+        taskId: task.id,
+        title: task.title
+      },
+      created_at: skippedAt.toISOString()
     });
   });
 
@@ -271,6 +290,42 @@ export const buildEventRows = ({
   });
 
   return rows.sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
+};
+
+export const buildTaskCompletionRatingRows = ({ insertedCompletionRows, users, householdId }) => {
+  const usersWithIndex = users.map((user, index) => ({ ...user, __index: index }));
+  const latestCompletionByTask = new Map();
+
+  (insertedCompletionRows ?? []).forEach((entry) => {
+    if (!entry?.id || !entry?.task_id || !entry?.user_id || !entry?.completed_at) return;
+    const existing = latestCompletionByTask.get(entry.task_id);
+    if (!existing) {
+      latestCompletionByTask.set(entry.task_id, entry);
+      return;
+    }
+    if (new Date(entry.completed_at).getTime() > new Date(existing.completed_at).getTime()) {
+      latestCompletionByTask.set(entry.task_id, entry);
+    }
+  });
+
+  const rows = [];
+  Array.from(latestCompletionByTask.values()).forEach((completion, completionIndex) => {
+    const raterCandidates = usersWithIndex.filter((user) => user.id !== completion.user_id);
+    raterCandidates.forEach((user) => {
+      if ((completionIndex + user.__index) % 2 !== 0) return;
+      const rating = 3 + ((completionIndex + user.__index) % 3);
+      rows.push({
+        task_completion_id: completion.id,
+        household_id: householdId,
+        user_id: user.id,
+        rating,
+        created_at: new Date(new Date(completion.completed_at).getTime() + (user.__index + 1) * 60 * 60 * 1000).toISOString(),
+        updated_at: new Date(new Date(completion.completed_at).getTime() + (user.__index + 2) * 60 * 60 * 1000).toISOString()
+      });
+    });
+  });
+
+  return rows;
 };
 
 export const buildPimperRows = ({ users, householdId, completionRows }) => {

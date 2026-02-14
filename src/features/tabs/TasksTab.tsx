@@ -20,7 +20,6 @@ import {
   Tooltip as ChartTooltip
 } from "chart.js";
 import {
-  BellRing,
   Camera,
   CheckCircle2,
   ChevronLeft,
@@ -35,6 +34,7 @@ import {
   Paperclip,
   Plus,
   Sparkles,
+  Star,
   X
 } from "lucide-react";
 import { Bar } from "react-chartjs-2";
@@ -89,8 +89,6 @@ interface TasksTabProps {
   memberPimpers: HouseholdMemberPimpers[];
   userId: string;
   busy: boolean;
-  notificationPermission: NotificationPermission;
-  onEnableNotifications: () => Promise<void>;
   onAdd: (input: NewTaskInput) => Promise<void>;
   onComplete: (task: TaskItem) => Promise<void>;
   onSkip: (task: TaskItem) => Promise<void>;
@@ -98,6 +96,7 @@ interface TasksTabProps {
   onToggleActive: (task: TaskItem) => Promise<void>;
   onUpdate: (task: TaskItem, input: NewTaskInput) => Promise<void>;
   onDelete: (task: TaskItem) => Promise<void>;
+  onRateTaskCompletion: (taskCompletionId: string, rating: number) => Promise<void>;
   onUpdateMemberTaskLaziness: (targetUserId: string, taskLazinessFactor: number) => Promise<void>;
   onResetHouseholdPimpers: () => Promise<void>;
   canManageTaskLaziness: boolean;
@@ -118,6 +117,11 @@ type TaskFormValues = {
   effortPimpers: string;
   prioritizeLowPimpers: boolean;
   assigneeFairnessMode: "actual" | "projection";
+};
+
+type SkipMathChallenge = {
+  expression: string;
+  answer: number;
 };
 
 const toDateInputValue = (date: Date) => {
@@ -217,6 +221,62 @@ const relativeDueChipLabel = (
   return isFuture ? t("tasks.dueIn", { value: valueLabel }) : t("tasks.dueSince", { value: valueLabel });
 };
 
+const hashStringToUint32 = (value: string) => {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+};
+
+const seededRandom = (seed: number) => {
+  let state = seed >>> 0;
+  return () => {
+    state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+    return state / 4294967296;
+  };
+};
+
+const getCurrentHourSeedKey = () => {
+  const now = new Date();
+  const month = `${now.getMonth() + 1}`.padStart(2, "0");
+  const day = `${now.getDate()}`.padStart(2, "0");
+  const hour = `${now.getHours()}`.padStart(2, "0");
+  return `${now.getFullYear()}-${month}-${day}-${hour}`;
+};
+
+const buildSkipMathChallenge = (seedSource: string): SkipMathChallenge => {
+  const random = seededRandom(hashStringToUint32(seedSource));
+  const pickInt = (min: number, max: number) => Math.floor(random() * (max - min + 1)) + min;
+  const operation = pickInt(0, 2);
+
+  if (operation === 0) {
+    const left = pickInt(18, 89);
+    const right = pickInt(17, 76);
+    return {
+      expression: `${left} + ${right}`,
+      answer: left + right
+    };
+  }
+
+  if (operation === 1) {
+    const right = pickInt(14, 68);
+    const left = right + pickInt(25, 99);
+    return {
+      expression: `${left} - ${right}`,
+      answer: left - right
+    };
+  }
+
+  const left = pickInt(7, 16);
+  const right = pickInt(6, 14);
+  return {
+    expression: `${left} × ${right}`,
+    answer: left * right
+  };
+};
+
 export const TasksTab = ({
   section = "overview",
   tasks,
@@ -225,8 +285,6 @@ export const TasksTab = ({
   memberPimpers,
   userId,
   busy,
-  notificationPermission,
-  onEnableNotifications,
   onAdd,
   onComplete,
   onSkip,
@@ -234,6 +292,7 @@ export const TasksTab = ({
   onToggleActive,
   onUpdate,
   onDelete,
+  onRateTaskCompletion,
   onUpdateMemberTaskLaziness,
   onResetHouseholdPimpers,
   canManageTaskLaziness
@@ -261,6 +320,7 @@ export const TasksTab = ({
   const [calendarMonthDate, setCalendarMonthDate] = useState(() => startOfMonth(new Date()));
   const [isCoarsePointer, setIsCoarsePointer] = useState(false);
   const [openCalendarTooltipDay, setOpenCalendarTooltipDay] = useState<string | null>(null);
+  const [skipChallengeAnswerInput, setSkipChallengeAnswerInput] = useState("");
   const addCurrentStateUploadInputRef = useRef<HTMLInputElement | null>(null);
   const addCurrentStateCameraInputRef = useRef<HTMLInputElement | null>(null);
   const addTargetStateUploadInputRef = useRef<HTMLInputElement | null>(null);
@@ -428,6 +488,16 @@ export const TasksTab = ({
     () => (memberId: string) => normalizeUserColor(memberById.get(memberId)?.user_color) ?? fallbackColorFromUserId(memberId),
     [memberById]
   );
+  const skipMathChallenge = useMemo(() => {
+    if (pendingTaskAction?.kind !== "skip") return null;
+    const userNameSeed = memberById.get(userId)?.display_name?.trim() || userId;
+    return buildSkipMathChallenge(`${getCurrentHourSeedKey()}::${userNameSeed.toLowerCase()}`);
+  }, [memberById, pendingTaskAction?.kind, userId]);
+  const isSkipMathChallengeSolved = useMemo(() => {
+    if (!skipMathChallenge) return true;
+    const parsed = Number(skipChallengeAnswerInput.trim());
+    return Number.isFinite(parsed) && parsed === skipMathChallenge.answer;
+  }, [skipChallengeAnswerInput, skipMathChallenge]);
 
   useEffect(() => {
     if (statsTaskFilterId === "all") return;
@@ -494,6 +564,10 @@ export const TasksTab = ({
   useEffect(() => {
     setOpenCalendarTooltipDay(null);
   }, [calendarMonthDate]);
+  useEffect(() => {
+    if (pendingTaskAction?.kind !== "skip") return;
+    setSkipChallengeAnswerInput("");
+  }, [pendingTaskAction?.kind, pendingTaskAction?.task.id]);
   const projectionByTaskId = useMemo(() => {
     const lazinessByUserId = new Map<string, number>();
     members.forEach((member) => lazinessByUserId.set(member.user_id, getLazinessFactor(member)));
@@ -609,8 +683,6 @@ export const TasksTab = ({
     [sortedMemberRows]
   );
 
-  const permissionLabel = t(`tasks.notificationStatus.${notificationPermission}`);
-  const pushEnabled = notificationPermission === "granted";
   const showOverview = section === "overview";
   const showStats = section === "stats";
   const showHistory = section === "history";
@@ -1097,6 +1169,7 @@ export const TasksTab = ({
 
   const onConfirmTaskAction = async () => {
     if (!pendingTaskAction) return;
+    if (pendingTaskAction.kind === "skip" && !isSkipMathChallengeSolved) return;
 
     const { kind, task } = pendingTaskAction;
     if (kind === "skip") {
@@ -1141,6 +1214,15 @@ export const TasksTab = ({
     () => buildCompletionSpansByDay(completions, visibleCalendarDayKeys, visibleCalendarRange),
     [completions, visibleCalendarDayKeys, visibleCalendarRange]
   );
+  const latestCompletionIdByTask = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const entry of completions) {
+      if (!map.has(entry.task_id)) {
+        map.set(entry.task_id, entry.id);
+      }
+    }
+    return map;
+  }, [completions]);
 
   const calendarCard = showStats ? (
     <Card>
@@ -1394,27 +1476,8 @@ export const TasksTab = ({
           </CardHeader>
 
           <CardContent>
-            <div className="mb-4 flex items-center justify-between gap-2">
-              <p className="text-xs text-slate-600 dark:text-slate-300">
-                {t("tasks.notifications", { status: permissionLabel })}
-              </p>
-              <div className="flex flex-wrap items-center gap-2">
-                <div className="flex items-center gap-2">
-                  <BellRing className="h-4 w-4 text-slate-600 dark:text-slate-300" />
-                  <span className="text-sm">{t("tasks.enablePush")}</span>
-                  <Switch
-                    checked={pushEnabled}
-                    onCheckedChange={() => {
-                      if (!pushEnabled) {
-                        void onEnableNotifications();
-                      }
-                    }}
-                    disabled={pushEnabled}
-                    aria-label={t("tasks.enablePush")}
-                  />
-                </div>
-
-                <MobileSubpageDialog
+            <div className="mb-4 flex items-center justify-end gap-2">
+              <MobileSubpageDialog
                   open={isCreateDialogOpen}
                   onOpenChange={(open) => {
                     setIsCreateDialogOpen(open);
@@ -1681,8 +1744,7 @@ export const TasksTab = ({
                       </Button>
                     </div>
                   </form>
-                </MobileSubpageDialog>
-              </div>
+              </MobileSubpageDialog>
             </div>
 
             <ul className="space-y-2">
@@ -2110,7 +2172,7 @@ export const TasksTab = ({
         ) : null}
 
         {showHistory ? (
-          <Card className="mt-5">
+          <Card>
             <CardHeader>
               <CardTitle>{t("tasks.historyTitle")}</CardTitle>
             </CardHeader>
@@ -2163,6 +2225,42 @@ export const TasksTab = ({
                         <PimpersIcon />
                       </span>
                     </p>
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      {entry.rating_count > 0 ? (
+                        <p className="text-xs text-slate-500 dark:text-slate-400">
+                          {t("tasks.ratingSummary", {
+                            average: Number((entry.rating_average ?? 0).toFixed(1)),
+                            count: entry.rating_count
+                          })}
+                        </p>
+                      ) : (
+                        <p className="text-xs text-slate-500 dark:text-slate-400">{t("tasks.ratingNoVotes")}</p>
+                      )}
+                      {entry.user_id !== userId && latestCompletionIdByTask.get(entry.task_id) === entry.id ? (
+                        <div className="ml-auto flex items-center gap-0.5">
+                          {[1, 2, 3, 4, 5].map((starValue) => {
+                            const isSelected = (entry.my_rating ?? 0) >= starValue;
+                            return (
+                              <button
+                                key={`${entry.id}-rate-${starValue}`}
+                                type="button"
+                                className={`rounded p-1 transition ${
+                                  isSelected
+                                    ? "text-amber-500 hover:text-amber-600"
+                                    : "text-slate-300 hover:text-amber-400 dark:text-slate-600"
+                                }`}
+                                onClick={() => void onRateTaskCompletion(entry.id, starValue)}
+                                disabled={busy}
+                                aria-label={t("tasks.rateAction", { rating: starValue })}
+                                title={t("tasks.rateAction", { rating: starValue })}
+                              >
+                                <Star className={`h-4 w-4 ${isSelected ? "fill-current" : ""}`} />
+                              </button>
+                            );
+                          })}
+                        </div>
+                      ) : null}
+                    </div>
                   </li>
                 ))}
               </ul>
@@ -2242,6 +2340,27 @@ export const TasksTab = ({
                 <p className="mt-3 text-sm font-semibold text-rose-800 dark:text-rose-200">
                   {t("tasks.confirmSkipWarning")}
                 </p>
+                {skipMathChallenge ? (
+                  <div className="mt-4 rounded-lg border border-rose-200 bg-white p-3 text-left dark:border-rose-800 dark:bg-slate-900/60">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-rose-700 dark:text-rose-300">
+                      {t("tasks.skipChallengeTitle")}
+                    </p>
+                    <p className="mt-1 text-sm text-slate-700 dark:text-slate-200">
+                      {t("tasks.skipChallengePrompt", { expression: skipMathChallenge.expression })}
+                    </p>
+                    <Input
+                      type="number"
+                      inputMode="numeric"
+                      value={skipChallengeAnswerInput}
+                      onChange={(event) => setSkipChallengeAnswerInput(event.target.value)}
+                      placeholder={t("tasks.skipChallengePlaceholder")}
+                      className="mt-2"
+                    />
+                    {skipChallengeAnswerInput.trim().length > 0 && !isSkipMathChallengeSolved ? (
+                      <p className="mt-2 text-xs text-rose-700 dark:text-rose-300">{t("tasks.skipChallengeIncorrect")}</p>
+                    ) : null}
+                  </div>
+                ) : null}
               </div>
             ) : null}
 
@@ -2251,7 +2370,7 @@ export const TasksTab = ({
               </Button>
               <Button
                 type="button"
-                disabled={busy}
+                disabled={busy || (pendingTaskAction?.kind === "skip" && !isSkipMathChallengeSolved)}
                 className={
                   pendingTaskAction?.kind === "skip"
                     ? "bg-rose-600 text-white hover:bg-rose-700 dark:bg-rose-700 dark:hover:bg-rose-600"

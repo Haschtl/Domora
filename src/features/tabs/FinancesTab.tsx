@@ -54,7 +54,7 @@ import {
 import { Input } from "../../components/ui/input";
 import { InputWithSuffix } from "../../components/ui/input-with-suffix";
 import { Label } from "../../components/ui/label";
-import { Popover, PopoverContent, PopoverTrigger } from "../../components/ui/popover";
+import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "../../components/ui/popover";
 import { SectionPanel } from "../../components/ui/section-panel";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
 import { useSmartSuggestions } from "../../hooks/use-smart-suggestions";
@@ -357,8 +357,14 @@ export const FinancesTab = ({
   const [receiptUploadError, setReceiptUploadError] = useState<string | null>(null);
   const [previewDescription, setPreviewDescription] = useState("");
   const [previewAmountInput, setPreviewAmountInput] = useState("");
-  const [previewPayerIds, setPreviewPayerIds] = useState<string[]>([userId]);
-  const [previewBeneficiaryIds, setPreviewBeneficiaryIds] = useState<string[]>([]);
+  const getDefaultFinanceSelectionIds = useCallback(() => {
+    const nonVacationMemberIds = members.filter((member) => !member.vacation_mode).map((member) => member.user_id);
+    if (nonVacationMemberIds.length > 0) return nonVacationMemberIds;
+    return members.map((member) => member.user_id);
+  }, [members]);
+  const [previewPayerIds, setPreviewPayerIds] = useState<string[]>(() => getDefaultFinanceSelectionIds());
+  const [previewBeneficiaryIds, setPreviewBeneficiaryIds] = useState<string[]>(() => getDefaultFinanceSelectionIds());
+  const addEntryComposerContainerRef = useRef<HTMLDivElement | null>(null);
   const addEntryRowRef = useRef<HTMLDivElement | null>(null);
   const ocrVideoRef = useRef<HTMLVideoElement | null>(null);
   const ocrCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -387,8 +393,8 @@ export const FinancesTab = ({
       amount: "",
       receiptImageUrl: "",
       entryDate: "",
-      paidByUserIds: [userId],
-      beneficiaryUserIds: [] as string[]
+      paidByUserIds: getDefaultFinanceSelectionIds(),
+      beneficiaryUserIds: getDefaultFinanceSelectionIds()
     },
     onSubmit: async ({
       value,
@@ -429,8 +435,8 @@ export const FinancesTab = ({
       setReceiptUploadError(null);
       setPreviewDescription("");
       setPreviewAmountInput("");
-      setPreviewPayerIds([userId]);
-      setPreviewBeneficiaryIds(members.map((member) => member.user_id));
+      setPreviewPayerIds(getDefaultFinanceSelectionIds());
+      setPreviewBeneficiaryIds(getDefaultFinanceSelectionIds());
     }
   });
   const archiveFilterForm = useForm({
@@ -681,13 +687,14 @@ export const FinancesTab = ({
     const currentPayers = addEntryPayers;
     const currentBeneficiaries = addEntryBeneficiaries;
 
-    if (currentPayers.length === 0) {
-      addEntryForm.setFieldValue("paidByUserIds", [userId]);
+    const defaultSelectionIds = getDefaultFinanceSelectionIds();
+    if (currentPayers.length === 0 && defaultSelectionIds.length > 0) {
+      addEntryForm.setFieldValue("paidByUserIds", defaultSelectionIds);
     }
-    if (currentBeneficiaries.length === 0 && memberIds.length > 0) {
-      addEntryForm.setFieldValue("beneficiaryUserIds", memberIds);
+    if (currentBeneficiaries.length === 0 && defaultSelectionIds.length > 0) {
+      addEntryForm.setFieldValue("beneficiaryUserIds", defaultSelectionIds);
     }
-  }, [addEntryBeneficiaries, addEntryForm, addEntryPayers, memberIds, userId]);
+  }, [addEntryBeneficiaries, addEntryForm, addEntryPayers, getDefaultFinanceSelectionIds, memberIds]);
 
   useEffect(() => {
     const memberIds = members.map((member) => member.user_id);
@@ -1621,7 +1628,9 @@ export const FinancesTab = ({
 
   useEffect(() => {
     const updateWidth = () => {
-      const next = addEntryRowRef.current?.getBoundingClientRect().width;
+      const next =
+        addEntryComposerContainerRef.current?.getBoundingClientRect().width ??
+        addEntryRowRef.current?.getBoundingClientRect().width;
       if (!next || Number.isNaN(next)) return;
       setAddEntryPopoverWidth(Math.max(220, Math.round(next)));
     };
@@ -1629,7 +1638,7 @@ export const FinancesTab = ({
     updateWidth();
     window.addEventListener("resize", updateWidth);
     return () => window.removeEventListener("resize", updateWidth);
-  }, []);
+  }, [isMobileAddEntryComposer]);
   useEffect(() => {
     if (typeof window === "undefined") return;
     const mediaQuery = window.matchMedia("(max-width: 639px)");
@@ -1751,71 +1760,97 @@ export const FinancesTab = ({
           name="description"
           children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
             <div className="relative min-w-0 flex-1">
-              <div
-                ref={addEntryRowRef}
-                className="relative flex h-10 items-stretch overflow-hidden rounded-xl border border-brand-200 bg-white dark:border-slate-700 dark:bg-slate-900 focus-within:border-brand-500 focus-within:ring-2 focus-within:ring-brand-200 dark:focus-within:border-slate-500 dark:focus-within:ring-slate-600/40"
-              >
-                <Input
-                  value={field.state.value}
-                  onChange={(event) => {
-                    const nextValue = event.target.value;
-                    field.handleChange(nextValue);
-                    setPreviewDescription(nextValue);
-                    tryAutofillNewEntryFromDescription(nextValue);
-                  }}
-                  onFocus={onEntryDescriptionFocus}
-                  onBlur={(event) => {
-                    onEntryDescriptionBlur();
-                    tryAutofillNewEntryFromDescription(event.target.value);
-                  }}
-                  onKeyDown={onEntryDescriptionKeyDown}
-                  placeholder={t("finances.descriptionPlaceholder")}
-                  required
-                  className="h-full min-w-0 flex-1 rounded-none border-0 bg-transparent shadow-none focus-visible:ring-0"
-                />
-                <addEntryForm.Field
-                  name="amount"
-                  children={(amountField: { state: { value: string }; handleChange: (value: string) => void }) => (
-                    <div className="relative h-full w-28 shrink-0 border-l border-brand-200 dark:border-slate-700">
-                      <Input
-                        type="number"
-                        inputMode="decimal"
-                        step="0.01"
-                        min="0"
-                        value={amountField.state.value}
-                        onChange={(event) => {
-                          amountField.handleChange(event.target.value);
-                          setPreviewAmountInput(event.target.value);
-                        }}
-                        placeholder={t("finances.amountPlaceholder")}
-                        required
-                        className="h-full rounded-none border-0 bg-transparent pr-7 shadow-none focus-visible:ring-0"
-                      />
-                      <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-500 dark:text-slate-400">
-                        €
-                      </span>
-                    </div>
-                  )}
-                />
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="h-full w-10 shrink-0 rounded-none border-l border-brand-200 p-0 dark:border-slate-700"
-                      aria-label={t("finances.moreOptions")}
-                    >
-                      <MoreHorizontal className="h-4 w-4" />
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent
-                    align="end"
-                    side={mobile ? "top" : "bottom"}
-                    sideOffset={8}
-                    className="z-50 box-border w-auto space-y-3 rounded-xl border-brand-100 shadow-lg dark:border-slate-700"
-                    style={{ width: `${addEntryPopoverWidth}px` }}
+              <Popover>
+                <PopoverAnchor asChild>
+                  <div
+                    ref={addEntryRowRef}
+                    className="relative flex h-10 items-stretch overflow-hidden rounded-xl border border-brand-200 bg-white dark:border-slate-700 dark:bg-slate-900 focus-within:border-brand-500 focus-within:ring-2 focus-within:ring-brand-200 dark:focus-within:border-slate-500 dark:focus-within:ring-slate-600/40"
                   >
+                    <Input
+                      value={field.state.value}
+                      onChange={(event) => {
+                        const nextValue = event.target.value;
+                        field.handleChange(nextValue);
+                        setPreviewDescription(nextValue);
+                        tryAutofillNewEntryFromDescription(nextValue);
+                      }}
+                      onFocus={onEntryDescriptionFocus}
+                      onBlur={(event) => {
+                        onEntryDescriptionBlur();
+                        tryAutofillNewEntryFromDescription(event.target.value);
+                      }}
+                      onKeyDown={onEntryDescriptionKeyDown}
+                      placeholder={t("finances.descriptionPlaceholder")}
+                      required
+                      className="h-full min-w-0 flex-1 rounded-none border-0 bg-transparent shadow-none focus-visible:ring-0"
+                    />
+                    <addEntryForm.Field
+                      name="amount"
+                      children={(amountField: { state: { value: string }; handleChange: (value: string) => void }) => (
+                        <div className="relative h-full w-28 shrink-0 border-l border-brand-200 dark:border-slate-700">
+                          <Input
+                            type="number"
+                            inputMode="decimal"
+                            step="0.01"
+                            min="0"
+                            value={amountField.state.value}
+                            onChange={(event) => {
+                              amountField.handleChange(event.target.value);
+                              setPreviewAmountInput(event.target.value);
+                            }}
+                            placeholder={t("finances.amountPlaceholder")}
+                            required
+                            className="h-full rounded-none border-0 bg-transparent pr-7 shadow-none focus-visible:ring-0"
+                          />
+                          <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-500 dark:text-slate-400">
+                            €
+                          </span>
+                        </div>
+                      )}
+                    />
+                    <PopoverTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-full w-10 shrink-0 rounded-none border-l border-brand-200 p-0 dark:border-slate-700"
+                        aria-label={t("finances.moreOptions")}
+                      >
+                        <MoreHorizontal className="h-4 w-4" />
+                      </Button>
+                    </PopoverTrigger>
+                    {useCameraInsteadOfAdd ? (
+                      <Button
+                        type="button"
+                        disabled={busy}
+                        className="h-full shrink-0 rounded-none border-l border-brand-200 px-3 dark:border-slate-700"
+                        onClick={() => {
+                          setOcrError(null);
+                          setOcrCameraDialogOpen(true);
+                        }}
+                      >
+                        <Camera className="h-4 w-4 sm:hidden" />
+                        <span className="hidden sm:inline">{t("finances.ocrCameraButton")}</span>
+                      </Button>
+                    ) : (
+                      <Button
+                        type="submit"
+                        disabled={busy}
+                        className="h-full shrink-0 rounded-none border-l border-brand-200 px-3 dark:border-slate-700"
+                      >
+                        <Plus className="h-4 w-4 sm:hidden" />
+                        <span className="hidden sm:inline">{t("common.add")}</span>
+                      </Button>
+                    )}
+                  </div>
+                </PopoverAnchor>
+                <PopoverContent
+                  align="start"
+                  side={mobile ? "top" : "bottom"}
+                  sideOffset={12}
+                  className="z-50 -translate-x-1.5 box-border w-auto space-y-3 rounded-xl border-brand-100 shadow-lg dark:border-slate-700"
+                  style={{ width: `${addEntryPopoverWidth}px` }}
+                >
                     <addEntryForm.Field
                       name="category"
                       children={(categoryField: { state: { value: string }; handleChange: (value: string) => void }) => (
@@ -1853,36 +1888,12 @@ export const FinancesTab = ({
                       },
                       true
                     )}
-                  </PopoverContent>
-                </Popover>
-                {useCameraInsteadOfAdd ? (
-                  <Button
-                    type="button"
-                    disabled={busy}
-                    className="h-full shrink-0 rounded-none border-l border-brand-200 px-3 dark:border-slate-700"
-                    onClick={() => {
-                      setOcrError(null);
-                      setOcrCameraDialogOpen(true);
-                    }}
-                  >
-                    <Camera className="h-4 w-4 sm:hidden" />
-                    <span className="hidden sm:inline">{t("finances.ocrCameraButton")}</span>
-                  </Button>
-                ) : (
-                  <Button
-                    type="submit"
-                    disabled={busy}
-                    className="h-full shrink-0 rounded-none border-l border-brand-200 px-3 dark:border-slate-700"
-                  >
-                    <Plus className="h-4 w-4 sm:hidden" />
-                    <span className="hidden sm:inline">{t("common.add")}</span>
-                  </Button>
-                )}
-              </div>
+                </PopoverContent>
+              </Popover>
               {entryDescriptionFocused && entryDescriptionSuggestions.length > 0 ? (
                 <div
                   className={`absolute left-0 right-0 z-50 rounded-xl border border-brand-100 bg-white p-1 shadow-lg dark:border-slate-700 dark:bg-slate-900 ${
-                    mobile ? "bottom-[calc(100%+0.4rem)]" : "top-[calc(100%+0.4rem)]"
+                    mobile ? "bottom-[calc(100%+0.65rem)]" : "top-[calc(100%+0.65rem)]"
                   }`}
                 >
                   <p className="px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
@@ -1945,7 +1956,10 @@ export const FinancesTab = ({
             ) : null}
             {isMobileAddEntryComposer ? (
               <div className="fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+4.25rem)] z-40 px-3 sm:hidden">
-                <div className="rounded-2xl border border-brand-200/70 bg-white/75 p-1.5 shadow-xl backdrop-blur-xl dark:border-slate-700/70 dark:bg-slate-900/75">
+                <div
+                  ref={addEntryComposerContainerRef}
+                  className="rounded-2xl border border-brand-200/70 bg-white/75 p-1.5 shadow-xl backdrop-blur-xl dark:border-slate-700/70 dark:bg-slate-900/75"
+                >
                   {renderAddEntryComposer(true)}
                 </div>
               </div>

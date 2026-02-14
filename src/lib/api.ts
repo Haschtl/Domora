@@ -169,7 +169,17 @@ const taskCompletionSchema = z.object({
   pimpers_earned: z.coerce.number().int().positive(),
   due_at_snapshot: z.string().nullable().optional().transform((value) => value ?? null),
   delay_minutes: z.coerce.number().int().nonnegative().default(0),
-  completed_at: z.string().min(1)
+  completed_at: z.string().min(1),
+  rating_average: z.coerce.number().finite().nullable().optional().transform((value) => value ?? null),
+  rating_count: z.coerce.number().int().nonnegative().optional().default(0),
+  my_rating: z.coerce.number().int().min(1).max(5).nullable().optional().transform((value) => value ?? null)
+});
+
+const taskCompletionRatingSchema = z.object({
+  task_completion_id: z.string().uuid(),
+  household_id: z.string().uuid(),
+  user_id: z.string().uuid(),
+  rating: z.coerce.number().int().min(1).max(5)
 });
 
 const householdEventSchema = z.object({
@@ -629,25 +639,23 @@ export const createHousehold = async (name: string, userId: string): Promise<Hou
 export const joinHouseholdByInvite = async (inviteCode: string, userId: string): Promise<Household> => {
   const validatedInviteCode = z.string().trim().min(1).max(32).parse(inviteCode).toUpperCase();
   const validatedUserId = z.string().uuid().parse(userId);
+  const requesterUserId = await requireAuthenticatedUserId();
+  if (requesterUserId !== validatedUserId) {
+    throw new Error("Authenticated user does not match provided userId");
+  }
+
+  const { data: joinedHouseholdId, error: joinError } = await supabase.rpc("join_household_by_invite", {
+    p_invite_code: validatedInviteCode
+  });
+  if (joinError) throw joinError;
+  const resolvedHouseholdId = z.string().uuid().parse(String(joinedHouseholdId));
 
   const { data: household, error } = await supabase
     .from("households")
     .select("*")
-    .eq("invite_code", validatedInviteCode)
+    .eq("id", resolvedHouseholdId)
     .single();
-
   if (error) throw error;
-
-  const { error: membershipError } = await supabase.from("household_members").upsert(
-    {
-      household_id: household.id,
-      user_id: validatedUserId,
-      role: "member"
-    },
-    { onConflict: "household_id,user_id" }
-  );
-
-  if (membershipError) throw membershipError;
 
   return normalizeHousehold(household as Record<string, unknown>);
 };
@@ -1630,6 +1638,7 @@ export const updateTaskActiveState = async (taskId: string, isActive: boolean): 
 };
 
 export const getTaskCompletions = async (householdId: string): Promise<TaskCompletion[]> => {
+  const currentUserId = await requireAuthenticatedUserId();
   const { data, error } = await supabase
     .from("task_completions")
     .select("*")
@@ -1638,7 +1647,73 @@ export const getTaskCompletions = async (householdId: string): Promise<TaskCompl
     .limit(200);
 
   if (error) throw error;
-  return (data ?? []).map((entry) => normalizeTaskCompletion(entry as Record<string, unknown>));
+  const completions = (data ?? []).map((entry) => normalizeTaskCompletion(entry as Record<string, unknown>));
+  if (completions.length === 0) return completions;
+
+  const completionIds = completions.map((entry) => entry.id);
+  const { data: ratingsData, error: ratingsError } = await supabase
+    .from("task_completion_ratings")
+    .select("task_completion_id,household_id,user_id,rating")
+    .eq("household_id", householdId)
+    .in("task_completion_id", completionIds);
+
+  if (ratingsError) throw ratingsError;
+
+  const ratingsByCompletionId = new Map<
+    string,
+    {
+      total: number;
+      count: number;
+      myRating: number | null;
+    }
+  >();
+
+  for (const row of ratingsData ?? []) {
+    const parsed = taskCompletionRatingSchema.parse(row);
+    const existing = ratingsByCompletionId.get(parsed.task_completion_id) ?? {
+      total: 0,
+      count: 0,
+      myRating: null
+    };
+    existing.total += parsed.rating;
+    existing.count += 1;
+    if (parsed.user_id === currentUserId) {
+      existing.myRating = parsed.rating;
+    }
+    ratingsByCompletionId.set(parsed.task_completion_id, existing);
+  }
+
+  return completions.map((entry) => {
+    const ratingStats = ratingsByCompletionId.get(entry.id);
+    if (!ratingStats) {
+      return {
+        ...entry,
+        rating_average: null,
+        rating_count: 0,
+        my_rating: null
+      };
+    }
+    return {
+      ...entry,
+      rating_average: Number((ratingStats.total / ratingStats.count).toFixed(2)),
+      rating_count: ratingStats.count,
+      my_rating: ratingStats.myRating
+    };
+  });
+};
+
+export const rateTaskCompletion = async (taskCompletionId: string, rating: number): Promise<void> => {
+  const parsed = z.object({
+    taskCompletionId: z.string().uuid(),
+    rating: z.coerce.number().int().min(1).max(5)
+  }).parse({ taskCompletionId, rating });
+
+  const { error } = await supabase.rpc("rate_task_completion", {
+    p_task_completion_id: parsed.taskCompletionId,
+    p_rating: parsed.rating
+  });
+
+  if (error) throw error;
 };
 
 export const getFinanceEntries = async (householdId: string): Promise<FinanceEntry[]> => {

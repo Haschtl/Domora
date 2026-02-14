@@ -31,7 +31,12 @@ const completion = (partial: Partial<TaskCompletion>): TaskCompletion => ({
   task_title_snapshot: partial.task_title_snapshot ?? "Bad putzen",
   user_id: partial.user_id ?? "u-1",
   pimpers_earned: partial.pimpers_earned ?? 1,
-  completed_at: partial.completed_at ?? "2026-02-13T12:00:00.000Z"
+  due_at_snapshot: partial.due_at_snapshot ?? null,
+  delay_minutes: partial.delay_minutes ?? 0,
+  completed_at: partial.completed_at ?? "2026-02-13T12:00:00.000Z",
+  rating_average: partial.rating_average ?? null,
+  rating_count: partial.rating_count ?? 0,
+  my_rating: partial.my_rating ?? null
 });
 
 describe("buildTaskSuggestions", () => {

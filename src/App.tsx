@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useMemo } from "react";
+import { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import { AnimatePresence, motion } from "framer-motion";
 import {
@@ -22,6 +22,7 @@ import { isDueNow } from "./lib/date";
 import type { AppTab } from "./lib/types";
 import { Button } from "./components/ui/button";
 import { Card, CardDescription, CardHeader, CardTitle } from "./components/ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "./components/ui/dialog";
 import { useWorkspaceController } from "./hooks/useWorkspaceController";
 
 const AuthView = lazy(() => import("./features/AuthView").then((module) => ({ default: module.AuthView })));
@@ -135,6 +136,18 @@ const settingsSubPathMap: Record<SettingsSubTab, "/settings/me" | "/settings/hou
   household: "/settings/household"
 };
 
+const LOADING_OVERLAY_EXTRA_MS = 500;
+const LOADING_OVERLAY_FADE_MS = 260;
+const PUSH_PROMPT_SNOOZE_MS = 24 * 60 * 60 * 1000;
+
+const buildPushPromptStorageKey = (userId: string, householdId: string) =>
+  `domora-push-prompt:${userId}:${householdId}`;
+
+type PushPromptState = {
+  dismissedAt?: number;
+  enabledAt?: number;
+};
+
 const App = () => {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -190,6 +203,7 @@ const App = () => {
     onToggleTaskActive,
     onUpdateTask,
     onDeleteTask,
+    onRateTaskCompletion,
     onAddFinanceEntry,
     onUpdateFinanceEntry,
     onDeleteFinanceEntry,
@@ -226,6 +240,15 @@ const App = () => {
   const taskSubTab = useMemo(() => resolveTaskSubTabFromPathname(location.pathname), [location.pathname]);
   const financeSubTab = useMemo(() => resolveFinanceSubTabFromPathname(location.pathname), [location.pathname]);
   const settingsSubTab = useMemo(() => resolveSettingsSubTabFromPathname(location.pathname), [location.pathname]);
+  const [isMobileKeyboardOpen, setIsMobileKeyboardOpen] = useState(false);
+  const [isMobileViewport, setIsMobileViewport] = useState(() =>
+    typeof window !== "undefined" ? window.matchMedia("(max-width: 639px)").matches : false
+  );
+  const [showLoadingOverlay, setShowLoadingOverlay] = useState(loadingSession);
+  const [loadingOverlayOpaque, setLoadingOverlayOpaque] = useState(loadingSession);
+  const [isPushPromptOpen, setIsPushPromptOpen] = useState(false);
+  const loadingOverlayDelayTimerRef = useRef<number | null>(null);
+  const loadingOverlayHideTimerRef = useRef<number | null>(null);
   const dueTasksBadge = useMemo(() => {
     const dueTasks = tasks.filter((task) => task.is_active && !task.done && isDueNow(task.due_at));
     const allDue = dueTasks.length;
@@ -364,6 +387,166 @@ const App = () => {
     document.title = householdName ? `${householdName} | ${brand}` : brand;
   }, [activeHousehold?.name, t]);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const viewport = window.visualViewport;
+    let maxViewportHeight = viewport?.height ?? window.innerHeight;
+    let rafId: number | null = null;
+
+    const isInputLikeElement = (element: Element | null) => {
+      if (!(element instanceof HTMLElement)) return false;
+      const tag = element.tagName;
+      return tag === "INPUT" || tag === "TEXTAREA" || element.isContentEditable;
+    };
+
+    const updateKeyboardState = () => {
+      const viewportWidth = viewport?.width ?? window.innerWidth;
+      const isMobileViewport = viewportWidth < 640;
+      if (!isMobileViewport) {
+        maxViewportHeight = viewport?.height ?? window.innerHeight;
+        setIsMobileKeyboardOpen(false);
+        return;
+      }
+
+      const currentHeight = viewport?.height ?? window.innerHeight;
+      if (currentHeight > maxViewportHeight) {
+        maxViewportHeight = currentHeight;
+      }
+
+      const keyboardHeightDelta = maxViewportHeight - currentHeight;
+      const hasInputFocus = isInputLikeElement(document.activeElement);
+      setIsMobileKeyboardOpen(keyboardHeightDelta > 140 && hasInputFocus);
+    };
+
+    const scheduleUpdate = () => {
+      if (rafId !== null) {
+        window.cancelAnimationFrame(rafId);
+      }
+      rafId = window.requestAnimationFrame(updateKeyboardState);
+    };
+
+    updateKeyboardState();
+    viewport?.addEventListener("resize", scheduleUpdate);
+    window.addEventListener("resize", scheduleUpdate);
+    document.addEventListener("focusin", scheduleUpdate);
+    document.addEventListener("focusout", scheduleUpdate);
+
+    return () => {
+      if (rafId !== null) {
+        window.cancelAnimationFrame(rafId);
+      }
+      viewport?.removeEventListener("resize", scheduleUpdate);
+      window.removeEventListener("resize", scheduleUpdate);
+      document.removeEventListener("focusin", scheduleUpdate);
+      document.removeEventListener("focusout", scheduleUpdate);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const mediaQuery = window.matchMedia("(max-width: 639px)");
+    const onChange = (event: MediaQueryListEvent) => setIsMobileViewport(event.matches);
+    mediaQuery.addEventListener("change", onChange);
+    return () => mediaQuery.removeEventListener("change", onChange);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    let immediateTimer: number | null = null;
+    if (loadingOverlayDelayTimerRef.current !== null) {
+      window.clearTimeout(loadingOverlayDelayTimerRef.current);
+      loadingOverlayDelayTimerRef.current = null;
+    }
+    if (loadingOverlayHideTimerRef.current !== null) {
+      window.clearTimeout(loadingOverlayHideTimerRef.current);
+      loadingOverlayHideTimerRef.current = null;
+    }
+
+    if (loadingSession) {
+      immediateTimer = window.setTimeout(() => {
+        setShowLoadingOverlay(true);
+        setLoadingOverlayOpaque(true);
+      }, 0);
+      return;
+    }
+
+    loadingOverlayDelayTimerRef.current = window.setTimeout(() => {
+      setLoadingOverlayOpaque(false);
+      loadingOverlayHideTimerRef.current = window.setTimeout(() => {
+        setShowLoadingOverlay(false);
+      }, LOADING_OVERLAY_FADE_MS);
+    }, LOADING_OVERLAY_EXTRA_MS);
+
+    return () => {
+      if (immediateTimer !== null) {
+        window.clearTimeout(immediateTimer);
+      }
+      if (loadingOverlayDelayTimerRef.current !== null) {
+        window.clearTimeout(loadingOverlayDelayTimerRef.current);
+        loadingOverlayDelayTimerRef.current = null;
+      }
+      if (loadingOverlayHideTimerRef.current !== null) {
+        window.clearTimeout(loadingOverlayHideTimerRef.current);
+        loadingOverlayHideTimerRef.current = null;
+      }
+    };
+  }, [loadingSession]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    let nextOpen = false;
+
+    if (session && activeHousehold && userId && notificationPermission === "default") {
+      const promptKey = buildPushPromptStorageKey(userId, activeHousehold.id);
+      try {
+        const rawValue = window.localStorage.getItem(promptKey);
+        const parsed = rawValue ? (JSON.parse(rawValue) as PushPromptState) : null;
+        const dismissedAt = parsed?.dismissedAt ?? 0;
+        const enabledAt = parsed?.enabledAt ?? 0;
+
+        nextOpen = enabledAt <= 0 && !(dismissedAt > 0 && Date.now() - dismissedAt < PUSH_PROMPT_SNOOZE_MS);
+      } catch {
+        nextOpen = true;
+      }
+    }
+
+    const timerId = window.setTimeout(() => {
+      setIsPushPromptOpen(nextOpen);
+    }, 0);
+
+    return () => {
+      window.clearTimeout(timerId);
+    };
+  }, [activeHousehold, notificationPermission, session, userId]);
+
+  const onPushPromptEnable = async () => {
+    if (!activeHousehold || !userId || typeof window === "undefined") return;
+    const promptKey = buildPushPromptStorageKey(userId, activeHousehold.id);
+    try {
+      window.localStorage.setItem(promptKey, JSON.stringify({ enabledAt: Date.now() } satisfies PushPromptState));
+    } catch {
+      // ignore storage failures
+    }
+    setIsPushPromptOpen(false);
+    await onEnableNotifications();
+  };
+
+  const onPushPromptLater = () => {
+    if (!activeHousehold || !userId || typeof window === "undefined") {
+      setIsPushPromptOpen(false);
+      return;
+    }
+    const promptKey = buildPushPromptStorageKey(userId, activeHousehold.id);
+    try {
+      window.localStorage.setItem(promptKey, JSON.stringify({ dismissedAt: Date.now() } satisfies PushPromptState));
+    } catch {
+      // ignore storage failures
+    }
+    setIsPushPromptOpen(false);
+  };
+
   if (paymentRedirectStatus) {
     const isSuccess = paymentRedirectStatus === "success";
     const Icon = isSuccess ? CheckCircle2 : XCircle;
@@ -416,8 +599,6 @@ const App = () => {
         </Card>
       ) : null}
 
-      {loadingSession ? <p className="text-sm text-slate-700 dark:text-slate-300">{t("app.loadingSession")}</p> : null}
-
       {!loadingSession && !session ? (
         <Suspense fallback={viewLoadingFallback}>
           <AuthView busy={busy} onSignIn={onSignIn} onSignUp={onSignUp} onGoogleSignIn={onGoogleSignIn} />
@@ -461,7 +642,7 @@ const App = () => {
       ) : null}
 
       {!loadingSession && session && activeHousehold ? (
-        <section className="pb-24 sm:pb-0">
+        <section className={isMobileKeyboardOpen ? "pb-0 sm:pb-0" : "pb-24 sm:pb-0"}>
           <div className="sm:grid sm:grid-cols-[230px_minmax(0,1fr)] sm:gap-6">
             <aside className="hidden sm:block">
               <div className="sticky top-6 rounded-2xl border border-brand-100 bg-white/90 p-3 shadow-card dark:border-slate-700 dark:bg-slate-900/80">
@@ -573,9 +754,9 @@ const App = () => {
               <AnimatePresence mode="wait" initial={false}>
                 <motion.div
                   key={location.pathname}
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -8 }}
+                  initial={isMobileViewport ? { opacity: 0 } : { opacity: 0, y: 10 }}
+                  animate={isMobileViewport ? { opacity: 1 } : { opacity: 1, y: 0 }}
+                  exit={isMobileViewport ? { opacity: 0 } : { opacity: 0, y: -8 }}
                   transition={{ duration: 0.2, ease: "easeOut" }}
                 >
                   <Suspense fallback={viewLoadingFallback}>
@@ -632,8 +813,6 @@ const App = () => {
                         memberPimpers={memberPimpers}
                         userId={userId!}
                         busy={busy}
-                        notificationPermission={notificationPermission}
-                        onEnableNotifications={onEnableNotifications}
                         onAdd={onAddTask}
                         onComplete={onCompleteTask}
                         onSkip={onSkipTask}
@@ -641,6 +820,7 @@ const App = () => {
                         onToggleActive={onToggleTaskActive}
                         onUpdate={onUpdateTask}
                         onDelete={onDeleteTask}
+                        onRateTaskCompletion={onRateTaskCompletion}
                         onUpdateMemberTaskLaziness={onUpdateMemberTaskLaziness}
                         onResetHouseholdPimpers={onResetHouseholdPimpers}
                         canManageTaskLaziness={currentMember?.role === "owner"}
@@ -685,6 +865,8 @@ const App = () => {
                         userRevolutName={userRevolutName}
                         userWeroName={userWeroName}
                         busy={busy}
+                        notificationPermission={notificationPermission}
+                        onEnableNotifications={onEnableNotifications}
                         onUpdateHousehold={onUpdateHousehold}
                         onUpdateUserAvatar={onUpdateUserAvatar}
                         onUpdateUserDisplayName={onUpdateUserDisplayName}
@@ -704,40 +886,74 @@ const App = () => {
             </div>
           </div>
 
-          <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-brand-200 bg-white/95 px-2 py-2 backdrop-blur dark:border-slate-700 dark:bg-slate-900/95 sm:hidden">
-            <ul className="grid grid-cols-5 gap-1">
-              {tabItems.map((item) => {
-                const Icon = item.icon;
-                const active = tab === item.id;
+          {!isMobileKeyboardOpen ? (
+            <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-brand-200 bg-white/95 px-2 py-2 backdrop-blur dark:border-slate-700 dark:bg-slate-900/95 sm:hidden">
+              <ul className="grid grid-cols-5 gap-1">
+                {tabItems.map((item) => {
+                  const Icon = item.icon;
+                  const active = tab === item.id;
 
-                return (
-                  <li key={item.id}>
-                    <button
-                      type="button"
-                      className={
-                        active
-                          ? "relative flex w-full flex-col items-center rounded-lg bg-brand-100 px-1 py-2 text-brand-900 dark:bg-brand-900 dark:text-brand-100"
-                          : "relative flex w-full flex-col items-center rounded-lg px-1 py-2 text-slate-500 dark:text-slate-400"
-                      }
-                      onClick={() => onTabChange(item.id)}
-                      aria-label={t(`tab.${item.id}`)}
-                    >
-                      <Icon className="h-4 w-4" />
-                      <span className="mt-1 text-[10px] font-medium">{t(`tab.${item.id}`)}</span>
-                      {item.id === "tasks" && dueTasksBadge.allDue > 0 ? (
-                        <span className="absolute right-1 top-1 inline-flex min-h-4 items-center justify-center rounded-md border border-brand-200 bg-brand-500 px-1 text-[9px] font-semibold leading-none text-white dark:border-brand-700 dark:bg-brand-600">
-                          {dueTasksBadge.label}
-                        </span>
-                      ) : null}
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-          </nav>
+                  return (
+                    <li key={item.id}>
+                      <button
+                        type="button"
+                        className={
+                          active
+                            ? "relative flex w-full flex-col items-center rounded-lg bg-brand-100 px-1 py-2 text-brand-900 dark:bg-brand-900 dark:text-brand-100"
+                            : "relative flex w-full flex-col items-center rounded-lg px-1 py-2 text-slate-500 dark:text-slate-400"
+                        }
+                        onClick={() => onTabChange(item.id)}
+                        aria-label={t(`tab.${item.id}`)}
+                      >
+                        <Icon className="h-4 w-4" />
+                        <span className="mt-1 text-[10px] font-medium">{t(`tab.${item.id}`)}</span>
+                        {item.id === "tasks" && dueTasksBadge.allDue > 0 ? (
+                          <span className="absolute right-1 top-1 inline-flex min-h-4 items-center justify-center rounded-md border border-brand-200 bg-brand-500 px-1 text-[9px] font-semibold leading-none text-white dark:border-brand-700 dark:bg-brand-600">
+                            {dueTasksBadge.label}
+                          </span>
+                        ) : null}
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </nav>
+          ) : null}
         </section>
       ) : null}
       </div>
+      {showLoadingOverlay ? (
+        <div
+          className="fixed inset-0 z-[120] flex items-center justify-center bg-white/80 backdrop-blur-sm transition-opacity duration-300 dark:bg-slate-950/70"
+          style={{ opacity: loadingOverlayOpaque ? 1 : 0 }}
+        >
+          <div className="flex flex-col items-center gap-3 rounded-2xl border border-brand-200/70 bg-white/90 px-6 py-5 shadow-xl dark:border-slate-700 dark:bg-slate-900/90">
+            <span className="h-8 w-8 animate-spin rounded-full border-2 border-brand-200 border-t-brand-600 dark:border-slate-600 dark:border-t-brand-400" />
+            <p className="text-sm font-medium text-slate-700 dark:text-slate-200">{t("app.loadingSession")}</p>
+          </div>
+        </div>
+      ) : null}
+      <Dialog
+        open={isPushPromptOpen}
+        onOpenChange={(open) => {
+          if (!open) onPushPromptLater();
+        }}
+      >
+        <DialogContent className="z-[130] max-w-md border-brand-200/80 bg-white/95 dark:border-slate-700 dark:bg-slate-900/95">
+          <DialogHeader>
+            <DialogTitle>{t("app.pushPromptTitle")}</DialogTitle>
+            <DialogDescription>{t("app.pushPromptDescription")}</DialogDescription>
+          </DialogHeader>
+          <div className="flex items-center justify-end gap-2 pt-2">
+            <Button type="button" variant="outline" onClick={onPushPromptLater}>
+              {t("app.pushPromptLater")}
+            </Button>
+            <Button type="button" onClick={() => void onPushPromptEnable()}>
+              {t("app.pushPromptEnable")}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

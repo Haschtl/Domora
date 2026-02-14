@@ -39,6 +39,8 @@ interface SettingsTabProps {
   userRevolutName: string | null;
   userWeroName: string | null;
   busy: boolean;
+  notificationPermission: NotificationPermission;
+  onEnableNotifications: () => Promise<void>;
   onUpdateHousehold: (input: UpdateHouseholdInput) => Promise<void>;
   onUpdateUserAvatar: (avatarUrl: string) => Promise<void>;
   onUpdateUserDisplayName: (displayName: string) => Promise<void>;
@@ -116,6 +118,8 @@ export const SettingsTab = ({
   userRevolutName,
   userWeroName,
   busy,
+  notificationPermission,
+  onEnableNotifications,
   onUpdateHousehold,
   onUpdateUserAvatar,
   onUpdateUserDisplayName,
@@ -363,6 +367,8 @@ export const SettingsTab = ({
     [t, uniqueMembers, userId]
   );
   const canDissolveHousehold = isOwner && uniqueMembers.length === 1 && uniqueMembers[0]?.user_id === userId;
+  const pushEnabled = notificationPermission === "granted";
+  const pushPermissionLabel = t(`settings.pushStatus.${notificationPermission}`);
   const inviteUrl = useMemo(() => {
     if (typeof window === "undefined") return `/?invite=${encodeURIComponent(household.invite_code)}`;
     return `${window.location.origin}/?invite=${encodeURIComponent(household.invite_code)}`;
@@ -565,6 +571,37 @@ export const SettingsTab = ({
                 }}
                 aria-label={t("settings.vacationModeLabel")}
               />
+            </div>
+
+            <div className="rounded-xl border border-brand-200 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{t("settings.pushTitle")}</p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">{t("settings.pushDescription")}</p>
+                  <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">
+                    {t("settings.pushStatusLabel", { status: pushPermissionLabel })}
+                  </p>
+                </div>
+                <Switch
+                  checked={pushEnabled}
+                  onCheckedChange={() => {
+                    if (!pushEnabled) {
+                      void onEnableNotifications();
+                    }
+                  }}
+                  disabled={busy || pushEnabled}
+                  aria-label={t("settings.pushEnableAction")}
+                />
+              </div>
+              <div className="mt-2 text-xs text-slate-600 dark:text-slate-300">
+                <p className="font-medium text-slate-700 dark:text-slate-200">{t("settings.pushUsedForTitle")}</p>
+                <ul className="mt-1 list-disc space-y-0.5 pl-4">
+                  <li>{t("settings.pushUsedForTaskDue")}</li>
+                  <li>{t("settings.pushUsedForTaskCompleted")}</li>
+                  <li>{t("settings.pushUsedForFinanceCreated")}</li>
+                  <li>{t("settings.pushUsedForCashAudit")}</li>
+                </ul>
+              </div>
             </div>
 
             </form>

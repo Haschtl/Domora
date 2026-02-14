@@ -134,7 +134,10 @@ const taskCompletionSchema = z.object({
   pimpers_earned: z.coerce.number().int().positive(),
   due_at_snapshot: z.string().nullable().optional().transform((value) => value ?? null),
   delay_minutes: z.coerce.number().int().nonnegative().default(0),
-  completed_at: z.string().min(1)
+  completed_at: z.string().min(1),
+  rating_average: z.coerce.number().finite().nullable().optional().transform((value) => value ?? null),
+  rating_count: z.coerce.number().int().nonnegative().optional().default(0),
+  my_rating: z.coerce.number().int().min(1).max(5).nullable().optional().transform((value) => value ?? null)
 });
 
 const householdEventSchema = z.object({
