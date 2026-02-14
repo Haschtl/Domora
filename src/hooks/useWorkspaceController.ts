@@ -106,7 +106,12 @@ export const useWorkspaceController = () => {
       try {
         await actionMutation.mutateAsync(action);
       } catch (err) {
-        const text = err instanceof Error ? err.message : t("app.unknownError");
+        const text =
+          err instanceof Error
+            ? err.message
+            : typeof err === "object" && err && "message" in err && typeof (err as { message?: unknown }).message === "string"
+              ? (err as { message: string }).message
+              : t("app.unknownError");
         setError(text);
       }
     },

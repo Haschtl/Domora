@@ -1,15 +1,13 @@
 server-seitig, wo deployen? 
-push-notifications sicher machen
 
 
 liht-mode fixen
-bewertung-darstellung+input besser machen
 
 texte frecher machen
 
 
 Push-Notifications sicher machen
-Aktuell sind es vor allem clientseitige Browser-Notifications.
+Aktuell sind es nur clientseitige Browser-Notifications.
 Für „täglich fällig + assigned Person zuverlässig“ fehlt noch ein robuster serverseitiger Flow (z. B. Supabase Edge Function + Scheduler + Push-Token-Verwaltung).
 
 Kassensturz Email an alle
