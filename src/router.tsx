@@ -29,6 +29,12 @@ const homeSummaryRoute = createRoute({
   component: () => null
 });
 
+const homeBucketRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "home/bucket",
+  component: () => null
+});
+
 const homeFeedRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "home/feed",
@@ -159,6 +165,7 @@ const routeTree = rootRoute.addChildren([
   indexRoute,
   homeRoute,
   homeSummaryRoute,
+  homeBucketRoute,
   homeFeedRoute,
   shoppingRoute,
   shoppingListRoute,

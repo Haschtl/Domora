@@ -60,9 +60,11 @@ const householdMemberSchema = z.object({
   role: z.enum(["owner", "member"]),
   display_name: z.string().nullable().optional().transform((value) => value ?? null),
   avatar_url: z.string().nullable().optional().transform((value) => value ?? null),
+  user_color: z.string().nullable().optional().transform((value) => value ?? null),
   room_size_sqm: positiveOptionalNumberSchema,
   common_area_factor: z.coerce.number().finite().min(0).max(2),
   task_laziness_factor: z.coerce.number().finite().min(0).max(2).default(1),
+  vacation_mode: z.coerce.boolean().default(false),
   created_at: z.string().min(1)
 });
 
@@ -70,6 +72,7 @@ export const userProfileSchema = z.object({
   user_id: z.string().uuid(),
   display_name: z.string().nullable().optional().transform((value) => value ?? null),
   avatar_url: z.string().nullable().optional().transform((value) => value ?? null),
+  user_color: z.string().nullable().optional().transform((value) => value ?? null),
   paypal_name: z.string().nullable().optional().transform((value) => value ?? null),
   revolut_name: z.string().nullable().optional().transform((value) => value ?? null),
   wero_name: z.string().nullable().optional().transform((value) => value ?? null)
@@ -94,6 +97,8 @@ const taskSchema = z.object({
   household_id: z.string().uuid(),
   title: z.string().min(1),
   description: z.string().default(""),
+  current_state_image_url: z.string().nullable().optional().transform((value) => value ?? null),
+  target_state_image_url: z.string().nullable().optional().transform((value) => value ?? null),
   start_date: z.string().min(1),
   due_at: z.string().min(1),
   cron_pattern: z.string().min(1).default("0 9 */7 * *"),

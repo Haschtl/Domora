@@ -10,6 +10,7 @@ import {
 } from "./household-guards";
 import { supabase } from "./supabase";
 import type {
+  BucketItem,
   CashAuditRequest,
   FinanceEntry,
   FinanceSubscription,
@@ -74,15 +75,18 @@ const householdMemberSchema = z.object({
   role: z.enum(["owner", "member"]),
   display_name: z.string().nullable().optional().transform((value) => value ?? null),
   avatar_url: z.string().nullable().optional().transform((value) => value ?? null),
+  user_color: z.string().nullable().optional().transform((value) => value ?? null),
   room_size_sqm: positiveOptionalNumberSchema,
   common_area_factor: z.coerce.number().finite().min(0).max(2),
   task_laziness_factor: z.coerce.number().finite().min(0).max(2).default(1),
+  vacation_mode: z.coerce.boolean().default(false),
   created_at: z.string().min(1)
 });
 const userProfileSchema = z.object({
   user_id: z.string().uuid(),
   display_name: z.string().nullable().optional().transform((value) => value ?? null),
   avatar_url: z.string().nullable().optional().transform((value) => value ?? null),
+  user_color: z.string().nullable().optional().transform((value) => value ?? null),
   paypal_name: z.string().nullable().optional().transform((value) => value ?? null),
   revolut_name: z.string().nullable().optional().transform((value) => value ?? null),
   wero_name: z.string().nullable().optional().transform((value) => value ?? null)
@@ -102,11 +106,34 @@ const shoppingItemSchema = z.object({
   created_at: z.string().min(1)
 });
 
+const bucketItemSchema = z.object({
+  id: z.string().uuid(),
+  household_id: z.string().uuid(),
+  title: z.string().min(1),
+  description_markdown: z.string().nullable().optional().transform((value) => value ?? ""),
+  suggested_dates: z.array(z.string().min(1)).nullable().optional().transform((value) => value ?? []),
+  done: z.coerce.boolean(),
+  done_at: z.string().nullable().optional().transform((value) => value ?? null),
+  done_by: z.string().uuid().nullable().optional().transform((value) => value ?? null),
+  created_by: z.string().uuid(),
+  created_at: z.string().min(1)
+});
+
+const bucketItemDateVoteSchema = z.object({
+  bucket_item_id: z.string().uuid(),
+  household_id: z.string().uuid(),
+  suggested_date: z.string().min(1),
+  user_id: z.string().uuid(),
+  created_at: z.string().min(1)
+});
+
 const taskSchema = z.object({
   id: z.string().uuid(),
   household_id: z.string().uuid(),
   title: z.string().min(1),
   description: z.string().default(""),
+  current_state_image_url: z.string().nullable().optional().transform((value) => value ?? null),
+  target_state_image_url: z.string().nullable().optional().transform((value) => value ?? null),
   start_date: z.string().min(1),
   due_at: z.string().min(1),
   cron_pattern: z.string().min(1).default("0 9 */7 * *"),
@@ -210,6 +237,18 @@ const normalizeHouseholdMember = (row: Record<string, unknown>): HouseholdMember
 
 const normalizeShoppingItem = (row: Record<string, unknown>): ShoppingItem => ({
   ...shoppingItemSchema.parse(row)
+});
+
+const normalizeBucketItem = (row: Record<string, unknown>): BucketItem => ({
+  ...(() => {
+    const parsed = bucketItemSchema.parse(row);
+    return {
+      ...parsed,
+      description_markdown: parsed.description_markdown ?? "",
+      suggested_dates: [...new Set(parsed.suggested_dates)].sort(),
+      votes_by_date: {} as Record<string, string[]>
+    };
+  })()
 });
 
 const normalizeTask = (row: Record<string, unknown>, rotationUserIds: string[]): TaskItem => {
@@ -460,6 +499,28 @@ export const updateUserPaymentHandles = async (input: {
   if (profileError) throw profileError;
 };
 
+export const updateUserColor = async (userColor: string) => {
+  const normalizedUserColor = z
+    .string()
+    .trim()
+    .regex(/^#[0-9a-fA-F]{6}$/)
+    .transform((value) => value.toLowerCase())
+    .parse(userColor);
+
+  const userId = await requireAuthenticatedUserId();
+
+  const { error: profileError } = await supabase.from("user_profiles").upsert(
+    {
+      user_id: userId,
+      user_color: normalizedUserColor,
+      updated_at: new Date().toISOString()
+    },
+    { onConflict: "user_id" }
+  );
+
+  if (profileError) throw profileError;
+};
+
 export const getHouseholdsForUser = async (userId: string): Promise<Household[]> => {
   const { data, error } = await supabase
     .from("household_members")
@@ -493,7 +554,7 @@ export const getHouseholdMembers = async (householdId: string): Promise<Househol
   const memberUserIds = [...new Set(members.map((entry) => entry.user_id))];
   const { data: profileRows, error: profileError } = await supabase
     .from("user_profiles")
-    .select("user_id,display_name,avatar_url,paypal_name,revolut_name,wero_name")
+    .select("user_id,display_name,avatar_url,user_color,paypal_name,revolut_name,wero_name")
     .in("user_id", memberUserIds);
 
   if (profileError) throw profileError;
@@ -510,6 +571,7 @@ export const getHouseholdMembers = async (householdId: string): Promise<Househol
       ...entry,
       display_name: profile?.display_name ?? null,
       avatar_url: profile?.avatar_url ?? null,
+      user_color: profile?.user_color ?? null,
       paypal_name: profile?.paypal_name ?? null,
       revolut_name: profile?.revolut_name ?? null,
       wero_name: profile?.wero_name ?? null
@@ -686,6 +748,29 @@ export const updateMemberTaskLaziness = async (
     .from("household_members")
     .update({
       task_laziness_factor: parsedTaskLazinessFactor
+    })
+    .eq("household_id", validatedHouseholdId)
+    .eq("user_id", validatedUserId)
+    .select("*")
+    .single();
+
+  if (error) throw error;
+  return normalizeHouseholdMember(data as Record<string, unknown>);
+};
+
+export const updateMemberVacationMode = async (
+  householdId: string,
+  userId: string,
+  vacationMode: boolean
+): Promise<HouseholdMember> => {
+  const validatedHouseholdId = z.string().uuid().parse(householdId);
+  const validatedUserId = z.string().uuid().parse(userId);
+  const parsedVacationMode = z.coerce.boolean().parse(vacationMode);
+
+  const { data, error } = await supabase
+    .from("household_members")
+    .update({
+      vacation_mode: parsedVacationMode
     })
     .eq("household_id", validatedHouseholdId)
     .eq("user_id", validatedUserId)
@@ -906,6 +991,154 @@ export const removeHouseholdMember = async (householdId: string, targetUserId: s
     .eq("household_id", validatedHouseholdId)
     .eq("user_id", validatedTargetUserId);
 
+  if (error) throw error;
+};
+
+export const getBucketItems = async (householdId: string): Promise<BucketItem[]> => {
+  const validatedHouseholdId = z.string().uuid().parse(householdId);
+  const { data, error } = await supabase
+    .from("bucket_items")
+    .select("*")
+    .eq("household_id", validatedHouseholdId)
+    .order("done", { ascending: true })
+    .order("created_at", { ascending: false });
+
+  if (error) throw error;
+  const items = (data ?? []).map((entry) => normalizeBucketItem(entry as Record<string, unknown>));
+
+  const { data: voteRows, error: votesError } = await supabase
+    .from("bucket_item_date_votes")
+    .select("*")
+    .eq("household_id", validatedHouseholdId);
+
+  if (votesError) throw votesError;
+  const parsedVotes = (voteRows ?? []).map((entry) => bucketItemDateVoteSchema.parse(entry as Record<string, unknown>));
+  const votesByItemId = new Map<string, Record<string, string[]>>();
+
+  parsedVotes.forEach((vote) => {
+    const byDate = votesByItemId.get(vote.bucket_item_id) ?? {};
+    const current = byDate[vote.suggested_date] ?? [];
+    if (!current.includes(vote.user_id)) {
+      byDate[vote.suggested_date] = [...current, vote.user_id];
+    }
+    votesByItemId.set(vote.bucket_item_id, byDate);
+  });
+
+  return items.map((item) => ({
+    ...item,
+    votes_by_date: votesByItemId.get(item.id) ?? {}
+  }));
+};
+
+export const addBucketItem = async (
+  householdId: string,
+  input: { title: string; descriptionMarkdown: string; suggestedDates: string[] },
+  userId: string
+): Promise<BucketItem> => {
+  const parsedInput = z
+    .object({
+      householdId: z.string().uuid(),
+      title: z.string().trim().min(1).max(200),
+      descriptionMarkdown: z.string().max(20_000),
+      suggestedDates: z
+        .array(z.string().regex(/^\d{4}-\d{2}-\d{2}$/))
+        .max(15),
+      userId: z.string().uuid()
+    })
+    .parse({
+      householdId,
+      title: input.title,
+      descriptionMarkdown: input.descriptionMarkdown,
+      suggestedDates: input.suggestedDates,
+      userId
+    });
+
+  const { data, error } = await supabase
+    .from("bucket_items")
+    .insert({
+      id: uuid(),
+      household_id: parsedInput.householdId,
+      title: parsedInput.title,
+      description_markdown: parsedInput.descriptionMarkdown,
+      suggested_dates: [...new Set(parsedInput.suggestedDates)].sort(),
+      done: false,
+      created_by: parsedInput.userId
+    })
+    .select("*")
+    .single();
+
+  if (error) throw error;
+  return normalizeBucketItem(data as Record<string, unknown>);
+};
+
+export const updateBucketItemStatus = async (id: string, done: boolean, userId: string): Promise<void> => {
+  const validatedId = z.string().uuid().parse(id);
+  const validatedUserId = z.string().uuid().parse(userId);
+  const parsedDone = z.coerce.boolean().parse(done);
+
+  const payload = parsedDone
+    ? {
+        done: true,
+        done_at: new Date().toISOString(),
+        done_by: validatedUserId
+      }
+    : {
+        done: false,
+        done_at: null,
+        done_by: null
+      };
+
+  const { error } = await supabase.from("bucket_items").update(payload).eq("id", validatedId);
+  if (error) throw error;
+};
+
+export const deleteBucketItem = async (id: string): Promise<void> => {
+  const validatedId = z.string().uuid().parse(id);
+  const { error } = await supabase.from("bucket_items").delete().eq("id", validatedId);
+  if (error) throw error;
+};
+
+export const updateBucketDateVote = async (
+  input: {
+    bucketItemId: string;
+    householdId: string;
+    suggestedDate: string;
+    userId: string;
+    voted: boolean;
+  }
+): Promise<void> => {
+  const parsedInput = z
+    .object({
+      bucketItemId: z.string().uuid(),
+      householdId: z.string().uuid(),
+      suggestedDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      userId: z.string().uuid(),
+      voted: z.coerce.boolean()
+    })
+    .parse(input);
+
+  if (parsedInput.voted) {
+    const { error } = await supabase
+      .from("bucket_item_date_votes")
+      .upsert(
+        {
+          bucket_item_id: parsedInput.bucketItemId,
+          household_id: parsedInput.householdId,
+          suggested_date: parsedInput.suggestedDate,
+          user_id: parsedInput.userId
+        },
+        { onConflict: "bucket_item_id,suggested_date,user_id" }
+      );
+    if (error) throw error;
+    return;
+  }
+
+  const { error } = await supabase
+    .from("bucket_item_date_votes")
+    .delete()
+    .eq("bucket_item_id", parsedInput.bucketItemId)
+    .eq("suggested_date", parsedInput.suggestedDate)
+    .eq("user_id", parsedInput.userId);
   if (error) throw error;
 };
 
@@ -1143,6 +1376,8 @@ export const addTask = async (
     userId: z.string().uuid(),
     title: z.string().trim().min(1).max(200),
     description: z.string().trim().max(2000),
+    currentStateImageUrl: z.string().trim().max(5_000_000).nullable().optional(),
+    targetStateImageUrl: z.string().trim().max(5_000_000).nullable().optional(),
     startDate: z.string().min(1),
     frequencyDays: z.coerce.number().int().positive(),
     effortPimpers: z.coerce.number().int().positive(),
@@ -1154,6 +1389,8 @@ export const addTask = async (
     userId,
     title: input.title,
     description: input.description,
+    currentStateImageUrl: input.currentStateImageUrl ?? null,
+    targetStateImageUrl: input.targetStateImageUrl ?? null,
     startDate: input.startDate,
     frequencyDays: input.frequencyDays,
     effortPimpers: input.effortPimpers,
@@ -1175,6 +1412,8 @@ export const addTask = async (
       household_id: parsedInput.householdId,
       title: parsedInput.title,
       description: parsedInput.description,
+      current_state_image_url: parsedInput.currentStateImageUrl,
+      target_state_image_url: parsedInput.targetStateImageUrl,
       start_date: parsedInput.startDate,
       due_at: dueAt,
       cron_pattern: cronPattern,
@@ -1211,6 +1450,8 @@ export const updateTask = async (taskId: string, input: NewTaskInput): Promise<v
     taskId: z.string().uuid(),
     title: z.string().trim().min(1).max(200),
     description: z.string().trim().max(2000),
+    currentStateImageUrl: z.string().trim().max(5_000_000).nullable().optional(),
+    targetStateImageUrl: z.string().trim().max(5_000_000).nullable().optional(),
     startDate: z.string().min(1),
     frequencyDays: z.coerce.number().int().positive(),
     effortPimpers: z.coerce.number().int().positive(),
@@ -1221,6 +1462,8 @@ export const updateTask = async (taskId: string, input: NewTaskInput): Promise<v
     taskId,
     title: input.title,
     description: input.description,
+    currentStateImageUrl: input.currentStateImageUrl ?? null,
+    targetStateImageUrl: input.targetStateImageUrl ?? null,
     startDate: input.startDate,
     frequencyDays: input.frequencyDays,
     effortPimpers: input.effortPimpers,
@@ -1238,6 +1481,8 @@ export const updateTask = async (taskId: string, input: NewTaskInput): Promise<v
     .update({
       title: parsedInput.title,
       description: parsedInput.description,
+      current_state_image_url: parsedInput.currentStateImageUrl,
+      target_state_image_url: parsedInput.targetStateImageUrl,
       start_date: parsedInput.startDate,
       due_at: dueAt,
       cron_pattern: cronPattern,

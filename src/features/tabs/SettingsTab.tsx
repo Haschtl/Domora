@@ -24,6 +24,7 @@ import {
 import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
+import { Switch } from "../../components/ui/switch";
 
 interface SettingsTabProps {
   section?: "me" | "household";
@@ -41,7 +42,9 @@ interface SettingsTabProps {
   onUpdateHousehold: (input: UpdateHouseholdInput) => Promise<void>;
   onUpdateUserAvatar: (avatarUrl: string) => Promise<void>;
   onUpdateUserDisplayName: (displayName: string) => Promise<void>;
+  onUpdateUserColor: (userColor: string) => Promise<void>;
   onUpdateUserPaymentHandles: (input: { paypalName: string; revolutName: string; weroName: string }) => Promise<void>;
+  onUpdateVacationMode: (vacationMode: boolean) => Promise<void>;
   onSetMemberRole: (targetUserId: string, role: "owner" | "member") => Promise<void>;
   onRemoveMember: (targetUserId: string) => Promise<void>;
   onSignOut: () => Promise<void>;
@@ -95,6 +98,11 @@ const compressImageToDataUrl = async (file: File) => {
   return imageCompression.getDataUrlFromFile(compressed);
 };
 
+const normalizeUserColor = (value: string) => {
+  const trimmed = value.trim().toLowerCase();
+  return /^#[0-9a-f]{6}$/.test(trimmed) ? trimmed : "#4f46e5";
+};
+
 export const SettingsTab = ({
   section = "me",
   household,
@@ -111,7 +119,9 @@ export const SettingsTab = ({
   onUpdateHousehold,
   onUpdateUserAvatar,
   onUpdateUserDisplayName,
+  onUpdateUserColor,
   onUpdateUserPaymentHandles,
+  onUpdateVacationMode,
   onSetMemberRole,
   onRemoveMember,
   onSignOut,
@@ -142,6 +152,14 @@ export const SettingsTab = ({
     },
     onSubmit: async ({ value }: { value: { displayName: string } }) => {
       await onUpdateUserDisplayName(value.displayName);
+    }
+  });
+  const profileColorForm = useForm({
+    defaultValues: {
+      userColor: normalizeUserColor(currentMember?.user_color ?? "")
+    },
+    onSubmit: async ({ value }: { value: { userColor: string } }) => {
+      await onUpdateUserColor(normalizeUserColor(value.userColor));
     }
   });
   const profilePaymentsForm = useForm({
@@ -222,6 +240,9 @@ export const SettingsTab = ({
   useEffect(() => {
     profileNameForm.setFieldValue("displayName", userDisplayName ?? "");
   }, [profileNameForm, userDisplayName]);
+  useEffect(() => {
+    profileColorForm.setFieldValue("userColor", normalizeUserColor(currentMember?.user_color ?? ""));
+  }, [currentMember?.user_color, profileColorForm]);
   useEffect(() => {
     profilePaymentsForm.setFieldValue("paypalName", userPaypalName ?? "");
     profilePaymentsForm.setFieldValue("revolutName", userRevolutName ?? "");
@@ -316,6 +337,8 @@ export const SettingsTab = ({
         role: currentMember?.role ?? "member",
         display_name: currentMember?.display_name ?? null,
         avatar_url: currentMember?.avatar_url ?? null,
+        user_color: currentMember?.user_color ?? null,
+        vacation_mode: currentMember?.vacation_mode ?? false,
         room_size_sqm: currentMember?.room_size_sqm ?? null,
         common_area_factor: currentMember?.common_area_factor ?? 1,
         task_laziness_factor: currentMember?.task_laziness_factor ?? 1,
@@ -429,6 +452,46 @@ export const SettingsTab = ({
             </div>
 
             <div className="space-y-1">
+              <Label htmlFor="profile-color">{t("settings.profileColorLabel")}</Label>
+              <div className="relative flex items-center gap-2">
+                <profileColorForm.Field
+                  name="userColor"
+                  children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
+                    <>
+                      <Input
+                        id="profile-color"
+                        type="color"
+                        className="h-10 w-16 p-1"
+                        value={normalizeUserColor(field.state.value)}
+                        onChange={(event) => field.handleChange(normalizeUserColor(event.target.value))}
+                      />
+                      <Input
+                        className="pr-11"
+                        value={normalizeUserColor(field.state.value)}
+                        onChange={(event) => field.handleChange(normalizeUserColor(event.target.value))}
+                        placeholder="#4f46e5"
+                      />
+                    </>
+                  )}
+                />
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="absolute right-1 top-1/2 h-8 w-8 -translate-y-1/2 rounded-md p-0"
+                  disabled={busy}
+                  aria-label={t("settings.profileColorSave")}
+                  title={t("settings.profileColorSave")}
+                  onClick={() => {
+                    void profileColorForm.handleSubmit();
+                  }}
+                >
+                  <Check className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+
+            <div className="space-y-1">
               <input
                 ref={profileUploadInputRef}
                 id="profile-image-upload"
@@ -488,6 +551,21 @@ export const SettingsTab = ({
                 {profileUploadError}
               </p>
             ) : null}
+
+            <div className="flex items-center justify-between rounded-xl border border-brand-200 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900">
+              <div>
+                <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{t("settings.vacationModeLabel")}</p>
+                <p className="text-xs text-slate-500 dark:text-slate-400">{t("settings.vacationModeDescription")}</p>
+              </div>
+              <Switch
+                checked={currentMember?.vacation_mode ?? false}
+                disabled={busy || !currentMember}
+                onCheckedChange={(checked) => {
+                  void onUpdateVacationMode(checked);
+                }}
+                aria-label={t("settings.vacationModeLabel")}
+              />
+            </div>
 
             </form>
             <form

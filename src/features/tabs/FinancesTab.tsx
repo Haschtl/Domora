@@ -235,6 +235,22 @@ const financeRecurrenceToMonthlyFactor = (recurrence: FinanceSubscriptionRecurre
 
 const encodePathSegment = (value: string) => encodeURIComponent(value.trim().replace(/^@+/, ""));
 
+const normalizeUserColor = (value: string | null | undefined) => {
+  if (!value) return null;
+  const normalized = value.trim().toLowerCase();
+  return /^#[0-9a-f]{6}$/.test(normalized) ? normalized : null;
+};
+
+const fallbackColorFromUserId = (memberId: string) => {
+  let hash = 0;
+  for (let i = 0; i < memberId.length; i += 1) {
+    hash = (hash << 5) - hash + memberId.charCodeAt(i);
+    hash |= 0;
+  }
+  const hue = Math.abs(hash) % 360;
+  return `hsl(${hue} 70% 48%)`;
+};
+
 type OcrDetectionResult = { rawValue?: string; text?: string };
 type TextDetectorLike = { detect: (input: ImageBitmapSource) => Promise<OcrDetectionResult[]> };
 type TextDetectorConstructor = new (options?: { languages?: string[] }) => TextDetectorLike;
@@ -758,6 +774,10 @@ export const FinancesTab = ({
     [members, t, userId]
   );
   const memberById = useMemo(() => new Map(members.map((member) => [member.user_id, member])), [members]);
+  const resolveMemberColor = useMemo(
+    () => (memberId: string) => normalizeUserColor(memberById.get(memberId)?.user_color) ?? fallbackColorFromUserId(memberId),
+    [memberById]
+  );
   const memberAvatarSrc = (memberId: string) => {
     const member = memberById.get(memberId);
     const avatarUrl = member?.avatar_url?.trim() ?? "";
@@ -2070,25 +2090,24 @@ export const FinancesTab = ({
                   <Bar
                     data={{
                       labels: historySeries.labels.map((label) => formatShortDay(label, language, label)),
-                      datasets: [
-                        {
-                          label: t("finances.chartDailyTotal"),
-                          data: historySeries.values,
-                          backgroundColor: "rgba(124, 58, 237, 0.28)",
-                          borderColor: "#7c3aed",
-                          borderWidth: 1,
-                          borderRadius: 6
-                        }
-                      ]
+                      datasets: historySeries.datasets.map((dataset) => ({
+                        label: memberLabel(dataset.memberId),
+                        data: dataset.values,
+                        backgroundColor: resolveMemberColor(dataset.memberId),
+                        borderColor: "transparent",
+                        borderWidth: 0,
+                        borderRadius: 6
+                      }))
                     }}
                     options={{
                       responsive: true,
                       maintainAspectRatio: false,
                       plugins: {
-                        legend: { display: false }
+                        legend: { display: true, position: "bottom" }
                       },
                       scales: {
-                        y: { beginAtZero: true }
+                        x: { stacked: true },
+                        y: { stacked: true, beginAtZero: true }
                       }
                     }}
                     height={170}

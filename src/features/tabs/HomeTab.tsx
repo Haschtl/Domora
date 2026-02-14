@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { CalendarCheck2, Pencil, Receipt, ShoppingCart, Wallet, X } from "lucide-react";
+import { CalendarCheck2, MoreHorizontal, Pencil, Plus, Receipt, ShoppingCart, Trash2, Wallet, X } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useTranslation } from "react-i18next";
@@ -12,6 +12,7 @@ import { formatDateTime } from "../../lib/date";
 import { createMemberLabelGetter } from "../../lib/member-label";
 import { calculateBalancesByMember } from "../../lib/finance-math";
 import type {
+  BucketItem,
   CashAuditRequest,
   FinanceEntry,
   HouseholdEvent,
@@ -22,6 +23,11 @@ import type {
 } from "../../lib/types";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
+import { Checkbox } from "../../components/ui/checkbox";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../../components/ui/dialog";
+import { Input } from "../../components/ui/input";
+import { Label } from "../../components/ui/label";
+import { Popover, PopoverContent, PopoverTrigger } from "../../components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
 import {
   LANDING_WIDGET_KEYS,
@@ -32,12 +38,13 @@ import {
 } from "./home-landing.utils";
 
 interface HomeTabProps {
-  section?: "summary" | "feed";
+  section?: "summary" | "bucket" | "feed";
   household: Household;
   households: Household[];
   currentMember: HouseholdMember | null;
   userId: string;
   members: HouseholdMember[];
+  bucketItems: BucketItem[];
   tasks: TaskItem[];
   taskCompletions: TaskCompletion[];
   financeEntries: FinanceEntry[];
@@ -47,6 +54,10 @@ interface HomeTabProps {
   busy: boolean;
   onSelectHousehold: (householdId: string) => void;
   onSaveLandingMarkdown: (markdown: string) => Promise<void>;
+  onAddBucketItem: (input: { title: string; descriptionMarkdown: string; suggestedDates: string[] }) => Promise<void>;
+  onToggleBucketItem: (item: BucketItem) => Promise<void>;
+  onDeleteBucketItem: (item: BucketItem) => Promise<void>;
+  onToggleBucketDateVote: (item: BucketItem, suggestedDate: string, voted: boolean) => Promise<void>;
   onCompleteTask: (task: TaskItem) => Promise<void>;
 }
 
@@ -58,6 +69,7 @@ const LANDING_WIDGET_COMPONENTS: Array<{ key: LandingWidgetKey; tag: string }> =
   { key: "your-balance", tag: "LandingWidgetYourBalance" },
   { key: "household-balance", tag: "LandingWidgetHouseholdBalance" },
   { key: "recent-activity", tag: "LandingWidgetRecentActivity" },
+  { key: "bucket-short-list", tag: "LandingWidgetBucketShortList" },
   { key: "fairness-score", tag: "LandingWidgetFairnessScore" },
   { key: "expenses-by-month", tag: "LandingWidgetExpensesByMonth" },
   { key: "fairness-by-member", tag: "LandingWidgetFairnessByMember" }
@@ -153,6 +165,7 @@ export const HomeTab = ({
   currentMember,
   userId,
   members,
+  bucketItems,
   tasks,
   taskCompletions,
   financeEntries,
@@ -162,6 +175,10 @@ export const HomeTab = ({
   busy,
   onSelectHousehold,
   onSaveLandingMarkdown,
+  onAddBucketItem,
+  onToggleBucketItem,
+  onDeleteBucketItem,
+  onToggleBucketDateVote,
   onCompleteTask
 }: HomeTabProps) => {
   const { t, i18n } = useTranslation();
@@ -173,6 +190,7 @@ export const HomeTab = ({
       { label: t("home.widgetYourBalance"), value: widgetTokenFromKey("your-balance") },
       { label: t("home.widgetHouseholdBalance"), value: widgetTokenFromKey("household-balance") },
       { label: t("home.widgetRecentActivity"), value: widgetTokenFromKey("recent-activity") },
+      { label: t("home.widgetBucketShortList"), value: widgetTokenFromKey("bucket-short-list") },
       { label: t("home.widgetFairness"), value: widgetTokenFromKey("fairness-score") },
       { label: t("home.widgetExpensesByMonth"), value: widgetTokenFromKey("expenses-by-month") },
       { label: t("home.widgetFairnessByMember"), value: widgetTokenFromKey("fairness-by-member") }
@@ -207,9 +225,20 @@ export const HomeTab = ({
     [household.name, t]
   );
   const showSummary = section === "summary";
+  const showBucket = section === "bucket";
   const showFeed = section === "feed";
+  const [isMobileBucketComposer, setIsMobileBucketComposer] = useState(() =>
+    typeof window !== "undefined" ? window.matchMedia("(max-width: 639px)").matches : false
+  );
+  const [bucketTitle, setBucketTitle] = useState("");
+  const [bucketDescriptionMarkdown, setBucketDescriptionMarkdown] = useState("");
+  const [bucketDateInput, setBucketDateInput] = useState("");
+  const [bucketSuggestedDates, setBucketSuggestedDates] = useState<string[]>([]);
+  const bucketComposerRowRef = useRef<HTMLDivElement | null>(null);
+  const [bucketPopoverWidth, setBucketPopoverWidth] = useState(320);
   const [isEditingLanding, setIsEditingLanding] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [pendingCompleteTask, setPendingCompleteTask] = useState<TaskItem | null>(null);
   const savedMarkdown = getSavedLandingMarkdown(household.landing_page_markdown);
   const effectiveMarkdown = getEffectiveLandingMarkdown(savedMarkdown, defaultLandingMarkdown);
   const [markdownDraft, setMarkdownDraft] = useState(effectiveMarkdown);
@@ -470,6 +499,58 @@ export const HomeTab = ({
     []
   );
   const landingContentSegments = useMemo(() => splitLandingContentSegments(effectiveMarkdown), [effectiveMarkdown]);
+  const openBucketItemsCount = useMemo(() => bucketItems.filter((entry) => !entry.done).length, [bucketItems]);
+  const doneBucketItemsCount = useMemo(() => bucketItems.filter((entry) => entry.done).length, [bucketItems]);
+  const bucketShortList = useMemo(
+    () =>
+      bucketItems
+        .filter((entry) => !entry.done)
+        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+        .slice(0, 5),
+    [bucketItems]
+  );
+  const onSubmitBucketItem = useCallback(
+    async (event: FormEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+
+      const nextTitle = bucketTitle.trim();
+      if (!nextTitle) return;
+
+      await onAddBucketItem({
+        title: nextTitle,
+        descriptionMarkdown: bucketDescriptionMarkdown.trim(),
+        suggestedDates: [...new Set(bucketSuggestedDates)].sort()
+      });
+      setBucketTitle("");
+      setBucketDescriptionMarkdown("");
+      setBucketDateInput("");
+      setBucketSuggestedDates([]);
+    },
+    [bucketDescriptionMarkdown, bucketSuggestedDates, bucketTitle, onAddBucketItem]
+  );
+  const addBucketSuggestedDate = useCallback(() => {
+    const next = bucketDateInput.trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(next)) return;
+    setBucketSuggestedDates((current) => (current.includes(next) ? current : [...current, next].sort()));
+    setBucketDateInput("");
+  }, [bucketDateInput]);
+  const removeBucketSuggestedDate = useCallback((value: string) => {
+    setBucketSuggestedDates((current) => current.filter((entry) => entry !== value));
+  }, []);
+  const formatSuggestedDate = useMemo(
+    () => (value: string) => {
+      const parsed = new Date(`${value}T12:00:00`);
+      if (Number.isNaN(parsed.getTime())) return value;
+      return new Intl.DateTimeFormat(language, { dateStyle: "medium" }).format(parsed);
+    },
+    [language]
+  );
+  const onConfirmCompleteTask = useCallback(async () => {
+    if (!pendingCompleteTask) return;
+    await onCompleteTask(pendingCompleteTask);
+    setPendingCompleteTask(null);
+  }, [onCompleteTask, pendingCompleteTask]);
 
   const renderLandingWidget = useCallback((key: LandingWidgetKey) => {
     if (key === "tasks-overview") {
@@ -505,7 +586,7 @@ export const HomeTab = ({
                     className="h-7 px-2 text-[11px]"
                     disabled={busy}
                     onClick={() => {
-                      void onCompleteTask(task).catch(() => undefined);
+                      setPendingCompleteTask(task);
                     }}
                   >
                     {t("tasks.complete")}
@@ -561,6 +642,29 @@ export const HomeTab = ({
             <p className="text-xs text-slate-500 dark:text-slate-400">{t("home.activityEmpty")}</p>
           )}
         </div>
+      );
+    }
+
+    if (key === "bucket-short-list") {
+      return (
+        <button
+          type="button"
+          className="w-full rounded-xl border border-brand-100 bg-white/80 p-3 text-left transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900/70 dark:hover:bg-slate-900"
+          onClick={() => void navigate({ to: "/home/bucket" })}
+        >
+          <p className="text-xs text-slate-500 dark:text-slate-400">{t("home.widgetBucketShortList")}</p>
+          <p className="mt-1 text-lg font-semibold text-slate-900 dark:text-slate-100">{openBucketItemsCount}</p>
+          <p className="text-xs text-slate-500 dark:text-slate-400">{t("home.widgetBucketShortListHint")}</p>
+          {bucketShortList.length > 0 ? (
+            <ul className="mt-2 space-y-1">
+              {bucketShortList.map((entry) => (
+                <li key={entry.id} className="truncate text-xs text-slate-600 dark:text-slate-300">
+                  • {entry.title}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </button>
       );
     }
 
@@ -628,6 +732,8 @@ export const HomeTab = ({
     householdOpenBalance,
     recentActivity,
     monthlyExpenseRows,
+    bucketShortList,
+    openBucketItemsCount,
     taskFairness,
     memberLabel,
     navigate,
@@ -657,6 +763,122 @@ export const HomeTab = ({
     setMarkdownDraft(getEffectiveLandingMarkdown(getSavedLandingMarkdown(household.landing_page_markdown), defaultLandingMarkdown));
     setIsEditingLanding(false);
   }, [defaultLandingMarkdown, household.id, household.landing_page_markdown]);
+  useEffect(() => {
+    const updateWidth = () => {
+      const next = bucketComposerRowRef.current?.getBoundingClientRect().width;
+      if (!next || Number.isNaN(next)) return;
+      setBucketPopoverWidth(Math.max(220, Math.round(next)));
+    };
+
+    updateWidth();
+    window.addEventListener("resize", updateWidth);
+    return () => window.removeEventListener("resize", updateWidth);
+  }, []);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const mediaQuery = window.matchMedia("(max-width: 639px)");
+    const onChange = (event: MediaQueryListEvent) => setIsMobileBucketComposer(event.matches);
+    setIsMobileBucketComposer(mediaQuery.matches);
+    mediaQuery.addEventListener("change", onChange);
+    return () => mediaQuery.removeEventListener("change", onChange);
+  }, []);
+
+  const renderBucketComposer = (mobile: boolean) => (
+    <form className={mobile ? "space-y-0" : "space-y-2"} onSubmit={(event) => void onSubmitBucketItem(event)}>
+      <div className="flex items-end">
+        <div className="relative flex-1 space-y-1">
+          <Label className={mobile ? "sr-only" : ""}>{t("home.bucketTitle")}</Label>
+          <div
+            ref={bucketComposerRowRef}
+            className="flex h-10 items-stretch overflow-hidden rounded-xl border border-brand-200 bg-white dark:border-slate-700 dark:bg-slate-900 focus-within:border-brand-500 focus-within:shadow-[inset_0_0_0_1px_rgba(59,130,246,0.45)] dark:focus-within:border-slate-500 dark:focus-within:shadow-[inset_0_0_0_1px_rgba(148,163,184,0.45)]"
+          >
+            <Input
+              value={bucketTitle}
+              onChange={(event) => setBucketTitle(event.target.value)}
+              placeholder={t("home.bucketPlaceholder")}
+              maxLength={200}
+              disabled={busy}
+              className="h-full flex-1 rounded-none border-0 bg-transparent shadow-none focus-visible:ring-0"
+            />
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-full w-10 shrink-0 rounded-none border-l border-brand-200 p-0 dark:border-slate-700"
+                  aria-label={t("home.bucketMoreOptions")}
+                >
+                  <MoreHorizontal className="h-4 w-4" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent
+                align="start"
+                side={mobile ? "top" : "bottom"}
+                className="w-auto space-y-3 rounded-xl border-brand-100 shadow-lg dark:border-slate-700"
+                style={{ width: `${bucketPopoverWidth}px` }}
+              >
+                <div className="space-y-1">
+                  <Label>{t("home.bucketDescriptionPlaceholder")}</Label>
+                  <textarea
+                    value={bucketDescriptionMarkdown}
+                    onChange={(event) => setBucketDescriptionMarkdown(event.target.value)}
+                    placeholder={t("home.bucketDescriptionPlaceholder")}
+                    maxLength={20000}
+                    disabled={busy}
+                    rows={4}
+                    className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs outline-none transition-[color,box-shadow] placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <p className="text-xs font-medium text-slate-600 dark:text-slate-300">{t("home.bucketDatesLabel")}</p>
+                  <div className="flex items-end gap-2">
+                    <Input
+                      type="date"
+                      value={bucketDateInput}
+                      onChange={(event) => setBucketDateInput(event.target.value)}
+                      disabled={busy}
+                    />
+                    <Button type="button" variant="outline" onClick={addBucketSuggestedDate} disabled={busy || !bucketDateInput}>
+                      {t("home.bucketDateAddAction")}
+                    </Button>
+                  </div>
+                  {bucketSuggestedDates.length > 0 ? (
+                    <ul className="flex flex-wrap gap-2">
+                      {bucketSuggestedDates.map((dateValue) => (
+                        <li key={dateValue}>
+                          <button
+                            type="button"
+                            className="inline-flex items-center gap-1 rounded-full border border-brand-200 bg-brand-50 px-2 py-1 text-xs text-brand-800 dark:border-brand-800 dark:bg-brand-900/30 dark:text-brand-200"
+                            onClick={() => removeBucketSuggestedDate(dateValue)}
+                            aria-label={t("home.bucketDateRemove", { date: formatSuggestedDate(dateValue) })}
+                          >
+                            <span>{formatSuggestedDate(dateValue)}</span>
+                            <X className="h-3 w-3" />
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-xs text-slate-500 dark:text-slate-400">{t("home.bucketNoDates")}</p>
+                  )}
+                </div>
+              </PopoverContent>
+            </Popover>
+            <Button
+              type="submit"
+              disabled={busy || bucketTitle.trim().length === 0}
+              className="h-full shrink-0 rounded-none border-l border-brand-200 px-3 dark:border-slate-700"
+              aria-label={t("home.bucketAddAction")}
+            >
+              <Plus className="h-4 w-4 sm:hidden" />
+              <span className="hidden sm:inline">{t("home.bucketAddAction")}</span>
+            </Button>
+          </div>
+        </div>
+      </div>
+    </form>
+  );
 
   return (
     <div className="space-y-4">
@@ -773,6 +995,120 @@ export const HomeTab = ({
       </Card>
       ) : null}
 
+      {showBucket ? (
+      <>
+      <Card>
+        <CardHeader>
+          <CardTitle>{t("home.bucketTitle")}</CardTitle>
+          <CardDescription>{t("home.bucketDescription")}</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {!isMobileBucketComposer ? renderBucketComposer(false) : null}
+
+          <div className={isMobileBucketComposer ? "pb-40" : ""}>
+          {bucketItems.length > 0 ? (
+            <>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                {t("home.bucketProgress", {
+                  open: openBucketItemsCount,
+                  done: doneBucketItemsCount
+                })}
+              </p>
+              <ul className="space-y-2">
+                {bucketItems.map((item) => (
+                  <li
+                    key={item.id}
+                    className="space-y-2 rounded-xl border border-brand-100 bg-white/80 px-3 py-3 dark:border-slate-700 dark:bg-slate-900/70"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-2">
+                        <Checkbox
+                          checked={item.done}
+                          onCheckedChange={() => {
+                            void onToggleBucketItem(item);
+                          }}
+                          aria-label={item.done ? t("home.bucketMarkOpen") : t("home.bucketMarkDone")}
+                          disabled={busy}
+                        />
+                        <span className={`truncate text-sm ${item.done ? "text-slate-400 line-through dark:text-slate-500" : "text-slate-700 dark:text-slate-300"}`}>
+                          {item.title}
+                        </span>
+                      </label>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        className="h-8 w-8 shrink-0 px-0"
+                        onClick={() => {
+                          void onDeleteBucketItem(item);
+                        }}
+                        disabled={busy}
+                        aria-label={t("home.bucketDelete")}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+
+                    {item.description_markdown.trim().length > 0 ? (
+                      <div className="prose prose-slate max-w-none text-sm dark:prose-invert [&_*]:break-words">
+                        <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+                          {item.description_markdown}
+                        </ReactMarkdown>
+                      </div>
+                    ) : null}
+
+                    {item.suggested_dates.length > 0 ? (
+                      <div className="space-y-2">
+                        <p className="text-xs font-medium text-slate-600 dark:text-slate-300">{t("home.bucketSuggestedDatesTitle")}</p>
+                        <ul className="space-y-1">
+                          {item.suggested_dates.map((dateValue) => {
+                            const voters = item.votes_by_date[dateValue] ?? [];
+                            const hasVoted = voters.includes(userId);
+                            return (
+                              <li key={`${item.id}-${dateValue}`} className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50/70 px-2 py-1.5 dark:border-slate-700 dark:bg-slate-800/60">
+                                <span className="text-xs text-slate-700 dark:text-slate-300">{formatSuggestedDate(dateValue)}</span>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-xs text-slate-500 dark:text-slate-400">
+                                    {t("home.bucketVotes", { count: voters.length })}
+                                  </span>
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant={hasVoted ? "default" : "outline"}
+                                    className="h-7 px-2 text-[11px]"
+                                    disabled={busy}
+                                    onClick={() => {
+                                      void onToggleBucketDateVote(item, dateValue, !hasVoted);
+                                    }}
+                                  >
+                                    {hasVoted ? t("home.bucketVotedAction") : t("home.bucketVoteAction")}
+                                  </Button>
+                                </div>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      </div>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            </>
+          ) : (
+            <p className="text-sm text-slate-500 dark:text-slate-400">{t("home.bucketEmpty")}</p>
+          )}
+          </div>
+        </CardContent>
+      </Card>
+      {isMobileBucketComposer ? (
+        <div className="fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+4.75rem)] z-40 px-3 sm:hidden">
+          <div className="rounded-2xl border border-brand-200/70 bg-white/75 p-1.5 shadow-xl backdrop-blur-xl dark:border-slate-700/70 dark:bg-slate-900/75">
+            {renderBucketComposer(true)}
+          </div>
+        </div>
+      ) : null}
+      </>
+      ) : null}
+
       {showFeed ? (
       <Card>
         <CardHeader>
@@ -808,6 +1144,41 @@ export const HomeTab = ({
       </Card>
       ) : null}
 
+      <Dialog
+        open={pendingCompleteTask !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingCompleteTask(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-lg">
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className="absolute right-3 top-3 h-8 w-8 p-0"
+            onClick={() => setPendingCompleteTask(null)}
+            aria-label={t("common.cancel")}
+          >
+            <X className="h-4 w-4" />
+          </Button>
+          <DialogHeader>
+            <DialogTitle>{t("tasks.confirmCompleteTitle")}</DialogTitle>
+            <DialogDescription>
+              {t("tasks.confirmCompleteDescription", {
+                title: pendingCompleteTask?.title ?? t("tasks.fallbackTitle")
+              })}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="outline" onClick={() => setPendingCompleteTask(null)}>
+              {t("common.cancel")}
+            </Button>
+            <Button type="button" disabled={busy} onClick={() => void onConfirmCompleteTask()}>
+              {t("tasks.confirmCompleteAction")}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

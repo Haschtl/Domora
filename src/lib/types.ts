@@ -35,12 +35,14 @@ export interface HouseholdMember {
   role: "owner" | "member";
   display_name?: string | null;
   avatar_url?: string | null;
+  user_color?: string | null;
   paypal_name?: string | null;
   revolut_name?: string | null;
   wero_name?: string | null;
   room_size_sqm: number | null;
   common_area_factor: number;
   task_laziness_factor: number;
+  vacation_mode: boolean;
   created_at: string;
 }
 
@@ -65,6 +67,20 @@ export interface ShoppingItem {
   created_at: string;
 }
 
+export interface BucketItem {
+  id: string;
+  household_id: string;
+  title: string;
+  description_markdown: string;
+  suggested_dates: string[];
+  votes_by_date: Record<string, string[]>;
+  done: boolean;
+  done_at: string | null;
+  done_by: string | null;
+  created_by: string;
+  created_at: string;
+}
+
 export interface ShoppingItemCompletion {
   id: string;
   shopping_item_id: string;
@@ -80,6 +96,8 @@ export interface TaskItem {
   household_id: string;
   title: string;
   description: string;
+  current_state_image_url: string | null;
+  target_state_image_url: string | null;
   start_date: string;
   due_at: string;
   cron_pattern: string;
@@ -131,6 +149,8 @@ export interface HouseholdEvent {
 export interface NewTaskInput {
   title: string;
   description: string;
+  currentStateImageUrl?: string | null;
+  targetStateImageUrl?: string | null;
   startDate: string;
   frequencyDays: number;
   effortPimpers: number;

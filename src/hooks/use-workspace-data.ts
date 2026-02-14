@@ -4,6 +4,7 @@ import { useStore } from "@tanstack/react-store";
 import type { Session } from "@supabase/supabase-js";
 import { appStore, setActiveHouseholdId } from "../lib/app-store";
 import {
+  getBucketItems,
   getCashAuditRequests,
   getCurrentSession,
   getFinanceEntries,
@@ -20,6 +21,7 @@ import {
 import { queryKeys } from "../lib/query-keys";
 import { supabase } from "../lib/supabase";
 import type {
+  BucketItem,
   CashAuditRequest,
   FinanceEntry,
   FinanceSubscription,
@@ -34,6 +36,7 @@ import type {
 } from "../lib/types";
 
 interface WorkspaceData {
+  bucketItems: BucketItem[];
   shoppingItems: ShoppingItem[];
   shoppingCompletions: ShoppingItemCompletion[];
   tasks: TaskItem[];
@@ -47,6 +50,7 @@ interface WorkspaceData {
 }
 
 const emptyWorkspace: WorkspaceData = {
+  bucketItems: [],
   shoppingItems: [],
   shoppingCompletions: [],
   tasks: [],
@@ -60,8 +64,21 @@ const emptyWorkspace: WorkspaceData = {
 };
 
 const getWorkspaceData = async (householdId: string): Promise<WorkspaceData> => {
-  const [shoppingItems, shoppingCompletions, tasks, taskCompletions, finances, cashAuditRequests, financeSubscriptions, householdMembers, memberPimpers, householdEvents] =
+  const [
+    bucketItems,
+    shoppingItems,
+    shoppingCompletions,
+    tasks,
+    taskCompletions,
+    finances,
+    cashAuditRequests,
+    financeSubscriptions,
+    householdMembers,
+    memberPimpers,
+    householdEvents
+  ] =
     await Promise.all([
+      getBucketItems(householdId),
       getShoppingItems(householdId),
       getShoppingCompletions(householdId),
       getTasks(householdId),
@@ -75,6 +92,7 @@ const getWorkspaceData = async (householdId: string): Promise<WorkspaceData> => 
     ]);
 
   return {
+    bucketItems,
     shoppingItems,
     shoppingCompletions,
     tasks,

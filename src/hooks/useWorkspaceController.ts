@@ -2,6 +2,7 @@ import { useCallback, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import {
+  addBucketItem,
   addFinanceEntry,
   addFinanceSubscription,
   addShoppingItem,
@@ -12,6 +13,7 @@ import {
   createHousehold,
   deleteFinanceEntry,
   deleteFinanceSubscription,
+  deleteBucketItem,
   deleteShoppingItem,
   getCurrentSession,
   joinHouseholdByInvite,
@@ -34,15 +36,20 @@ import {
   updateMemberSettings,
   resetHouseholdPimpers,
   updateMemberTaskLaziness,
+  updateMemberVacationMode,
   updateShoppingItem,
   updateShoppingItemStatus,
   updateUserAvatar,
+  updateUserColor,
   updateUserDisplayName,
-  updateUserPaymentHandles
+  updateUserPaymentHandles,
+  updateBucketDateVote,
+  updateBucketItemStatus
 } from "../lib/api";
 import { setActiveHouseholdId } from "../lib/app-store";
 import { queryKeys } from "../lib/query-keys";
 import type {
+  BucketItem,
   FinanceEntry,
   FinanceSubscription,
   NewFinanceSubscriptionInput,
@@ -223,6 +230,56 @@ export const useWorkspaceController = () => {
       });
     },
     [activeHousehold, runWithWorkspaceInvalidation]
+  );
+
+  const onAddBucketItem = useCallback(
+    async (input: { title: string; descriptionMarkdown: string; suggestedDates: string[] }) => {
+      if (!activeHousehold || !userId) return;
+
+      await runWithWorkspaceInvalidation(async () => {
+        await addBucketItem(activeHousehold.id, input, userId);
+      });
+    },
+    [activeHousehold, runWithWorkspaceInvalidation, userId]
+  );
+
+  const onToggleBucketItem = useCallback(
+    async (item: BucketItem) => {
+      if (!activeHousehold || !userId) return;
+
+      await runWithWorkspaceInvalidation(async () => {
+        await updateBucketItemStatus(item.id, !item.done, userId);
+      });
+    },
+    [activeHousehold, runWithWorkspaceInvalidation, userId]
+  );
+
+  const onDeleteBucketItem = useCallback(
+    async (item: BucketItem) => {
+      if (!activeHousehold) return;
+
+      await runWithWorkspaceInvalidation(async () => {
+        await deleteBucketItem(item.id);
+      });
+    },
+    [activeHousehold, runWithWorkspaceInvalidation]
+  );
+
+  const onToggleBucketDateVote = useCallback(
+    async (item: BucketItem, suggestedDate: string, voted: boolean) => {
+      if (!activeHousehold || !userId) return;
+
+      await runWithWorkspaceInvalidation(async () => {
+        await updateBucketDateVote({
+          bucketItemId: item.id,
+          householdId: activeHousehold.id,
+          suggestedDate,
+          userId,
+          voted
+        });
+      });
+    },
+    [activeHousehold, runWithWorkspaceInvalidation, userId]
   );
 
   const onAddTask = useCallback(
@@ -482,6 +539,18 @@ export const useWorkspaceController = () => {
     [activeHousehold, runWithWorkspaceInvalidation]
   );
 
+  const onUpdateVacationMode = useCallback(
+    async (vacationMode: boolean) => {
+      if (!activeHousehold || !userId) return;
+
+      await runWithWorkspaceInvalidation(async () => {
+        await updateMemberVacationMode(activeHousehold.id, userId, vacationMode);
+        setMessage(t("settings.vacationModeSaved"));
+      });
+    },
+    [activeHousehold, runWithWorkspaceInvalidation, t, userId]
+  );
+
   const onResetHouseholdPimpers = useCallback(async () => {
     if (!activeHousehold) return;
 
@@ -521,6 +590,17 @@ export const useWorkspaceController = () => {
         await updateUserPaymentHandles(input);
         await invalidateWorkspace();
         setMessage(t("settings.paymentSaved"));
+      });
+    },
+    [executeAction, invalidateWorkspace, t]
+  );
+
+  const onUpdateUserColor = useCallback(
+    async (userColor: string) => {
+      await executeAction(async () => {
+        await updateUserColor(userColor);
+        await invalidateWorkspace();
+        setMessage(t("settings.profileColorSaved"));
       });
     },
     [executeAction, invalidateWorkspace, t]
@@ -583,6 +663,7 @@ export const useWorkspaceController = () => {
     households,
     householdsLoadError,
     activeHousehold,
+    bucketItems: workspace.bucketItems,
     shoppingItems: workspace.shoppingItems,
     shoppingCompletions: workspace.shoppingCompletions,
     tasks: workspace.tasks,
@@ -610,6 +691,10 @@ export const useWorkspaceController = () => {
     onSignOut,
     onCreateHousehold,
     onJoinHousehold,
+    onAddBucketItem,
+    onToggleBucketItem,
+    onDeleteBucketItem,
+    onToggleBucketDateVote,
     onAddShoppingItem,
     onToggleShoppingItem,
     onUpdateShoppingItem,
@@ -634,9 +719,11 @@ export const useWorkspaceController = () => {
     onUpdateMemberSettings,
     onUpdateMemberSettingsForUser,
     onUpdateMemberTaskLaziness,
+    onUpdateVacationMode,
     onResetHouseholdPimpers,
     onUpdateUserAvatar,
     onUpdateUserDisplayName,
+    onUpdateUserColor,
     onUpdateUserPaymentHandles,
     onLeaveHousehold,
     onDissolveHousehold,

@@ -51,7 +51,7 @@ const tabPathMap: Record<AppTab, string> = {
   settings: "/settings/me"
 };
 
-type HomeSubTab = "summary" | "feed";
+type HomeSubTab = "summary" | "bucket" | "feed";
 type ShoppingSubTab = "list" | "history";
 type TaskSubTab = "overview" | "stats" | "history" | "settings";
 type FinanceSubTab = "overview" | "stats" | "archive" | "subscriptions";
@@ -67,6 +67,7 @@ const resolveTabFromPathname = (pathname: string): AppTab => {
 };
 
 const resolveHomeSubTabFromPathname = (pathname: string): HomeSubTab => {
+  if (pathname.startsWith("/home/bucket")) return "bucket";
   if (pathname.startsWith("/home/feed")) return "feed";
   return "summary";
 };
@@ -103,8 +104,9 @@ const tabItems: Array<{ id: AppTab; icon: LucideIcon }> = [
   { id: "settings", icon: Settings }
 ];
 
-const homeSubPathMap: Record<HomeSubTab, "/home/summary" | "/home/feed"> = {
+const homeSubPathMap: Record<HomeSubTab, "/home/summary" | "/home/bucket" | "/home/feed"> = {
   summary: "/home/summary",
+  bucket: "/home/bucket",
   feed: "/home/feed"
 };
 
@@ -147,6 +149,7 @@ const App = () => {
     householdsLoadError,
     activeHousehold,
     shoppingItems,
+    bucketItems,
     shoppingCompletions,
     tasks,
     taskCompletions,
@@ -173,6 +176,10 @@ const App = () => {
     onCreateHousehold,
     onJoinHousehold,
     onAddShoppingItem,
+    onAddBucketItem,
+    onToggleBucketItem,
+    onDeleteBucketItem,
+    onToggleBucketDateVote,
     onToggleShoppingItem,
     onUpdateShoppingItem,
     onDeleteShoppingItem,
@@ -196,9 +203,11 @@ const App = () => {
     onUpdateMemberSettings,
     onUpdateMemberSettingsForUser,
     onUpdateMemberTaskLaziness,
+    onUpdateVacationMode,
     onResetHouseholdPimpers,
     onUpdateUserAvatar,
     onUpdateUserDisplayName,
+    onUpdateUserColor,
     onUpdateUserPaymentHandles,
     onLeaveHousehold,
     onDissolveHousehold,
@@ -258,6 +267,7 @@ const App = () => {
     tab === "home"
       ? [
           { id: "summary", icon: LayoutList, labelKey: "subnav.home.summary", path: homeSubPathMap.summary },
+          { id: "bucket", icon: CheckSquare, labelKey: "subnav.home.bucket", path: homeSubPathMap.bucket },
           { id: "feed", icon: FileText, labelKey: "subnav.home.feed", path: homeSubPathMap.feed }
         ]
       : tab === "shopping"
@@ -579,6 +589,7 @@ const App = () => {
                         members={householdMembers}
                         userLabel={userDisplayName ?? userEmail}
                         busy={busy}
+                        bucketItems={bucketItems}
                         tasks={tasks}
                         taskCompletions={taskCompletions}
                         financeEntries={finances}
@@ -589,6 +600,10 @@ const App = () => {
                           if (next) setActiveHousehold(next);
                         }}
                         onSaveLandingMarkdown={onUpdateHomeMarkdown}
+                        onAddBucketItem={onAddBucketItem}
+                        onToggleBucketItem={onToggleBucketItem}
+                        onDeleteBucketItem={onDeleteBucketItem}
+                        onToggleBucketDateVote={onToggleBucketDateVote}
                         onCompleteTask={onCompleteTask}
                       />
                     ) : null}
@@ -673,7 +688,9 @@ const App = () => {
                         onUpdateHousehold={onUpdateHousehold}
                         onUpdateUserAvatar={onUpdateUserAvatar}
                         onUpdateUserDisplayName={onUpdateUserDisplayName}
+                        onUpdateUserColor={onUpdateUserColor}
                         onUpdateUserPaymentHandles={onUpdateUserPaymentHandles}
+                        onUpdateVacationMode={onUpdateVacationMode}
                         onSetMemberRole={onSetMemberRole}
                         onRemoveMember={onRemoveMember}
                         onSignOut={onSignOut}

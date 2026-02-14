@@ -25,6 +25,7 @@ create table if not exists household_members (
   room_size_sqm numeric(8, 2) check (room_size_sqm is null or room_size_sqm > 0),
   common_area_factor numeric(8, 3) not null default 1 check (common_area_factor >= 0 and common_area_factor <= 2),
   task_laziness_factor numeric(8, 3) not null default 1 check (task_laziness_factor >= 0 and task_laziness_factor <= 2),
+  vacation_mode boolean not null default false,
   created_at timestamptz not null default now(),
   primary key (household_id, user_id)
 );
@@ -33,6 +34,7 @@ create table if not exists user_profiles (
   user_id uuid primary key references auth.users(id) on delete cascade,
   display_name text,
   avatar_url text,
+  user_color text check (user_color is null or user_color ~ '^#[0-9A-Fa-f]{6}$'),
   paypal_name text,
   revolut_name text,
   wero_name text,
@@ -57,6 +59,28 @@ create table if not exists shopping_items (
   )
 );
 
+create table if not exists bucket_items (
+  id uuid primary key default gen_random_uuid(),
+  household_id uuid not null references households(id) on delete cascade,
+  title text not null,
+  description_markdown text not null default '',
+  suggested_dates date[] not null default '{}',
+  done boolean not null default false,
+  done_at timestamptz,
+  done_by uuid references auth.users(id) on delete set null,
+  created_by uuid not null references auth.users(id) on delete cascade,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists bucket_item_date_votes (
+  bucket_item_id uuid not null references bucket_items(id) on delete cascade,
+  household_id uuid not null references households(id) on delete cascade,
+  suggested_date date not null,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (bucket_item_id, suggested_date, user_id)
+);
+
 create table if not exists shopping_item_completions (
   id uuid primary key default gen_random_uuid(),
   shopping_item_id uuid not null references shopping_items(id) on delete cascade,
@@ -72,6 +96,8 @@ create table if not exists tasks (
   household_id uuid not null references households(id) on delete cascade,
   title text not null,
   description text not null default '',
+  current_state_image_url text,
+  target_state_image_url text,
   start_date date not null default current_date,
   due_at timestamptz not null,
   cron_pattern text not null default '0 9 */7 * *',
@@ -259,6 +285,7 @@ $$;
 alter table household_members add column if not exists room_size_sqm numeric(8, 2);
 alter table household_members add column if not exists common_area_factor numeric(8, 3) not null default 1;
 alter table household_members add column if not exists task_laziness_factor numeric(8, 3) not null default 1;
+alter table household_members add column if not exists vacation_mode boolean not null default false;
 
 update household_members
 set common_area_factor = 1
@@ -267,6 +294,13 @@ where common_area_factor is null;
 update household_members
 set task_laziness_factor = 1
 where task_laziness_factor is null;
+
+update household_members
+set vacation_mode = false
+where vacation_mode is null;
+
+alter table household_members
+alter column vacation_mode set not null;
 
 do $$
 begin
@@ -340,8 +374,18 @@ $$;
 alter table shopping_items add column if not exists tags text[] not null default '{}';
 alter table shopping_items add column if not exists recurrence_interval_value integer;
 alter table shopping_items add column if not exists recurrence_interval_unit text;
+alter table bucket_items add column if not exists title text;
+alter table bucket_items add column if not exists description_markdown text not null default '';
+alter table bucket_items add column if not exists suggested_dates date[] not null default '{}';
+alter table bucket_items add column if not exists done boolean not null default false;
 alter table shopping_items add column if not exists done_at timestamptz;
 alter table shopping_items add column if not exists done_by uuid references auth.users(id) on delete set null;
+alter table bucket_items add column if not exists created_by uuid references auth.users(id) on delete cascade;
+alter table bucket_items add column if not exists created_at timestamptz not null default now();
+alter table bucket_items add column if not exists done_at timestamptz;
+alter table bucket_items add column if not exists done_by uuid references auth.users(id) on delete set null;
+alter table bucket_item_date_votes add column if not exists household_id uuid references households(id) on delete cascade;
+alter table bucket_item_date_votes add column if not exists created_at timestamptz not null default now();
 alter table task_completions add column if not exists task_title_snapshot text not null default '';
 alter table task_completions add column if not exists due_at_snapshot timestamptz;
 alter table task_completions add column if not exists delay_minutes integer not null default 0;
@@ -359,6 +403,16 @@ alter table finance_subscriptions add column if not exists updated_at timestampt
 alter table user_profiles add column if not exists paypal_name text;
 alter table user_profiles add column if not exists revolut_name text;
 alter table user_profiles add column if not exists wero_name text;
+alter table user_profiles add column if not exists user_color text;
+
+update user_profiles
+set user_color = lower(user_color)
+where user_color is not null;
+
+update user_profiles
+set user_color = null
+where user_color is not null
+  and user_color !~ '^#[0-9a-f]{6}$';
 
 update finance_entries
 set paid_by_user_ids = array[paid_by]
@@ -582,10 +636,22 @@ begin
         or (recurrence_interval_value is not null and recurrence_interval_unit is not null)
       );
   end if;
+
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'user_profiles_user_color_format_check'
+  ) then
+    alter table user_profiles
+      add constraint user_profiles_user_color_format_check
+      check (user_color is null or user_color ~ '^#[0-9a-f]{6}$');
+  end if;
 end;
 $$;
 
 alter table tasks add column if not exists description text not null default '';
+alter table tasks add column if not exists current_state_image_url text;
+alter table tasks add column if not exists target_state_image_url text;
 alter table tasks add column if not exists start_date date not null default current_date;
 alter table tasks add column if not exists cron_pattern text not null default '0 9 */7 * *';
 alter table tasks add column if not exists frequency_days integer not null default 7;
@@ -643,12 +709,17 @@ as $$
 $$;
 
 create index if not exists idx_shopping_items_household_created_at on shopping_items (household_id, created_at desc);
+create index if not exists idx_bucket_items_household_created_at on bucket_items (household_id, created_at desc);
+create index if not exists idx_bucket_item_date_votes_household_date on bucket_item_date_votes (household_id, suggested_date asc);
 create index if not exists idx_shopping_item_completions_household_completed_at on shopping_item_completions (household_id, completed_at desc);
 create index if not exists idx_tasks_household_due_at on tasks (household_id, due_at asc);
+create index if not exists idx_tasks_household_active on tasks (household_id, is_active, id);
 create index if not exists idx_task_completions_household_completed_at on task_completions (household_id, completed_at desc);
 create index if not exists idx_household_events_household_created_at on household_events (household_id, created_at desc);
 create index if not exists idx_finance_entries_household_entry_date on finance_entries (household_id, entry_date desc);
 create index if not exists idx_finance_subscriptions_household_created_at on finance_subscriptions (household_id, created_at desc);
+create index if not exists idx_household_members_user_household on household_members (user_id, household_id);
+create index if not exists idx_task_rotation_members_user_task on task_rotation_members (user_id, task_id);
 
 create or replace function is_household_member(hid uuid)
 returns boolean
@@ -777,6 +848,7 @@ as $$
       r.rotation_index,
       coalesce(hmp.total_pimpers, 0)::numeric as total_pimpers,
       coalesce(hm.task_laziness_factor, 1)::numeric as task_laziness_factor,
+      coalesce(hm.vacation_mode, false) as vacation_mode,
       rm.rotation_count,
       case
         when rm.rotation_count <= 0 then 0
@@ -793,6 +865,31 @@ as $$
       on hm.household_id = ti.household_id
      and hm.user_id = r.user_id
   ),
+  active_tasks as (
+    select
+      t2.id as task_id,
+      greatest(task_cron_interval_days(t2.cron_pattern, t2.frequency_days), 1)::numeric as interval_days,
+      greatest(t2.effort_pimpers, 1)::numeric as effort_pimpers
+    from tasks t2
+    join task_info ti on t2.household_id = ti.household_id
+    where t2.id <> ti.task_id
+      and t2.is_active = true
+  ),
+  task_rotation_counts as (
+    select
+      trm.task_id,
+      count(*)::numeric as rotation_count
+    from task_rotation_members trm
+    join active_tasks at on at.task_id = trm.task_id
+    group by trm.task_id
+  ),
+  member_active_tasks as (
+    select distinct
+      trm.user_id,
+      trm.task_id
+    from task_rotation_members trm
+    join active_tasks at on at.task_id = trm.task_id
+  ),
   projected as (
     select
       c.*,
@@ -801,28 +898,18 @@ as $$
           select sum(
             greatest(
               floor(
-                (c.turns_until_turn * ti.interval_days)::numeric
-                / greatest(task_cron_interval_days(t2.cron_pattern, t2.frequency_days), 1)::numeric
+                (c.turns_until_turn * ti.interval_days)::numeric / at.interval_days
               ),
               0
             )
-            * greatest(t2.effort_pimpers, 1)::numeric
-            / rot.rotation_count
+            * at.effort_pimpers
+            / trc.rotation_count
           )
           from task_info ti
-          join tasks t2
-            on t2.household_id = ti.household_id
-           and t2.id <> ti.task_id
-           and t2.is_active = true
-          join lateral (
-            select
-              count(*)::numeric as rotation_count,
-              bool_or(trm2.user_id = c.user_id) as includes_member
-            from task_rotation_members trm2
-            where trm2.task_id = t2.id
-          ) rot on true
-          where rot.includes_member = true
-            and rot.rotation_count > 0
+          join member_active_tasks mat on mat.user_id = c.user_id
+          join active_tasks at on at.task_id = mat.task_id
+          join task_rotation_counts trc on trc.task_id = at.task_id
+          where trc.rotation_count > 0
         ),
         0
       ) as projected_pimpers_until_turn
@@ -831,6 +918,7 @@ as $$
   select p.user_id
   from projected p
   order by
+    case when p.vacation_mode then 1 else 0 end asc,
     case
       when p_prioritize_low_pimpers and p.task_laziness_factor <= 0 then 999999999::numeric
       when p_prioritize_low_pimpers and lower(coalesce(p_assignee_fairness_mode, 'actual')) = 'projection' then
@@ -1075,7 +1163,13 @@ declare
   total_fixes integer := 0;
   summary_message text;
 begin
-  if p_enforce_owner and not is_household_owner(p_household_id) then
+  -- Only service_role may bypass owner checks (used by scheduled maintenance).
+  -- For authenticated users, owner enforcement is always required, even if
+  -- p_enforce_owner=false is passed by the caller.
+  if (
+    coalesce(auth.role(), 'authenticated') <> 'service_role'
+    or p_enforce_owner
+  ) and not is_household_owner(p_household_id) then
     raise exception 'Only household owners can run maintenance';
   end if;
 
@@ -1293,6 +1387,8 @@ alter table households enable row level security;
 alter table household_members enable row level security;
 alter table user_profiles enable row level security;
 alter table shopping_items enable row level security;
+alter table bucket_items enable row level security;
+alter table bucket_item_date_votes enable row level security;
 alter table shopping_item_completions enable row level security;
 alter table tasks enable row level security;
 alter table task_rotation_members enable row level security;
@@ -1389,6 +1485,31 @@ for all
 to authenticated
 using (is_household_member(household_id))
 with check (is_household_member(household_id));
+
+drop policy if exists bucket_items_all on bucket_items;
+create policy bucket_items_all on bucket_items
+for all
+to authenticated
+using (is_household_member(household_id))
+with check (is_household_member(household_id));
+
+drop policy if exists bucket_item_date_votes_select on bucket_item_date_votes;
+create policy bucket_item_date_votes_select on bucket_item_date_votes
+for select
+to authenticated
+using (is_household_member(household_id));
+
+drop policy if exists bucket_item_date_votes_insert on bucket_item_date_votes;
+create policy bucket_item_date_votes_insert on bucket_item_date_votes
+for insert
+to authenticated
+with check (is_household_member(household_id) and auth.uid() = user_id);
+
+drop policy if exists bucket_item_date_votes_delete on bucket_item_date_votes;
+create policy bucket_item_date_votes_delete on bucket_item_date_votes
+for delete
+to authenticated
+using (is_household_member(household_id) and auth.uid() = user_id);
 
 drop policy if exists shopping_item_completions_select on shopping_item_completions;
 create policy shopping_item_completions_select on shopping_item_completions

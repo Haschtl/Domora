@@ -11,6 +11,19 @@ export const memberProfiles = [
   { displayName: "Lukas Braun" }
 ];
 
+export const memberColors = [
+  "#0ea5e9",
+  "#22c55e",
+  "#f97316",
+  "#ec4899",
+  "#a855f7",
+  "#14b8a6",
+  "#ef4444",
+  "#84cc16",
+  "#6366f1",
+  "#f59e0b"
+];
+
 export const financeCategories = ["groceries", "utilities", "internet", "cleaning", "household", "repairs"];
 
 export const taskTitles = [
@@ -94,7 +107,9 @@ export const buildMemberRows = ({ householdId, users }) =>
     user_id: user.id,
     role: index === 0 ? "owner" : "member",
     room_size_sqm: 12 + index * 2,
-    common_area_factor: index === 0 ? 1.1 : 1
+    common_area_factor: index === 0 ? 1.1 : 1,
+    task_laziness_factor: Number((0.8 + (index % 5) * 0.2).toFixed(1)),
+    vacation_mode: index === users.length - 1 && users.length > 3
   }));
 
 export const buildTaskRows = ({ taskCount, users, householdId, ownerId, now }) => {
@@ -110,10 +125,20 @@ export const buildTaskRows = ({ taskCount, users, householdId, ownerId, now }) =
       household_id: householdId,
       title: taskTitles[i % taskTitles.length],
       description: `Demo Task ${i + 1}`,
+      current_state_image_url:
+        i % 3 === 0
+          ? `https://picsum.photos/seed/domora-task-${i}-before/800/500`
+          : null,
+      target_state_image_url:
+        i % 3 === 0
+          ? `https://picsum.photos/seed/domora-task-${i}-after/800/500`
+          : null,
       start_date: new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
       due_at: dueAt.toISOString(),
       frequency_days: 3 + (i % 5),
       effort_pimpers: effort,
+      prioritize_low_pimpers: i % 4 !== 0,
+      assignee_fairness_mode: i % 2 === 0 ? "projection" : "actual",
       done: isDone,
       done_at: doneAt ? doneAt.toISOString() : null,
       done_by: isDone ? assignee.id : null,
@@ -449,3 +474,59 @@ export const buildShoppingCompletionRows = ({ insertedShoppingItems, householdId
       completed_by: item.done_by,
       completed_at: item.done_at
     }));
+
+export const buildBucketRows = ({ users, householdId, ownerId, now, bucketCount = 8 }) => {
+  const rows = [];
+  const dayMs = 24 * 60 * 60 * 1000;
+
+  for (let i = 0; i < bucketCount; i += 1) {
+    const creator = users[i % users.length] ?? { id: ownerId };
+    const createdAt = new Date(now.getTime() - (i + 2) * dayMs);
+    const done = i % 4 === 0;
+    const doneBy = done ? users[(i + 1) % users.length]?.id ?? creator.id : null;
+    const doneAt = done ? new Date(createdAt.getTime() + 5 * 60 * 60 * 1000).toISOString() : null;
+    const baseDate = new Date(now.getTime() + (4 + i) * dayMs);
+    const suggestedDates = i % 2 === 0
+      ? [0, 2, 5].map((offset) => {
+          const candidate = new Date(baseDate.getTime() + offset * dayMs);
+          return candidate.toISOString().slice(0, 10);
+        })
+      : [];
+
+    rows.push({
+      household_id: householdId,
+      title: `Bucket ${i + 1}: ${["Kochen", "Spieleabend", "Ausflug", "Filmnacht", "WG-Foto", "Pflanzenmarkt", "Flohmarkt", "Brunch"][i % 8]}`,
+      description_markdown:
+        i % 3 === 0
+          ? `### Idee\n- Wer: alle\n- Budget: ca. ${10 + i * 3} EUR\n\n**Notiz:** Bitte bis Freitag abstimmen.`
+          : "",
+      suggested_dates: suggestedDates,
+      done,
+      done_at: doneAt,
+      done_by: doneBy,
+      created_by: creator.id,
+      created_at: createdAt.toISOString()
+    });
+  }
+
+  return rows;
+};
+
+export const buildBucketVoteRows = ({ insertedBucketItems, users, householdId }) => {
+  const rows = [];
+  insertedBucketItems.forEach((item, itemIndex) => {
+    const suggestedDates = item.suggested_dates ?? [];
+    suggestedDates.forEach((suggestedDate, dateIndex) => {
+      users.forEach((user, userIndex) => {
+        if ((itemIndex + dateIndex + userIndex) % 2 !== 0) return;
+        rows.push({
+          bucket_item_id: item.id,
+          household_id: householdId,
+          suggested_date: suggestedDate,
+          user_id: user.id
+        });
+      });
+    });
+  });
+  return rows;
+};

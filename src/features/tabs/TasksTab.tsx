@@ -1,5 +1,6 @@
-import { type CSSProperties, useEffect, useMemo, useState } from "react";
+import { type CSSProperties, type RefObject, useRef, useState, useEffect, useMemo } from "react";
 import { useForm } from "@tanstack/react-form";
+import imageCompression from "browser-image-compression";
 import {
   DndContext,
   type DragEndEvent,
@@ -14,15 +15,13 @@ import {
   BarElement,
   CategoryScale,
   Chart as ChartJS,
-  Filler,
   Legend,
-  LineElement,
   LinearScale,
-  PointElement,
   Tooltip as ChartTooltip
 } from "chart.js";
 import {
   BellRing,
+  Camera,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
@@ -33,11 +32,12 @@ import {
   MoonStar,
   Medal,
   MoreHorizontal,
+  Paperclip,
   Plus,
   Sparkles,
   X
 } from "lucide-react";
-import { Bar, Line } from "react-chartjs-2";
+import { Bar } from "react-chartjs-2";
 import { useTranslation } from "react-i18next";
 import type {
   HouseholdMember,
@@ -76,10 +76,7 @@ import { buildCalendarEntriesByDay, buildCompletionSpansByDay, buildMonthGrid, d
 ChartJS.register(
   CategoryScale,
   LinearScale,
-  PointElement,
-  LineElement,
   BarElement,
-  Filler,
   ChartTooltip,
   Legend
 );
@@ -114,6 +111,8 @@ type PendingTaskAction = {
 type TaskFormValues = {
   title: string;
   description: string;
+  currentStateImageUrl: string;
+  targetStateImageUrl: string;
   startDate: string;
   frequencyDays: string;
   effortPimpers: string;
@@ -131,12 +130,57 @@ const toDateInputValue = (date: Date) => {
 const createDefaultTaskFormValues = (): TaskFormValues => ({
   title: "",
   description: "",
+  currentStateImageUrl: "",
+  targetStateImageUrl: "",
   startDate: toDateInputValue(new Date()),
   frequencyDays: "7",
   effortPimpers: "1",
   prioritizeLowPimpers: true,
   assigneeFairnessMode: "actual"
 });
+
+const MAX_TASK_IMAGE_DIMENSION = 1600;
+const MAX_TASK_IMAGE_SIZE_MB = 0.9;
+const TASK_IMAGE_QUALITY = 0.78;
+
+const readBlobAsDataUrl = (blob: Blob) =>
+  new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result ?? ""));
+    reader.onerror = () => reject(new Error("Datei konnte nicht gelesen werden."));
+    reader.readAsDataURL(blob);
+  });
+
+const compressImageToDataUrl = async (file: File) => {
+  if (!file.type.startsWith("image/")) {
+    return readBlobAsDataUrl(file);
+  }
+
+  const compressed = await imageCompression(file, {
+    maxSizeMB: MAX_TASK_IMAGE_SIZE_MB,
+    maxWidthOrHeight: MAX_TASK_IMAGE_DIMENSION,
+    useWebWorker: true,
+    initialQuality: TASK_IMAGE_QUALITY
+  });
+
+  return imageCompression.getDataUrlFromFile(compressed);
+};
+
+const normalizeUserColor = (value: string | null | undefined) => {
+  if (!value) return null;
+  const normalized = value.trim().toLowerCase();
+  return /^#[0-9a-f]{6}$/.test(normalized) ? normalized : null;
+};
+
+const fallbackColorFromUserId = (userId: string) => {
+  let hash = 0;
+  for (let i = 0; i < userId.length; i += 1) {
+    hash = (hash << 5) - hash + userId.charCodeAt(i);
+    hash |= 0;
+  }
+  const hue = Math.abs(hash) % 360;
+  return `hsl(${hue} 70% 48%)`;
+};
 
 const relativeDueChipLabel = (
   dueAtIso: string,
@@ -208,12 +252,23 @@ export const TasksTab = ({
   const [taskPendingDelete, setTaskPendingDelete] = useState<TaskItem | null>(null);
   const [taskPendingToggleActive, setTaskPendingToggleActive] = useState<TaskItem | null>(null);
   const [pendingTaskAction, setPendingTaskAction] = useState<PendingTaskAction | null>(null);
+  const [taskImageUploadError, setTaskImageUploadError] = useState<string | null>(null);
+  const [editTaskImageUploadError, setEditTaskImageUploadError] = useState<string | null>(null);
   const [isResetPimpersDialogOpen, setIsResetPimpersDialogOpen] = useState(false);
   const [lazinessDraftByUserId, setLazinessDraftByUserId] = useState<Record<string, number>>({});
   const [statsForecastTaskId, setStatsForecastTaskId] = useState<string>("");
+  const [statsTaskFilterId, setStatsTaskFilterId] = useState<string>("all");
   const [calendarMonthDate, setCalendarMonthDate] = useState(() => startOfMonth(new Date()));
   const [isCoarsePointer, setIsCoarsePointer] = useState(false);
   const [openCalendarTooltipDay, setOpenCalendarTooltipDay] = useState<string | null>(null);
+  const addCurrentStateUploadInputRef = useRef<HTMLInputElement | null>(null);
+  const addCurrentStateCameraInputRef = useRef<HTMLInputElement | null>(null);
+  const addTargetStateUploadInputRef = useRef<HTMLInputElement | null>(null);
+  const addTargetStateCameraInputRef = useRef<HTMLInputElement | null>(null);
+  const editCurrentStateUploadInputRef = useRef<HTMLInputElement | null>(null);
+  const editCurrentStateCameraInputRef = useRef<HTMLInputElement | null>(null);
+  const editTargetStateUploadInputRef = useRef<HTMLInputElement | null>(null);
+  const editTargetStateCameraInputRef = useRef<HTMLInputElement | null>(null);
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: { distance: 6 }
@@ -251,6 +306,8 @@ export const TasksTab = ({
       const input: NewTaskInput = {
         title: trimmedTitle,
         description: value.description.trim(),
+        currentStateImageUrl: value.currentStateImageUrl.trim() || null,
+        targetStateImageUrl: value.targetStateImageUrl.trim() || null,
         startDate: value.startDate,
         frequencyDays: Number.isFinite(parsedFrequencyDays) ? Math.max(1, Math.floor(parsedFrequencyDays)) : 7,
         effortPimpers: Number.isFinite(parsedEffort) ? Math.max(1, Math.floor(parsedEffort)) : 1,
@@ -260,6 +317,7 @@ export const TasksTab = ({
       };
 
       setFormError(null);
+      setTaskImageUploadError(null);
       await onAdd(input);
       formApi.reset();
       setIsCreateDialogOpen(false);
@@ -294,6 +352,8 @@ export const TasksTab = ({
       const input: NewTaskInput = {
         title: trimmedTitle,
         description: value.description.trim(),
+        currentStateImageUrl: value.currentStateImageUrl.trim() || null,
+        targetStateImageUrl: value.targetStateImageUrl.trim() || null,
         startDate: value.startDate,
         frequencyDays: Number.isFinite(parsedFrequencyDays) ? Math.max(1, Math.floor(parsedFrequencyDays)) : 7,
         effortPimpers: Number.isFinite(parsedEffort) ? Math.max(1, Math.floor(parsedEffort)) : 1,
@@ -303,6 +363,7 @@ export const TasksTab = ({
       };
 
       setEditFormError(null);
+      setEditTaskImageUploadError(null);
       await onUpdate(taskBeingEdited, input);
       setTaskBeingEdited(null);
       setIsEditDialogOpen(false);
@@ -358,6 +419,38 @@ export const TasksTab = ({
     memberPimpers.forEach((entry) => map.set(entry.user_id, Number(entry.total_pimpers)));
     return map;
   }, [memberPimpers]);
+  const memberById = useMemo(() => {
+    const map = new Map<string, HouseholdMember>();
+    members.forEach((member) => map.set(member.user_id, member));
+    return map;
+  }, [members]);
+  const resolveMemberColor = useMemo(
+    () => (memberId: string) => normalizeUserColor(memberById.get(memberId)?.user_color) ?? fallbackColorFromUserId(memberId),
+    [memberById]
+  );
+
+  useEffect(() => {
+    if (statsTaskFilterId === "all") return;
+    if (tasks.some((task) => task.id === statsTaskFilterId)) return;
+    setStatsTaskFilterId("all");
+  }, [statsTaskFilterId, tasks]);
+
+  const statsFilteredTaskIds = useMemo(() => {
+    if (statsTaskFilterId === "all") {
+      return new Set(tasks.map((task) => task.id));
+    }
+    return new Set([statsTaskFilterId]);
+  }, [statsTaskFilterId, tasks]);
+
+  const statsFilteredTasks = useMemo(() => {
+    if (statsTaskFilterId === "all") return tasks;
+    return tasks.filter((task) => task.id === statsTaskFilterId);
+  }, [statsTaskFilterId, tasks]);
+
+  const statsFilteredCompletions = useMemo(
+    () => completions.filter((entry) => statsFilteredTaskIds.has(entry.task_id)),
+    [completions, statsFilteredTaskIds]
+  );
 
   const taskLazinessMeta = useMemo(
     () => [
@@ -379,8 +472,8 @@ export const TasksTab = ({
   const getScaledPimpers = (rawPimpers: number, lazinessFactor: number) =>
     lazinessFactor <= 0 ? null : rawPimpers / lazinessFactor;
   const activeForecastTasks = useMemo(
-    () => tasks.filter((task) => task.is_active && task.rotation_user_ids.length > 0),
-    [tasks]
+    () => statsFilteredTasks.filter((task) => task.is_active && task.rotation_user_ids.length > 0),
+    [statsFilteredTasks]
   );
   useEffect(() => {
     if (activeForecastTasks.length === 0) {
@@ -431,7 +524,7 @@ export const TasksTab = ({
       const rows = rotation.map((rotationUserId, index) => {
         const turnsUntilTurn = index >= currentIndex ? index - currentIndex : rotation.length - currentIndex + index;
         const horizonDays = turnsUntilTurn * intervalDays;
-        const projectedUntilTurn = tasks.reduce((sum, otherTask) => {
+        const projectedUntilTurn = statsFilteredTasks.reduce((sum, otherTask) => {
           if (!otherTask.is_active || otherTask.id === task.id) return sum;
           if (!otherTask.rotation_user_ids.includes(rotationUserId) || otherTask.rotation_user_ids.length === 0) return sum;
 
@@ -458,7 +551,7 @@ export const TasksTab = ({
     });
 
     return projectedByTask;
-  }, [activeForecastTasks, members, pimperByUserId, tasks]);
+  }, [activeForecastTasks, members, pimperByUserId, statsFilteredTasks]);
   const selectedForecastTask = useMemo(
     () => activeForecastTasks.find((task) => task.id === statsForecastTaskId) ?? null,
     [activeForecastTasks, statsForecastTaskId]
@@ -467,22 +560,28 @@ export const TasksTab = ({
     () => (selectedForecastTask ? projectionByTaskId.get(selectedForecastTask.id) ?? [] : []),
     [projectionByTaskId, selectedForecastTask]
   );
-  const statsMemberRows = useMemo(
-    () =>
-      members
-        .map((entry) => {
-          const totalPimpers = pimperByUserId.get(entry.user_id) ?? 0;
-          const lazinessFactor = getLazinessFactor(entry);
-          return {
-            ...entry,
-            total_pimpers: totalPimpers,
-            task_laziness_factor: lazinessFactor,
-            scaled_pimpers: getScaledPimpers(totalPimpers, lazinessFactor)
-          };
-        })
-        .filter((entry) => entry.scaled_pimpers !== null),
-    [members, pimperByUserId]
-  );
+  const statsMemberRows = useMemo(() => {
+    const filteredPimpersByUserId = new Map<string, number>();
+    statsFilteredCompletions.forEach((entry) => {
+      filteredPimpersByUserId.set(
+        entry.user_id,
+        (filteredPimpersByUserId.get(entry.user_id) ?? 0) + Math.max(0, entry.pimpers_earned)
+      );
+    });
+
+    return members
+      .map((entry) => {
+        const totalPimpers = filteredPimpersByUserId.get(entry.user_id) ?? 0;
+        const lazinessFactor = getLazinessFactor(entry);
+        return {
+          ...entry,
+          total_pimpers: totalPimpers,
+          task_laziness_factor: lazinessFactor,
+          scaled_pimpers: getScaledPimpers(totalPimpers, lazinessFactor)
+        };
+      })
+      .filter((entry) => entry.scaled_pimpers !== null);
+  }, [members, statsFilteredCompletions]);
   const sortedMemberRows = useMemo(
     () =>
       [...statsMemberRows].sort(
@@ -543,6 +642,106 @@ export const TasksTab = ({
     taskForm.setFieldValue("frequencyDays", String(suggestion.frequencyDays));
     taskForm.setFieldValue("effortPimpers", String(suggestion.effortPimpers));
   };
+
+  const handleTaskImageFileSelect = async (
+    file: File,
+    setError: (message: string | null) => void
+  ) => {
+    try {
+      const dataUrl = await compressImageToDataUrl(file);
+      setError(null);
+      return dataUrl;
+    } catch {
+      setError(t("tasks.stateImageUploadError"));
+      return null;
+    }
+  };
+
+  const renderTaskStateImageField = (
+    form: typeof taskForm | typeof editTaskForm,
+    options: {
+      fieldName: "currentStateImageUrl" | "targetStateImageUrl";
+      label: string;
+      previewAlt: string;
+      uploadInputRef: RefObject<HTMLInputElement | null>;
+      cameraInputRef: RefObject<HTMLInputElement | null>;
+      setError: (message: string | null) => void;
+    }
+  ) => (
+    <form.Field
+      name={options.fieldName}
+      children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
+        <div className="space-y-2">
+          <Label>{options.label}</Label>
+          <div className="flex flex-wrap gap-2">
+            <input
+              ref={options.uploadInputRef}
+              type="file"
+              accept="image/*"
+              className="sr-only"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                if (!file) return;
+                void handleTaskImageFileSelect(file, options.setError).then((dataUrl) => {
+                  if (dataUrl) field.handleChange(dataUrl);
+                });
+                event.currentTarget.value = "";
+              }}
+            />
+            <input
+              ref={options.cameraInputRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              className="sr-only"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                if (!file) return;
+                void handleTaskImageFileSelect(file, options.setError).then((dataUrl) => {
+                  if (dataUrl) field.handleChange(dataUrl);
+                });
+                event.currentTarget.value = "";
+              }}
+            />
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => options.uploadInputRef.current?.click()}
+            >
+              <Paperclip className="mr-1 h-4 w-4" />
+              {t("tasks.stateImageUploadButton")}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => options.cameraInputRef.current?.click()}
+            >
+              <Camera className="mr-1 h-4 w-4" />
+              {t("tasks.stateImageCameraButton")}
+            </Button>
+            {field.state.value.trim().length > 0 ? (
+              <Button type="button" variant="ghost" size="sm" onClick={() => field.handleChange("")}>
+                {t("tasks.stateImageRemoveButton")}
+              </Button>
+            ) : null}
+          </div>
+          {field.state.value.trim().length > 0 ? (
+            <a
+              href={field.state.value}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-2 rounded-lg border border-brand-100 bg-white px-2 py-1 text-xs text-brand-700 hover:text-brand-600 dark:border-slate-700 dark:bg-slate-900 dark:text-brand-300"
+            >
+              <img src={field.state.value} alt={options.previewAlt} className="h-8 w-8 rounded object-cover" />
+              <span>{t("tasks.stateImagePreviewLink")}</span>
+            </a>
+          ) : null}
+        </div>
+      )}
+    />
+  );
   const {
     suggestions: taskSuggestions,
     focused: titleFocused,
@@ -569,26 +768,39 @@ export const TasksTab = ({
   });
 
   const completionSeries = useMemo(() => {
-    const byDay = new Map<string, number>();
+    const byDayByUser = new Map<string, Map<string, number>>();
     completions.forEach((entry) => {
       const day = entry.completed_at.slice(0, 10);
-      byDay.set(day, (byDay.get(day) ?? 0) + 1);
+      const byUser = byDayByUser.get(day) ?? new Map<string, number>();
+      byUser.set(entry.user_id, (byUser.get(entry.user_id) ?? 0) + 1);
+      byDayByUser.set(day, byUser);
     });
 
-    const labels = [...byDay.keys()].sort();
-    const values = labels.map((label) => byDay.get(label) ?? 0);
+    const dayKeys = [...byDayByUser.keys()].sort();
+    const userIds = [...new Set(completions.map((entry) => entry.user_id))]
+      .sort((left, right) => userLabel(left).localeCompare(userLabel(right), language));
+
+    const datasets = userIds.map((memberId) => ({
+      label: userLabel(memberId),
+      data: dayKeys.map((day) => byDayByUser.get(day)?.get(memberId) ?? 0),
+      backgroundColor: resolveMemberColor(memberId),
+      borderColor: "transparent",
+      borderWidth: 0
+    }));
 
     return {
-      labels: labels.map((label) => formatShortDay(label, language, label)),
-      values
+      labels: dayKeys.map((day) => formatShortDay(day, language, day)),
+      datasets
     };
-  }, [completions, language]);
+  }, [completions, language, resolveMemberColor, userLabel]);
   const backlogAndDelayStats = useMemo(() => {
     const nowMs = Date.now();
-    const dueTasks = tasks.filter((task) => task.is_active && !task.done && !Number.isNaN(new Date(task.due_at).getTime()));
+    const dueTasks = statsFilteredTasks.filter(
+      (task) => task.is_active && !task.done && !Number.isNaN(new Date(task.due_at).getTime())
+    );
     const overdueTasks = dueTasks.filter((task) => new Date(task.due_at).getTime() <= nowMs);
 
-    const completionRows = completions.filter((entry) => Number.isFinite(entry.delay_minutes));
+    const completionRows = statsFilteredCompletions.filter((entry) => Number.isFinite(entry.delay_minutes));
     const overallDelayMinutes =
       completionRows.length > 0
         ? completionRows.reduce((sum, entry) => sum + Math.max(0, entry.delay_minutes), 0) / completionRows.length
@@ -621,7 +833,7 @@ export const TasksTab = ({
       overallDelayMinutes,
       memberRows
     };
-  }, [completions, members, tasks]);
+  }, [members, statsFilteredCompletions, statsFilteredTasks]);
   const formatDelayLabel = (minutes: number) => {
     if (minutes < 60) return t("tasks.delayMinutesValue", { count: Math.round(minutes) });
     if (minutes < 24 * 60) return t("tasks.delayHoursValue", { count: Number((minutes / 60).toFixed(1)) });
@@ -844,8 +1056,11 @@ export const TasksTab = ({
 
   const onStartEditTask = (task: TaskItem) => {
     setTaskBeingEdited(task);
+    setEditTaskImageUploadError(null);
     editTaskForm.setFieldValue("title", task.title);
     editTaskForm.setFieldValue("description", task.description ?? "");
+    editTaskForm.setFieldValue("currentStateImageUrl", task.current_state_image_url ?? "");
+    editTaskForm.setFieldValue("targetStateImageUrl", task.target_state_image_url ?? "");
     editTaskForm.setFieldValue("startDate", task.start_date);
     editTaskForm.setFieldValue("frequencyDays", String(task.frequency_days));
     editTaskForm.setFieldValue("effortPimpers", String(task.effort_pimpers));
@@ -907,13 +1122,11 @@ export const TasksTab = ({
     () => new Intl.DateTimeFormat(language, { month: "long", year: "numeric" }).format(calendarMonthDate),
     [calendarMonthDate, language]
   );
-  const calendarEntriesByDay = useMemo(() => buildCalendarEntriesByDay(tasks, completions), [completions, tasks]);
+  const calendarEntriesByDay = useMemo(
+    () => buildCalendarEntriesByDay(statsFilteredTasks, statsFilteredCompletions),
+    [statsFilteredCompletions, statsFilteredTasks]
+  );
 
-  const memberById = useMemo(() => {
-    const map = new Map<string, HouseholdMember>();
-    members.forEach((member) => map.set(member.user_id, member));
-    return map;
-  }, [members]);
   const visibleCalendarRange = useMemo(() => {
     const firstDate = monthCells[0]?.date;
     const lastDate = monthCells[monthCells.length - 1]?.date;
@@ -929,7 +1142,7 @@ export const TasksTab = ({
     [completions, visibleCalendarDayKeys, visibleCalendarRange]
   );
 
-  const calendarCard = showOverview ? (
+  const calendarCard = showStats ? (
     <Card>
       <CardHeader>
         <div className="flex items-center justify-between gap-2">
@@ -1166,7 +1379,15 @@ export const TasksTab = ({
                 <CardTitle>{t("tasks.title")}</CardTitle>
                 <CardDescription>{t("tasks.description")}</CardDescription>
               </div>
-              <Button type="button" size="sm" aria-label={t("tasks.createTask")} onClick={() => setIsCreateDialogOpen(true)}>
+              <Button
+                type="button"
+                size="sm"
+                aria-label={t("tasks.createTask")}
+                onClick={() => {
+                  setTaskImageUploadError(null);
+                  setIsCreateDialogOpen(true);
+                }}
+              >
                 <Plus className="h-4 w-4" />
               </Button>
             </div>
@@ -1195,7 +1416,12 @@ export const TasksTab = ({
 
                 <MobileSubpageDialog
                   open={isCreateDialogOpen}
-                  onOpenChange={setIsCreateDialogOpen}
+                  onOpenChange={(open) => {
+                    setIsCreateDialogOpen(open);
+                    if (!open) {
+                      setTaskImageUploadError(null);
+                    }
+                  }}
                   title={t("tasks.createTask")}
                   description={t("tasks.description")}
                   trigger={<span className="hidden" aria-hidden="true" />}
@@ -1280,6 +1506,25 @@ export const TasksTab = ({
                         </div>
                       )}
                     />
+
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      {renderTaskStateImageField(taskForm, {
+                        fieldName: "currentStateImageUrl",
+                        label: t("tasks.currentStateImageLabel"),
+                        previewAlt: t("tasks.currentStateImagePreviewAlt"),
+                        uploadInputRef: addCurrentStateUploadInputRef,
+                        cameraInputRef: addCurrentStateCameraInputRef,
+                        setError: setTaskImageUploadError
+                      })}
+                      {renderTaskStateImageField(taskForm, {
+                        fieldName: "targetStateImageUrl",
+                        label: t("tasks.targetStateImageLabel"),
+                        previewAlt: t("tasks.targetStateImagePreviewAlt"),
+                        uploadInputRef: addTargetStateUploadInputRef,
+                        cameraInputRef: addTargetStateCameraInputRef,
+                        setError: setTaskImageUploadError
+                      })}
+                    </div>
 
                     <div className="grid gap-2 sm:grid-cols-3">
                       <taskForm.Field
@@ -1424,6 +1669,11 @@ export const TasksTab = ({
                         {formError}
                       </p>
                     ) : null}
+                    {taskImageUploadError ? (
+                      <p className="rounded-lg border border-rose-300 bg-rose-50 px-3 py-2 text-xs text-rose-700 dark:border-rose-900 dark:bg-rose-950/60 dark:text-rose-200">
+                        {taskImageUploadError}
+                      </p>
+                    ) : null}
 
                     <div className="flex justify-end">
                       <Button type="submit" disabled={busy}>
@@ -1487,6 +1737,40 @@ export const TasksTab = ({
 
                         {task.description ? (
                           <p className="text-sm text-slate-600 dark:text-slate-300">{task.description}</p>
+                        ) : null}
+                        {task.current_state_image_url || task.target_state_image_url ? (
+                          <div className="flex flex-wrap items-center gap-2 pt-1">
+                            {task.current_state_image_url ? (
+                              <a
+                                href={task.current_state_image_url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="inline-flex items-center gap-2 rounded-lg border border-brand-100 bg-white px-2 py-1 text-xs text-brand-700 hover:text-brand-600 dark:border-slate-700 dark:bg-slate-900 dark:text-brand-300"
+                              >
+                                <img
+                                  src={task.current_state_image_url}
+                                  alt={t("tasks.currentStateImagePreviewAlt")}
+                                  className="h-8 w-8 rounded object-cover"
+                                />
+                                <span>{t("tasks.currentStateImageLabel")}</span>
+                              </a>
+                            ) : null}
+                            {task.target_state_image_url ? (
+                              <a
+                                href={task.target_state_image_url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="inline-flex items-center gap-2 rounded-lg border border-brand-100 bg-white px-2 py-1 text-xs text-brand-700 hover:text-brand-600 dark:border-slate-700 dark:bg-slate-900 dark:text-brand-300"
+                              >
+                                <img
+                                  src={task.target_state_image_url}
+                                  alt={t("tasks.targetStateImagePreviewAlt")}
+                                  className="h-8 w-8 rounded object-cover"
+                                />
+                                <span>{t("tasks.targetStateImageLabel")}</span>
+                              </a>
+                            ) : null}
+                          </div>
                         ) : null}
                       </div>
 
@@ -1595,6 +1879,28 @@ export const TasksTab = ({
           </CardContent>
         </Card>
       ) : null}
+
+        {showStats ? (
+          <Card className="mb-4">
+            <CardContent className="pt-6">
+              <div className="space-y-1">
+                <Label>{t("tasks.statsTaskFilterLabel")}</Label>
+                <select
+                  className="h-10 w-full rounded-xl border border-brand-200 bg-white px-3 text-sm text-slate-900 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                  value={statsTaskFilterId}
+                  onChange={(event) => setStatsTaskFilterId(event.target.value)}
+                >
+                  <option value="all">{t("tasks.statsTaskFilterAll")}</option>
+                  {visibleTasks.map((task) => (
+                    <option key={`stats-filter-task-${task.id}`} value={task.id}>
+                      {task.title}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </CardContent>
+          </Card>
+        ) : null}
 
         {showStats && sortedMemberRows.length > 0 ? (
           <Card className="mb-4">
@@ -1811,29 +2117,20 @@ export const TasksTab = ({
             <CardContent>
             {completionSeries.labels.length > 0 ? (
               <div className="mb-3 rounded-lg bg-white p-2 dark:bg-slate-900">
-                <Line
+                <Bar
                   data={{
                     labels: completionSeries.labels,
-                    datasets: [
-                      {
-                        label: t("tasks.historyChartCompletions"),
-                        data: completionSeries.values,
-                        borderColor: "#2563eb",
-                        backgroundColor: "rgba(37, 99, 235, 0.18)",
-                        borderWidth: 2,
-                        tension: 0.3,
-                        fill: true
-                      }
-                    ]
+                    datasets: completionSeries.datasets
                   }}
                   options={{
                     responsive: true,
                     maintainAspectRatio: false,
                     plugins: {
-                      legend: { display: false }
+                      legend: { display: true, position: "bottom" }
                     },
                     scales: {
-                      y: { beginAtZero: true, ticks: { precision: 0 } }
+                      x: { stacked: true },
+                      y: { stacked: true, beginAtZero: true, ticks: { precision: 0 } }
                     }
                   }}
                   height={170}
@@ -1978,6 +2275,7 @@ export const TasksTab = ({
             setIsEditDialogOpen(open);
             if (!open) {
               setTaskBeingEdited(null);
+              setEditTaskImageUploadError(null);
             }
           }}
         >
@@ -2023,6 +2321,25 @@ export const TasksTab = ({
                   </div>
                 )}
               />
+
+              <div className="grid gap-2 sm:grid-cols-2">
+                {renderTaskStateImageField(editTaskForm, {
+                  fieldName: "currentStateImageUrl",
+                  label: t("tasks.currentStateImageLabel"),
+                  previewAlt: t("tasks.currentStateImagePreviewAlt"),
+                  uploadInputRef: editCurrentStateUploadInputRef,
+                  cameraInputRef: editCurrentStateCameraInputRef,
+                  setError: setEditTaskImageUploadError
+                })}
+                {renderTaskStateImageField(editTaskForm, {
+                  fieldName: "targetStateImageUrl",
+                  label: t("tasks.targetStateImageLabel"),
+                  previewAlt: t("tasks.targetStateImagePreviewAlt"),
+                  uploadInputRef: editTargetStateUploadInputRef,
+                  cameraInputRef: editTargetStateCameraInputRef,
+                  setError: setEditTaskImageUploadError
+                })}
+              </div>
 
               <div className="grid gap-2 sm:grid-cols-3">
                 <editTaskForm.Field
@@ -2165,6 +2482,11 @@ export const TasksTab = ({
               {editFormError ? (
                 <p className="rounded-lg border border-rose-300 bg-rose-50 px-3 py-2 text-xs text-rose-700 dark:border-rose-900 dark:bg-rose-950/60 dark:text-rose-200">
                   {editFormError}
+                </p>
+              ) : null}
+              {editTaskImageUploadError ? (
+                <p className="rounded-lg border border-rose-300 bg-rose-50 px-3 py-2 text-xs text-rose-700 dark:border-rose-900 dark:bg-rose-950/60 dark:text-rose-200">
+                  {editTaskImageUploadError}
                 </p>
               ) : null}
 

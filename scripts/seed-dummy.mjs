@@ -12,7 +12,10 @@ import {
   buildRotationRows,
   buildTaskRows,
   buildCashAuditRows,
+  buildBucketRows,
+  buildBucketVoteRows,
   buildSubscriptionRows,
+  memberColors,
   memberProfiles,
   randomCode,
   toInt
@@ -73,6 +76,8 @@ const appTablesToClear = [
   { table: "task_completions", markerColumn: "id" },
   { table: "task_rotation_members", markerColumn: "task_id" },
   { table: "tasks", markerColumn: "id" },
+  { table: "bucket_item_date_votes", markerColumn: "bucket_item_id" },
+  { table: "bucket_items", markerColumn: "id" },
   { table: "shopping_item_completions", markerColumn: "id" },
   { table: "shopping_items", markerColumn: "id" },
   { table: "household_member_pimpers", markerColumn: "household_id" },
@@ -83,7 +88,7 @@ const appTablesToClear = [
 
 const clearApplicationData = async () => {
   console.warn("WARNING: This will clear existing Domora data before inserting new dummy data.");
-  console.warn("WARNING: Tables affected: cash_audit_requests, finance_subscriptions, finance_entries, household_events, tasks, shopping_items, households, user_profiles, ...");
+  console.warn("WARNING: Tables affected: cash_audit_requests, finance_subscriptions, finance_entries, household_events, tasks, shopping_items, bucket_items, households, user_profiles, ...");
   console.warn("WARNING: Continuing in 3 seconds. Press Ctrl+C to abort.");
   await new Promise((resolveTimeout) => setTimeout(resolveTimeout, 3000));
 
@@ -200,10 +205,11 @@ const run = async () => {
     throw new Error(`Failed to insert household members: ${memberError.message}`);
   }
 
-  const profileRows = users.map((user) => ({
+  const profileRows = users.map((user, index) => ({
     user_id: user.id,
     display_name: user.name,
     avatar_url: null,
+    user_color: memberColors[index % memberColors.length] ?? "#0ea5e9",
     paypal_name: user.email.split("@")[0],
     revolut_name: user.email.split("@")[0],
     wero_name: user.name
@@ -308,6 +314,34 @@ const run = async () => {
     }
   }
 
+  const bucketRows = buildBucketRows({
+    users,
+    householdId,
+    ownerId: owner.id,
+    now
+  });
+  const { data: insertedBucketItems, error: bucketError } = await supabase
+    .from("bucket_items")
+    .insert(bucketRows)
+    .select("id, suggested_dates");
+  if (bucketError) {
+    throw new Error(`Failed to insert bucket items: ${bucketError.message}`);
+  }
+
+  const bucketVoteRows = buildBucketVoteRows({
+    insertedBucketItems: insertedBucketItems ?? [],
+    users,
+    householdId
+  });
+  if (bucketVoteRows.length > 0) {
+    const { error: bucketVoteError } = await supabase
+      .from("bucket_item_date_votes")
+      .insert(bucketVoteRows);
+    if (bucketVoteError) {
+      throw new Error(`Failed to insert bucket item votes: ${bucketVoteError.message}`);
+    }
+  }
+
   const eventRows = buildEventRows({
     householdId,
     completionRows,
@@ -335,6 +369,8 @@ const run = async () => {
   console.log(`Cash audits created: ${cashAuditRows.length}`);
   console.log(`Shopping items created: ${insertedShoppingItems.length}`);
   console.log(`Shopping completions created: ${shoppingCompletionRows.length}`);
+  console.log(`Bucket items created: ${insertedBucketItems?.length ?? 0}`);
+  console.log(`Bucket votes created: ${bucketVoteRows.length}`);
   console.log(`Household events created: ${eventRows.length}`);
 };
 

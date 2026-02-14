@@ -81,8 +81,8 @@ export const AppParticlesBackground = () => {
   if (!engineReady) return null;
 
   return (
-    <div className="pointer-events-none fixed inset-0 z-0 opacity-95">
-      <Particles id="domora-particles" options={options} />
+    <div className="pointer-events-none absolute inset-0 z-0 opacity-95">
+      <Particles id="domora-particles" className="h-full w-full" options={options} />
     </div>
   );
 };

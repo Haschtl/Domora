@@ -117,17 +117,34 @@ export const useFinancesDerivedData = ({
   }, [filteredEntries]);
 
   const historySeries = useMemo(() => {
-    const byWeek = new Map<string, number>();
+    const byWeekByMember = new Map<string, Map<string, number>>();
+    const memberIds = members.map((member) => member.user_id);
+
     filteredEntries.forEach((entry) => {
       const day = parseDateFallback(entry);
       const weekStart = startOfWeekKey(day);
-      byWeek.set(weekStart, (byWeek.get(weekStart) ?? 0) + entry.amount);
-    });
-    const labels = [...byWeek.keys()].sort();
-    const values = labels.map((label) => byWeek.get(label) ?? 0);
 
-    return { labels, values };
-  }, [filteredEntries]);
+      const payers = entry.paid_by_user_ids.length > 0 ? entry.paid_by_user_ids : [entry.paid_by];
+      const shares = splitAmountEvenly(entry.amount, payers);
+      const byMember = byWeekByMember.get(weekStart) ?? new Map<string, number>();
+
+      shares.forEach((value, memberId) => {
+        byMember.set(memberId, (byMember.get(memberId) ?? 0) + value);
+      });
+
+      byWeekByMember.set(weekStart, byMember);
+    });
+    const labels = [...byWeekByMember.keys()].sort();
+    const datasetMemberIds = memberIds.length > 0
+      ? memberIds
+      : [...new Set(filteredEntries.flatMap((entry) => (entry.paid_by_user_ids.length > 0 ? entry.paid_by_user_ids : [entry.paid_by])))];
+    const datasets = datasetMemberIds.map((memberId) => ({
+      memberId,
+      values: labels.map((label) => byWeekByMember.get(label)?.get(memberId) ?? 0)
+    }));
+
+    return { labels, datasets };
+  }, [filteredEntries, members]);
 
   const categorySeries = useMemo(() => {
     const byCategory = new Map<string, number>();
