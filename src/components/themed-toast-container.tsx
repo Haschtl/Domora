@@ -14,7 +14,6 @@ export const ThemedToastContainer = () => {
       closeOnClick
       draggable={false}
       toastClassName="domora-toast"
-      bodyClassName="domora-toast-body"
     />
   );
 };

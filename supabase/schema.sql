@@ -515,6 +515,7 @@ create or replace function task_cron_interval_days(p_cron_pattern text, p_fallba
 returns integer
 language sql
 stable
+set search_path = public
 as $$
   select coalesce(
     case
@@ -571,6 +572,7 @@ create or replace function reset_due_recurring_shopping_items(p_household_id uui
 returns integer
 language plpgsql
 security invoker
+set search_path = public
 as $$
 declare
   affected integer;
@@ -617,6 +619,7 @@ create or replace function choose_next_task_assignee(p_task_id uuid)
 returns uuid
 language sql
 stable
+set search_path = public
 as $$
   with task_info as (
     select household_id
@@ -645,6 +648,7 @@ create or replace function complete_task(p_task_id uuid, p_user_id uuid)
 returns void
 language plpgsql
 security invoker
+set search_path = public
 as $$
 declare
   v_task tasks%rowtype;
@@ -740,6 +744,7 @@ create or replace function reopen_due_tasks(p_household_id uuid)
 returns integer
 language plpgsql
 security invoker
+set search_path = public
 as $$
 declare
   affected integer;
@@ -763,6 +768,7 @@ create or replace function skip_task(p_task_id uuid, p_user_id uuid)
 returns void
 language plpgsql
 security invoker
+set search_path = public
 as $$
 declare
   v_task tasks%rowtype;

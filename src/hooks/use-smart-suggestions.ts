@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import Fuse from "fuse.js";
 import type { KeyboardEvent } from "react";
 import type { FuseOptions } from "fuse.js";
@@ -37,18 +37,12 @@ export const useSmartSuggestions = <T>({
       .filter((entry) => getLabel(entry).toLocaleLowerCase() !== queryLower);
   }, [getLabel, items, limit, query, suggestionIndex]);
 
-  useEffect(() => {
-    if (suggestions.length === 0) {
-      setActiveSuggestionIndex(-1);
-      return;
-    }
-
-    setActiveSuggestionIndex((current) => {
-      if (current < 0) return 0;
-      if (current >= suggestions.length) return suggestions.length - 1;
-      return current;
-    });
-  }, [suggestions]);
+  const resolvedActiveSuggestionIndex =
+    suggestions.length === 0
+      ? -1
+      : activeSuggestionIndex < 0
+        ? 0
+        : Math.min(activeSuggestionIndex, suggestions.length - 1);
 
   const applySuggestion = useCallback(
     (suggestion: T) => {
@@ -90,19 +84,19 @@ export const useSmartSuggestions = <T>({
         return;
       }
 
-      if (event.key === "Enter" && activeSuggestionIndex >= 0) {
+      if (event.key === "Enter" && resolvedActiveSuggestionIndex >= 0) {
         event.preventDefault();
-        const selected = suggestions[activeSuggestionIndex];
+        const selected = suggestions[resolvedActiveSuggestionIndex];
         if (selected) applySuggestion(selected);
       }
     },
-    [activeSuggestionIndex, applySuggestion, focused, suggestions]
+    [applySuggestion, focused, resolvedActiveSuggestionIndex, suggestions]
   );
 
   return {
     suggestions,
     focused,
-    activeSuggestionIndex,
+    activeSuggestionIndex: resolvedActiveSuggestionIndex,
     onFocus,
     onBlur,
     onKeyDown,

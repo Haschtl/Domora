@@ -196,10 +196,10 @@ const App = () => {
   const taskSubTab = useMemo(() => resolveTaskSubTabFromPathname(location.pathname), [location.pathname]);
   const financeSubTab = useMemo(() => resolveFinanceSubTabFromPathname(location.pathname), [location.pathname]);
   const settingsSubTab = useMemo(() => resolveSettingsSubTabFromPathname(location.pathname), [location.pathname]);
-  const dueTasksCount = useMemo(() => {
-    const now = Date.now();
-    return tasks.filter((task) => task.is_active && !task.done && new Date(task.due_at).getTime() <= now).length;
-  }, [tasks]);
+  const dueTasksCount = useMemo(
+    () => tasks.filter((task) => task.is_active && !task.done).length,
+    [tasks]
+  );
   const initialInviteCode = useMemo(() => {
     if (typeof window === "undefined") return "";
     const params = new URLSearchParams(window.location.search);
