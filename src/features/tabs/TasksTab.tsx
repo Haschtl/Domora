@@ -55,6 +55,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger
 } from "../../components/ui/dropdown-menu";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "../../components/ui/accordion";
 import { Input } from "../../components/ui/input";
 import { InputWithSuffix } from "../../components/ui/input-with-suffix";
 import { Label } from "../../components/ui/label";
@@ -1634,45 +1635,7 @@ export const TasksTab = ({
                         )}
                       />
 
-                      <div className="grid gap-2 sm:grid-cols-2">
-                        {renderTaskStateImageField(taskForm, {
-                          fieldName: "currentStateImageUrl",
-                          label: t("tasks.currentStateImageLabel"),
-                          previewAlt: t("tasks.currentStateImagePreviewAlt"),
-                          uploadInputRef: addCurrentStateUploadInputRef,
-                          setError: setTaskImageUploadError,
-                        })}
-                        {renderTaskStateImageField(taskForm, {
-                          fieldName: "targetStateImageUrl",
-                          label: t("tasks.targetStateImageLabel"),
-                          previewAlt: t("tasks.targetStateImagePreviewAlt"),
-                          uploadInputRef: addTargetStateUploadInputRef,
-                          setError: setTaskImageUploadError,
-                        })}
-                      </div>
-
                       <div className="grid gap-2 sm:grid-cols-3">
-                        <taskForm.Field
-                          name="startDate"
-                          children={(field: {
-                            state: { value: string };
-                            handleChange: (value: string) => void;
-                          }) => (
-                            <div className="space-y-1">
-                              <Label>{t("tasks.startDate")}</Label>
-                              <Input
-                                type="date"
-                                lang={language}
-                                value={field.state.value}
-                                onChange={(event) =>
-                                  field.handleChange(event.target.value)
-                                }
-                                title={t("tasks.startDate")}
-                                required
-                              />
-                            </div>
-                          )}
-                        />
                         <taskForm.Field
                           name="frequencyDays"
                           children={(field: {
@@ -1718,61 +1681,117 @@ export const TasksTab = ({
                           )}
                         />
                       </div>
-                      <taskForm.Field
-                        name="prioritizeLowPimpers"
-                        children={(field: {
-                          state: { value: boolean };
-                          handleChange: (value: boolean) => void;
-                        }) => (
-                          <div className="flex items-center justify-between rounded-xl border border-brand-200 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900">
-                            <div>
-                              <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
-                                {t("tasks.prioritizeLowPimpers")}
-                              </p>
-                              <p className="text-xs text-slate-500 dark:text-slate-400">
-                                {t("tasks.prioritizeLowPimpersHint")}
-                              </p>
+
+                      <Accordion
+                        type="single"
+                        collapsible
+                        className="rounded-xl border border-brand-200 bg-white px-3 dark:border-slate-700 dark:bg-slate-900"
+                      >
+                        <AccordionItem value="more" className="border-none">
+                          <AccordionTrigger className="py-2">
+                            {t("tasks.moreOptions")}
+                          </AccordionTrigger>
+                          <AccordionContent className="pb-3">
+                            <div className="space-y-3">
+                              <div className="grid gap-2 sm:grid-cols-2">
+                                {renderTaskStateImageField(taskForm, {
+                                  fieldName: "currentStateImageUrl",
+                                  label: t("tasks.currentStateImageLabel"),
+                                  previewAlt: t("tasks.currentStateImagePreviewAlt"),
+                                  uploadInputRef: addCurrentStateUploadInputRef,
+                                  setError: setTaskImageUploadError,
+                                })}
+                                {renderTaskStateImageField(taskForm, {
+                                  fieldName: "targetStateImageUrl",
+                                  label: t("tasks.targetStateImageLabel"),
+                                  previewAlt: t("tasks.targetStateImagePreviewAlt"),
+                                  uploadInputRef: addTargetStateUploadInputRef,
+                                  setError: setTaskImageUploadError,
+                                })}
+                              </div>
+
+                              <taskForm.Field
+                                name="startDate"
+                                children={(field: {
+                                  state: { value: string };
+                                  handleChange: (value: string) => void;
+                                }) => (
+                                  <div className="space-y-1">
+                                    <Label>{t("tasks.startDate")}</Label>
+                                    <Input
+                                      type="date"
+                                      lang={language}
+                                      value={field.state.value}
+                                      onChange={(event) =>
+                                        field.handleChange(event.target.value)
+                                      }
+                                      title={t("tasks.startDate")}
+                                      required
+                                    />
+                                  </div>
+                                )}
+                              />
+
+                              <taskForm.Field
+                                name="prioritizeLowPimpers"
+                                children={(field: {
+                                  state: { value: boolean };
+                                  handleChange: (value: boolean) => void;
+                                }) => (
+                                  <div className="flex items-center justify-between rounded-xl border border-brand-200 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900">
+                                    <div>
+                                      <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
+                                        {t("tasks.prioritizeLowPimpers")}
+                                      </p>
+                                      <p className="text-xs text-slate-500 dark:text-slate-400">
+                                        {t("tasks.prioritizeLowPimpersHint")}
+                                      </p>
+                                    </div>
+                                    <Switch
+                                      checked={field.state.value}
+                                      onCheckedChange={field.handleChange}
+                                    />
+                                  </div>
+                                )}
+                              />
+
+                              <taskForm.Field
+                                name="assigneeFairnessMode"
+                                children={(field: {
+                                  state: { value: "actual" | "projection" };
+                                  handleChange: (value: "actual" | "projection") => void;
+                                }) => (
+                                  <div className="space-y-1">
+                                    <Label>{t("tasks.assigneeFairnessModeLabel")}</Label>
+                                    <select
+                                      className="h-10 w-full rounded-xl border border-brand-200 bg-white px-3 text-sm text-slate-900 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                                      value={field.state.value}
+                                      onChange={(event) =>
+                                        field.handleChange(
+                                          event.target.value as "actual" | "projection",
+                                        )
+                                      }
+                                      disabled={
+                                        !taskForm.state.values.prioritizeLowPimpers
+                                      }
+                                    >
+                                      <option value="actual">
+                                        {t("tasks.assigneeFairnessModeActual")}
+                                      </option>
+                                      <option value="projection">
+                                        {t("tasks.assigneeFairnessModeProjection")}
+                                      </option>
+                                    </select>
+                                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                                      {t("tasks.assigneeFairnessModeHint")}
+                                    </p>
+                                  </div>
+                                )}
+                              />
                             </div>
-                            <Switch
-                              checked={field.state.value}
-                              onCheckedChange={field.handleChange}
-                            />
-                          </div>
-                        )}
-                      />
-                      <taskForm.Field
-                        name="assigneeFairnessMode"
-                        children={(field: {
-                          state: { value: "actual" | "projection" };
-                          handleChange: (value: "actual" | "projection") => void;
-                        }) => (
-                          <div className="space-y-1">
-                            <Label>{t("tasks.assigneeFairnessModeLabel")}</Label>
-                            <select
-                              className="h-10 w-full rounded-xl border border-brand-200 bg-white px-3 text-sm text-slate-900 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                              value={field.state.value}
-                              onChange={(event) =>
-                                field.handleChange(
-                                  event.target.value as "actual" | "projection",
-                                )
-                              }
-                              disabled={
-                                !taskForm.state.values.prioritizeLowPimpers
-                              }
-                            >
-                              <option value="actual">
-                                {t("tasks.assigneeFairnessModeActual")}
-                              </option>
-                              <option value="projection">
-                                {t("tasks.assigneeFairnessModeProjection")}
-                              </option>
-                            </select>
-                            <p className="text-xs text-slate-500 dark:text-slate-400">
-                              {t("tasks.assigneeFairnessModeHint")}
-                            </p>
-                          </div>
-                        )}
-                      />
+                          </AccordionContent>
+                        </AccordionItem>
+                      </Accordion>
 
                       <SectionPanel className="bg-brand-50/40">
                         <p className="mb-2 text-sm font-semibold text-slate-900 dark:text-slate-100">

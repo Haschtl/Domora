@@ -268,6 +268,7 @@ export const resources = {
         title: "Aufgaben",
         description:
           "Lege wiederkehrende Aufgaben in der WG an.",
+        moreOptions: "Mehr Optionen",
         suggestionsTitle: "Häufige Aufgaben",
         suggestionUsedCount: "{{count}}x genutzt",
         suggestionLibraryBadge: "Tipp",
@@ -627,6 +628,7 @@ export const resources = {
         profileImageUploadLabel: "User-Bild Upload",
         profileUploadError: "User-Bild konnte nicht geladen werden.",
         profileImagePreviewAlt: "User Bild Vorschau",
+        currentEmailLabel: "Account",
         currentEmail: "Account: {{value}}",
         profileSave: "User-Bild speichern",
         profileNameSave: "Namen speichern",
@@ -1050,6 +1052,7 @@ export const resources = {
         title: "Tasks",
         description:
           "Recurring chores with rotation and pimpers. Pimpers-based fairness is optional per task.",
+        moreOptions: "More options",
         suggestionsTitle: "Common tasks",
         suggestionUsedCount: "Used {{count}}x",
         suggestionLibraryBadge: "Tip",
@@ -1404,6 +1407,7 @@ export const resources = {
         profileImageUploadLabel: "User image upload",
         profileUploadError: "User image could not be loaded.",
         profileImagePreviewAlt: "User image preview",
+        currentEmailLabel: "Account",
         currentEmail: "Account: {{value}}",
         profileSave: "Save user image",
         profileNameSave: "Save name",
