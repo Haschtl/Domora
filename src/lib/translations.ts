@@ -70,12 +70,10 @@ export const resources = {
           "Bitte Netzwerk, DNS oder Supabase-Erreichbarkeit prüfen.",
         unknownError: "Unbekannter Fehler",
         signInSuccess: "Erfolgreich eingeloggt.",
-        signUpSuccess:
-          "Account erstellt. Bitte E-Mail bestätigen, falls Verification aktiv ist.",
+        signUpSuccess: "Account erstellt.",
         householdCreated: "WG erstellt: {{name}}",
         householdJoined: "WG beigetreten: {{name}}",
-        cashAuditQueued:
-          "Kassensturz angefordert. Eine Edge Function kann jetzt Emails versenden.",
+        cashAuditQueued: "Kassensturz angefordert.",
         pushEnabled: "Push-Benachrichtigungen aktiviert.",
         pushDenied: "Push-Benachrichtigungen wurden nicht erlaubt.",
         pushHouseholdTitle: "Neue WG-Aktivität",
@@ -491,8 +489,7 @@ export const resources = {
         forWhomLabel: "Für wen?",
         startAudit: "Kassensturz starten",
         auditDialogTitle: "Kassensturz auslösen?",
-        auditDialogDescription:
-          "Es wird ein Kassensturz-Request erstellt. Ein Email-Versand kann per Supabase Edge Function daran angebunden werden.",
+        auditDialogDescription: "Es wird ein Kassensturz-Request erstellt.",
         historyTitle: "Finanz-Historie",
         chartDailyTotal: "Summe pro Woche",
         chartCategoryShare: "Anteil pro Kategorie",
@@ -859,12 +856,10 @@ export const resources = {
           "Please check network, DNS, or Supabase availability. While this error persists, create/join is disabled.",
         unknownError: "Unknown error",
         signInSuccess: "Signed in successfully.",
-        signUpSuccess:
-          "Account created. Confirm your email if verification is enabled.",
+        signUpSuccess: "Account created.",
         householdCreated: "Shared flat created: {{name}}",
         householdJoined: "Joined shared flat: {{name}}",
-        cashAuditQueued:
-          "Cash audit requested. An Edge Function can now send emails.",
+        cashAuditQueued: "Cash audit requested.",
         pushEnabled: "Push notifications enabled.",
         pushDenied: "Push notifications were not allowed.",
         pushHouseholdTitle: "New household activity",
@@ -1274,8 +1269,7 @@ export const resources = {
         forWhomLabel: "For whom?",
         startAudit: "Start cash audit",
         auditDialogTitle: "Trigger cash audit?",
-        auditDialogDescription:
-          "A cash audit request will be created. You can attach email sending through a Supabase Edge Function.",
+        auditDialogDescription: "A cash audit request will be created.",
         historyTitle: "Finance history",
         chartDailyTotal: "Total per week",
         chartCategoryShare: "Share per category",
