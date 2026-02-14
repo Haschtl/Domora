@@ -3,11 +3,7 @@ push-notifications sicher machen
 
 
 liht-mode fixen
-bild-anzeige im background bei tasks
 bewertung-darstellung+input besser machen
-
-
-neues pimper-icon
 
 texte frecher machen
 

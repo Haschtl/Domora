@@ -510,7 +510,7 @@ export const resources = {
         editEntryDescription: "Passe Name, Preis, Datum und Beteiligte an.",
         saveEntry: "Speichern",
         searchLabel: "Suche",
-        searchPlaceholder: "Suche in Beschreibung",
+        searchPlaceholder: "Suchen...",
         filteredTotal: "{{count}} Einträge, Summe: {{value}}",
         currentPeriodTitle: "Aktuell seit Kassensturz {{date}}",
         auditPeriodTitle: "Kassensturz {{date}}",

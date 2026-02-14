@@ -61,7 +61,7 @@ const supabase = createClient(supabaseUrl, supabaseSecretKey, {
 });
 
 const memberCount = toInt(process.env.DUMMY_MEMBER_COUNT, 5);
-const financeCount = toInt(process.env.DUMMY_FINANCE_COUNT, 72);
+const financeCount = toInt(process.env.DUMMY_FINANCE_COUNT, 400);
 const taskCount = toInt(process.env.DUMMY_TASK_COUNT, 14);
 const shoppingCount = toInt(process.env.DUMMY_SHOPPING_COUNT, 48);
 const cashAuditCount = toInt(process.env.DUMMY_CASH_AUDIT_COUNT, 5);

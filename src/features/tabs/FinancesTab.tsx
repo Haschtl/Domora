@@ -70,6 +70,7 @@ import { createDiceBearAvatarDataUri } from "../../lib/avatar";
 import { formatDateOnly, formatShortDay } from "../../lib/date";
 import { calculateBalancesByMember, calculateSettlementTransfers, splitAmountEvenly } from "../../lib/finance-math";
 import { createMemberLabelGetter, type MemberLabelCase } from "../../lib/member-label";
+import { FinanceEntriesList } from "./components/FinanceEntriesList";
 import { FinanceHistoryCard } from "./components/FinanceHistoryCard";
 import { useFinancesDerivedData } from "./hooks/use-finances-derived-data";
 
@@ -375,6 +376,7 @@ export const FinancesTab = ({
   const [rentFormError, setRentFormError] = useState<string | null>(null);
   const [memberRentFormError, setMemberRentFormError] = useState<string | null>(null);
   const [overviewMemberRentFormError, setOverviewMemberRentFormError] = useState<string | null>(null);
+  const [overviewEntrySearch, setOverviewEntrySearch] = useState("");
   const [savingOverviewMemberId, setSavingOverviewMemberId] = useState<string | null>(null);
   const [receiptUploadError, setReceiptUploadError] = useState<string | null>(null);
   const [previewDescription, setPreviewDescription] = useState("");
@@ -1163,6 +1165,14 @@ export const FinancesTab = ({
         "accusative"
       )
     });
+  const normalizedOverviewSearch = overviewEntrySearch.trim().toLowerCase();
+  const filteredEntriesSinceLastAudit = useMemo(() => {
+    if (!normalizedOverviewSearch) return entriesSinceLastAudit;
+    return entriesSinceLastAudit.filter((entry) => {
+      const haystack = `${entry.description} ${entry.category} ${paidByText(entry)}`.toLowerCase();
+      return haystack.includes(normalizedOverviewSearch);
+    });
+  }, [entriesSinceLastAudit, normalizedOverviewSearch, paidByText]);
   const entryDateText = (entry: FinanceEntry) => formatDateOnly(parseDateFallback(entry), language, parseDateFallback(entry));
   const recurrenceOptions: Array<{ value: FinanceSubscriptionRecurrence; label: string }> = [
     { value: "weekly", label: t("finances.subscriptionRecurrenceWeekly") },
@@ -3493,99 +3503,54 @@ export const FinancesTab = ({
                 </Badge>
               </div>
             </CardHeader>
+            <CardContent>
+              <div className="max-w-sm space-y-1">
+                <Label className="sr-only">
+                  {t("finances.searchLabel")}
+                </Label>
+                <Input
+                  value={overviewEntrySearch}
+                  onChange={(event) => setOverviewEntrySearch(event.target.value)}
+                  placeholder={t("finances.searchPlaceholder")}
+                />
+              </div>
+            </CardContent>
           </Card>
-          {entriesSinceLastAudit.length > 0 ? (
-            <div className="mt-4 space-y-3">
-              {entriesSinceLastAudit.map((entry) => (
-                <Card
-                  key={entry.id}
-                  className="relative z-0 rounded-xl border border-slate-300 bg-white/88 p-3 text-slate-800 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-100 mb-4"
-                >
-                  <CardContent>
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex min-w-0 flex-col gap-1">
-                        <p className="truncate font-medium text-slate-900 dark:text-slate-100">
-                          {entry.description}
-                        </p>
-                        <Badge className="w-fit text-[10px]">
-                          {entry.category}
-                        </Badge>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <div className="flex flex-col items-end gap-1">
-                          {personalEntryDeltaLabel(entry) ? (
-                            <Badge
-                              className={personalEntryDeltaChipClassName(entry)}
-                            >
-                              {personalEntryDeltaLabel(entry)}
-                            </Badge>
-                          ) : null}
-                          <p className="text-xs text-slate-500 dark:text-slate-400">
-                            {moneyLabel(entry.amount)}
-                          </p>
-                        </div>
-                        {canManageFinanceEntry(entry) ? (
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                className="h-8 w-8 p-0"
-                                aria-label={t("finances.entryActions")}
-                                disabled={busy}
-                              >
-                                <MoreHorizontal className="h-4 w-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem
-                                onClick={() => onStartEditEntry(entry)}
-                              >
-                                {t("finances.editEntry")}
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                onClick={() => {
-                                  void onDeleteEntry(entry);
-                                }}
-                                className="text-rose-600 dark:text-rose-300"
-                              >
-                                {t("finances.deleteEntry")}
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        ) : null}
-                      </div>
-                    </div>
-                    <div className="mt-1 flex items-end justify-between gap-2">
-                      <div className="min-w-0">
-                        <p className="text-xs text-slate-500 dark:text-slate-400">
-                          {paidByText(entry)}
-                        </p>
-                        {entry.receipt_image_url ? (
-                          <a
-                            href={entry.receipt_image_url}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="mt-1 inline-flex items-center text-xs text-brand-700 underline decoration-brand-300 underline-offset-2 hover:text-brand-600 dark:text-brand-300 dark:decoration-brand-700"
-                          >
-                            {t("finances.receiptLink")}
-                          </a>
-                        ) : null}
-                      </div>
-                      <p className="shrink-0 text-xs text-slate-500 dark:text-slate-400">
-                        {entryDateText(entry)}
-                      </p>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          ) : (
+          {entriesSinceLastAudit.length > 0 && filteredEntriesSinceLastAudit.length === 0 ? (
+            <p className="mt-4 text-sm text-slate-500 dark:text-slate-400">
+              {t("finances.emptyFiltered")}
+            </p>
+          ) : null}
+          {filteredEntriesSinceLastAudit.length > 0 ? (
+            <FinanceEntriesList
+              entries={filteredEntriesSinceLastAudit}
+              itemClassName="relative z-0 rounded-xl border border-slate-300 bg-white/88 p-3 text-slate-800 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-100"
+              formatMoney={moneyLabel}
+              paidByText={paidByText}
+              entryDateText={entryDateText}
+              receiptImageUrl={(entry) => entry.receipt_image_url}
+              receiptLabel={t("finances.receiptLink")}
+              entryChipText={personalEntryDeltaLabel}
+              entryChipClassName={personalEntryDeltaChipClassName}
+              amountClassName="text-xs text-slate-500 dark:text-slate-400"
+              actionsLabel={t("finances.entryActions")}
+              editLabel={t("finances.editEntry")}
+              deleteLabel={t("finances.deleteEntry")}
+              onEdit={onStartEditEntry}
+              onDelete={(entry) => {
+                void onDeleteEntry(entry);
+              }}
+              canEditEntry={canManageFinanceEntry}
+              canDeleteEntry={canManageFinanceEntry}
+              busy={busy}
+              virtualized
+              virtualHeight={520}
+            />
+          ) : entriesSinceLastAudit.length === 0 ? (
             <p className="mt-4 text-sm text-slate-500 dark:text-slate-400">
               {t("finances.empty")}
             </p>
-          )}
+          ) : null}
         </>
       ) : null}
 

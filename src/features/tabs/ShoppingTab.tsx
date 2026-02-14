@@ -11,7 +11,7 @@ import {
   PointElement,
   Tooltip
 } from "chart.js";
-import { MoreHorizontal, Plus } from "lucide-react";
+import { Loader2, MoreHorizontal, Plus } from "lucide-react";
 import { Bar, Line } from "react-chartjs-2";
 import { useTranslation } from "react-i18next";
 import { Checkbox } from "../../components/ui/checkbox";
@@ -95,6 +95,7 @@ export const ShoppingTab = ({
   const [itemPendingDelete, setItemPendingDelete] = useState<ShoppingItem | null>(null);
   const [itemBeingEdited, setItemBeingEdited] = useState<ShoppingItem | null>(null);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [togglingItemIds, setTogglingItemIds] = useState<Set<string>>(() => new Set());
   const [isMobileComposer, setIsMobileComposer] = useState(() =>
     typeof window !== "undefined" ? window.matchMedia("(max-width: 639px)").matches : false
   );
@@ -130,6 +131,23 @@ export const ShoppingTab = ({
       setRecurrenceUnit("days");
     }
   });
+  const handleToggleItem = async (item: ShoppingItem) => {
+    if (togglingItemIds.has(item.id)) return;
+    setTogglingItemIds((current) => {
+      const next = new Set(current);
+      next.add(item.id);
+      return next;
+    });
+    try {
+      await onToggle(item);
+    } finally {
+      setTogglingItemIds((current) => {
+        const next = new Set(current);
+        next.delete(item.id);
+        return next;
+      });
+    }
+  };
   const editForm = useForm({
     defaultValues: {
       title: "",
@@ -563,14 +581,22 @@ export const ShoppingTab = ({
                 item.done && item.done_at && item.recurrence_interval_value && item.recurrence_interval_unit
                   ? addRecurringIntervalToIso(item.done_at, item.recurrence_interval_value, item.recurrence_interval_unit)
                   : null;
+              const isToggling = togglingItemIds.has(item.id);
 
               return (
                 <li
                   key={item.id}
-                  className="rounded-xl border border-brand-100 bg-brand-50/40 p-3 dark:border-slate-700 dark:bg-slate-800/70"
+                  className={`rounded-xl border border-brand-100 bg-brand-50/40 p-3 transition dark:border-slate-700 dark:bg-slate-800/70 ${
+                    isToggling ? "ring-2 ring-amber-300/80 shadow-[inset_0_0_0_1px_rgba(251,191,36,0.35)] opacity-80 cursor-wait" : ""
+                  }`}
                 >
                   <div className="flex items-center gap-2">
-                    <Checkbox checked={item.done} onCheckedChange={() => onToggle(item)} />
+                    <Checkbox
+                      checked={item.done}
+                      disabled={busy || isToggling}
+                      onCheckedChange={() => void handleToggleItem(item)}
+                    />
+                    {isToggling ? <Loader2 className="h-4 w-4 animate-spin text-amber-500" /> : null}
                     <span
                       className={
                         item.done ? "flex-1 text-slate-400 line-through" : "flex-1 text-slate-800 dark:text-slate-100"
@@ -933,14 +959,22 @@ export const ShoppingTab = ({
               item.done && item.done_at && item.recurrence_interval_value && item.recurrence_interval_unit
                 ? addRecurringIntervalToIso(item.done_at, item.recurrence_interval_value, item.recurrence_interval_unit)
                 : null;
+            const isToggling = togglingItemIds.has(item.id);
 
             return (
               <li
                 key={item.id}
-                className="rounded-xl border border-brand-100 bg-brand-50/40 p-3 dark:border-slate-700 dark:bg-slate-800/70"
+                className={`rounded-xl border border-brand-100 bg-brand-50/40 p-3 transition dark:border-slate-700 dark:bg-slate-800/70 ${
+                  isToggling ? "ring-2 ring-amber-300/80 shadow-[inset_0_0_0_1px_rgba(251,191,36,0.35)] opacity-80 cursor-wait" : ""
+                }`}
               >
                 <div className="flex items-center gap-2">
-                  <Checkbox checked={item.done} onCheckedChange={() => onToggle(item)} />
+                  <Checkbox
+                    checked={item.done}
+                    disabled={busy || isToggling}
+                    onCheckedChange={() => void handleToggleItem(item)}
+                  />
+                  {isToggling ? <Loader2 className="h-4 w-4 animate-spin text-amber-500" /> : null}
                   <span
                     className={
                       item.done ? "flex-1 text-slate-400 line-through" : "flex-1 text-slate-800 dark:text-slate-100"

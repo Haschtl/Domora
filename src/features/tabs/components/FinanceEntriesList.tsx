@@ -13,6 +13,7 @@ import {
 
 interface FinanceEntriesListProps {
   entries: FinanceEntry[];
+  itemClassName?: string;
   formatMoney: (value: number) => string;
   paidByText: (entry: FinanceEntry) => string;
   entryDateText?: (entry: FinanceEntry) => string | null;
@@ -35,6 +36,7 @@ interface FinanceEntriesListProps {
 
 export const FinanceEntriesList = ({
   entries,
+  itemClassName,
   formatMoney,
   paidByText,
   entryDateText,
@@ -63,22 +65,19 @@ export const FinanceEntriesList = ({
   });
 
   const renderEntry = (entry: FinanceEntry) => (
-    <li key={entry.id} className="rounded-xl border border-brand-100 bg-white p-3 dark:border-slate-700 dark:bg-slate-900">
+    <li
+      key={entry.id}
+      className={
+        itemClassName ??
+        "rounded-xl border border-brand-100 bg-white p-3 dark:border-slate-700 dark:bg-slate-900"
+      }
+    >
       <div className="flex items-center justify-between gap-2">
         <div className="flex flex-col gap-1">
           <p className="font-medium text-slate-900 dark:text-slate-100">{entry.description}</p>
           <Badge className="w-fit text-[10px]">{entry.category}</Badge>
         </div>
         <div className="flex items-center gap-1">
-          <div className="flex flex-col items-end gap-1">
-            {entryChipText ? (
-              (() => {
-                const chipText = entryChipText(entry);
-                return chipText ? <Badge className={entryChipClassName?.(entry)}>{chipText}</Badge> : null;
-              })()
-            ) : null}
-            <p className={amountClassName}>{formatMoney(entry.amount)}</p>
-          </div>
           {(onEdit || onDelete) && ((onEdit && (canEditEntry?.(entry) ?? true)) || (onDelete && (canDeleteEntry?.(entry) ?? true))) ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -107,6 +106,15 @@ export const FinanceEntriesList = ({
               </DropdownMenuContent>
             </DropdownMenu>
           ) : null}
+          <div className="flex flex-col items-end gap-1">
+            {entryChipText ? (
+              (() => {
+                const chipText = entryChipText(entry);
+                return chipText ? <Badge className={entryChipClassName?.(entry)}>{chipText}</Badge> : null;
+              })()
+            ) : null}
+            <p className={amountClassName}>{formatMoney(entry.amount)}</p>
+          </div>
         </div>
       </div>
       <div className="mt-1 flex items-end justify-between gap-2">

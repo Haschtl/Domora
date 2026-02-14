@@ -33,7 +33,6 @@ import {
   MoreHorizontal,
   Plus,
   Sparkles as SparklesIcon,
-  Star,
   X
 } from "lucide-react";
 import SparklesEffect from "react-sparkle";
@@ -63,6 +62,7 @@ import { MobileSubpageDialog } from "../../components/ui/mobile-subpage-dialog";
 import { PimpersIcon } from "../../components/pimpers-icon";
 import { PersonSelect } from "../../components/person-select";
 import { SectionPanel } from "../../components/ui/section-panel";
+import { StarRating } from "../../components/ui/star-rating";
 import { Switch } from "../../components/ui/switch";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../../components/ui/tooltip";
 import { useSmartSuggestions } from "../../hooks/use-smart-suggestions";
@@ -2533,7 +2533,7 @@ export const TasksTab = ({
                           </span>
                         </p>
                         <div className="mt-2 flex flex-wrap items-center gap-2">
-                          {entry.rating_count > 0 ? (
+                          {/* {entry.rating_count > 0 ? (
                             <p className="text-xs text-slate-500 dark:text-slate-400">
                               {t("tasks.ratingSummary", {
                                 average: Number(
@@ -2546,43 +2546,22 @@ export const TasksTab = ({
                             <p className="text-xs text-slate-500 dark:text-slate-400">
                               {t("tasks.ratingNoVotes")}
                             </p>
-                          )}
+                          )} */}
                           {entry.user_id !== userId &&
                           latestCompletionIdByTask.get(entry.task_id) ===
                             entry.id ? (
-                            <div className="ml-auto flex items-center gap-0.5">
-                              {[1, 2, 3, 4, 5].map((starValue) => {
-                                const isSelected =
-                                  (entry.my_rating ?? 0) >= starValue;
-                                return (
-                                  <button
-                                    key={`${entry.id}-rate-${starValue}`}
-                                    type="button"
-                                    className={`rounded p-1 transition ${
-                                      isSelected
-                                        ? "text-amber-500 hover:text-amber-600"
-                                        : "text-slate-300 hover:text-amber-400 dark:text-slate-600"
-                                    }`}
-                                    onClick={() =>
-                                      void onRateTaskCompletion(
-                                        entry.id,
-                                        starValue,
-                                      )
-                                    }
-                                    disabled={busy}
-                                    aria-label={t("tasks.rateAction", {
-                                      rating: starValue,
-                                    })}
-                                    title={t("tasks.rateAction", {
-                                      rating: starValue,
-                                    })}
-                                  >
-                                    <Star
-                                      className={`h-4 w-4 ${isSelected ? "fill-current" : ""}`}
-                                    />
-                                  </button>
-                                );
-                              })}
+                            <div className="ml-auto">
+                              <StarRating
+                                value={entry.my_rating ?? 0}
+                                displayValue={entry.rating_average ?? 0}
+                                disabled={busy}
+                                onChange={(rating) =>
+                                  void onRateTaskCompletion(entry.id, rating)
+                                }
+                                getLabel={(rating) =>
+                                  t("tasks.rateAction", { rating })
+                                }
+                              />
                             </div>
                           ) : null}
                         </div>
