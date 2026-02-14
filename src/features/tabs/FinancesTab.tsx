@@ -151,21 +151,23 @@ const parseOptionalNumber = (value: string) => {
   return Number.isFinite(parsed) ? parsed : Number.NaN;
 };
 
-const renderSparkleIcon = (Icon: (props: { className?: string }) => JSX.Element) => {
+const renderSparkleIcon = (
+  Icon: (props: { className?: string }) => React.ReactNode,
+) => {
   const icon = <Icon className="h-3.5 w-3.5" />;
   if (Icon !== SparklesIcon) return icon;
   return (
     <span className="relative inline-flex h-4 w-4 items-center justify-center">
       {icon}
-        <SparklesEffect
-          color="currentColor"
-          count={6}
-          minSize={2}
-          maxSize={4}
-          overflowPx={4}
-          fadeOutSpeed={8}
-          flicker={false}
-        />
+      <SparklesEffect
+        color="currentColor"
+        count={6}
+        minSize={2}
+        maxSize={4}
+        overflowPx={4}
+        fadeOutSpeed={8}
+        flicker={false}
+      />
     </span>
   );
 };
