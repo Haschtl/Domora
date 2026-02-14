@@ -656,7 +656,7 @@ export const FinancesTab = ({
     return household.apartment_size_sqm - totalRoomAreaSqm;
   }, [household.apartment_size_sqm, totalRoomAreaSqm]);
   const formatSqm = (value: number | null) =>
-    value === null ? "-" : `${Number(value.toFixed(2)).toString()} qm`;
+    value === null ? "-" : `${Number(value.toFixed(2)).toString()} m²`;
   const rentColdPerSqm = useMemo(() => {
     if (household.apartment_size_sqm === null || household.apartment_size_sqm <= 0 || household.cold_rent_monthly === null) return null;
     return household.cold_rent_monthly / household.apartment_size_sqm;
@@ -811,7 +811,7 @@ export const FinancesTab = ({
       grandTotal: sumNullable(grandTotalValues)
     };
   }, [costTableData, members]);
-  const formatMoneyPerSqm = (value: number | null) => (value === null ? "-" : `${moneyLabel(value)}/qm`);
+  const formatMoneyPerSqm = (value: number | null) => (value === null ? "-" : `${moneyLabel(value)}/m²`);
   const personalEntryDelta = (entry: FinanceEntry) => {
     const payerIds = entry.paid_by_user_ids.length > 0 ? entry.paid_by_user_ids : [entry.paid_by];
     const beneficiaryIds = entry.beneficiary_user_ids.length > 0 ? entry.beneficiary_user_ids : householdMemberIds;
@@ -1647,7 +1647,7 @@ export const FinancesTab = ({
                     <div className="space-y-1">
                       <Label>{t("settings.householdSizeLabel")}</Label>
                       <InputWithSuffix
-                        suffix="qm"
+                        suffix="m²"
                         type="number"
                         min="0.1"
                         step="0.1"
@@ -1774,7 +1774,7 @@ export const FinancesTab = ({
                     <div className="space-y-1">
                       <Label>{t("settings.roomSizeLabel")}</Label>
                       <InputWithSuffix
-                        suffix="qm"
+                        suffix="m²"
                         type="number"
                         min="0.1"
                         step="0.1"
