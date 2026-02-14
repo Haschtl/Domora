@@ -4,7 +4,12 @@ import { getMessaging, isSupported, onMessage } from "firebase/messaging";
 import { toast } from "react-toastify";
 import { firebaseConfig, isFirebaseConfigured } from "../lib/firebase-config";
 
-export const useForegroundPush = (enabled: boolean) => {
+type ForegroundPushOptions = {
+  enabled: boolean;
+  onNavigate?: (data: Record<string, string>) => void;
+};
+
+export const useForegroundPush = ({ enabled, onNavigate }: ForegroundPushOptions) => {
   useEffect(() => {
     if (!enabled) return;
     if (!isFirebaseConfigured) return;
@@ -26,11 +31,22 @@ export const useForegroundPush = (enabled: boolean) => {
       unsubscribe = onMessage(messaging, (payload) => {
         const title = payload.notification?.title ?? "Domora";
         const body = payload.notification?.body ?? "";
+        const data = payload.data ?? {};
+        const handleClick =
+          onNavigate && Object.keys(data).length > 0
+            ? () => {
+                onNavigate(data as Record<string, string>);
+              }
+            : undefined;
         toast.info(
           <div>
             <p className="text-sm font-semibold">{title}</p>
             {body ? <p className="text-xs text-slate-200/90">{body}</p> : null}
-          </div>
+          </div>,
+          {
+            onClick: handleClick,
+            className: handleClick ? "cursor-pointer" : undefined
+          }
         );
       });
     };

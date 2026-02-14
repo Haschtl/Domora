@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import { AnimatePresence, motion } from "framer-motion";
 import {
@@ -20,6 +20,7 @@ import { toast } from "react-toastify";
 import { isSupabaseConfigured } from "./lib/supabase";
 import { useForegroundPush } from "./hooks/useForegroundPush";
 import { isDueNow } from "./lib/date";
+import { getForegroundPushRoute } from "./lib/push-navigation";
 import type { AppTab } from "./lib/types";
 import { Button } from "./components/ui/button";
 import { Card, CardDescription, CardHeader, CardTitle } from "./components/ui/card";
@@ -231,7 +232,17 @@ const App = () => {
     onRemoveMember
   } = useWorkspaceController();
 
-  useForegroundPush(notificationPermission === "granted");
+  const handleForegroundPush = useCallback(
+    (data: Record<string, string>) => {
+      navigate({ to: getForegroundPushRoute(data) });
+    },
+    [navigate]
+  );
+
+  useForegroundPush({
+    enabled: notificationPermission === "granted",
+    onNavigate: handleForegroundPush
+  });
 
   const tab = useMemo(() => resolveTabFromPathname(location.pathname), [location.pathname]);
   const paymentRedirectStatus = useMemo<"success" | "cancel" | null>(() => {

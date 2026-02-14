@@ -18,14 +18,14 @@ serve(async (req) => {
   }
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
-  const supabasePublishableKey = Deno.env.get("SUPABASE_PUBLISHABLE_KEY");
-  if (!supabaseUrl || !supabasePublishableKey) {
+  const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY");
+  if (!supabaseUrl || !supabaseAnonKey) {
     return new Response("Missing Supabase env", { status: 500 });
   }
 
   const authHeader = req.headers.get("Authorization") ?? "";
-  const supabase = createClient(supabaseUrl, supabasePublishableKey, {
-    global: { headers: { Authorization: authHeader } }
+  const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+    global: { headers: { Authorization: authHeader } },
   });
 
   const { data: authData, error: authError } = await supabase.auth.getUser();

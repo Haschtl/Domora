@@ -8,20 +8,38 @@ Domora ist ein WG-Organizer als Web-App (PWA) mit Supabase-Backend.
 
 ## Inhalt
 
-1. [Highlights](#highlights)
-2. [Tech Stack](#tech-stack)
-3. [Projektstruktur](#projektstruktur)
-4. [Voraussetzungen](#voraussetzungen)
-5. [Quickstart](#quickstart)
-6. [Konfiguration](#konfiguration)
-7. [Datenbank und Security](#datenbank-und-security)
-8. [Entwicklung](#entwicklung)
-9. [Tests und Qualitaet](#tests-und-qualitaet)
-10. [Dummy-Daten](#dummy-daten)
-11. [PWA](#pwa)
-12. [Android (Capacitor)](#android-capacitor)
-13. [Deployment und CI/CD](#deployment-und-cicd)
-14. [Troubleshooting](#troubleshooting)
+- [Domora](#domora)
+  - [Inhalt](#inhalt)
+  - [Highlights](#highlights)
+    - [Auth und Haushalte](#auth-und-haushalte)
+    - [Home](#home)
+    - [Shopping](#shopping)
+    - [Tasks](#tasks)
+    - [Finanzen](#finanzen)
+    - [Settings](#settings)
+  - [Tech Stack](#tech-stack)
+  - [Projektstruktur](#projektstruktur)
+  - [Voraussetzungen](#voraussetzungen)
+  - [Quickstart](#quickstart)
+  - [Konfiguration](#konfiguration)
+    - [`.env` Variablen](#env-variablen)
+    - [Supabase Edge Functions (Push)](#supabase-edge-functions-push)
+  - [Datenbank und Security](#datenbank-und-security)
+    - [Wichtige Security-Mechanismen](#wichtige-security-mechanismen)
+    - [Performance-Hinweise im Schema](#performance-hinweise-im-schema)
+  - [Entwicklung](#entwicklung)
+    - [Wichtige Skripte](#wichtige-skripte)
+    - [i18n](#i18n)
+  - [Tests und Qualitaet](#tests-und-qualitaet)
+  - [Dummy-Daten](#dummy-daten)
+  - [PWA](#pwa)
+  - [Android (Capacitor)](#android-capacitor)
+  - [Deployment und CI/CD](#deployment-und-cicd)
+  - [Troubleshooting](#troubleshooting)
+    - ["Supabase nicht konfiguriert"](#supabase-nicht-konfiguriert)
+    - [Join funktioniert nicht](#join-funktioniert-nicht)
+    - [Schema-Update greift nicht](#schema-update-greift-nicht)
+    - [Push/OCR funktionieren nicht](#pushocr-funktionieren-nicht)
 
 ## Highlights
 
@@ -176,7 +194,7 @@ In Supabase **Project Settings → Functions → Secrets** setzen:
 
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY`
-- `SUPABASE_PUBLISHABLE_KEY` (entspricht dem frueheren `anon`-Key)
+- `SUPABASE_ANON_KEY`
 - `FCM_PROJECT_ID`
 - `FCM_SERVICE_ACCOUNT_JSON` (voller JSON-String des Firebase Service Accounts)
 

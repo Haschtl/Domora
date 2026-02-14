@@ -9,7 +9,9 @@ export const firebaseConfig = {
   authDomain: normalizeEnv(import.meta.env.VITE_FIREBASE_AUTH_DOMAIN),
   projectId: normalizeEnv(import.meta.env.VITE_FIREBASE_PROJECT_ID),
   messagingSenderId: normalizeEnv(import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID),
-  appId: normalizeEnv(import.meta.env.VITE_FIREBASE_APP_ID)
+  appId: normalizeEnv(import.meta.env.VITE_FIREBASE_APP_ID),
+  storageBucket: normalizeEnv(import.meta.env.VITE_FIREBASE_STORAGE_BUCKET),
+  measurementId: normalizeEnv(import.meta.env.VITE_FIREBASE_MEASUREMENT_ID),
 };
 
 export const vapidKey = normalizeEnv(import.meta.env.VITE_FIREBASE_VAPID_KEY);

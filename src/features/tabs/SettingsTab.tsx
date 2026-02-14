@@ -107,6 +107,21 @@ const normalizeUserColor = (value: string) => {
   return /^#[0-9a-f]{6}$/.test(trimmed) ? trimmed : "#4f46e5";
 };
 
+const serializePushPreferences = (prefs: PushPreferences) => {
+  const topics = [...(prefs.topics ?? [])].sort();
+  const quiet = prefs.quiet_hours ?? {};
+  return JSON.stringify({
+    enabled: prefs.enabled ?? true,
+    topics,
+    quiet_hours: {
+      start: quiet.start ?? "",
+      end: quiet.end ?? "",
+      timezone: quiet.timezone ?? "",
+      offsetMinutes: quiet.offsetMinutes ?? null
+    }
+  });
+};
+
 export const SettingsTab = ({
   section = "me",
   household,
@@ -142,6 +157,7 @@ export const SettingsTab = ({
   const [householdUploadError, setHouseholdUploadError] = useState<string | null>(null);
   const [inviteCopied, setInviteCopied] = useState(false);
   const [pushPreferences, setPushPreferences] = useState<PushPreferences | null>(null);
+  const [pushPreferencesSnapshot, setPushPreferencesSnapshot] = useState<string | null>(null);
   const [pushPreferencesBusy, setPushPreferencesBusy] = useState(false);
   const [pushPreferencesError, setPushPreferencesError] = useState<string | null>(null);
   const profileUploadInputRef = useRef<HTMLInputElement | null>(null);
@@ -264,7 +280,10 @@ export const SettingsTab = ({
     void (async () => {
       try {
         const prefs = await getPushPreferences(household.id, userId);
-        if (isActive) setPushPreferences(prefs);
+        if (isActive) {
+          setPushPreferences(prefs);
+          setPushPreferencesSnapshot(serializePushPreferences(prefs));
+        }
       } catch (error) {
         if (isActive) {
           const message = error instanceof Error ? error.message : t("app.unknownError");
@@ -408,6 +427,15 @@ export const SettingsTab = ({
     [t]
   );
   const isPushPreferencesReady = Boolean(pushPreferences);
+  const pushPreferencesDirty = Boolean(
+    pushPreferences && pushPreferencesSnapshot && serializePushPreferences(pushPreferences) !== pushPreferencesSnapshot
+  );
+  const quietHoursStart = pushPreferences?.quiet_hours?.start ?? "";
+  const quietHoursEnd = pushPreferences?.quiet_hours?.end ?? "";
+  const quietHoursPartial = Boolean(quietHoursStart) !== Boolean(quietHoursEnd);
+  const quietHoursInvalid = quietHoursPartial || (quietHoursStart && quietHoursEnd && quietHoursStart === quietHoursEnd);
+  const pushPreferencesControlsDisabled = pushPreferencesBusy || !(pushPreferences?.enabled ?? true);
+  const pushPreferencesSaveDisabled = pushPreferencesBusy || !pushPreferencesDirty || quietHoursInvalid;
   const inviteUrl = useMemo(() => {
     if (typeof window === "undefined") return `/?invite=${encodeURIComponent(household.invite_code)}`;
     return `${window.location.origin}/?invite=${encodeURIComponent(household.invite_code)}`;
@@ -453,6 +481,7 @@ export const SettingsTab = ({
         topics: pushPreferences.topics ?? []
       });
       setPushPreferences(updated);
+      setPushPreferencesSnapshot(serializePushPreferences(updated));
     } catch (error) {
       const message = error instanceof Error ? error.message : t("app.unknownError");
       setPushPreferencesError(message);
@@ -707,7 +736,7 @@ export const SettingsTab = ({
                       <p className="text-xs font-semibold text-slate-600 dark:text-slate-300">
                         {t("settings.pushPreferencesTopics")}
                       </p>
-                      <div className="grid gap-2 sm:grid-cols-2">
+                      <div className={`grid gap-2 sm:grid-cols-2 ${pushPreferencesControlsDisabled ? "opacity-60" : ""}`}>
                         {pushTopics.map((topic) => {
                           const isChecked = (pushPreferences?.topics ?? []).includes(topic.id);
                           return (
@@ -728,7 +757,7 @@ export const SettingsTab = ({
                                     };
                                   });
                                 }}
-                                disabled={pushPreferencesBusy}
+                                disabled={pushPreferencesControlsDisabled}
                               />
                               <span className="text-xs text-slate-700 dark:text-slate-200">{topic.label}</span>
                             </label>
@@ -740,7 +769,7 @@ export const SettingsTab = ({
                       <p className="text-xs font-semibold text-slate-600 dark:text-slate-300">
                         {t("settings.pushQuietHoursTitle")}
                       </p>
-                      <div className="grid gap-2 sm:grid-cols-2">
+                      <div className={`grid gap-2 sm:grid-cols-2 ${pushPreferencesControlsDisabled ? "opacity-60" : ""}`}>
                         <div className="space-y-1">
                           <Label className="text-xs">{t("settings.pushQuietHoursStart")}</Label>
                           <Input
@@ -758,7 +787,7 @@ export const SettingsTab = ({
                                 }
                               }));
                             }}
-                            disabled={pushPreferencesBusy}
+                            disabled={pushPreferencesControlsDisabled}
                           />
                         </div>
                         <div className="space-y-1">
@@ -778,10 +807,15 @@ export const SettingsTab = ({
                                 }
                               }));
                             }}
-                            disabled={pushPreferencesBusy}
+                            disabled={pushPreferencesControlsDisabled}
                           />
                         </div>
                       </div>
+                      {quietHoursInvalid ? (
+                        <p className="text-xs text-amber-600 dark:text-amber-300">
+                          {t("settings.pushQuietHoursInvalid")}
+                        </p>
+                      ) : null}
                     </div>
                     {pushPreferencesError ? (
                       <p className="text-xs text-rose-600 dark:text-rose-300">{pushPreferencesError}</p>
@@ -791,7 +825,7 @@ export const SettingsTab = ({
                         type="button"
                         size="sm"
                         onClick={() => void savePushPreferences()}
-                        disabled={pushPreferencesBusy}
+                        disabled={pushPreferencesSaveDisabled}
                       >
                         {t("settings.pushPreferencesSave")}
                       </Button>
