@@ -36,7 +36,7 @@ Domora ist ein WG-Organizer mit React, Tailwind, Radix-UI-Primitives, Supabase u
   - Kassensturz-Request
 - Settings Tab
   - Client-Settings (Theme + Sprache)
-  - WG-Verwaltung (Ausziehen, WG-Bild-Upload, User-Bild-Upload, Adresse, Waehrung, Wohnungs-qm, Warm-Miete)
+  - WG-Verwaltung (Ausziehen, WG-Banner-Upload, User-Bild-Upload, Adresse, Waehrung, Wohnungs-qm, Warm-Miete)
   - Mitglied-Werte (Zimmer-qm + Gemeinschaftsfaktor)
 
 ## Setup

@@ -124,11 +124,30 @@ export const ShoppingTab = ({
       }),
     [members, t, userId]
   );
+  const latestItemByTitle = useMemo(() => {
+    const byTitle = new Map<string, ShoppingItem>();
+    const sortedItems = [...items].sort((a, b) => b.created_at.localeCompare(a.created_at));
+    sortedItems.forEach((item) => {
+      const key = item.title.trim().toLocaleLowerCase();
+      if (!key || byTitle.has(key)) return;
+      byTitle.set(key, item);
+    });
+    return byTitle;
+  }, [items]);
 
   const applySuggestion = (suggestion: ShoppingSuggestion) => {
     form.setFieldValue("title", suggestion.title);
-    if (!form.state.values.tagsInput.trim() && suggestion.tags.length > 0) {
-      form.setFieldValue("tagsInput", suggestion.tags.join(", "));
+    const matchedItem = latestItemByTitle.get(suggestion.title.trim().toLocaleLowerCase());
+
+    const tagsToApply = matchedItem ? matchedItem.tags : suggestion.tags;
+    form.setFieldValue("tagsInput", tagsToApply.join(", "));
+
+    if (matchedItem?.recurrence_interval_value && matchedItem.recurrence_interval_unit) {
+      form.setFieldValue("recurrenceValue", String(matchedItem.recurrence_interval_value));
+      setRecurrenceUnit(matchedItem.recurrence_interval_unit);
+    } else {
+      form.setFieldValue("recurrenceValue", "");
+      setRecurrenceUnit("days");
     }
   };
   const {
@@ -179,8 +198,6 @@ export const ShoppingTab = ({
       values
     };
   }, [completions, language]);
-  const recurrenceUnitLabel =
-    unitOptions.find((option) => option.id === recurrenceUnit)?.label ?? t("shopping.recurrenceUnitDays");
   const showList = section === "list";
   const showHistory = section === "history";
 
@@ -278,43 +295,43 @@ export const ShoppingTab = ({
                 </div>
               )}
             />
-            <div className="grid grid-cols-[1fr_auto] gap-2">
+            <div className="space-y-1">
               <form.Field
                 name="recurrenceValue"
                 children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
                   <div className="space-y-1">
                     <Label>{t("shopping.recurrenceValueLabel")}</Label>
                     <InputWithSuffix
-                      suffix={recurrenceUnitLabel}
+                      suffix={
+                        <Select
+                          value={recurrenceUnit}
+                          onValueChange={(value: string) => setRecurrenceUnit(value as ShoppingRecurrenceUnit)}
+                        >
+                          <SelectTrigger className="h-7 w-[110px] border-brand-200 bg-white/95 px-2 text-xs dark:border-slate-700 dark:bg-slate-900">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {unitOptions.map((option) => (
+                              <SelectItem key={option.id} value={option.id}>
+                                {option.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      }
                       type="number"
                       min="1"
                       inputMode="numeric"
                       value={field.state.value}
                       onChange={(event) => field.handleChange(event.target.value)}
                       placeholder={t("shopping.recurrenceValuePlaceholder")}
-                      inputClassName="pr-16"
+                      interactiveSuffix
+                      suffixContainerClassName="right-1"
+                      inputClassName="pr-[7.75rem]"
                     />
                   </div>
                 )}
               />
-              <div className="space-y-1">
-                <Label>{t("shopping.recurrenceUnitLabel")}</Label>
-                <Select
-                  value={recurrenceUnit}
-                  onValueChange={(value: string) => setRecurrenceUnit(value as ShoppingRecurrenceUnit)}
-                >
-                  <SelectTrigger className="w-[110px]">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {unitOptions.map((option) => (
-                      <SelectItem key={option.id} value={option.id}>
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
             </div>
           </div>
           </form>

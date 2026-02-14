@@ -24,6 +24,20 @@ const basePath = detectBasePath();
 
 export default defineConfig({
   base: basePath,
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (!id.includes("node_modules")) return undefined;
+          if (id.includes("@tsparticles/")) return "vendor-particles";
+          if (id.includes("chart.js") || id.includes("react-chartjs-2")) return "vendor-charts";
+          if (id.includes("react-markdown") || id.includes("remark-gfm")) return "vendor-markdown";
+          if (id.includes("@supabase/supabase-js")) return "vendor-supabase";
+          return undefined;
+        }
+      }
+    }
+  },
   plugins: [
     react(),
     VitePWA({

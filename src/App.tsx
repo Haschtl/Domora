@@ -17,7 +17,6 @@ import { useTranslation } from "react-i18next";
 import { toast } from "react-toastify";
 import { isSupabaseConfigured } from "./lib/supabase";
 import type { AppTab } from "./lib/types";
-import { AppParticlesBackground } from "./components/app-particles-background";
 import { Card, CardDescription, CardHeader, CardTitle } from "./components/ui/card";
 import { useWorkspaceController } from "./hooks/useWorkspaceController";
 
@@ -35,6 +34,9 @@ const FinancesTab = lazy(() =>
 );
 const SettingsTab = lazy(() =>
   import("./features/tabs/SettingsTab").then((module) => ({ default: module.SettingsTab }))
+);
+const AppParticlesBackground = lazy(() =>
+  import("./components/app-particles-background").then((module) => ({ default: module.AppParticlesBackground }))
 );
 
 const tabPathMap: Record<AppTab, string> = {
@@ -327,7 +329,9 @@ const App = () => {
 
   return (
     <div className="relative min-h-screen">
-      <AppParticlesBackground />
+      <Suspense fallback={null}>
+        <AppParticlesBackground />
+      </Suspense>
       <div className="relative z-10 mx-auto min-h-screen w-full max-w-7xl p-4 pb-10 text-slate-900 dark:text-slate-100 sm:p-6">
       {!isSupabaseConfigured ? (
         <Card className="mb-4 border border-amber-200 bg-amber-50/80 dark:border-amber-900 dark:bg-amber-950/60">

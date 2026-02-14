@@ -129,3 +129,60 @@ html:not(.dark) .text-brand-800 {
   background: var(--slider-thumb);
   box-shadow: 0 1px 6px rgba(15, 23, 42, 0.28);
 }
+
+.dark .mdxeditor {
+  --basePageBg: #0b1220;
+  --baseBase: #0f172a;
+  --baseBgSubtle: #111f33;
+  --baseBg: #16243a;
+  --baseBgHover: #1b2e47;
+  --baseBgActive: #213652;
+  --baseLine: #2a3d58;
+  --baseBorder: #334155;
+  --baseBorderHover: #475569;
+  --baseSolid: #94a3b8;
+  --baseSolidHover: #cbd5e1;
+  --baseText: #cbd5e1;
+  --baseTextContrast: #f8fafc;
+
+  --accentBase: #062623;
+  --accentBgSubtle: #07312d;
+  --accentBg: #0b3b36;
+  --accentBgHover: #0f4a43;
+  --accentBgActive: #136156;
+  --accentLine: #1b7c6f;
+  --accentBorder: #15927f;
+  --accentBorderHover: #14b8a6;
+  --accentSolid: #14b8a6;
+  --accentSolidHover: #2dd4bf;
+  --accentText: #5eead4;
+  --accentTextContrast: #052e2b;
+}
+
+.dark .mdxeditor .cm-editor {
+  background-color: #0b1220;
+  color: #e2e8f0;
+}
+
+.dark .mdxeditor .cm-gutters {
+  background-color: #0f172a;
+  border-right-color: #334155;
+}
+
+/* Keep MDX editor overlays above app cards/sticky layers */
+[class*="_tooltipContent_"],
+[class*="_toolbarNodeKindSelectContainer_"],
+[class*="_toolbarButtonDropdownContainer_"],
+[class*="_toolbarCodeBlockLanguageSelectContent_"],
+[class*="_selectContainer_"],
+[class*="_popoverContent_"],
+[class*="_linkDialogPopoverContent_"],
+[class*="_tableColumnEditorPopoverContent_"],
+[class*="_dialogContent_"],
+[class*="_largeDialogContent_"] {
+  z-index: 90 !important;
+}
+
+[class*="_dialogOverlay_"] {
+  z-index: 89 !important;
+}

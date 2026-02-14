@@ -237,6 +237,7 @@ export const FinancesTab = ({
 }: FinancesTabProps) => {
   const { t, i18n } = useTranslation();
   const categorySuggestionsListId = useId();
+  const entryNameSuggestionsListId = useId();
   const [auditDialogOpen, setAuditDialogOpen] = useState(false);
   const [archiveFilterDialogOpen, setArchiveFilterDialogOpen] = useState(false);
   const [editEntryDialogOpen, setEditEntryDialogOpen] = useState(false);
@@ -622,6 +623,30 @@ export const FinancesTab = ({
     return createDiceBearAvatarDataUri(seed);
   };
   const moneyLabel = (value: number) => formatMoney(value, locale);
+  const reimbursementPreviewSummary = useMemo(() => {
+    const positiveEntries = reimbursementPreview.filter((entry) => entry.value > 0.004);
+    if (positiveEntries.length === 0) return null;
+
+    const memberIds = [...new Set(positiveEntries.map((entry) => entry.memberId))];
+    const totalAmount = positiveEntries.reduce((sum, entry) => sum + entry.value, 0);
+    const amountLabel = moneyLabel(totalAmount);
+
+    if (memberIds.length === 1) {
+      const memberId = memberIds[0];
+      if (memberId === userId) {
+        return t("finances.reimbursementYou", { amount: amountLabel });
+      }
+      return t("finances.reimbursementSingle", {
+        member: memberLabel(memberId),
+        amount: amountLabel
+      });
+    }
+
+    return t("finances.reimbursementGroup", {
+      members: memberIds.map((memberId) => memberLabel(memberId)).join(", "),
+      amount: amountLabel
+    });
+  }, [memberLabel, moneyLabel, reimbursementPreview, t, userId]);
   const settlementTransfers = useMemo(() => calculateSettlementTransfers(balancesByMember), [balancesByMember]);
   const householdMemberIds = useMemo(() => [...new Set(members.map((member) => member.user_id))], [members]);
   const allMembersLabel = t("finances.allMembers");
@@ -869,6 +894,45 @@ export const FinancesTab = ({
 
     return [...byKey.values()].sort((left, right) => left.localeCompare(right, language));
   }, [entries, language, subscriptions]);
+  const entryNameSuggestions = useMemo(() => {
+    const byKey = new Map<string, string>();
+    entries.forEach((entry) => {
+      const normalized = entry.description.trim();
+      if (!normalized) return;
+      const key = normalized.toLocaleLowerCase(language);
+      if (!byKey.has(key)) byKey.set(key, normalized);
+    });
+    return [...byKey.values()].sort((left, right) => left.localeCompare(right, language));
+  }, [entries, language]);
+  const latestEntryByDescription = useMemo(() => {
+    const byKey = new Map<string, FinanceEntry>();
+    const sortedEntries = [...entries].sort((left, right) => right.created_at.localeCompare(left.created_at));
+    sortedEntries.forEach((entry) => {
+      const key = entry.description.trim().toLocaleLowerCase(language);
+      if (!key || byKey.has(key)) return;
+      byKey.set(key, entry);
+    });
+    return byKey;
+  }, [entries, language]);
+  const tryAutofillNewEntryFromDescription = (descriptionValue: string) => {
+    const normalized = descriptionValue.trim().toLocaleLowerCase(language);
+    if (!normalized) return;
+    const matchedEntry = latestEntryByDescription.get(normalized);
+    if (!matchedEntry) return;
+
+    const paidByUserIds = matchedEntry.paid_by_user_ids.length > 0 ? matchedEntry.paid_by_user_ids : [matchedEntry.paid_by];
+    const beneficiaryUserIds =
+      matchedEntry.beneficiary_user_ids.length > 0
+        ? matchedEntry.beneficiary_user_ids
+        : members.map((member) => member.user_id);
+    const entryDate = matchedEntry.entry_date ?? matchedEntry.created_at.slice(0, 10);
+
+    addEntryForm.setFieldValue("amount", String(matchedEntry.amount));
+    addEntryForm.setFieldValue("category", matchedEntry.category || "general");
+    addEntryForm.setFieldValue("paidByUserIds", paidByUserIds);
+    addEntryForm.setFieldValue("beneficiaryUserIds", beneficiaryUserIds);
+    addEntryForm.setFieldValue("entryDate", entryDate);
+  };
   const subscriptionParticipantsText = (subscription: FinanceSubscription) =>
     t("finances.subscriptionParticipants", {
       paidBy: formatMemberGroupLabel(subscription.paid_by_user_ids, "dative"),
@@ -1159,8 +1223,16 @@ export const FinancesTab = ({
                           <Label>{t("finances.entryNameLabel")}</Label>
                           <Input
                             value={field.state.value}
-                            onChange={(event) => field.handleChange(event.target.value)}
+                            onChange={(event) => {
+                              const nextValue = event.target.value;
+                              field.handleChange(nextValue);
+                              tryAutofillNewEntryFromDescription(nextValue);
+                            }}
+                            onBlur={(event) => {
+                              tryAutofillNewEntryFromDescription(event.target.value);
+                            }}
                             placeholder={t("finances.descriptionPlaceholder")}
+                            list={entryNameSuggestions.length > 0 ? entryNameSuggestionsListId : undefined}
                             required
                           />
                         </div>
@@ -1235,16 +1307,9 @@ export const FinancesTab = ({
                   </div>
                 </form>
 
-                {reimbursementPreview.length > 0 ? (
+                {reimbursementPreviewSummary ? (
                   <p className="mt-3 text-sm text-slate-600 dark:text-slate-300">
-                    {reimbursementPreview
-                      .map((entry) =>
-                        t("finances.reimbursementLine", {
-                          member: memberLabel(entry.memberId),
-                          amount: moneyLabel(entry.value)
-                        })
-                      )
-                      .join(" • ")}
+                    {reimbursementPreviewSummary}
                   </p>
                 ) : null}
               </CardContent>
@@ -2232,6 +2297,7 @@ export const FinancesTab = ({
                     value={field.state.value}
                     onChange={(event) => field.handleChange(event.target.value)}
                     placeholder={t("finances.descriptionPlaceholder")}
+                    list={entryNameSuggestions.length > 0 ? entryNameSuggestionsListId : undefined}
                     required
                   />
                 </div>
@@ -2300,6 +2366,13 @@ export const FinancesTab = ({
         <datalist id={categorySuggestionsListId}>
           {categorySuggestions.map((category) => (
             <option key={category} value={category} />
+          ))}
+        </datalist>
+      ) : null}
+      {entryNameSuggestions.length > 0 ? (
+        <datalist id={entryNameSuggestionsListId}>
+          {entryNameSuggestions.map((name) => (
+            <option key={name} value={name} />
           ))}
         </datalist>
       ) : null}

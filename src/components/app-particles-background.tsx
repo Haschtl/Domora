@@ -38,16 +38,16 @@ export const AppParticlesBackground = () => {
       fpsLimit: 60,
       pauseOnOutsideViewport: true,
       particles: {
-        number: { value: resolvedTheme === "dark" ? 26 : 30, density: { enable: true, area: 1000 } },
+        number: { value: resolvedTheme === "dark" ? 30 : 34, density: { enable: true, area: 1000 } },
         color: { value: resolvedTheme === "dark" ? ["#22c55e", "#0ea5a4", "#94a3b8"] : ["#0f766e", "#14b8a6", "#0d9488"] },
         shape: { type: ["circle", "square"] },
-        opacity: { value: resolvedTheme === "dark" ? 0.17 : 0.14 },
+        opacity: { value: resolvedTheme === "dark" ? 0.2 : 0.18 },
         size: { value: { min: 1, max: 3 } },
         links: {
           enable: true,
           distance: 140,
           color: resolvedTheme === "dark" ? "#1f3a35" : "#8dd8cb",
-          opacity: resolvedTheme === "dark" ? 0.12 : 0.16,
+          opacity: resolvedTheme === "dark" ? 0.16 : 0.2,
           width: 1
         },
         move: {
@@ -64,13 +64,13 @@ export const AppParticlesBackground = () => {
           onHover: {
             enable: !reduceMotion,
             mode: "grab",
-            parallax: { enable: true, force: 18, smooth: 14 }
+            parallax: { enable: true, force: 7, smooth: 30 }
           }
         },
         modes: {
           grab: {
-            distance: 120,
-            links: { opacity: 0.2 }
+            distance: 90,
+            links: { opacity: 0.18 }
           }
         }
       }
@@ -81,7 +81,7 @@ export const AppParticlesBackground = () => {
   if (!engineReady) return null;
 
   return (
-    <div className="pointer-events-none fixed inset-0 z-0 opacity-90">
+    <div className="pointer-events-none fixed inset-0 z-0 opacity-95">
       <Particles id="domora-particles" options={options} />
     </div>
   );

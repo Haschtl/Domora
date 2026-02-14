@@ -6,6 +6,7 @@ import { useTranslation } from "react-i18next";
 import QRCode from "react-qr-code";
 import type { Household, HouseholdMember, UpdateHouseholdInput } from "../../lib/types";
 import { createDiceBearAvatarDataUri } from "../../lib/avatar";
+import { createTrianglifyBannerBackground } from "../../lib/banner";
 import { createMemberLabelGetter } from "../../lib/member-label";
 import { ThemeLanguageControls } from "../../components/theme-language-controls";
 import { Button } from "../../components/ui/button";
@@ -19,7 +20,6 @@ import {
   DialogTitle,
   DialogTrigger
 } from "../../components/ui/dialog";
-import { FileUploadButton } from "../../components/ui/file-upload-button";
 import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
@@ -117,6 +117,7 @@ export const SettingsTab = ({
   const [householdUploadError, setHouseholdUploadError] = useState<string | null>(null);
   const [inviteCopied, setInviteCopied] = useState(false);
   const profileUploadInputRef = useRef<HTMLInputElement | null>(null);
+  const householdUploadInputRef = useRef<HTMLInputElement | null>(null);
 
   const profileForm = useForm({
     defaultValues: {
@@ -229,6 +230,36 @@ export const SettingsTab = ({
     try {
       const dataUrl = await compressImageToDataUrl(file);
       householdForm.setFieldValue("imageUrl", dataUrl);
+      await onUpdateHousehold({
+        name: householdForm.state.values.name.trim(),
+        imageUrl: dataUrl,
+        address: householdForm.state.values.address,
+        currency: normalizeCurrency(householdForm.state.values.currency),
+        apartmentSizeSqm: household.apartment_size_sqm,
+        coldRentMonthly: household.cold_rent_monthly,
+        utilitiesMonthly: household.utilities_monthly,
+        utilitiesOnRoomSqmPercent: household.utilities_on_room_sqm_percent
+      });
+      setHouseholdUploadError(null);
+    } catch {
+      setHouseholdUploadError(t("settings.householdUploadError"));
+    }
+  };
+
+  const onRemoveHouseholdImage = async () => {
+    if (!isOwner) return;
+    try {
+      householdForm.setFieldValue("imageUrl", "");
+      await onUpdateHousehold({
+        name: householdForm.state.values.name.trim(),
+        imageUrl: "",
+        address: householdForm.state.values.address,
+        currency: normalizeCurrency(householdForm.state.values.currency),
+        apartmentSizeSqm: household.apartment_size_sqm,
+        coldRentMonthly: household.cold_rent_monthly,
+        utilitiesMonthly: household.utilities_monthly,
+        utilitiesOnRoomSqmPercent: household.utilities_on_room_sqm_percent
+      });
       setHouseholdUploadError(null);
     } catch {
       setHouseholdUploadError(t("settings.householdUploadError"));
@@ -245,6 +276,11 @@ export const SettingsTab = ({
   const generatedProfileAvatarUrl = useMemo(() => createDiceBearAvatarDataUri(profileSeed), [profileSeed]);
   const profilePreviewImageUrl = profileImageUrl || generatedProfileAvatarUrl;
   const householdImageUrl = householdForm.state.values.imageUrl.trim();
+  const generatedHouseholdBannerUrl = useMemo(
+    () => createTrianglifyBannerBackground(householdForm.state.values.name.trim() || household.id),
+    [household.id, householdForm.state.values.name]
+  );
+  const householdPreviewBackgroundImage = householdImageUrl ? `url("${householdImageUrl}")` : generatedHouseholdBannerUrl;
   const ownerCount = useMemo(() => members.filter((member) => member.role === "owner").length, [members]);
   const uniqueMembers = useMemo(() => {
     const map = new Map<string, HouseholdMember>();
@@ -466,14 +502,56 @@ export const SettingsTab = ({
 
             <div className="space-y-1">
               <Label htmlFor="household-image-upload">{t("settings.householdImageUploadLabel")}</Label>
-              <FileUploadButton
+              <input
+                ref={householdUploadInputRef}
                 id="household-image-upload"
-                disabled={busy || !isOwner}
-                buttonLabel={t("settings.householdImageUploadLabel")}
-                onFileSelect={(file) => {
+                type="file"
+                accept="image/*"
+                className="sr-only"
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  if (!file) return;
                   void onHouseholdFileChange(file);
+                  event.currentTarget.value = "";
                 }}
               />
+              <div className="relative">
+                <button
+                  type="button"
+                  className="relative inline-flex h-28 w-full items-center justify-center overflow-hidden rounded-xl border border-brand-200 bg-brand-50 text-slate-600 transition hover:border-brand-300 hover:bg-brand-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:bg-slate-800"
+                  disabled={busy || !isOwner}
+                  onClick={() => {
+                    householdUploadInputRef.current?.click();
+                  }}
+                  aria-label={t("settings.householdImageUploadLabel")}
+                  title={t("settings.householdImageUploadLabel")}
+                >
+                  <span
+                    aria-label={t("settings.householdImagePreviewAlt")}
+                    className="absolute inset-0 bg-cover bg-center"
+                    style={{ backgroundImage: householdPreviewBackgroundImage }}
+                  />
+                  <span className="absolute inset-0 bg-gradient-to-r from-slate-900/30 via-slate-900/10 to-slate-900/35" />
+                  <span className="absolute bottom-2 right-2 inline-flex h-7 w-7 items-center justify-center rounded-full bg-white/90 text-slate-700 dark:bg-slate-900/90 dark:text-slate-200">
+                    <Camera className="h-4 w-4" />
+                  </span>
+                </button>
+                {householdImageUrl ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="danger"
+                    className="absolute -right-1 -top-1 h-6 w-6 rounded-full p-0"
+                    disabled={busy || !isOwner}
+                    onClick={() => {
+                      void onRemoveHouseholdImage();
+                    }}
+                    aria-label={t("settings.removeImage")}
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </Button>
+                ) : null}
+              </div>
             </div>
 
             <div className="space-y-1">
@@ -534,27 +612,6 @@ export const SettingsTab = ({
                 }}
               />
             </div>
-
-            {householdImageUrl ? (
-              <div className="relative">
-                <img
-                  src={householdImageUrl}
-                  alt={t("settings.householdImagePreviewAlt")}
-                  className="h-20 w-full rounded-xl border border-brand-200 object-cover dark:border-slate-700"
-                />
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="danger"
-                  className="absolute right-2 top-2 h-6 w-6 rounded-full p-0"
-                  disabled={busy || !isOwner}
-                  onClick={() => householdForm.setFieldValue("imageUrl", "")}
-                  aria-label={t("settings.removeImage")}
-                >
-                  <X className="h-3.5 w-3.5" />
-                </Button>
-              </div>
-            ) : null}
 
             {householdUploadError ? (
               <p className="rounded-lg border border-rose-300 bg-rose-50 px-3 py-2 text-xs text-rose-700 dark:border-rose-900 dark:bg-rose-950/60 dark:text-rose-200">

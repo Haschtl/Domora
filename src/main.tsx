@@ -4,6 +4,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider } from "@tanstack/react-router";
 import "./i18n";
 import "./index.css";
+import "@mdxeditor/editor/style.css";
 import "react-toastify/dist/ReactToastify.css";
 import { ThemedToastContainer } from "./components/themed-toast-container";
 import { queryClient } from "./lib/query-client";

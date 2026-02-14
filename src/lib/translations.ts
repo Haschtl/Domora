@@ -6,33 +6,33 @@ export const resources = {
         shopping: "Einkaufen",
         tasks: "Aufgaben",
         finances: "Finanzen",
-        settings: "Einstellungen"
+        settings: "Einstellungen",
       },
       subnav: {
         title: "Unterseiten",
         home: {
           summary: "Summary",
-          feed: "Feed"
+          feed: "Feed",
         },
         tasks: {
           overview: "Übersicht",
           stats: "Statistik",
-          history: "Verlauf"
+          history: "Verlauf",
         },
         finances: {
           overview: "Übersicht",
           stats: "Statistik",
           archive: "Archiv",
-          subscriptions: "Verträge"
+          subscriptions: "Verträge",
         },
         shopping: {
           list: "Einkaufsliste",
-          history: "Historie"
+          history: "Historie",
         },
         settings: {
           me: "Ich",
-          household: "WG"
-        }
+          household: "WG",
+        },
       },
       common: {
         add: "Hinzufügen",
@@ -46,7 +46,7 @@ export const resources = {
         all: "Alle",
         allExcept: "Alle außer {{member}}",
         others: "andere",
-        memberFallback: "Mitglied"
+        memberFallback: "Mitglied",
       },
       app: {
         brand: "Domora",
@@ -63,12 +63,14 @@ export const resources = {
         sessionLoadError: "Konnte Session nicht laden",
         unknownError: "Unbekannter Fehler",
         signInSuccess: "Erfolgreich eingeloggt.",
-        signUpSuccess: "Account erstellt. Bitte E-Mail bestätigen, falls Verification aktiv ist.",
+        signUpSuccess:
+          "Account erstellt. Bitte E-Mail bestätigen, falls Verification aktiv ist.",
         householdCreated: "WG erstellt: {{name}}",
         householdJoined: "WG beigetreten: {{name}}",
-        cashAuditQueued: "Kassensturz angefordert. Eine Edge Function kann jetzt Emails versenden.",
+        cashAuditQueued:
+          "Kassensturz angefordert. Eine Edge Function kann jetzt Emails versenden.",
         pushEnabled: "Push-Benachrichtigungen aktiviert.",
-        pushDenied: "Push-Benachrichtigungen wurden nicht erlaubt."
+        pushDenied: "Push-Benachrichtigungen wurden nicht erlaubt.",
       },
       home: {
         title: "Home",
@@ -77,7 +79,8 @@ export const resources = {
         tasksProgress: "Tasks erledigt",
         currency: "Währung",
         widgetsTitle: "Landing Widgets",
-        widgetsDescription: "Schnelle Kennzahlen für Aufgaben, Ausgaben und Fairness.",
+        widgetsDescription:
+          "Schnelle Kennzahlen für Aufgaben, Ausgaben und Fairness.",
         widgetTasksDue: "Heute fällige Aufgaben",
         widgetTasksOpen: "{{count}} aktive Aufgaben offen",
         widgetFairness: "Task-Fairness-Score",
@@ -92,23 +95,32 @@ export const resources = {
         activityFinanceCreated: "Finanzeintrag „{{name}}“ mit {{amount}} €",
         activityCashAudit: "{{user}} hat einen Kassensturz gestartet",
         landingTitle: "WG Landing Page",
-        landingDescription: "Gemeinsame Infos, Regeln und Updates als Markdown.",
-        landingEmpty: "Noch kein Inhalt vorhanden. Lege einen Markdown-Text an.",
+        landingDescription:
+          "Gemeinsame Infos, Regeln und Updates als Markdown.",
+        landingEmpty:
+          "Noch kein Inhalt vorhanden. Lege einen Markdown-Text an.",
         defaultLandingHeading: "Willkommen in {{household}}",
-        defaultLandingIntro: "Das ist eure gemeinsame Landing Page. Ergänzt Regeln, Absprachen und wichtige Infos.",
+        defaultLandingIntro:
+          "Das ist eure gemeinsame Landing Page. Ergänzt Regeln, Absprachen und wichtige Infos.",
         defaultLandingWidgetsHeading: "Live-Widgets",
         editLanding: "Landing Page bearbeiten",
-        editLandingOwnerOnly: "Nur Hauptmieter können die Landing Page bearbeiten.",
+        editLandingOwnerOnly:
+          "Nur Hauptmieter können die Landing Page bearbeiten.",
         editLandingTitle: "Landing Page bearbeiten",
-        editLandingDescription: "Markdown mit Tabellen, Listen, Links und Codeblöcken wird unterstützt.",
+        editLandingDescription:
+          "Markdown mit Tabellen, Listen, Links und Codeblöcken wird unterstützt.",
         markdownLabel: "Markdown",
-        markdownPlaceholder: "# Willkommen in der WG\n\n- Müll: Dienstag\n- Putzplan: Sonntag",
+        markdownPlaceholder:
+          "# Willkommen in der WG\n\n- Müll: Dienstag\n- Putzplan: Sonntag",
+        insertWidgetPlaceholder: "Widget auswählen",
+        insertWidgetAction: "Einfügen",
         saveLanding: "Landing speichern",
-        saved: "Landing Page gespeichert."
+        saved: "Landing Page gespeichert.",
       },
       auth: {
         title: "Willkommen bei Domora",
-        description: "Login oder Registrierung. Danach kannst du einer WG beitreten oder eine neue WG erstellen.",
+        description:
+          "Login oder Registrierung. Danach kannst du einer WG beitreten oder eine neue WG erstellen.",
         email: "E-Mail",
         emailPlaceholder: "alex@beispiel.de",
         password: "Passwort",
@@ -116,26 +128,30 @@ export const resources = {
         or: "oder",
         googleSignIn: "Mit Google fortfahren",
         signIn: "Einloggen",
-        signUp: "Registrieren"
+        signUp: "Registrieren",
       },
       household: {
         createTitle: "Neue WG erstellen",
-        createDescription: "Gib deiner WG einen Namen. Du wirst automatisch als Hauptmieter eingetragen.",
+        createDescription:
+          "Gib deiner WG einen Namen. Du wirst automatisch als Hauptmieter eingetragen.",
         nameLabel: "WG Name",
         namePlaceholder: "Sonnenallee 4",
         createAction: "WG anlegen",
         joinTitle: "WG beitreten",
-        joinDescription: "Code von einem Mitglied eingeben und sofort beitreten.",
+        joinDescription:
+          "Code von einem Mitglied eingeben und sofort beitreten.",
         inviteLabel: "Einladungscode",
         invitePlaceholder: "AB12CD",
         joinAction: "Beitreten",
         myHouseholdsTitle: "Deine WGs",
-        myHouseholdsDescription: "Bereits vorhanden. Du kannst direkt in eine WG springen.",
-        codeBadge: "Code {{code}}"
+        myHouseholdsDescription:
+          "Bereits vorhanden. Du kannst direkt in eine WG springen.",
+        codeBadge: "Code {{code}}",
       },
       shopping: {
         title: "Einkaufsliste",
-        description: "Alles, was in die WG muss. Optional mit Tags und Wiederholung.",
+        description:
+          "Alles, was in die WG muss. Optional mit Tags und Wiederholung.",
         historyDescription: "Abgeschlossene Einkäufe mit Verlauf und Trend.",
         itemLabel: "Eintrag",
         placeholder: "Milch, Spüli, Pasta...",
@@ -161,7 +177,7 @@ export const resources = {
         historyEmpty: "Noch keine Erledigungen.",
         historyBy: "Erledigt von: {{value}}",
         empty: "Noch keine Einträge.",
-        deleteItem: "Eintrag löschen"
+        deleteItem: "Eintrag löschen",
       },
       tasks: {
         title: "Aufgaben",
@@ -175,7 +191,7 @@ export const resources = {
         notificationStatus: {
           default: "nicht gesetzt",
           granted: "aktiv",
-          denied: "abgelehnt"
+          denied: "abgelehnt",
         },
         enablePush: "Push aktivieren",
         titleLabel: "Aufgabe",
@@ -186,7 +202,8 @@ export const resources = {
         frequencyDays: "Frequenz in Tagen",
         effortPimpers: "Aufwand in Pimpers",
         rotationTitle: "Personen in Reihenfolge",
-        rotationHint: "Auswählen und per Drag-and-drop (auch Touch) umsortieren.",
+        rotationHint:
+          "Auswählen und per Drag-and-drop (auch Touch) umsortieren.",
         noMembers: "Keine Mitglieder verfügbar.",
         inRotation: "In Rotation",
         addToRotation: "Zur Rotation",
@@ -195,14 +212,16 @@ export const resources = {
         pimpersValue: "{{count}} Pimpers",
         moveUp: "Nach oben",
         moveDown: "Nach unten",
-        noAssigneesError: "Bitte mindestens eine Person für die Rotation auswählen.",
+        noAssigneesError:
+          "Bitte mindestens eine Person für die Rotation auswählen.",
         noStartDate: "Bitte ein Startdatum setzen.",
         createTask: "Aufgabe anlegen",
         taskActions: "Aufgaben-Aktionen",
         editTask: "Bearbeiten",
         deleteTask: "Loeschen",
         deleteTaskConfirmTitle: "Aufgabe wirklich loeschen?",
-        deleteTaskConfirmDescription: "Die Aufgabe \"{{title}}\" wird dauerhaft entfernt.",
+        deleteTaskConfirmDescription:
+          'Die Aufgabe "{{title}}" wird dauerhaft entfernt.',
         editTaskTitle: "Aufgabe bearbeiten",
         editTaskDescription: "Passe Aufgabe, Rhythmus und Rotation an.",
         saveTask: "Speichern",
@@ -247,7 +266,7 @@ export const resources = {
         historyChartPimpers: "Pimpers pro Person",
         historyEmpty: "Noch keine Abschlüsse.",
         historyLine: "{{user}} hat {{pimpers}} Pimpers gesammelt",
-        fallbackTitle: "Aufgabe"
+        fallbackTitle: "Aufgabe",
       },
       finances: {
         title: "Finanzen",
@@ -277,7 +296,8 @@ export const resources = {
         filterByCategoryAll: "Alle Kategorien",
         filtersButton: "Filter",
         filtersDialogTitle: "Archiv-Filter",
-        filtersDialogDescription: "Setze Filter für Zeitraum, Person, Kategorie oder Suche.",
+        filtersDialogDescription:
+          "Setze Filter für Zeitraum, Person, Kategorie oder Suche.",
         entryActions: "Eintrag-Aktionen",
         editEntry: "Bearbeiten",
         deleteEntry: "Loeschen",
@@ -292,16 +312,22 @@ export const resources = {
         byMember: "Ausgaben nach Mitglied",
         settlementTitle: "Saldo seit letztem Kassensturz",
         settlementSince: "Zeitraum seit {{date}}",
-        settlementSinceStart: "Noch kein Kassensturz vorhanden, gesamte Historie wird verwendet.",
+        settlementSinceStart:
+          "Noch kein Kassensturz vorhanden, gesamte Historie wird verwendet.",
         settlementStats: "{{count}} Einträge, Gesamtvolumen {{total}}",
-        settlementEmpty: "Noch keine Einträge im aktuellen Kassensturz-Zeitraum.",
+        settlementEmpty:
+          "Noch keine Einträge im aktuellen Kassensturz-Zeitraum.",
         settlementPlanTitle: "Ausgleichsvorschlag",
-        settlementPlanEmpty: "Kein Ausgleich nötig. Alle Salden sind bereits ausgeglichen.",
+        settlementPlanEmpty:
+          "Kein Ausgleich nötig. Alle Salden sind bereits ausgeglichen.",
         settlementTransferLine: "{{from}} zahlt {{to}} {{amount}}",
         paidByYou: "Bezahlt von dir am {{date}}",
         paidByMember: "Bezahlt von {{member}} am {{date}}",
         paidByMembers: "Bezahlt von {{members}} für {{forMembers}} am {{date}}",
         reimbursementLine: "{{member}} bekommt {{amount}} zurück",
+        reimbursementYou: "Du bekommst {{amount}} zurück",
+        reimbursementSingle: "{{member}} bekommt {{amount}} zurück",
+        reimbursementGroup: "{{members}} bekommen {{amount}} zurück",
         allMembers: "alle",
         allExceptMember: "alle, außer {{member}}",
         currentEntriesTitle: "Aktuelle Einträge",
@@ -309,7 +335,8 @@ export const resources = {
         personalBalanceChip: "{{value}}",
         personalEntryImpactChip: "{{value}}",
         subscriptionsTitle: "Abos und Verträge",
-        subscriptionsDescription: "Wiederkehrende Zahlungen und Verträge verwalten.",
+        subscriptionsDescription:
+          "Wiederkehrende Zahlungen und Verträge verwalten.",
         subscriptionNameLabel: "Name",
         subscriptionNamePlaceholder: "z. B. Internet",
         subscriptionCategoryLabel: "Kategorie",
@@ -326,10 +353,12 @@ export const resources = {
         editSubscriptionAction: "Bearbeiten",
         deleteSubscriptionAction: "Loeschen",
         editSubscriptionTitle: "Vertrag bearbeiten",
-        editSubscriptionDescription: "Passe Name, Betrag, Beteiligte und Intervall an.",
+        editSubscriptionDescription:
+          "Passe Name, Betrag, Beteiligte und Intervall an.",
         saveSubscriptionAction: "Speichern",
         costBreakdownTitle: "Kosten-Rechnung",
-        costBreakdownDescription: "Transparente Aufrechnung pro Mitbewohner (Monatswerte).",
+        costBreakdownDescription:
+          "Transparente Aufrechnung pro Mitbewohner (Monatswerte).",
         costBreakdownRowLabel: "Position",
         costBreakdownTotalColumn: "Gesamt",
         costBreakdownColdRoom: "Kaltmiete für Zimmer",
@@ -343,29 +372,34 @@ export const resources = {
         costBreakdownExtraContracts: "Kosten für Verträge",
         costBreakdownGrandTotal: "Gesamtsumme mit Verträgen",
         rentCardTitle: "Miete",
-        rentCardDescription: "Hier pflegst du Wohnungsdaten und deine eigene Mietbasis.",
+        rentCardDescription:
+          "Hier pflegst du Wohnungsdaten und deine eigene Mietbasis.",
         rentApartmentTitle: "Wohnung",
-        rentApartmentDescription: "Wohnungsfläche, Kalt-Miete, Nebenkosten und Nebenkosten-m²-Faktor für die ganze WG.",
+        rentApartmentDescription:
+          "Wohnungsfläche, Kalt-Miete, Nebenkosten und Nebenkosten-m²-Faktor für die ganze WG.",
         rentMineTitle: "Meins",
         rentMineDescription: "Deine Zimmergröße und dein Gemeinschaftsfaktor.",
         rentOverviewTitle: "Miet-Übersicht",
-        rentOwnerOnlyHint: "Nur Hauptmieter können Wohnungsfläche, Kalt-Miete und Nebenkosten bearbeiten.",
+        rentOwnerOnlyHint:
+          "Nur Hauptmieter können Wohnungsfläche, Kalt-Miete und Nebenkosten bearbeiten.",
         rentSave: "Wohnung speichern",
         rentSaveMine: "Meine Werte speichern",
         rentColdPerSqmLabel: "Kaltmiete /m²",
         rentTotalMonthlyLabel: "Gesamtmiete (Kalt + Nebenkosten)",
-        rentRoomPerSqmWithUtilitiesLabel: "Zimmer (mit Nebenkosten auf Zimmer) /m²",
+        rentRoomPerSqmWithUtilitiesLabel:
+          "Zimmer (mit Nebenkosten auf Zimmer) /m²",
         rentTotalPerSqmLabel: "Gesamtmiete /m²",
         rentAreaOverviewTitle: "Mietflächen-Übersicht",
         rentAreaOverviewEmpty: "Noch keine Mitbewohnerdaten vorhanden.",
         sharedAreaLabel: "Gemeinschaftsflaeche",
         rentFactorValue: "Faktor {{value}}",
         empty: "Noch keine Finanz-Einträge.",
-        emptyFiltered: "Keine Einträge für diese Filter."
+        emptyFiltered: "Keine Einträge für diese Filter.",
       },
       settings: {
         clientTitle: "Client-Einstellungen",
-        clientDescription: "Theme und Sprache werden lokal auf diesem Gerät gespeichert.",
+        clientDescription:
+          "Theme und Sprache werden lokal auf diesem Gerät gespeichert.",
         profileTitle: "Dein Profil",
         profileDescription: "Ändere deinen Namen und dein Profilbild.",
         profileNameLabel: "Dein Name",
@@ -379,14 +413,14 @@ export const resources = {
         profileSave: "User-Bild speichern",
         profileNameSave: "Namen speichern",
         householdTitle: "WG Verwaltung",
-        householdDescription: "WG-Bild, Adresse und Währung zentral verwalten.",
+        householdDescription: "WG-Banner, Adresse und Währung zentral verwalten.",
         householdOwnerOnlyHint: "Nur Hauptmieter können WG-Daten bearbeiten.",
-        householdImageLabel: "WG-Bild URL",
+        householdImageLabel: "WG-Banner URL",
         householdImagePlaceholder: "https://...",
         householdNameLabel: "WG-Name",
         householdNamePlaceholder: "Sonnenallee 4",
-        householdImageUploadLabel: "WG-Bild Upload",
-        householdUploadError: "WG-Bild konnte nicht geladen werden.",
+        householdImageUploadLabel: "WG-Banner",
+        householdUploadError: "WG-Banner konnte nicht geladen werden.",
         householdImagePreviewAlt: "WG Bild Vorschau",
         householdAddressLabel: "WG-Adresse",
         householdAddressPlaceholder: "Musterstrasse 1, 1010 Wien",
@@ -401,18 +435,23 @@ export const resources = {
         utilitiesOnRoomSqmPercentLabel: "Nebenkosten auf Zimmer",
         householdSave: "WG speichern",
         householdNameError: "Bitte einen WG-Namen eingeben.",
-        currencyError: "Bitte eine gültige 3-stellige Währung setzen (z. B. EUR).",
-        householdSizeError: "Bitte gültige Quadratmeter eintragen (größer als 0).",
+        currencyError:
+          "Bitte eine gültige 3-stellige Währung setzen (z. B. EUR).",
+        householdSizeError:
+          "Bitte gültige Quadratmeter eintragen (größer als 0).",
         coldRentError: "Bitte gültige Kalt-Miete eintragen (0 oder größer).",
         utilitiesError: "Bitte gültige Nebenkosten eintragen (0 oder größer).",
-        utilitiesOnRoomSqmPercentError: "Der Nebenkosten-Zimmer-Faktor muss zwischen 0 und 100 liegen.",
+        utilitiesOnRoomSqmPercentError:
+          "Der Nebenkosten-Zimmer-Faktor muss zwischen 0 und 100 liegen.",
         memberTitle: "Deine Zimmerkosten-Basis",
-        memberDescription: "Definiere Zimmergröße und deinen Anteil an Gemeinschaftsflächen.",
+        memberDescription:
+          "Definiere Zimmergröße und deinen Anteil an Gemeinschaftsflächen.",
         roomSizeLabel: "Zimmergröße (m²)",
         roomSizePlaceholder: "16",
         commonFactorLabel: "Gemeinschaftsfaktor",
         commonFactorPlaceholder: "1",
-        commonFactorHint: "Default 1 = alle gleich verteilt. Höher = du trägst mehr, niedriger = weniger.",
+        commonFactorHint:
+          "Default 1 = alle gleich verteilt. Höher = du trägst mehr, niedriger = weniger.",
         commonFactorLevel1: "Luxusmodus: fast nix zahlen",
         commonFactorLevel2: "VIP-Rabatt läuft",
         commonFactorLevel3: "Schon ziemlich geschont",
@@ -424,20 +463,25 @@ export const resources = {
         commonFactorLevel9: "Premium-Sponsor",
         commonFactorLevel10: "Endboss der Nebenkosten",
         roomSizeError: "Bitte gültige Zimmergröße eintragen (größer als 0).",
-        commonFactorError: "Der Gemeinschaftsfaktor muss zwischen 0 und 2 liegen.",
+        commonFactorError:
+          "Der Gemeinschaftsfaktor muss zwischen 0 und 2 liegen.",
         memberSave: "Deine Werte speichern",
         removeImage: "Bild entfernen",
         leaveTitle: "Ausziehen",
-        leaveDescription: "Du verlässt diese WG und verlierst den direkten Zugriff.",
+        leaveDescription:
+          "Du verlässt diese WG und verlierst den direkten Zugriff.",
         leaveAction: "WG verlassen",
         leaveConfirmTitle: "WG wirklich verlassen?",
-        leaveConfirmDescription: "Du kannst später nur mit Code erneut beitreten.",
+        leaveConfirmDescription:
+          "Du kannst später nur mit Code erneut beitreten.",
         leaveConfirmAction: "Jetzt ausziehen",
         dissolveAction: "WG auflösen",
         dissolveConfirmTitle: "WG wirklich auflösen?",
-        dissolveConfirmDescription: "Die WG und alle zugehörigen Daten werden dauerhaft gelöscht.",
+        dissolveConfirmDescription:
+          "Die WG und alle zugehörigen Daten werden dauerhaft gelöscht.",
         dissolveConfirmAction: "WG auflösen",
-        dissolveDisabledHint: "Nur möglich, wenn du der letzte Mieter und Hauptmieter bist.",
+        dissolveDisabledHint:
+          "Nur möglich, wenn du der letzte Mieter und Hauptmieter bist.",
         householdSaved: "WG-Einstellungen gespeichert.",
         memberSaved: "Deine Werte wurden gespeichert.",
         profileSaved: "User-Bild gespeichert.",
@@ -445,7 +489,8 @@ export const resources = {
         leftHousehold: "Du hast die WG verlassen.",
         dissolvedHousehold: "Die WG wurde aufgelöst.",
         tenantsTitle: "Mieter-Verwaltung",
-        tenantsDescription: "Mitbewohner verwalten, Hauptmieter-Rolle vergeben oder zurücknehmen und Mitglieder entfernen.",
+        tenantsDescription:
+          "Mitbewohner verwalten, Hauptmieter-Rolle vergeben oder zurücknehmen und Mitglieder entfernen.",
         tenantsOwnerOnly: "Nur Hauptmieter können Mitbewohner verwalten.",
         tenantsNoMembers: "Noch keine Mitbewohner vorhanden.",
         tenantsRoleOwner: "Hauptmieter",
@@ -455,26 +500,27 @@ export const resources = {
         tenantsKick: "Rauswerfen",
         inviteAction: "Einladen",
         inviteDialogTitle: "Mitbewohner einladen",
-        inviteDialogDescription: "QR-Code scannen oder Link teilen, um der WG beizutreten.",
+        inviteDialogDescription:
+          "QR-Code scannen oder Link teilen, um der WG beizutreten.",
         inviteCodeLabel: "Einladungscode",
         inviteLinkLabel: "Einladungslink",
         inviteShareAction: "Teilen",
         inviteShareText: "Tritt meiner WG bei. Einladungscode: {{code}}",
         inviteQrAlt: "QR-Code zum Beitreten",
-        inviteCopied: "Link kopiert"
+        inviteCopied: "Link kopiert",
       },
       theme: {
         label: "Theme",
         system: "System",
         light: "Hell",
-        dark: "Dunkel"
+        dark: "Dunkel",
       },
       language: {
         label: "Sprache",
         de: "DE",
-        en: "EN"
-      }
-    }
+        en: "EN",
+      },
+    },
   },
   en: {
     translation: {
@@ -483,33 +529,33 @@ export const resources = {
         shopping: "Shopping",
         tasks: "Tasks",
         finances: "Finances",
-        settings: "Settings"
+        settings: "Settings",
       },
       subnav: {
         title: "Subpages",
         home: {
           summary: "Summary",
-          feed: "Feed"
+          feed: "Feed",
         },
         tasks: {
           overview: "Overview",
           stats: "Stats",
-          history: "History"
+          history: "History",
         },
         finances: {
           overview: "Overview",
           stats: "Stats",
           archive: "Archive",
-          subscriptions: "Subscriptions"
+          subscriptions: "Subscriptions",
         },
         shopping: {
           list: "Shopping list",
-          history: "Shopping history"
+          history: "Shopping history",
         },
         settings: {
           me: "Me",
-          household: "Household"
-        }
+          household: "Household",
+        },
       },
       common: {
         add: "Add",
@@ -523,7 +569,7 @@ export const resources = {
         all: "All",
         allExcept: "All except {{member}}",
         others: "others",
-        memberFallback: "Member"
+        memberFallback: "Member",
       },
       app: {
         brand: "Domora",
@@ -540,12 +586,14 @@ export const resources = {
         sessionLoadError: "Could not load session",
         unknownError: "Unknown error",
         signInSuccess: "Signed in successfully.",
-        signUpSuccess: "Account created. Confirm your email if verification is enabled.",
+        signUpSuccess:
+          "Account created. Confirm your email if verification is enabled.",
         householdCreated: "Shared flat created: {{name}}",
         householdJoined: "Joined shared flat: {{name}}",
-        cashAuditQueued: "Cash audit requested. An Edge Function can now send emails.",
+        cashAuditQueued:
+          "Cash audit requested. An Edge Function can now send emails.",
         pushEnabled: "Push notifications enabled.",
-        pushDenied: "Push notifications were not allowed."
+        pushDenied: "Push notifications were not allowed.",
       },
       home: {
         title: "Home",
@@ -564,28 +612,35 @@ export const resources = {
         activityTitle: "Activity feed",
         activityDescription: "Latest household activity.",
         activityEmpty: "No activity yet.",
-        activityTaskCompleted: "{{user}} completed \"{{task}}\"",
-        activityShoppingCompleted: "{{user}} bought \"{{item}}\"",
-        activityFinanceCreated: "Finance entry \"{{name}}\" with {{amount}} €",
+        activityTaskCompleted: '{{user}} completed "{{task}}"',
+        activityShoppingCompleted: '{{user}} bought "{{item}}"',
+        activityFinanceCreated: 'Finance entry "{{name}}" with {{amount}} €',
         activityCashAudit: "{{user}} started a cash audit",
         landingTitle: "Household landing page",
         landingDescription: "Shared notes, rules, and updates as Markdown.",
         landingEmpty: "No content yet. Add a markdown text.",
         defaultLandingHeading: "Welcome to {{household}}",
-        defaultLandingIntro: "This is your shared landing page. Add rules, agreements, and important notes.",
+        defaultLandingIntro:
+          "This is your shared landing page. Add rules, agreements, and important notes.",
         defaultLandingWidgetsHeading: "Live widgets",
         editLanding: "Edit landing page",
-        editLandingOwnerOnly: "Only household owners can edit the landing page.",
+        editLandingOwnerOnly:
+          "Only household owners can edit the landing page.",
         editLandingTitle: "Edit landing page",
-        editLandingDescription: "Markdown with tables, lists, links, and code blocks is supported.",
+        editLandingDescription:
+          "Markdown with tables, lists, links, and code blocks is supported.",
         markdownLabel: "Markdown",
-        markdownPlaceholder: "# Welcome to the household\n\n- Trash: Tuesday\n- Cleaning plan: Sunday",
+        markdownPlaceholder:
+          "# Welcome to the household\n\n- Trash: Tuesday\n- Cleaning plan: Sunday",
+        insertWidgetPlaceholder: "Select widget",
+        insertWidgetAction: "Insert",
         saveLanding: "Save landing",
-        saved: "Landing page saved."
+        saved: "Landing page saved.",
       },
       auth: {
         title: "Welcome to Domora",
-        description: "Sign in or register, then join an existing shared flat or create a new one.",
+        description:
+          "Sign in or register, then join an existing shared flat or create a new one.",
         email: "Email",
         emailPlaceholder: "alex@example.com",
         password: "Password",
@@ -593,11 +648,12 @@ export const resources = {
         or: "or",
         googleSignIn: "Continue with Google",
         signIn: "Sign in",
-        signUp: "Register"
+        signUp: "Register",
       },
       household: {
         createTitle: "Create new shared flat",
-        createDescription: "Pick a name. You will be added as owner automatically.",
+        createDescription:
+          "Pick a name. You will be added as owner automatically.",
         nameLabel: "Shared flat name",
         namePlaceholder: "Sunset Street 4",
         createAction: "Create shared flat",
@@ -608,11 +664,12 @@ export const resources = {
         joinAction: "Join",
         myHouseholdsTitle: "Your shared flats",
         myHouseholdsDescription: "Already available. Jump into one directly.",
-        codeBadge: "Code {{code}}"
+        codeBadge: "Code {{code}}",
       },
       shopping: {
         title: "Shopping list",
-        description: "Everything the household needs. Optionally with tags and recurrence.",
+        description:
+          "Everything the household needs. Optionally with tags and recurrence.",
         historyDescription: "Completed purchases with timeline and trend.",
         itemLabel: "Item",
         placeholder: "Milk, soap, pasta...",
@@ -638,7 +695,7 @@ export const resources = {
         historyEmpty: "No completions yet.",
         historyBy: "Completed by: {{value}}",
         empty: "No items yet.",
-        deleteItem: "Delete item"
+        deleteItem: "Delete item",
       },
       tasks: {
         title: "Tasks",
@@ -652,7 +709,7 @@ export const resources = {
         notificationStatus: {
           default: "not set",
           granted: "enabled",
-          denied: "denied"
+          denied: "denied",
         },
         enablePush: "Enable push",
         titleLabel: "Task",
@@ -663,7 +720,8 @@ export const resources = {
         frequencyDays: "Frequency in days",
         effortPimpers: "Effort in pimpers",
         rotationTitle: "People in order",
-        rotationHint: "Select people and reorder with drag and drop (touch-friendly).",
+        rotationHint:
+          "Select people and reorder with drag and drop (touch-friendly).",
         noMembers: "No members available.",
         inRotation: "In rotation",
         addToRotation: "Add to rotation",
@@ -679,7 +737,8 @@ export const resources = {
         editTask: "Edit",
         deleteTask: "Delete",
         deleteTaskConfirmTitle: "Delete task?",
-        deleteTaskConfirmDescription: "The task \"{{title}}\" will be permanently removed.",
+        deleteTaskConfirmDescription:
+          'The task "{{title}}" will be permanently removed.',
         editTaskTitle: "Edit task",
         editTaskDescription: "Adjust task, schedule and rotation.",
         saveTask: "Save",
@@ -724,7 +783,7 @@ export const resources = {
         historyChartPimpers: "Pimpers per person",
         historyEmpty: "No completions yet.",
         historyLine: "{{user}} earned {{pimpers}} pimpers",
-        fallbackTitle: "Task"
+        fallbackTitle: "Task",
       },
       finances: {
         title: "Finances",
@@ -754,7 +813,8 @@ export const resources = {
         filterByCategoryAll: "All categories",
         filtersButton: "Filters",
         filtersDialogTitle: "Archive filters",
-        filtersDialogDescription: "Set filters for period, member, category or search.",
+        filtersDialogDescription:
+          "Set filters for period, member, category or search.",
         entryActions: "Entry actions",
         editEntry: "Edit",
         deleteEntry: "Delete",
@@ -779,6 +839,9 @@ export const resources = {
         paidByMember: "Paid by {{member}} on {{date}}",
         paidByMembers: "Paid by {{members}} for {{forMembers}} on {{date}}",
         reimbursementLine: "{{member}} gets {{amount}} back",
+        reimbursementYou: "You get {{amount}} back",
+        reimbursementSingle: "{{member}} gets {{amount}} back",
+        reimbursementGroup: "{{members}} get {{amount}} back",
         allMembers: "everyone",
         allExceptMember: "everyone except {{member}}",
         currentEntriesTitle: "Current entries",
@@ -803,10 +866,12 @@ export const resources = {
         editSubscriptionAction: "Edit",
         deleteSubscriptionAction: "Delete",
         editSubscriptionTitle: "Edit contract",
-        editSubscriptionDescription: "Adjust name, amount, participants and interval.",
+        editSubscriptionDescription:
+          "Adjust name, amount, participants and interval.",
         saveSubscriptionAction: "Save",
         costBreakdownTitle: "Cost breakdown",
-        costBreakdownDescription: "Transparent per-roommate calculation (monthly values).",
+        costBreakdownDescription:
+          "Transparent per-roommate calculation (monthly values).",
         costBreakdownRowLabel: "Item",
         costBreakdownTotalColumn: "Total",
         costBreakdownColdRoom: "Base rent for room",
@@ -820,29 +885,34 @@ export const resources = {
         costBreakdownExtraContracts: "Extra contract costs",
         costBreakdownGrandTotal: "Total incl. contracts",
         rentCardTitle: "Rent",
-        rentCardDescription: "Maintain apartment data and your own rent basis here.",
+        rentCardDescription:
+          "Maintain apartment data and your own rent basis here.",
         rentApartmentTitle: "Apartment",
-        rentApartmentDescription: "Apartment size, base rent, utilities, and utility-to-room-m² factor for the whole household.",
+        rentApartmentDescription:
+          "Apartment size, base rent, utilities, and utility-to-room-m² factor for the whole household.",
         rentMineTitle: "Mine",
         rentMineDescription: "Your room size and your common-area factor.",
         rentOverviewTitle: "Rent overview",
-        rentOwnerOnlyHint: "Only household owners can edit apartment size, base rent, and utilities.",
+        rentOwnerOnlyHint:
+          "Only household owners can edit apartment size, base rent, and utilities.",
         rentSave: "Save apartment",
         rentSaveMine: "Save my values",
         rentColdPerSqmLabel: "Base rent /m²",
         rentTotalMonthlyLabel: "Total rent (base + utilities)",
-        rentRoomPerSqmWithUtilitiesLabel: "Room (with utilities on room-m²) /m²",
+        rentRoomPerSqmWithUtilitiesLabel:
+          "Room (with utilities on room-m²) /m²",
         rentTotalPerSqmLabel: "Total rent /m²",
         rentAreaOverviewTitle: "Rent area overview",
         rentAreaOverviewEmpty: "No roommate data available yet.",
         sharedAreaLabel: "Shared area",
         rentFactorValue: "Factor {{value}}",
         empty: "No finance entries yet.",
-        emptyFiltered: "No entries for the current filters."
+        emptyFiltered: "No entries for the current filters.",
       },
       settings: {
         clientTitle: "Client settings",
-        clientDescription: "Theme and language are stored locally on this device.",
+        clientDescription:
+          "Theme and language are stored locally on this device.",
         profileTitle: "Your profile",
         profileDescription: "Update your user image for the household.",
         profileNameLabel: "Your name",
@@ -857,7 +927,8 @@ export const resources = {
         profileNameSave: "Save name",
         householdTitle: "Household settings",
         householdDescription: "Manage household image, address and currency.",
-        householdOwnerOnlyHint: "Only household owners can edit household data.",
+        householdOwnerOnlyHint:
+          "Only household owners can edit household data.",
         householdImageLabel: "Household image URL",
         householdImagePlaceholder: "https://...",
         householdNameLabel: "Household name",
@@ -878,18 +949,23 @@ export const resources = {
         utilitiesOnRoomSqmPercentLabel: "Utilities on room-m² (%)",
         householdSave: "Save household",
         householdNameError: "Please enter a household name.",
-        currencyError: "Please use a valid 3-letter currency (for example EUR).",
-        householdSizeError: "Please enter valid square meters (greater than 0).",
+        currencyError:
+          "Please use a valid 3-letter currency (for example EUR).",
+        householdSizeError:
+          "Please enter valid square meters (greater than 0).",
         coldRentError: "Please enter valid base rent (0 or greater).",
         utilitiesError: "Please enter valid utilities (0 or greater).",
-        utilitiesOnRoomSqmPercentError: "Utility room-m² factor must be between 0 and 100.",
+        utilitiesOnRoomSqmPercentError:
+          "Utility room-m² factor must be between 0 and 100.",
         memberTitle: "Your room cost base",
-        memberDescription: "Define room size and your share of common area costs.",
+        memberDescription:
+          "Define room size and your share of common area costs.",
         roomSizeLabel: "Room size (m²)",
         roomSizePlaceholder: "16",
         commonFactorLabel: "Common area factor",
         commonFactorPlaceholder: "1",
-        commonFactorHint: "Default 1 = evenly distributed. Higher = you pay more, lower = less.",
+        commonFactorHint:
+          "Default 1 = evenly distributed. Higher = you pay more, lower = less.",
         commonFactorLevel1: "Luxury mode: paying almost nothing",
         commonFactorLevel2: "VIP discount unlocked",
         commonFactorLevel3: "Pretty well protected",
@@ -908,13 +984,16 @@ export const resources = {
         leaveDescription: "Leave this household and lose direct access.",
         leaveAction: "Leave household",
         leaveConfirmTitle: "Leave household now?",
-        leaveConfirmDescription: "You can only rejoin later with an invite code.",
+        leaveConfirmDescription:
+          "You can only rejoin later with an invite code.",
         leaveConfirmAction: "Move out now",
         dissolveAction: "Dissolve household",
         dissolveConfirmTitle: "Dissolve household now?",
-        dissolveConfirmDescription: "The household and all related data will be deleted permanently.",
+        dissolveConfirmDescription:
+          "The household and all related data will be deleted permanently.",
         dissolveConfirmAction: "Dissolve household",
-        dissolveDisabledHint: "Only possible if you are the last tenant and owner.",
+        dissolveDisabledHint:
+          "Only possible if you are the last tenant and owner.",
         householdSaved: "Household settings saved.",
         memberSaved: "Your values were saved.",
         profileSaved: "User image saved.",
@@ -922,7 +1001,8 @@ export const resources = {
         leftHousehold: "You left the household.",
         dissolvedHousehold: "Household dissolved.",
         tenantsTitle: "Tenant management",
-        tenantsDescription: "Manage roommates, assign or revoke owner role, and remove members.",
+        tenantsDescription:
+          "Manage roommates, assign or revoke owner role, and remove members.",
         tenantsOwnerOnly: "Only household owners can manage roommates.",
         tenantsNoMembers: "No roommates yet.",
         tenantsRoleOwner: "Owner",
@@ -932,27 +1012,28 @@ export const resources = {
         tenantsKick: "Kick",
         inviteAction: "Invite",
         inviteDialogTitle: "Invite roommate",
-        inviteDialogDescription: "Scan the QR code or share the link to join this household.",
+        inviteDialogDescription:
+          "Scan the QR code or share the link to join this household.",
         inviteCodeLabel: "Invite code",
         inviteLinkLabel: "Invite link",
         inviteShareAction: "Share",
         inviteShareText: "Join my household. Invite code: {{code}}",
         inviteQrAlt: "Join QR code",
-        inviteCopied: "Link copied"
+        inviteCopied: "Link copied",
       },
       theme: {
         label: "Theme",
         system: "System",
         light: "Light",
-        dark: "Dark"
+        dark: "Dark",
       },
       language: {
         label: "Language",
         de: "DE",
-        en: "EN"
-      }
-    }
-  }
+        en: "EN",
+      },
+    },
+  },
 } as const;
 
 export type SupportedLanguage = keyof typeof resources;

@@ -2,9 +2,10 @@ import { useEffect, useMemo, useState } from "react";
 import { CalendarCheck2, Pencil, Receipt, ShoppingCart, Wallet } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import trianglify from "trianglify";
 import { useTranslation } from "react-i18next";
 import type { Components } from "react-markdown";
+import { createTrianglifyBannerBackground } from "../../lib/banner";
+import { MXEditor } from "../../components/mx-editor";
 import { formatDateTime } from "../../lib/date";
 import { createMemberLabelGetter } from "../../lib/member-label";
 import type {
@@ -18,8 +19,6 @@ import type {
 } from "../../lib/types";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
-import { Dialog, DialogClose, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../../components/ui/dialog";
-import { Label } from "../../components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
 import {
   LANDING_WIDGET_KEYS,
@@ -27,8 +26,7 @@ import {
   canEditLandingByRole,
   getEffectiveLandingMarkdown,
   getMissingLandingWidgetKeys,
-  getSavedLandingMarkdown,
-  shouldResetDraftOnDialogClose
+  getSavedLandingMarkdown
 } from "./home-landing.utils";
 
 interface HomeTabProps {
@@ -49,24 +47,6 @@ interface HomeTabProps {
   onSaveLandingMarkdown: (markdown: string) => Promise<void>;
 }
 
-const createTrianglifyBannerDataUrl = (seed: string) => {
-  try {
-    const pattern = trianglify({
-      width: 1600,
-      height: 420,
-      cellSize: 92,
-      variance: 0.8,
-      seed
-    });
-    const svg = pattern.toSVG();
-    const serializer = typeof XMLSerializer !== "undefined" ? new XMLSerializer() : null;
-    const svgMarkup = serializer ? serializer.serializeToString(svg) : svg.outerHTML;
-    return `url("data:image/svg+xml,${encodeURIComponent(svgMarkup)}")`;
-  } catch {
-    return "linear-gradient(135deg, #0f766e 0%, #1d4ed8 100%)";
-  }
-};
-
 export const HomeTab = ({
   section = "summary",
   household,
@@ -85,6 +65,15 @@ export const HomeTab = ({
   onSaveLandingMarkdown
 }: HomeTabProps) => {
   const { t, i18n } = useTranslation();
+  const landingInsertOptions = useMemo(
+    () => [
+      { label: t("home.widgetTasksDue"), value: "{{widget:tasks-overview}}" },
+      { label: t("home.widgetFairness"), value: "{{widget:fairness-score}}" },
+      { label: t("home.widgetExpensesByMonth"), value: "{{widget:expenses-by-month}}" },
+      { label: t("home.widgetFairnessByMember"), value: "{{widget:fairness-by-member}}" }
+    ],
+    [t]
+  );
   const defaultLandingMarkdown = useMemo(
     () =>
       [
@@ -106,7 +95,7 @@ export const HomeTab = ({
   );
   const showSummary = section === "summary";
   const showFeed = section === "feed";
-  const [editorOpen, setEditorOpen] = useState(false);
+  const [isEditingLanding, setIsEditingLanding] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const savedMarkdown = getSavedLandingMarkdown(household.landing_page_markdown);
   const effectiveMarkdown = getEffectiveLandingMarkdown(savedMarkdown, defaultLandingMarkdown);
@@ -118,7 +107,7 @@ export const HomeTab = ({
   const hasAllWidgetsInMarkdown = missingWidgetKeys.length === 0;
   const householdImageUrl = household.image_url?.trim() ?? "";
   const bannerBackgroundImage = useMemo(
-    () => (householdImageUrl ? `url("${householdImageUrl}")` : createTrianglifyBannerDataUrl(household.name)),
+    () => (householdImageUrl ? `url("${householdImageUrl}")` : createTrianglifyBannerBackground(household.name)),
     [household.name, householdImageUrl]
   );
   const language = i18n.resolvedLanguage ?? i18n.language;
@@ -398,14 +387,8 @@ export const HomeTab = ({
 
   useEffect(() => {
     setMarkdownDraft(getEffectiveLandingMarkdown(getSavedLandingMarkdown(household.landing_page_markdown), defaultLandingMarkdown));
+    setIsEditingLanding(false);
   }, [defaultLandingMarkdown, household.id, household.landing_page_markdown]);
-
-  const onEditorOpenChange = (open: boolean) => {
-    if (shouldResetDraftOnDialogClose(open, isSaving)) {
-      setMarkdownDraft(effectiveMarkdown);
-    }
-    setEditorOpen(open);
-  };
 
   return (
     <div className="space-y-4">
@@ -424,9 +407,9 @@ export const HomeTab = ({
 
       {showSummary ? (
       <Card>
-        <CardContent className="relative pt-6">
+        <CardContent className="relative">
           {households.length > 1 ? (
-            <div className="mb-4 pr-12 sm:max-w-[280px]">
+            <div className="mb-4 sm:max-w-[280px]">
               <Select value={household.id} onValueChange={onSelectHousehold}>
                 <SelectTrigger>
                   <SelectValue placeholder={t("home.switchHousehold")} />
@@ -445,8 +428,8 @@ export const HomeTab = ({
             type="button"
             size="sm"
             variant="outline"
-            className="absolute right-0 top-0 z-10 h-9 w-9 rounded-full border-brand-200 bg-white/95 px-0 shadow-sm hover:bg-brand-50 dark:border-slate-700 dark:bg-slate-900/95 dark:hover:bg-slate-800"
-            onClick={() => setEditorOpen(true)}
+            className="absolute right-2 top-2 z-10 h-9 w-9 rounded-full border-brand-200 bg-white/95 px-0 shadow-sm hover:bg-brand-50 dark:border-slate-700 dark:bg-slate-900/95 dark:hover:bg-slate-800"
+            onClick={() => setIsEditingLanding(true)}
             disabled={!canEdit}
             aria-label={t("home.editLanding")}
             title={t("home.editLanding")}
@@ -454,10 +437,52 @@ export const HomeTab = ({
             <Pencil className="h-4 w-4" />
           </Button>
           {!canEdit ? (
-            <p className="mb-3 pr-12 text-xs text-slate-500 dark:text-slate-400">{t("home.editLandingOwnerOnly")}</p>
+            <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">{t("home.editLandingOwnerOnly")}</p>
           ) : null}
-          {hasContent ? (
-            <div className="prose prose-slate max-w-none pr-12 dark:prose-invert [&_*]:break-words">
+          {canEdit && isEditingLanding ? (
+            <form
+              className="w-full space-y-3"
+              onSubmit={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                void (async () => {
+                  try {
+                    setIsSaving(true);
+                    await onSaveLandingMarkdown(markdownDraft);
+                    setIsEditingLanding(false);
+                  } finally {
+                    setIsSaving(false);
+                  }
+                })();
+              }}
+            >
+              <MXEditor
+                value={markdownDraft}
+                onChange={setMarkdownDraft}
+                placeholder={t("home.markdownPlaceholder")}
+                chrome="flat"
+                insertOptions={landingInsertOptions}
+                insertPlaceholder={t("home.insertWidgetPlaceholder")}
+                insertButtonLabel={t("home.insertWidgetAction")}
+              />
+              <div className="flex justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => {
+                    setMarkdownDraft(effectiveMarkdown);
+                    setIsEditingLanding(false);
+                  }}
+                >
+                  {t("common.cancel")}
+                </Button>
+                <Button type="submit" disabled={busy || isSaving}>
+                  {t("home.saveLanding")}
+                </Button>
+              </div>
+            </form>
+          ) : hasContent ? (
+            <div className="prose prose-slate max-w-none dark:prose-invert [&_*]:break-words">
               {landingContentSegments.map((segment, index) =>
                 segment.type === "markdown" ? (
                   <ReactMarkdown key={`md-${index}`} remarkPlugins={[remarkGfm]} components={markdownComponents}>
@@ -532,49 +557,6 @@ export const HomeTab = ({
       </Card>
       ) : null}
 
-      <Dialog open={editorOpen} onOpenChange={onEditorOpenChange}>
-        <DialogContent className="max-w-3xl">
-          <DialogHeader>
-            <DialogTitle>{t("home.editLandingTitle")}</DialogTitle>
-            <DialogDescription>{t("home.editLandingDescription")}</DialogDescription>
-          </DialogHeader>
-          <form
-            className="space-y-3"
-            onSubmit={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              void (async () => {
-                try {
-                  setIsSaving(true);
-                  await onSaveLandingMarkdown(markdownDraft);
-                  setEditorOpen(false);
-                } finally {
-                  setIsSaving(false);
-                }
-              })();
-            }}
-          >
-            <div className="space-y-1">
-              <Label>{t("home.markdownLabel")}</Label>
-              <textarea
-                value={markdownDraft}
-                onChange={(event) => setMarkdownDraft(event.target.value)}
-                rows={14}
-                placeholder={t("home.markdownPlaceholder")}
-                className="min-h-[300px] w-full rounded-xl border border-brand-200 bg-white p-3 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-400"
-              />
-            </div>
-            <div className="flex justify-end gap-2">
-              <DialogClose asChild>
-                <Button variant="ghost">{t("common.cancel")}</Button>
-              </DialogClose>
-              <Button type="submit" disabled={busy || isSaving}>
-                {t("home.saveLanding")}
-              </Button>
-            </div>
-          </form>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 };

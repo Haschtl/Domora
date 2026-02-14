@@ -6,22 +6,32 @@ interface InputWithSuffixProps extends React.InputHTMLAttributes<HTMLInputElemen
   suffix: React.ReactNode;
   containerClassName?: string;
   inputClassName?: string;
+  suffixContainerClassName?: string;
+  interactiveSuffix?: boolean;
 }
 
 export const InputWithSuffix = React.forwardRef<HTMLInputElement, InputWithSuffixProps>(
-  ({ suffix, className, containerClassName, inputClassName, ...props }, ref) => (
+  (
+    { suffix, className, containerClassName, inputClassName, suffixContainerClassName, interactiveSuffix = false, ...props },
+    ref
+  ) => (
     <div className={cn("relative", containerClassName)}>
       <Input
         ref={ref}
         className={cn("pr-10", inputClassName, className)}
         {...props}
       />
-      <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-500 dark:text-slate-400">
+      <div
+        className={cn(
+          "absolute right-2 top-1/2 -translate-y-1/2",
+          interactiveSuffix ? "pointer-events-auto" : "pointer-events-none text-xs text-slate-500 dark:text-slate-400",
+          suffixContainerClassName
+        )}
+      >
         {suffix}
-      </span>
+      </div>
     </div>
   )
 );
 
 InputWithSuffix.displayName = "InputWithSuffix";
-
