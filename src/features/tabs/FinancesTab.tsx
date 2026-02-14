@@ -84,6 +84,7 @@ interface FinancesTabProps {
   members: HouseholdMember[];
   userId: string;
   busy: boolean;
+  mobileTabBarVisible?: boolean;
   onAdd: (input: {
     description: string;
     amount: number;
@@ -324,6 +325,7 @@ export const FinancesTab = ({
   members,
   userId,
   busy,
+  mobileTabBarVisible = true,
   onAdd,
   onUpdateEntry,
   onDeleteEntry,
@@ -1848,7 +1850,7 @@ export const FinancesTab = ({
                   align="start"
                   side={mobile ? "top" : "bottom"}
                   sideOffset={12}
-                  className="z-50 -translate-x-1.5 box-border w-auto space-y-3 rounded-xl border-brand-100 shadow-lg dark:border-slate-700"
+                  className="z-50 -translate-x-1.5 box-border w-auto space-y-3 rounded-xl border-brand-100 shadow-lg duration-200 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 dark:border-slate-700"
                   style={{ width: `${addEntryPopoverWidth}px` }}
                 >
                     <addEntryForm.Field
@@ -1894,7 +1896,7 @@ export const FinancesTab = ({
                 <div
                   className={`absolute left-0 right-0 z-50 rounded-xl border border-brand-100 bg-white p-1 shadow-lg dark:border-slate-700 dark:bg-slate-900 ${
                     mobile ? "bottom-[calc(100%+0.65rem)]" : "top-[calc(100%+0.65rem)]"
-                  }`}
+                  } animate-in fade-in-0 zoom-in-95 duration-150`}
                 >
                   <p className="px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
                     {t("finances.suggestionsTitle")}
@@ -1955,7 +1957,13 @@ export const FinancesTab = ({
               </Card>
             ) : null}
             {isMobileAddEntryComposer ? (
-              <div className="fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+4.25rem)] z-40 px-3 sm:hidden">
+              <div
+                className={`fixed inset-x-0 z-40 px-3 sm:hidden ${
+                  mobileTabBarVisible
+                    ? "bottom-[calc(env(safe-area-inset-bottom)+4.75rem)]"
+                    : "bottom-[calc(env(safe-area-inset-bottom)+0.75rem)]"
+                }`}
+              >
                 <div
                   ref={addEntryComposerContainerRef}
                   className="rounded-2xl border border-brand-200/70 bg-white/75 p-1.5 shadow-xl backdrop-blur-xl dark:border-slate-700/70 dark:bg-slate-900/75"

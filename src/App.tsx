@@ -770,6 +770,7 @@ const App = () => {
                         members={householdMembers}
                         userLabel={userDisplayName ?? userEmail}
                         busy={busy}
+                        mobileTabBarVisible={!isMobileKeyboardOpen}
                         bucketItems={bucketItems}
                         tasks={tasks}
                         taskCompletions={taskCompletions}
@@ -797,6 +798,7 @@ const App = () => {
                         members={householdMembers}
                         userId={userId!}
                         busy={busy}
+                        mobileTabBarVisible={!isMobileKeyboardOpen}
                         onAdd={onAddShoppingItem}
                         onToggle={onToggleShoppingItem}
                         onUpdate={onUpdateShoppingItem}
@@ -838,6 +840,7 @@ const App = () => {
                         members={householdMembers}
                         busy={busy}
                         userId={userId!}
+                        mobileTabBarVisible={!isMobileKeyboardOpen}
                         onAdd={onAddFinanceEntry}
                         onUpdateEntry={onUpdateFinanceEntry}
                         onDeleteEntry={onDeleteFinanceEntry}

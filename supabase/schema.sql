@@ -1579,8 +1579,12 @@ begin
   end if;
 exception
   when others then
-    -- ignore scheduler setup errors; function can still be invoked manually.
-    null;
+    -- Do not fail schema deploy if pg_cron setup is unavailable, but surface
+    -- the issue so it is visible in migration/deploy logs.
+    raise warning
+      'pg_cron job setup failed for domora_household_data_maintenance_hourly (SQLSTATE %, error %)',
+      SQLSTATE,
+      SQLERRM;
 end;
 $$;
 

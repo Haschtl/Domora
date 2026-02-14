@@ -53,6 +53,7 @@ interface HomeTabProps {
   householdEvents: HouseholdEvent[];
   userLabel: string | undefined | null;
   busy: boolean;
+  mobileTabBarVisible?: boolean;
   onSelectHousehold: (householdId: string) => void;
   onSaveLandingMarkdown: (markdown: string) => Promise<void>;
   onAddBucketItem: (input: { title: string; descriptionMarkdown: string; suggestedDates: string[] }) => Promise<void>;
@@ -174,6 +175,7 @@ export const HomeTab = ({
   householdEvents,
   userLabel,
   busy,
+  mobileTabBarVisible = true,
   onSelectHousehold,
   onSaveLandingMarkdown,
   onAddBucketItem,
@@ -821,7 +823,7 @@ export const HomeTab = ({
               align="start"
               side={mobile ? "top" : "bottom"}
               sideOffset={12}
-              className="w-auto space-y-3 -translate-x-1.5 rounded-xl border-brand-100 shadow-lg dark:border-slate-700"
+              className="w-auto space-y-3 -translate-x-1.5 rounded-xl border-brand-100 shadow-lg duration-200 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 dark:border-slate-700"
               style={{ width: `${bucketPopoverWidth}px` }}
             >
                 <div className="space-y-1">
@@ -1075,7 +1077,13 @@ export const HomeTab = ({
         </CardContent>
       </Card>
       {isMobileBucketComposer ? (
-        <div className="fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+4.75rem)] z-40 px-3 sm:hidden">
+        <div
+          className={`fixed inset-x-0 z-40 px-3 sm:hidden ${
+            mobileTabBarVisible
+              ? "bottom-[calc(env(safe-area-inset-bottom)+4.75rem)]"
+              : "bottom-[calc(env(safe-area-inset-bottom)+0.75rem)]"
+          }`}
+        >
           <div
             ref={bucketComposerContainerRef}
             className="rounded-2xl border border-brand-200/70 bg-white/75 p-1.5 shadow-xl backdrop-blur-xl dark:border-slate-700/70 dark:bg-slate-900/75"

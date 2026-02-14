@@ -40,6 +40,7 @@ interface ShoppingTabProps {
   members: HouseholdMember[];
   userId: string;
   busy: boolean;
+  mobileTabBarVisible?: boolean;
   onAdd: (
     title: string,
     tags: string[],
@@ -81,6 +82,7 @@ export const ShoppingTab = ({
   members,
   userId,
   busy,
+  mobileTabBarVisible = true,
   onAdd,
   onToggle,
   onUpdate,
@@ -363,55 +365,58 @@ export const ShoppingTab = ({
         <form.Field
           name="title"
           children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
-            <div className="relative flex-1 space-y-1">
-              <Label className={mobile ? "sr-only" : ""}>{t("shopping.itemLabel")}</Label>
-              <Popover>
+            <Popover open={titleFocused && suggestions.length > 0}>
+              <div className="relative flex-1 space-y-1">
+                <Label className={mobile ? "sr-only" : ""}>{t("shopping.itemLabel")}</Label>
                 <PopoverAnchor asChild>
-                  <div
-                    ref={addItemRowRef}
-                    className="flex h-10 items-stretch overflow-hidden rounded-xl border border-brand-200 bg-white dark:border-slate-700 dark:bg-slate-900 focus-within:border-brand-500 focus-within:shadow-[inset_0_0_0_1px_rgba(59,130,246,0.45)] dark:focus-within:border-slate-500 dark:focus-within:shadow-[inset_0_0_0_1px_rgba(148,163,184,0.45)]"
-                  >
-                    <Input
-                      value={field.state.value}
-                      onChange={(event) => {
-                        const nextValue = event.target.value;
-                        field.handleChange(nextValue);
-                        tryAutofillTagsFromTitle(nextValue);
-                      }}
-                      onFocus={onTitleFocus}
-                      onBlur={(event) => {
-                        onTitleBlur();
-                        tryAutofillTagsFromTitle(event.target.value);
-                      }}
-                      onKeyDown={onTitleKeyDown}
-                      placeholder={t("shopping.placeholder")}
-                      autoComplete="off"
-                      className="h-full flex-1 rounded-none border-0 bg-transparent shadow-none focus-visible:ring-0"
-                    />
-                    <PopoverTrigger asChild>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="h-full w-10 shrink-0 rounded-none border-l border-brand-200 p-0 dark:border-slate-700"
-                        aria-label={t("shopping.moreOptions")}
+                  <div>
+                    <Popover>
+                      <PopoverAnchor asChild>
+                        <div
+                          ref={addItemRowRef}
+                          className="flex h-10 items-stretch overflow-hidden rounded-xl border border-brand-200 bg-white dark:border-slate-700 dark:bg-slate-900 focus-within:border-brand-500 focus-within:shadow-[inset_0_0_0_1px_rgba(59,130,246,0.45)] dark:focus-within:border-slate-500 dark:focus-within:shadow-[inset_0_0_0_1px_rgba(148,163,184,0.45)]"
+                        >
+                          <Input
+                            value={field.state.value}
+                            onChange={(event) => {
+                              const nextValue = event.target.value;
+                              field.handleChange(nextValue);
+                              tryAutofillTagsFromTitle(nextValue);
+                            }}
+                            onFocus={onTitleFocus}
+                            onBlur={(event) => {
+                              onTitleBlur();
+                              tryAutofillTagsFromTitle(event.target.value);
+                            }}
+                            onKeyDown={onTitleKeyDown}
+                            placeholder={t("shopping.placeholder")}
+                            autoComplete="off"
+                            className="h-full flex-1 rounded-none border-0 bg-transparent shadow-none focus-visible:ring-0"
+                          />
+                          <PopoverTrigger asChild>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="h-full w-10 shrink-0 rounded-none border-l border-brand-200 p-0 dark:border-slate-700"
+                              aria-label={t("shopping.moreOptions")}
+                            >
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </PopoverTrigger>
+                          <Button type="submit" disabled={busy} className="h-full shrink-0 rounded-none border-l border-brand-200 px-3 dark:border-slate-700">
+                            <Plus className="h-4 w-4 sm:hidden" />
+                            <span className="hidden sm:inline">{t("common.add")}</span>
+                          </Button>
+                        </div>
+                      </PopoverAnchor>
+                      <PopoverContent
+                        align="start"
+                        side={mobile ? "top" : "bottom"}
+                        sideOffset={12}
+                        className="w-auto -translate-x-1.5 space-y-3 rounded-xl border-brand-100 shadow-lg duration-200 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 dark:border-slate-700"
+                        style={{ width: `${addItemPopoverWidth}px` }}
                       >
-                        <MoreHorizontal className="h-4 w-4" />
-                      </Button>
-                    </PopoverTrigger>
-                    <Button type="submit" disabled={busy} className="h-full shrink-0 rounded-none border-l border-brand-200 px-3 dark:border-slate-700">
-                      <Plus className="h-4 w-4 sm:hidden" />
-                      <span className="hidden sm:inline">{t("common.add")}</span>
-                    </Button>
-                  </div>
-                </PopoverAnchor>
-                <PopoverContent
-                  align="start"
-                  side={mobile ? "top" : "bottom"}
-                  sideOffset={12}
-                  className="w-auto space-y-3 rounded-xl border-brand-100 shadow-lg dark:border-slate-700"
-                  style={{ width: `${addItemPopoverWidth}px` }}
-                >
                     <form.Field
                       name="tagsInput"
                       children={(tagField: { state: { value: string }; handleChange: (value: string) => void }) => (
@@ -463,14 +468,18 @@ export const ShoppingTab = ({
                         )}
                       />
                     </div>
-                </PopoverContent>
-              </Popover>
-              {titleFocused && suggestions.length > 0 ? (
-                <div
-                  className={`absolute left-0 right-0 z-20 rounded-xl border border-brand-100 bg-white p-1 shadow-lg dark:border-slate-700 dark:bg-slate-900 ${
-                    mobile ? "bottom-[calc(100%+0.65rem)]" : "top-[calc(100%+0.65rem)]"
-                  }`}
-                >
+                      </PopoverContent>
+                    </Popover>
+                  </div>
+                </PopoverAnchor>
+                    <PopoverContent
+                      align="start"
+                      side={mobile ? "top" : "bottom"}
+                      sideOffset={10}
+                      onOpenAutoFocus={(event) => event.preventDefault()}
+                      onCloseAutoFocus={(event) => event.preventDefault()}
+                      className="w-[var(--radix-popover-trigger-width)] rounded-xl border border-brand-100 bg-white p-1 shadow-lg duration-150 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0 dark:border-slate-700 dark:bg-slate-900"
+                    >
                   <p className="px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
                     {t("shopping.suggestionsTitle")}
                   </p>
@@ -508,9 +517,9 @@ export const ShoppingTab = ({
                       </li>
                     ))}
                   </ul>
-                </div>
-              ) : null}
-            </div>
+                </PopoverContent>
+              </div>
+            </Popover>
           )}
         />
       </div>
@@ -746,7 +755,13 @@ export const ShoppingTab = ({
           </DialogContent>
         </Dialog>
         {isMobileComposer ? (
-          <div className="fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+4.75rem)] z-40 px-3 sm:hidden">
+          <div
+            className={`fixed inset-x-0 z-40 px-3 sm:hidden ${
+              mobileTabBarVisible
+                ? "bottom-[calc(env(safe-area-inset-bottom)+4.75rem)]"
+                : "bottom-[calc(env(safe-area-inset-bottom)+0.75rem)]"
+            }`}
+          >
             <div
               ref={addItemComposerContainerRef}
               className="rounded-2xl border border-brand-200/70 bg-white/75 p-1.5 shadow-xl backdrop-blur-xl dark:border-slate-700/70 dark:bg-slate-900/75"
@@ -779,26 +794,35 @@ export const ShoppingTab = ({
             <form.Field
               name="title"
               children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
-                <div className="relative flex-1 space-y-1">
-                  <Label>{t("shopping.itemLabel")}</Label>
-                  <Input
-                    value={field.state.value}
-                    onChange={(event) => {
-                      const nextValue = event.target.value;
-                      field.handleChange(nextValue);
-                      tryAutofillTagsFromTitle(nextValue);
-                    }}
-                    onFocus={onTitleFocus}
-                    onBlur={(event) => {
-                      onTitleBlur();
-                      tryAutofillTagsFromTitle(event.target.value);
-                    }}
-                    onKeyDown={onTitleKeyDown}
-                    placeholder={t("shopping.placeholder")}
-                    autoComplete="off"
-                  />
-                  {titleFocused && suggestions.length > 0 ? (
-                    <div className="absolute left-0 right-0 top-[calc(100%+0.4rem)] z-20 rounded-xl border border-brand-100 bg-white p-1 shadow-lg dark:border-slate-700 dark:bg-slate-900">
+                <Popover open={titleFocused && suggestions.length > 0}>
+                  <div className="relative flex-1 space-y-1">
+                    <Label>{t("shopping.itemLabel")}</Label>
+                    <PopoverAnchor asChild>
+                      <Input
+                        value={field.state.value}
+                        onChange={(event) => {
+                          const nextValue = event.target.value;
+                          field.handleChange(nextValue);
+                          tryAutofillTagsFromTitle(nextValue);
+                        }}
+                        onFocus={onTitleFocus}
+                        onBlur={(event) => {
+                          onTitleBlur();
+                          tryAutofillTagsFromTitle(event.target.value);
+                        }}
+                        onKeyDown={onTitleKeyDown}
+                        placeholder={t("shopping.placeholder")}
+                        autoComplete="off"
+                      />
+                    </PopoverAnchor>
+                    <PopoverContent
+                      align="start"
+                      side="bottom"
+                      sideOffset={6}
+                      onOpenAutoFocus={(event) => event.preventDefault()}
+                      onCloseAutoFocus={(event) => event.preventDefault()}
+                      className="w-[var(--radix-popover-trigger-width)] rounded-xl border border-brand-100 bg-white p-1 shadow-lg duration-150 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0 dark:border-slate-700 dark:bg-slate-900"
+                    >
                       <p className="px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
                         {t("shopping.suggestionsTitle")}
                       </p>
@@ -836,9 +860,9 @@ export const ShoppingTab = ({
                           </li>
                         ))}
                       </ul>
-                    </div>
-                  ) : null}
-                </div>
+                    </PopoverContent>
+                  </div>
+                </Popover>
               )}
             />
             <Button type="submit" disabled={busy}>
