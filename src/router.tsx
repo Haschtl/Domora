@@ -92,6 +92,12 @@ const tasksHistoryRoute = createRoute({
   component: () => null
 });
 
+const tasksSettingsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "tasks/settings",
+  component: () => null
+});
+
 const financesOverviewRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "finances/overview",
@@ -137,6 +143,18 @@ const settingsHouseholdRoute = createRoute({
   component: () => null
 });
 
+const redirectPaymentSuccessRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "redirect-payment/success",
+  component: () => null
+});
+
+const redirectPaymentCancelRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "redirect-payment/cancel",
+  component: () => null
+});
+
 const routeTree = rootRoute.addChildren([
   indexRoute,
   homeRoute,
@@ -149,6 +167,7 @@ const routeTree = rootRoute.addChildren([
   tasksOverviewRoute,
   tasksStatsRoute,
   tasksHistoryRoute,
+  tasksSettingsRoute,
   financesRoute,
   financesOverviewRoute,
   financesStatsRoute,
@@ -156,7 +175,9 @@ const routeTree = rootRoute.addChildren([
   financesSubscriptionsRoute,
   settingsRoute,
   settingsMeRoute,
-  settingsHouseholdRoute
+  settingsHouseholdRoute,
+  redirectPaymentSuccessRoute,
+  redirectPaymentCancelRoute
 ]);
 
 export const router = createRouter({

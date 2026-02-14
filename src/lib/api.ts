@@ -169,6 +169,7 @@ const financeEntrySchema = z.object({
   description: z.string().min(1),
   category: z.string().min(1),
   amount: z.coerce.number().finite().nonnegative(),
+  receipt_image_url: z.string().nullable().optional().transform((value) => value ?? null),
   paid_by: z.string().uuid(),
   paid_by_user_ids: z.array(z.string().uuid()).default([]),
   beneficiary_user_ids: z.array(z.string().uuid()).default([]),
@@ -1033,6 +1034,47 @@ export const updateShoppingItemStatus = async (id: string, done: boolean, userId
   }
 };
 
+export const updateShoppingItem = async (
+  id: string,
+  input: {
+    title: string;
+    tags: string[];
+    recurrenceInterval: { value: number; unit: ShoppingRecurrenceUnit } | null;
+  }
+): Promise<ShoppingItem> => {
+  const parsedInput = z.object({
+    id: z.string().uuid(),
+    title: z.string().trim().min(1).max(200),
+    tags: z.array(z.string().trim().min(1).max(40)).max(10),
+    recurrenceInterval: z
+      .object({
+        value: z.coerce.number().int().positive(),
+        unit: shoppingRecurrenceUnitSchema
+      })
+      .nullable()
+  }).parse({
+    id,
+    title: input.title,
+    tags: input.tags.map((entry) => entry.trim()).filter((entry) => entry.length > 0),
+    recurrenceInterval: input.recurrenceInterval
+  });
+
+  const { data, error } = await supabase
+    .from("shopping_items")
+    .update({
+      title: parsedInput.title,
+      tags: parsedInput.tags,
+      recurrence_interval_value: parsedInput.recurrenceInterval?.value ?? null,
+      recurrence_interval_unit: parsedInput.recurrenceInterval?.unit ?? null
+    })
+    .eq("id", parsedInput.id)
+    .select("*")
+    .single();
+
+  if (error) throw error;
+  return normalizeShoppingItem(data as Record<string, unknown>);
+};
+
 export const getShoppingCompletions = async (householdId: string): Promise<ShoppingItemCompletion[]> => {
   const { data, error } = await supabase
     .from("shopping_item_completions")
@@ -1407,6 +1449,7 @@ export const addFinanceEntry = async (
     description: string;
     amount: number;
     category: string;
+    receiptImageUrl?: string | null;
     paidByUserIds: string[];
     beneficiaryUserIds: string[];
     entryDate?: string | null;
@@ -1418,6 +1461,7 @@ export const addFinanceEntry = async (
     description: z.string().trim().min(1).max(200),
     amount: z.coerce.number().finite().nonnegative(),
     category: z.string().trim().max(80),
+    receiptImageUrl: z.string().trim().max(5_000_000).nullable().optional(),
     paidByUserIds: z.array(z.string().uuid()).min(1),
     beneficiaryUserIds: z.array(z.string().uuid()).min(1),
     entryDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional()
@@ -1426,6 +1470,7 @@ export const addFinanceEntry = async (
     description: input.description,
     amount: input.amount,
     category: input.category,
+    receiptImageUrl: input.receiptImageUrl ?? null,
     paidByUserIds: input.paidByUserIds.filter((entry, index, all) => all.indexOf(entry) === index),
     beneficiaryUserIds: input.beneficiaryUserIds.filter((entry, index, all) => all.indexOf(entry) === index),
     entryDate: input.entryDate ?? null
@@ -1442,6 +1487,7 @@ export const addFinanceEntry = async (
       description: parsedInput.description,
       category: normalizedCategory,
       amount: parsedInput.amount,
+      receipt_image_url: parsedInput.receiptImageUrl,
       paid_by: parsedInput.paidByUserIds[0],
       paid_by_user_ids: parsedInput.paidByUserIds,
       beneficiary_user_ids: parsedInput.beneficiaryUserIds,
@@ -1473,6 +1519,7 @@ export const updateFinanceEntry = async (
     description: string;
     amount: number;
     category: string;
+    receiptImageUrl?: string | null;
     paidByUserIds: string[];
     beneficiaryUserIds: string[];
     entryDate?: string | null;
@@ -1485,6 +1532,7 @@ export const updateFinanceEntry = async (
       description: z.string().trim().min(1).max(200),
       amount: z.coerce.number().finite().nonnegative(),
       category: z.string().trim().max(80),
+      receiptImageUrl: z.string().trim().max(5_000_000).nullable().optional(),
       paidByUserIds: z.array(z.string().uuid()).min(1),
       beneficiaryUserIds: z.array(z.string().uuid()).min(1),
       entryDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional()
@@ -1494,6 +1542,7 @@ export const updateFinanceEntry = async (
       description: input.description,
       amount: input.amount,
       category: input.category,
+      receiptImageUrl: input.receiptImageUrl ?? null,
       paidByUserIds: input.paidByUserIds.filter((entry, index, all) => all.indexOf(entry) === index),
       beneficiaryUserIds: input.beneficiaryUserIds.filter((entry, index, all) => all.indexOf(entry) === index),
       entryDate: input.entryDate ?? null
@@ -1508,6 +1557,7 @@ export const updateFinanceEntry = async (
       description: parsedInput.description,
       category: normalizedCategory,
       amount: parsedInput.amount,
+      receipt_image_url: parsedInput.receiptImageUrl,
       paid_by: parsedInput.paidByUserIds[0],
       paid_by_user_ids: parsedInput.paidByUserIds,
       beneficiary_user_ids: parsedInput.beneficiaryUserIds,

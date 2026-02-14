@@ -145,6 +145,7 @@ export interface FinanceEntry {
   description: string;
   category: string;
   amount: number;
+  receipt_image_url: string | null;
   paid_by: string;
   paid_by_user_ids: string[];
   beneficiary_user_ids: string[];

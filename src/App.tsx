@@ -4,13 +4,15 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
   Archive,
   BarChart3,
+  CheckCircle2,
   CheckSquare,
   FileText,
   Home,
   LayoutList,
   Settings,
   ShoppingCart,
-  Wallet
+  Wallet,
+  XCircle
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -18,6 +20,7 @@ import { toast } from "react-toastify";
 import { isSupabaseConfigured } from "./lib/supabase";
 import { isDueNow } from "./lib/date";
 import type { AppTab } from "./lib/types";
+import { Button } from "./components/ui/button";
 import { Card, CardDescription, CardHeader, CardTitle } from "./components/ui/card";
 import { useWorkspaceController } from "./hooks/useWorkspaceController";
 
@@ -50,7 +53,7 @@ const tabPathMap: Record<AppTab, string> = {
 
 type HomeSubTab = "summary" | "feed";
 type ShoppingSubTab = "list" | "history";
-type TaskSubTab = "overview" | "stats" | "history";
+type TaskSubTab = "overview" | "stats" | "history" | "settings";
 type FinanceSubTab = "overview" | "stats" | "archive" | "subscriptions";
 type SettingsSubTab = "me" | "household";
 
@@ -71,6 +74,7 @@ const resolveHomeSubTabFromPathname = (pathname: string): HomeSubTab => {
 const resolveTaskSubTabFromPathname = (pathname: string): TaskSubTab => {
   if (pathname.startsWith("/tasks/stats")) return "stats";
   if (pathname.startsWith("/tasks/history")) return "history";
+  if (pathname.startsWith("/tasks/settings")) return "settings";
   return "overview";
 };
 
@@ -104,10 +108,11 @@ const homeSubPathMap: Record<HomeSubTab, "/home/summary" | "/home/feed"> = {
   feed: "/home/feed"
 };
 
-const taskSubPathMap: Record<TaskSubTab, "/tasks/overview" | "/tasks/stats" | "/tasks/history"> = {
+const taskSubPathMap: Record<TaskSubTab, "/tasks/overview" | "/tasks/stats" | "/tasks/history" | "/tasks/settings"> = {
   overview: "/tasks/overview",
   stats: "/tasks/stats",
-  history: "/tasks/history"
+  history: "/tasks/history",
+  settings: "/tasks/settings"
 };
 const shoppingSubPathMap: Record<ShoppingSubTab, "/shopping/list" | "/shopping/history"> = {
   list: "/shopping/list",
@@ -169,6 +174,7 @@ const App = () => {
     onJoinHousehold,
     onAddShoppingItem,
     onToggleShoppingItem,
+    onUpdateShoppingItem,
     onDeleteShoppingItem,
     onAddTask,
     onCompleteTask,
@@ -188,6 +194,7 @@ const App = () => {
     onUpdateHomeMarkdown,
     onUpdateHousehold,
     onUpdateMemberSettings,
+    onUpdateMemberSettingsForUser,
     onUpdateMemberTaskLaziness,
     onResetHouseholdPimpers,
     onUpdateUserAvatar,
@@ -200,6 +207,11 @@ const App = () => {
   } = useWorkspaceController();
 
   const tab = useMemo(() => resolveTabFromPathname(location.pathname), [location.pathname]);
+  const paymentRedirectStatus = useMemo<"success" | "cancel" | null>(() => {
+    if (location.pathname.startsWith("/redirect-payment/success")) return "success";
+    if (location.pathname.startsWith("/redirect-payment/cancel")) return "cancel";
+    return null;
+  }, [location.pathname]);
   const homeSubTab = useMemo(() => resolveHomeSubTabFromPathname(location.pathname), [location.pathname]);
   const shoppingSubTab = useMemo(() => resolveShoppingSubTabFromPathname(location.pathname), [location.pathname]);
   const taskSubTab = useMemo(() => resolveTaskSubTabFromPathname(location.pathname), [location.pathname]);
@@ -257,7 +269,8 @@ const App = () => {
       ? [
           { id: "overview", icon: LayoutList, labelKey: "subnav.tasks.overview", path: taskSubPathMap.overview },
           { id: "stats", icon: BarChart3, labelKey: "subnav.tasks.stats", path: taskSubPathMap.stats },
-          { id: "history", icon: FileText, labelKey: "subnav.tasks.history", path: taskSubPathMap.history }
+          { id: "history", icon: Archive, labelKey: "subnav.tasks.history", path: taskSubPathMap.history },
+          { id: "settings", icon: Settings, labelKey: "subnav.tasks.settings", path: taskSubPathMap.settings }
         ]
       : tab === "finances"
         ? [
@@ -340,6 +353,43 @@ const App = () => {
     const householdName = activeHousehold?.name?.trim();
     document.title = householdName ? `${householdName} | ${brand}` : brand;
   }, [activeHousehold?.name, t]);
+
+  if (paymentRedirectStatus) {
+    const isSuccess = paymentRedirectStatus === "success";
+    const Icon = isSuccess ? CheckCircle2 : XCircle;
+    return (
+      <div className="relative min-h-screen">
+        <Suspense fallback={null}>
+          <AppParticlesBackground />
+        </Suspense>
+        <div className="relative z-10 mx-auto flex min-h-screen w-full max-w-3xl items-center justify-center p-4 text-slate-900 dark:text-slate-100 sm:p-6">
+          <Card className="w-full border-brand-200 bg-white/95 dark:border-slate-700 dark:bg-slate-900/90">
+            <CardHeader>
+              <div className="mb-2 flex items-center gap-2">
+                <Icon className={isSuccess ? "h-5 w-5 text-emerald-600 dark:text-emerald-400" : "h-5 w-5 text-rose-600 dark:text-rose-400"} />
+                <CardTitle>
+                  {isSuccess ? t("app.paymentRedirectSuccessTitle") : t("app.paymentRedirectCancelTitle")}
+                </CardTitle>
+              </div>
+              <CardDescription>
+                {isSuccess ? t("app.paymentRedirectSuccessDescription") : t("app.paymentRedirectCancelDescription")}
+              </CardDescription>
+              <div className="pt-2">
+                <Button
+                  type="button"
+                  onClick={() => {
+                    void navigate({ to: "/finances/overview" });
+                  }}
+                >
+                  {t("app.paymentRedirectBackToFinances")}
+                </Button>
+              </div>
+            </CardHeader>
+          </Card>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="relative min-h-screen">
@@ -539,6 +589,7 @@ const App = () => {
                           if (next) setActiveHousehold(next);
                         }}
                         onSaveLandingMarkdown={onUpdateHomeMarkdown}
+                        onCompleteTask={onCompleteTask}
                       />
                     ) : null}
 
@@ -552,6 +603,7 @@ const App = () => {
                         busy={busy}
                         onAdd={onAddShoppingItem}
                         onToggle={onToggleShoppingItem}
+                        onUpdate={onUpdateShoppingItem}
                         onDelete={onDeleteShoppingItem}
                       />
                     ) : null}
@@ -599,6 +651,7 @@ const App = () => {
                         onDeleteSubscription={onDeleteFinanceSubscription}
                         onUpdateHousehold={onUpdateHousehold}
                         onUpdateMemberSettings={onUpdateMemberSettings}
+                        onUpdateMemberSettingsForUser={onUpdateMemberSettingsForUser}
                         onRequestCashAudit={onRequestCashAudit}
                       />
                     ) : null}

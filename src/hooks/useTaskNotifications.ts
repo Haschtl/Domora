@@ -7,14 +7,38 @@ const CHECK_INTERVAL_MS = 60_000;
 const buildNotificationKey = (userId: string, taskId: string, dayKey: string) =>
   `domora-task-notify:${userId}:${taskId}:${dayKey}`;
 const buildEventNotificationKey = (userId: string, eventId: string) => `domora-event-notify:${userId}:${eventId}`;
+const isNotificationSupported = () =>
+  typeof window !== "undefined" && window.isSecureContext && "Notification" in window && "localStorage" in window;
+const hasBeenNotified = (key: string) => {
+  try {
+    return window.localStorage.getItem(key) === "1";
+  } catch {
+    return false;
+  }
+};
+const markNotified = (key: string) => {
+  try {
+    window.localStorage.setItem(key, "1");
+  } catch {
+    // Ignore storage failures (private mode / quota issues).
+  }
+};
+const tryNotify = (title: string, options: NotificationOptions) => {
+  try {
+    new Notification(title, options);
+    return true;
+  } catch {
+    return false;
+  }
+};
 
 export const useTaskNotifications = (tasks: TaskItem[], householdEvents: HouseholdEvent[], userId: string | undefined) => {
   const [permission, setPermission] = useState<NotificationPermission>(
-    typeof window !== "undefined" && "Notification" in window ? Notification.permission : "denied"
+    isNotificationSupported() ? Notification.permission : "denied"
   );
 
   const requestPermission = async () => {
-    if (!("Notification" in window)) {
+    if (!isNotificationSupported()) {
       return "denied" as NotificationPermission;
     }
 
@@ -24,7 +48,7 @@ export const useTaskNotifications = (tasks: TaskItem[], householdEvents: Househo
   };
 
   useEffect(() => {
-    if (!("Notification" in window) || permission !== "granted" || !userId) {
+    if (!isNotificationSupported() || permission !== "granted" || !userId) {
       return;
     }
 
@@ -42,14 +66,13 @@ export const useTaskNotifications = (tasks: TaskItem[], householdEvents: Househo
         if (Number.isNaN(dueTime) || dueTime > nowMillis) return;
 
         const key = buildNotificationKey(userId, task.id, dayKey);
-        if (window.localStorage.getItem(key) === "1") return;
+        if (hasBeenNotified(key)) return;
 
-        new Notification(i18n.t("tasks.notificationTitle"), {
+        const sent = tryNotify(i18n.t("tasks.notificationTitle"), {
           body: i18n.t("tasks.notificationBody", { title: task.title }),
           tag: `task-${task.id}-${dayKey}`
         });
-
-        window.localStorage.setItem(key, "1");
+        if (sent) markNotified(key);
       });
     };
 
@@ -58,31 +81,34 @@ export const useTaskNotifications = (tasks: TaskItem[], householdEvents: Househo
       householdEvents.slice(0, 30).forEach((event) => {
         if (event.actor_user_id && event.actor_user_id === userId) return;
         const key = buildEventNotificationKey(userId, event.id);
-        if (window.localStorage.getItem(key) === "1") return;
+        if (hasBeenNotified(key)) return;
 
         const payload = event.payload ?? {};
-        let title:string|undefined;
-        let body = "";
+        const notificationContent =
+          event.event_type === "task_completed"
+            ? {
+                title: i18n.t("app.pushTaskCompletedTitle"),
+                body: i18n.t("app.pushTaskCompletedBody", { task: String(payload.title ?? "") })
+              }
+            : event.event_type === "finance_created"
+              ? {
+                  title: i18n.t("app.pushFinanceCreatedTitle"),
+                  body: i18n.t("app.pushFinanceCreatedBody", { name: String(payload.description ?? "") })
+                }
+              : event.event_type === "cash_audit_requested"
+                ? {
+                    title: i18n.t("app.pushCashAuditTitle"),
+                    body: i18n.t("app.pushCashAuditBody")
+                  }
+                : null;
 
-        if (event.event_type === "task_completed") {
-          title = i18n.t("app.pushTaskCompletedTitle");
-          body = i18n.t("app.pushTaskCompletedBody", { task: String(payload.title ?? "") });
-        } else if (event.event_type === "finance_created") {
-          title = i18n.t("app.pushFinanceCreatedTitle");
-          body = i18n.t("app.pushFinanceCreatedBody", { name: String(payload.description ?? "") });
-        } else if (event.event_type === "cash_audit_requested") {
-          title = i18n.t("app.pushCashAuditTitle");
-          body = i18n.t("app.pushCashAuditBody");
-        } else {
-          return;
-        }
+        if (!notificationContent) return;
 
-        new Notification(title, {
-          body,
+        const sent = tryNotify(notificationContent.title, {
+          body: notificationContent.body,
           tag: `event-${event.id}`
         });
-
-        window.localStorage.setItem(key, "1");
+        if (sent) markNotified(key);
       });
     };
 

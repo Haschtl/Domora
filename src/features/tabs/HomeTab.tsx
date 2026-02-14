@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useNavigate } from "@tanstack/react-router";
 import { CalendarCheck2, Pencil, Receipt, ShoppingCart, Wallet, X } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -46,6 +47,7 @@ interface HomeTabProps {
   busy: boolean;
   onSelectHousehold: (householdId: string) => void;
   onSaveLandingMarkdown: (markdown: string) => Promise<void>;
+  onCompleteTask: (task: TaskItem) => Promise<void>;
 }
 
 type LandingContentSegment = { type: "markdown"; content: string } | { type: "widget"; key: LandingWidgetKey };
@@ -159,9 +161,11 @@ export const HomeTab = ({
   userLabel,
   busy,
   onSelectHousehold,
-  onSaveLandingMarkdown
+  onSaveLandingMarkdown,
+  onCompleteTask
 }: HomeTabProps) => {
   const { t, i18n } = useTranslation();
+  const navigate = useNavigate();
   const landingInsertOptions = useMemo(
     () => [
       { label: t("home.widgetTasksDue"), value: widgetTokenFromKey("tasks-overview") },
@@ -300,7 +304,10 @@ export const HomeTab = ({
         return { month, total: data.total, categories };
       });
   }, [financeEntries]);
-  const labelForUserId = (memberId: string | null) => (memberId ? memberLabel(memberId) : t("common.memberFallback"));
+  const labelForUserId = useCallback(
+    (memberId: string | null) => (memberId ? memberLabel(memberId) : t("common.memberFallback")),
+    [memberLabel, t]
+  );
   const taskFairness = useMemo(() => {
     const memberIds = [...new Set(members.map((entry) => entry.user_id))];
     if (memberIds.length === 0) {
@@ -464,16 +471,20 @@ export const HomeTab = ({
   );
   const landingContentSegments = useMemo(() => splitLandingContentSegments(effectiveMarkdown), [effectiveMarkdown]);
 
-  const renderLandingWidget = (key: LandingWidgetKey) => {
+  const renderLandingWidget = useCallback((key: LandingWidgetKey) => {
     if (key === "tasks-overview") {
       return (
-        <div className="rounded-xl border border-brand-100 bg-brand-50/60 p-3 dark:border-slate-700 dark:bg-slate-800/60">
+        <button
+          type="button"
+          className="w-full rounded-xl border border-brand-100 bg-brand-50/60 p-3 text-left transition hover:bg-brand-100/70 dark:border-slate-700 dark:bg-slate-800/60 dark:hover:bg-slate-800"
+          onClick={() => void navigate({ to: "/tasks/overview" })}
+        >
           <p className="text-xs text-slate-500 dark:text-slate-400">{t("home.widgetTasksDue")}</p>
           <p className="mt-1 text-lg font-semibold text-slate-900 dark:text-slate-100">{dueTasksCount}</p>
           <p className="text-xs text-slate-500 dark:text-slate-400">
             {t("home.widgetTasksOpen", { count: openTasksCount })}
           </p>
-        </div>
+        </button>
       );
     }
 
@@ -486,8 +497,19 @@ export const HomeTab = ({
           {dueTasksForYou.length > 0 ? (
             <ul className="mt-2 space-y-1">
               {dueTasksForYou.slice(0, 3).map((task) => (
-                <li key={task.id} className="truncate text-xs text-slate-600 dark:text-slate-300">
-                  {task.title}
+                <li key={task.id} className="flex items-center justify-between gap-2 rounded-lg bg-white/60 px-2 py-1 dark:bg-slate-900/50">
+                  <span className="truncate text-xs text-slate-600 dark:text-slate-300">{task.title}</span>
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="h-7 px-2 text-[11px]"
+                    disabled={busy}
+                    onClick={() => {
+                      void onCompleteTask(task).catch(() => undefined);
+                    }}
+                  >
+                    {t("tasks.complete")}
+                  </Button>
                 </li>
               ))}
             </ul>
@@ -499,13 +521,17 @@ export const HomeTab = ({
     if (key === "your-balance") {
       const positive = yourBalance >= 0;
       return (
-        <div className="rounded-xl border border-brand-100 bg-white/80 p-3 dark:border-slate-700 dark:bg-slate-900/70">
+        <button
+          type="button"
+          className="w-full rounded-xl border border-brand-100 bg-white/80 p-3 text-left transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900/70 dark:hover:bg-slate-900"
+          onClick={() => void navigate({ to: "/finances/stats" })}
+        >
           <p className="text-xs text-slate-500 dark:text-slate-400">{t("home.widgetYourBalance")}</p>
           <p className={`mt-1 text-lg font-semibold ${positive ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}`}>
             {formatMoney(yourBalance)}
           </p>
           <p className="text-xs text-slate-500 dark:text-slate-400">{t("home.widgetBalanceSinceAudit")}</p>
-        </div>
+        </button>
       );
     }
 
@@ -593,7 +619,22 @@ export const HomeTab = ({
     }
 
     return null;
-  };
+  }, [
+    dueTasksCount,
+    openTasksCount,
+    dueTasksForYou,
+    yourBalance,
+    formatMoney,
+    householdOpenBalance,
+    recentActivity,
+    monthlyExpenseRows,
+    taskFairness,
+    memberLabel,
+    navigate,
+    onCompleteTask,
+    busy,
+    t
+  ]);
   const landingWidgetJsxDescriptors = useMemo<JsxComponentDescriptor[]>(
     () =>
       LANDING_WIDGET_COMPONENTS.map(({ key, tag }) => {

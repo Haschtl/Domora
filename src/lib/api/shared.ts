@@ -156,6 +156,7 @@ const financeEntrySchema = z.object({
   description: z.string().min(1),
   category: z.string().min(1),
   amount: z.coerce.number().finite().nonnegative(),
+  receipt_image_url: z.string().nullable().optional().transform((value) => value ?? null),
   paid_by: z.string().uuid(),
   paid_by_user_ids: z.array(z.string().uuid()).default([]),
   beneficiary_user_ids: z.array(z.string().uuid()).default([]),

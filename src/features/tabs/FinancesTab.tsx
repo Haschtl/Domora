@@ -1,5 +1,6 @@
-import { type CSSProperties, useEffect, useId, useMemo, useState } from "react";
+import { type CSSProperties, type RefObject, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useForm } from "@tanstack/react-form";
+import imageCompression from "browser-image-compression";
 import {
   ArcElement,
   BarElement,
@@ -11,10 +12,14 @@ import {
 } from "chart.js";
 import {
   AlertTriangle,
+  Camera,
+  ChevronLeft,
   Crown,
   Leaf,
   MoreHorizontal,
   PartyPopper,
+  Paperclip,
+  Plus,
   Scale,
   SlidersHorizontal,
   Smile,
@@ -24,6 +29,7 @@ import {
 import { Bar, Doughnut } from "react-chartjs-2";
 import { useTranslation } from "react-i18next";
 import { PersonSelect } from "../../components/person-select";
+import { PaymentBrandIcon } from "../../components/payment-brand-icon";
 import type {
   CashAuditRequest,
   FinanceEntry,
@@ -51,6 +57,7 @@ import { Label } from "../../components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "../../components/ui/popover";
 import { SectionPanel } from "../../components/ui/section-panel";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
+import { useSmartSuggestions } from "../../hooks/use-smart-suggestions";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -81,6 +88,7 @@ interface FinancesTabProps {
     description: string;
     amount: number;
     category: string;
+    receiptImageUrl?: string | null;
     paidByUserIds: string[];
     beneficiaryUserIds: string[];
     entryDate?: string | null;
@@ -91,6 +99,7 @@ interface FinancesTabProps {
       description: string;
       amount: number;
       category: string;
+      receiptImageUrl?: string | null;
       paidByUserIds: string[];
       beneficiaryUserIds: string[];
       entryDate?: string | null;
@@ -102,6 +111,10 @@ interface FinancesTabProps {
   onDeleteSubscription: (subscription: FinanceSubscription) => Promise<void>;
   onUpdateHousehold: (input: UpdateHouseholdInput) => Promise<void>;
   onUpdateMemberSettings: (input: { roomSizeSqm: number | null; commonAreaFactor: number }) => Promise<void>;
+  onUpdateMemberSettingsForUser: (
+    targetUserId: string,
+    input: { roomSizeSqm: number | null; commonAreaFactor: number }
+  ) => Promise<void>;
   onRequestCashAudit: () => Promise<void>;
 }
 
@@ -153,6 +166,12 @@ interface CategoryInputFieldProps {
   placeholder: string;
   suggestionsListId: string;
   hasSuggestions: boolean;
+}
+
+interface FinanceEntrySuggestion {
+  key: string;
+  title: string;
+  count: number;
 }
 
 const MemberMultiSelectField = ({
@@ -216,6 +235,69 @@ const financeRecurrenceToMonthlyFactor = (recurrence: FinanceSubscriptionRecurre
 
 const encodePathSegment = (value: string) => encodeURIComponent(value.trim().replace(/^@+/, ""));
 
+type OcrDetectionResult = { rawValue?: string; text?: string };
+type TextDetectorLike = { detect: (input: ImageBitmapSource) => Promise<OcrDetectionResult[]> };
+type TextDetectorConstructor = new (options?: { languages?: string[] }) => TextDetectorLike;
+
+const getTextDetectorConstructor = (): TextDetectorConstructor | null => {
+  if (typeof window === "undefined") return null;
+  const maybeCtor = (window as unknown as { TextDetector?: TextDetectorConstructor }).TextDetector;
+  return typeof maybeCtor === "function" ? maybeCtor : null;
+};
+
+const extractPriceFromOcrText = (text: string) => {
+  const normalized = text.replace(/\s/g, "");
+  const matches = [...normalized.matchAll(/(\d{1,4}(?:[.,]\d{2}))(?:€|EUR)?/gi)].map((entry) => entry[1] ?? "");
+  if (matches.length === 0) return null;
+
+  const candidate = matches[matches.length - 1].replace(",", ".");
+  const parsed = Number(candidate);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+};
+
+const extractProductFromOcrText = (text: string) => {
+  const blocked = new Set(["summe", "gesamt", "total", "mwst", "eur", "euro", "karte", "kasse", "beleg"]);
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => line.replace(/\s+/g, " ").trim())
+    .filter((line) => line.length >= 3)
+    .filter((line) => /[a-zA-ZäöüÄÖÜß]/.test(line))
+    .filter((line) => !/[0-9]{1,4}[.,][0-9]{2}/.test(line))
+    .filter((line) => {
+      const lowered = line.toLocaleLowerCase();
+      return ![...blocked].some((word) => lowered.includes(word));
+    });
+
+  return lines[0] ?? null;
+};
+
+const MAX_RECEIPT_IMAGE_DIMENSION = 1600;
+const MAX_RECEIPT_IMAGE_SIZE_MB = 0.9;
+const RECEIPT_IMAGE_QUALITY = 0.78;
+
+const readBlobAsDataUrl = (blob: Blob) =>
+  new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result ?? ""));
+    reader.onerror = () => reject(new Error("Datei konnte nicht gelesen werden."));
+    reader.readAsDataURL(blob);
+  });
+
+const compressImageToDataUrl = async (file: File) => {
+  if (!file.type.startsWith("image/")) {
+    return readBlobAsDataUrl(file);
+  }
+
+  const compressed = await imageCompression(file, {
+    maxSizeMB: MAX_RECEIPT_IMAGE_SIZE_MB,
+    maxWidthOrHeight: MAX_RECEIPT_IMAGE_DIMENSION,
+    useWebWorker: true,
+    initialQuality: RECEIPT_IMAGE_QUALITY
+  });
+
+  return imageCompression.getDataUrlFromFile(compressed);
+};
+
 export const FinancesTab = ({
   section = "overview",
   entries,
@@ -234,6 +316,7 @@ export const FinancesTab = ({
   onDeleteSubscription,
   onUpdateHousehold,
   onUpdateMemberSettings,
+  onUpdateMemberSettingsForUser,
   onRequestCashAudit
 }: FinancesTabProps) => {
   const { t, i18n } = useTranslation();
@@ -246,12 +329,34 @@ export const FinancesTab = ({
   const [subscriptionDialogOpen, setSubscriptionDialogOpen] = useState(false);
   const [editSubscriptionDialogOpen, setEditSubscriptionDialogOpen] = useState(false);
   const [subscriptionBeingEdited, setSubscriptionBeingEdited] = useState<FinanceSubscription | null>(null);
+  const [ocrCameraDialogOpen, setOcrCameraDialogOpen] = useState(false);
+  const [ocrConfirmDialogOpen, setOcrConfirmDialogOpen] = useState(false);
+  const [ocrBusy, setOcrBusy] = useState(false);
+  const [ocrError, setOcrError] = useState<string | null>(null);
+  const [ocrCandidate, setOcrCandidate] = useState<{ description: string; amount: string; fullText: string } | null>(null);
   const [rentFormError, setRentFormError] = useState<string | null>(null);
   const [memberRentFormError, setMemberRentFormError] = useState<string | null>(null);
+  const [overviewMemberRentFormError, setOverviewMemberRentFormError] = useState<string | null>(null);
+  const [savingOverviewMemberId, setSavingOverviewMemberId] = useState<string | null>(null);
+  const [receiptUploadError, setReceiptUploadError] = useState<string | null>(null);
   const [previewDescription, setPreviewDescription] = useState("");
   const [previewAmountInput, setPreviewAmountInput] = useState("");
   const [previewPayerIds, setPreviewPayerIds] = useState<string[]>([userId]);
   const [previewBeneficiaryIds, setPreviewBeneficiaryIds] = useState<string[]>([]);
+  const addEntryRowRef = useRef<HTMLDivElement | null>(null);
+  const ocrVideoRef = useRef<HTMLVideoElement | null>(null);
+  const ocrCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const ocrStreamRef = useRef<MediaStream | null>(null);
+  const addReceiptUploadInputRef = useRef<HTMLInputElement | null>(null);
+  const addReceiptCameraInputRef = useRef<HTMLInputElement | null>(null);
+  const editReceiptUploadInputRef = useRef<HTMLInputElement | null>(null);
+  const editReceiptCameraInputRef = useRef<HTMLInputElement | null>(null);
+  const [addEntryPopoverWidth, setAddEntryPopoverWidth] = useState(320);
+  const [isMobileAddEntryComposer, setIsMobileAddEntryComposer] = useState(() =>
+    typeof window !== "undefined" ? window.matchMedia("(max-width: 639px)").matches : false
+  );
+  const [memberOverviewDrafts, setMemberOverviewDrafts] = useState<Record<string, { roomSizeSqm: string; commonAreaFactor: string }>>({});
+  const [rentDetailsOpen, setRentDetailsOpen] = useState(false);
   const language = i18n.resolvedLanguage ?? i18n.language;
   const locale = getDateLocale(i18n.resolvedLanguage ?? i18n.language);
   const showOverview = section === "overview";
@@ -264,6 +369,7 @@ export const FinancesTab = ({
       description: "",
       category: "general",
       amount: "",
+      receiptImageUrl: "",
       entryDate: "",
       paidByUserIds: [userId],
       beneficiaryUserIds: [] as string[]
@@ -276,6 +382,7 @@ export const FinancesTab = ({
         description: string;
         category: string;
         amount: string;
+        receiptImageUrl: string;
         entryDate: string;
         paidByUserIds: string[];
         beneficiaryUserIds: string[];
@@ -297,11 +404,13 @@ export const FinancesTab = ({
         description: value.description,
         amount: parsedAmount,
         category: value.category,
+        receiptImageUrl: value.receiptImageUrl.trim() || null,
         paidByUserIds: value.paidByUserIds,
         beneficiaryUserIds: value.beneficiaryUserIds,
         entryDate: value.entryDate || null
       });
       formApi.reset();
+      setReceiptUploadError(null);
       setPreviewDescription("");
       setPreviewAmountInput("");
       setPreviewPayerIds([userId]);
@@ -323,6 +432,7 @@ export const FinancesTab = ({
       description: "",
       category: "general",
       amount: "",
+      receiptImageUrl: "",
       entryDate: "",
       paidByUserIds: [userId],
       beneficiaryUserIds: [] as string[]
@@ -334,6 +444,7 @@ export const FinancesTab = ({
         description: string;
         category: string;
         amount: string;
+        receiptImageUrl: string;
         entryDate: string;
         paidByUserIds: string[];
         beneficiaryUserIds: string[];
@@ -355,6 +466,7 @@ export const FinancesTab = ({
         description: value.description,
         amount: parsedAmount,
         category: value.category,
+        receiptImageUrl: value.receiptImageUrl.trim() || null,
         paidByUserIds: value.paidByUserIds,
         beneficiaryUserIds: value.beneficiaryUserIds,
         entryDate: value.entryDate || null
@@ -593,6 +705,20 @@ export const FinancesTab = ({
     rentMemberForm.setFieldValue("commonAreaFactor", currentMember ? String(currentMember.common_area_factor) : "1");
   }, [currentMember, rentMemberForm]);
 
+  useEffect(() => {
+    setMemberOverviewDrafts(
+      Object.fromEntries(
+        members.map((member) => [
+          member.user_id,
+          {
+            roomSizeSqm: toNumericInputValue(member.room_size_sqm),
+            commonAreaFactor: String(member.common_area_factor)
+          }
+        ])
+      )
+    );
+  }, [members]);
+
   const lastCashAuditAt = cashAuditRequests[0]?.created_at ?? null;
   const {
     periodTotal,
@@ -639,18 +765,33 @@ export const FinancesTab = ({
     const seed = member?.display_name?.trim() || memberLabel(memberId);
     return createDiceBearAvatarDataUri(seed);
   };
-  const moneyLabel = (value: number) => formatMoney(value, locale);
-  const buildPaymentLinks = (toMemberId: string, amount: number) => {
+  const moneyLabel = useCallback((value: number) => formatMoney(value, locale), [locale]);
+  const buildPaymentLinks = (toMemberId: string, amount: number, settlementDateIsoDay?: string) => {
     const target = memberById.get(toMemberId);
     if (!target) return [];
     const normalizedAmount = Math.max(0, Number(amount.toFixed(2)));
-    const links: Array<{ id: string; label: string; href: string }> = [];
+    const links: Array<{ id: "paypal" | "revolut" | "wero"; label: string; href: string }> = [];
+    const referenceDay = settlementDateIsoDay ?? new Date().toISOString().slice(0, 10);
+    const itemName = `${household.name} - Kassensturz vom ${formatDateOnly(referenceDay, language, referenceDay)}`;
+    const currencyCode = household.currency || "EUR";
+    const appOrigin = typeof window !== "undefined" ? window.location.origin : "";
+    const returnUrl = `${appOrigin}/redirect-payment/success`;
+    const cancelReturnUrl = `${appOrigin}/redirect-payment/cancel`;
 
     if (target.paypal_name?.trim()) {
+      const params = new URLSearchParams({
+        cmd: "_xclick",
+        business: target.paypal_name.trim(),
+        amount: normalizedAmount.toFixed(2),
+        currency_code: currencyCode,
+        item_name: itemName,
+        return: returnUrl,
+        cancel_return: cancelReturnUrl
+      });
       links.push({
         id: "paypal",
         label: t("finances.payWithPaypal"),
-        href: `https://paypal.me/${encodePathSegment(target.paypal_name)}/${normalizedAmount.toFixed(2)}`
+        href: `https://www.paypal.com/cgi-bin/webscr?${params.toString()}`
       });
     }
     if (target.revolut_name?.trim()) {
@@ -669,13 +810,14 @@ export const FinancesTab = ({
     }
     return links;
   };
+  const settlementReferenceDate = lastCashAuditAt?.slice(0, 10) ?? new Date().toISOString().slice(0, 10);
   const reimbursementPreviewSummary = useMemo(() => {
     const positiveEntries = reimbursementPreview.filter((entry) => entry.value > 0.004);
     if (positiveEntries.length === 0) return null;
 
     const memberIds = [...new Set(positiveEntries.map((entry) => entry.memberId))];
     const totalAmount = positiveEntries.reduce((sum, entry) => sum + entry.value, 0);
-    const amountLabel = moneyLabel(totalAmount);
+    const amountLabel = formatMoney(totalAmount, locale);
 
     if (memberIds.length === 1) {
       const memberId = memberIds[0];
@@ -692,7 +834,7 @@ export const FinancesTab = ({
       members: memberIds.map((memberId) => memberLabel(memberId)).join(", "),
       amount: amountLabel
     });
-  }, [memberLabel, moneyLabel, reimbursementPreview, t, userId]);
+  }, [locale, memberLabel, reimbursementPreview, t, userId]);
   const hasNewEntryDraftForPreview = useMemo(() => {
     const description = previewDescription.trim();
     const amount = Number(previewAmountInput);
@@ -701,10 +843,18 @@ export const FinancesTab = ({
   const settlementTransfers = useMemo(() => calculateSettlementTransfers(balancesByMember), [balancesByMember]);
   const householdMemberIds = useMemo(() => [...new Set(members.map((member) => member.user_id))], [members]);
   const allMembersLabel = t("finances.allMembers");
+  const andWord = t("common.and");
   const allExceptMemberLabel = (memberId: string, labelCase: MemberLabelCase) =>
     t("finances.allExceptMember", {
       member: memberLabel(memberId, labelCase)
     });
+  const joinMemberNames = (names: string[]) => {
+    if (names.length <= 1) return names[0] ?? "";
+    if (names.length === 2) return `${names[0]} ${andWord} ${names[1]}`;
+    const leading = names.slice(0, -1).join(", ");
+    const trailing = names[names.length - 1];
+    return `${leading} ${andWord} ${trailing}`;
+  };
   const formatMemberGroupLabel = (ids: string[], labelCase: MemberLabelCase) => {
     const normalizedIds = [...new Set(ids)];
     const normalizedInHousehold = normalizedIds.filter((memberId) => householdMemberIds.includes(memberId));
@@ -716,14 +866,14 @@ export const FinancesTab = ({
       const missingMemberId = householdMemberIds.find((memberId) => !normalizedInHousehold.includes(memberId));
       if (missingMemberId) return allExceptMemberLabel(missingMemberId, labelCase);
     }
-    return normalizedIds.map((memberId) => memberLabel(memberId, labelCase)).join(", ");
+    return joinMemberNames(normalizedIds.map((memberId) => memberLabel(memberId, labelCase)));
   };
   const personalBalance = useMemo(
     () => balancesByMember.find((entry) => entry.memberId === userId)?.balance ?? 0,
     [balancesByMember, userId]
   );
   const isPersonalBalanceNegative = personalBalance < -0.004;
-  const personalBalanceLabel = `${personalBalance > 0.004 ? "+" : ""}${moneyLabel(personalBalance)}`;
+  const personalBalanceLabel = `${personalBalance > 0.004 ? "+" : ""}${formatMoney(personalBalance, locale)}`;
   const totalRoomAreaSqm = useMemo(
     () => members.reduce((sum, member) => sum + (member.room_size_sqm ?? 0), 0),
     [members]
@@ -734,6 +884,49 @@ export const FinancesTab = ({
   }, [household.apartment_size_sqm, totalRoomAreaSqm]);
   const formatSqm = (value: number | null) =>
     value === null ? "-" : `${Number(value.toFixed(2)).toString()} m²`;
+  const setOverviewMemberDraft = (memberId: string, patch: Partial<{ roomSizeSqm: string; commonAreaFactor: string }>) => {
+    setMemberOverviewDrafts((current) => ({
+      ...current,
+      [memberId]: {
+        roomSizeSqm: current[memberId]?.roomSizeSqm ?? "",
+        commonAreaFactor: current[memberId]?.commonAreaFactor ?? "1",
+        ...patch
+      }
+    }));
+  };
+  const onSaveAllOverviewMemberSettings = async () => {
+    for (const member of members) {
+      const draft = memberOverviewDrafts[member.user_id];
+      if (!draft) continue;
+
+      const parsedRoomSize = parseOptionalNumber(draft.roomSizeSqm);
+      if (Number.isNaN(parsedRoomSize) || (parsedRoomSize !== null && parsedRoomSize <= 0)) {
+        setOverviewMemberRentFormError(t("settings.roomSizeError"));
+        return;
+      }
+
+      const parsedFactor = Number(draft.commonAreaFactor);
+      if (!Number.isFinite(parsedFactor) || parsedFactor < 0 || parsedFactor > 2) {
+        setOverviewMemberRentFormError(t("settings.commonFactorError"));
+        return;
+      }
+    }
+
+    setOverviewMemberRentFormError(null);
+    setSavingOverviewMemberId("__all__");
+    try {
+      for (const member of members) {
+        const draft = memberOverviewDrafts[member.user_id];
+        if (!draft) continue;
+        await onUpdateMemberSettingsForUser(member.user_id, {
+          roomSizeSqm: parseOptionalNumber(draft.roomSizeSqm),
+          commonAreaFactor: Number(draft.commonAreaFactor)
+        });
+      }
+    } finally {
+      setSavingOverviewMemberId(null);
+    }
+  };
   const rentColdPerSqm = useMemo(() => {
     if (household.apartment_size_sqm === null || household.apartment_size_sqm <= 0 || household.cold_rent_monthly === null) return null;
     return household.cold_rent_monthly / household.apartment_size_sqm;
@@ -946,16 +1139,25 @@ export const FinancesTab = ({
 
     return [...byKey.values()].sort((left, right) => left.localeCompare(right, language));
   }, [entries, language, subscriptions]);
-  const entryNameSuggestions = useMemo(() => {
-    const byKey = new Map<string, string>();
+  const financeEntrySuggestions = useMemo(() => {
+    const byKey = new Map<string, FinanceEntrySuggestion>();
     entries.forEach((entry) => {
       const normalized = entry.description.trim();
       if (!normalized) return;
       const key = normalized.toLocaleLowerCase(language);
-      if (!byKey.has(key)) byKey.set(key, normalized);
+      const current = byKey.get(key);
+      if (!current) {
+        byKey.set(key, { key, title: normalized, count: 1 });
+      } else {
+        byKey.set(key, { ...current, count: current.count + 1 });
+      }
     });
-    return [...byKey.values()].sort((left, right) => left.localeCompare(right, language));
+    return [...byKey.values()].sort((left, right) => {
+      if (right.count !== left.count) return right.count - left.count;
+      return left.title.localeCompare(right.title, language);
+    });
   }, [entries, language]);
+  const entryNameSuggestions = useMemo(() => financeEntrySuggestions.map((entry) => entry.title), [financeEntrySuggestions]);
   const latestEntryByDescription = useMemo(() => {
     const byKey = new Map<string, FinanceEntry>();
     const sortedEntries = [...entries].sort((left, right) => right.created_at.localeCompare(left.created_at));
@@ -966,7 +1168,10 @@ export const FinancesTab = ({
     });
     return byKey;
   }, [entries, language]);
-  const tryAutofillNewEntryFromDescription = (descriptionValue: string) => {
+  const tryAutofillNewEntryFromDescription = (
+    descriptionValue: string,
+    options?: { forceCategoryFromSuggestion?: boolean }
+  ) => {
     const normalized = descriptionValue.trim().toLocaleLowerCase(language);
     if (!normalized) return;
     const matchedEntry = latestEntryByDescription.get(normalized);
@@ -981,13 +1186,44 @@ export const FinancesTab = ({
 
     addEntryForm.setFieldValue("amount", String(matchedEntry.amount));
     setPreviewAmountInput(String(matchedEntry.amount));
-    addEntryForm.setFieldValue("category", matchedEntry.category || "general");
+    const currentCategory = (addEntryForm.state.values.category ?? "").trim();
+    const shouldAutofillCategory =
+      options?.forceCategoryFromSuggestion === true ||
+      currentCategory.length === 0 ||
+      currentCategory.toLocaleLowerCase(language) === "general";
+    if (shouldAutofillCategory) {
+      addEntryForm.setFieldValue("category", matchedEntry.category || "general");
+    }
     addEntryForm.setFieldValue("paidByUserIds", paidByUserIds);
     addEntryForm.setFieldValue("beneficiaryUserIds", beneficiaryUserIds);
     setPreviewPayerIds(paidByUserIds);
     setPreviewBeneficiaryIds(beneficiaryUserIds);
     addEntryForm.setFieldValue("entryDate", entryDate);
   };
+  const {
+    suggestions: entryDescriptionSuggestions,
+    focused: entryDescriptionFocused,
+    activeSuggestionIndex: activeEntryDescriptionSuggestionIndex,
+    onFocus: onEntryDescriptionFocus,
+    onBlur: onEntryDescriptionBlur,
+    onKeyDown: onEntryDescriptionKeyDown,
+    applySuggestion: onApplyEntryDescriptionSuggestion
+  } = useSmartSuggestions<FinanceEntrySuggestion>({
+    items: financeEntrySuggestions,
+    query: addEntryForm.state.values.description,
+    getLabel: (entry) => entry.title,
+    onApply: (suggestion) => {
+      addEntryForm.setFieldValue("description", suggestion.title);
+      setPreviewDescription(suggestion.title);
+      tryAutofillNewEntryFromDescription(suggestion.title, { forceCategoryFromSuggestion: true });
+    },
+    fuseOptions: {
+      keys: [{ name: "title", weight: 1 }],
+      threshold: 0.35,
+      ignoreLocation: true,
+      minMatchCharLength: 2
+    }
+  });
   const subscriptionParticipantsText = (subscription: FinanceSubscription) =>
     t("finances.subscriptionParticipants", {
       paidBy: formatMemberGroupLabel(subscription.paid_by_user_ids, "dative"),
@@ -1145,11 +1381,110 @@ export const FinancesTab = ({
       </>
     );
   };
+  const handleReceiptFileSelect = async (file: File, form: typeof addEntryForm | typeof editEntryForm) => {
+    try {
+      const dataUrl = await compressImageToDataUrl(file);
+      form.setFieldValue("receiptImageUrl", dataUrl);
+      setReceiptUploadError(null);
+    } catch {
+      setReceiptUploadError(t("finances.receiptUploadError"));
+    }
+  };
+  const renderReceiptFields = (
+    form: typeof addEntryForm | typeof editEntryForm,
+    refs: { uploadInputRef: RefObject<HTMLInputElement | null>; cameraInputRef: RefObject<HTMLInputElement | null> },
+    compactLabel: boolean
+  ) => (
+    <form.Field
+      name="receiptImageUrl"
+      children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
+        <div className="space-y-2">
+          {compactLabel ? (
+            <p className="text-xs font-medium text-slate-600 dark:text-slate-300">{t("finances.receiptLabel")}</p>
+          ) : (
+            <Label>{t("finances.receiptLabel")}</Label>
+          )}
+          <div className="flex flex-wrap gap-2">
+            <input
+              ref={refs.uploadInputRef}
+              type="file"
+              accept="image/*"
+              className="sr-only"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                if (!file) return;
+                void handleReceiptFileSelect(file, form);
+                event.currentTarget.value = "";
+              }}
+            />
+            <input
+              ref={refs.cameraInputRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              className="sr-only"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                if (!file) return;
+                void handleReceiptFileSelect(file, form);
+                event.currentTarget.value = "";
+              }}
+            />
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => refs.uploadInputRef.current?.click()}
+            >
+              <Paperclip className="mr-1 h-4 w-4" />
+              {t("finances.receiptUploadButton")}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => refs.cameraInputRef.current?.click()}
+            >
+              <Camera className="mr-1 h-4 w-4" />
+              {t("finances.receiptCameraButton")}
+            </Button>
+            {field.state.value.trim().length > 0 ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => field.handleChange("")}
+              >
+                {t("finances.receiptRemoveButton")}
+              </Button>
+            ) : null}
+          </div>
+          {field.state.value.trim().length > 0 ? (
+            <a
+              href={field.state.value}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-2 rounded-lg border border-brand-100 bg-white px-2 py-1 text-xs text-brand-700 hover:text-brand-600 dark:border-slate-700 dark:bg-slate-900 dark:text-brand-300"
+            >
+              <img
+                src={field.state.value}
+                alt={t("finances.receiptPreviewAlt")}
+                className="h-8 w-8 rounded object-cover"
+              />
+              <span>{t("finances.receiptPreviewLink")}</span>
+            </a>
+          ) : null}
+        </div>
+      )}
+    />
+  );
   const onStartEditEntry = (entry: FinanceEntry) => {
     setEntryBeingEdited(entry);
+    setReceiptUploadError(null);
     editEntryForm.setFieldValue("description", entry.description);
     editEntryForm.setFieldValue("category", entry.category || "general");
     editEntryForm.setFieldValue("amount", String(entry.amount));
+    editEntryForm.setFieldValue("receiptImageUrl", entry.receipt_image_url ?? "");
     editEntryForm.setFieldValue("entryDate", entry.entry_date ?? "");
     editEntryForm.setFieldValue(
       "paidByUserIds",
@@ -1264,126 +1599,337 @@ export const FinancesTab = ({
     });
   }, [archiveGroups, householdMemberIds]);
 
+  useEffect(() => {
+    const updateWidth = () => {
+      const next = addEntryRowRef.current?.getBoundingClientRect().width;
+      if (!next || Number.isNaN(next)) return;
+      setAddEntryPopoverWidth(Math.max(220, Math.round(next)));
+    };
+
+    updateWidth();
+    window.addEventListener("resize", updateWidth);
+    return () => window.removeEventListener("resize", updateWidth);
+  }, []);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const mediaQuery = window.matchMedia("(max-width: 639px)");
+    const onChange = (event: MediaQueryListEvent) => setIsMobileAddEntryComposer(event.matches);
+    setIsMobileAddEntryComposer(mediaQuery.matches);
+    mediaQuery.addEventListener("change", onChange);
+    return () => mediaQuery.removeEventListener("change", onChange);
+  }, []);
+
+  const stopOcrCameraStream = useCallback(() => {
+    if (!ocrStreamRef.current) return;
+    ocrStreamRef.current.getTracks().forEach((track) => track.stop());
+    ocrStreamRef.current = null;
+  }, []);
+
+  const startOcrCameraStream = useCallback(async () => {
+    if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
+      setOcrError(t("finances.ocrCameraNotSupported"));
+      return;
+    }
+
+    try {
+      setOcrError(null);
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: "environment" } },
+        audio: false
+      });
+      ocrStreamRef.current = stream;
+      if (ocrVideoRef.current) {
+        ocrVideoRef.current.srcObject = stream;
+        await ocrVideoRef.current.play();
+      }
+    } catch {
+      setOcrError(t("finances.ocrCameraAccessError"));
+    }
+  }, [t]);
+
+  useEffect(() => {
+    if (!ocrCameraDialogOpen) {
+      stopOcrCameraStream();
+      return;
+    }
+    void startOcrCameraStream();
+    return () => stopOcrCameraStream();
+  }, [ocrCameraDialogOpen, startOcrCameraStream, stopOcrCameraStream]);
+
+  const captureAndAnalyzeOcr = useCallback(async () => {
+    if (!ocrVideoRef.current || !ocrCanvasRef.current) return;
+    if (ocrBusy) return;
+
+    const detectorCtor = getTextDetectorConstructor();
+    if (!detectorCtor) {
+      setOcrError(t("finances.ocrUnsupported"));
+      return;
+    }
+
+    const video = ocrVideoRef.current;
+    const canvas = ocrCanvasRef.current;
+    const width = video.videoWidth || 1280;
+    const height = video.videoHeight || 720;
+    canvas.width = width;
+    canvas.height = height;
+
+    const context = canvas.getContext("2d");
+    if (!context) {
+      setOcrError(t("finances.ocrUnsupported"));
+      return;
+    }
+
+    context.drawImage(video, 0, 0, width, height);
+
+    setOcrBusy(true);
+    setOcrError(null);
+    try {
+      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.92));
+      if (!blob) {
+        setOcrError(t("finances.ocrCaptureError"));
+        return;
+      }
+
+      const bitmap = await createImageBitmap(blob);
+      const detector = new detectorCtor({ languages: ["de", "en"] });
+      const results = await detector.detect(bitmap);
+      bitmap.close?.();
+      const text = results.map((entry) => (entry.rawValue ?? entry.text ?? "").trim()).filter(Boolean).join("\n");
+
+      const recognizedPrice = extractPriceFromOcrText(text);
+      const recognizedProduct = extractProductFromOcrText(text);
+      const candidate = {
+        description: recognizedProduct ?? "",
+        amount: recognizedPrice !== null ? recognizedPrice.toFixed(2) : "",
+        fullText: text
+      };
+      setOcrCandidate(candidate);
+      setOcrConfirmDialogOpen(true);
+      setOcrCameraDialogOpen(false);
+    } catch {
+      setOcrError(t("finances.ocrReadError"));
+    } finally {
+      setOcrBusy(false);
+    }
+  }, [ocrBusy, t]);
+
+  const useCameraInsteadOfAdd = useMemo(() => {
+    const description = addEntryForm.state.values.description.trim();
+    const amount = addEntryForm.state.values.amount.trim();
+    return description.length === 0 && amount.length === 0;
+  }, [addEntryForm.state.values.amount, addEntryForm.state.values.description]);
+  const renderAddEntryComposer = (mobile: boolean) => (
+    <form
+      onSubmit={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        void addEntryForm.handleSubmit();
+      }}
+    >
+      <div className="flex items-end">
+        <addEntryForm.Field
+          name="description"
+          children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
+            <div className="relative min-w-0 flex-1">
+              <div
+                ref={addEntryRowRef}
+                className="relative flex h-10 items-stretch overflow-hidden rounded-xl border border-brand-200 bg-white dark:border-slate-700 dark:bg-slate-900 focus-within:border-brand-500 focus-within:ring-2 focus-within:ring-brand-200 dark:focus-within:border-slate-500 dark:focus-within:ring-slate-600/40"
+              >
+                <Input
+                  value={field.state.value}
+                  onChange={(event) => {
+                    const nextValue = event.target.value;
+                    field.handleChange(nextValue);
+                    setPreviewDescription(nextValue);
+                    tryAutofillNewEntryFromDescription(nextValue);
+                  }}
+                  onFocus={onEntryDescriptionFocus}
+                  onBlur={(event) => {
+                    onEntryDescriptionBlur();
+                    tryAutofillNewEntryFromDescription(event.target.value);
+                  }}
+                  onKeyDown={onEntryDescriptionKeyDown}
+                  placeholder={t("finances.descriptionPlaceholder")}
+                  required
+                  className="h-full min-w-0 flex-1 rounded-none border-0 bg-transparent shadow-none focus-visible:ring-0"
+                />
+                <addEntryForm.Field
+                  name="amount"
+                  children={(amountField: { state: { value: string }; handleChange: (value: string) => void }) => (
+                    <div className="relative h-full w-28 shrink-0 border-l border-brand-200 dark:border-slate-700">
+                      <Input
+                        type="number"
+                        inputMode="decimal"
+                        step="0.01"
+                        min="0"
+                        value={amountField.state.value}
+                        onChange={(event) => {
+                          amountField.handleChange(event.target.value);
+                          setPreviewAmountInput(event.target.value);
+                        }}
+                        placeholder={t("finances.amountPlaceholder")}
+                        required
+                        className="h-full rounded-none border-0 bg-transparent pr-7 shadow-none focus-visible:ring-0"
+                      />
+                      <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-500 dark:text-slate-400">
+                        €
+                      </span>
+                    </div>
+                  )}
+                />
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-full w-10 shrink-0 rounded-none border-l border-brand-200 p-0 dark:border-slate-700"
+                      aria-label={t("finances.moreOptions")}
+                    >
+                      <MoreHorizontal className="h-4 w-4" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent
+                    align="end"
+                    side={mobile ? "top" : "bottom"}
+                    sideOffset={8}
+                    className="z-50 box-border w-auto space-y-3 rounded-xl border-brand-100 shadow-lg dark:border-slate-700"
+                    style={{ width: `${addEntryPopoverWidth}px` }}
+                  >
+                    <addEntryForm.Field
+                      name="category"
+                      children={(categoryField: { state: { value: string }; handleChange: (value: string) => void }) => (
+                        <CategoryInputField
+                          label={t("finances.subscriptionCategoryLabel")}
+                          value={categoryField.state.value}
+                          onChange={categoryField.handleChange}
+                          placeholder={t("finances.categoryPlaceholder")}
+                          suggestionsListId={categorySuggestionsListId}
+                          hasSuggestions={categorySuggestions.length > 0}
+                        />
+                      )}
+                    />
+                    <addEntryForm.Field
+                      name="entryDate"
+                      children={(dateField: { state: { value: string }; handleChange: (value: string) => void }) => (
+                        <div className="space-y-1">
+                          <p className="text-xs font-medium text-slate-600 dark:text-slate-300">{t("finances.entryDate")}</p>
+                          <Input
+                            type="date"
+                            lang={locale}
+                            value={dateField.state.value}
+                            onChange={(event) => dateField.handleChange(event.target.value)}
+                            title={t("finances.entryDate")}
+                          />
+                        </div>
+                      )}
+                    />
+                    {renderEntryMemberFields(addEntryForm, true)}
+                    {renderReceiptFields(
+                      addEntryForm,
+                      {
+                        uploadInputRef: addReceiptUploadInputRef,
+                        cameraInputRef: addReceiptCameraInputRef
+                      },
+                      true
+                    )}
+                  </PopoverContent>
+                </Popover>
+                {useCameraInsteadOfAdd ? (
+                  <Button
+                    type="button"
+                    disabled={busy}
+                    className="h-full shrink-0 rounded-none border-l border-brand-200 px-3 dark:border-slate-700"
+                    onClick={() => {
+                      setOcrError(null);
+                      setOcrCameraDialogOpen(true);
+                    }}
+                  >
+                    <Camera className="h-4 w-4 sm:hidden" />
+                    <span className="hidden sm:inline">{t("finances.ocrCameraButton")}</span>
+                  </Button>
+                ) : (
+                  <Button
+                    type="submit"
+                    disabled={busy}
+                    className="h-full shrink-0 rounded-none border-l border-brand-200 px-3 dark:border-slate-700"
+                  >
+                    <Plus className="h-4 w-4 sm:hidden" />
+                    <span className="hidden sm:inline">{t("common.add")}</span>
+                  </Button>
+                )}
+              </div>
+              {entryDescriptionFocused && entryDescriptionSuggestions.length > 0 ? (
+                <div
+                  className={`absolute left-0 right-0 z-50 rounded-xl border border-brand-100 bg-white p-1 shadow-lg dark:border-slate-700 dark:bg-slate-900 ${
+                    mobile ? "bottom-[calc(100%+0.4rem)]" : "top-[calc(100%+0.4rem)]"
+                  }`}
+                >
+                  <p className="px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                    {t("finances.suggestionsTitle")}
+                  </p>
+                  <ul className="max-h-56 overflow-y-auto">
+                    {entryDescriptionSuggestions.map((suggestion, index) => (
+                      <li key={suggestion.key}>
+                        <button
+                          type="button"
+                          className={`flex w-full items-center justify-between gap-2 rounded-lg px-2 py-2 text-left hover:bg-brand-50 dark:hover:bg-slate-800 ${
+                            index === activeEntryDescriptionSuggestionIndex ? "bg-brand-50 dark:bg-slate-800" : ""
+                          }`}
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={() => {
+                            onApplyEntryDescriptionSuggestion(suggestion);
+                          }}
+                        >
+                          <p className="truncate text-sm font-medium text-slate-900 dark:text-slate-100">
+                            {suggestion.title}
+                          </p>
+                          <Badge className="text-[10px]">
+                            {t("finances.suggestionUsedCount", { count: suggestion.count })}
+                          </Badge>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+            </div>
+          )}
+        />
+      </div>
+    </form>
+  );
+
   return (
-    <div className="space-y-4">
+    <div className={`space-y-4 ${showOverview && isMobileAddEntryComposer ? "pb-44" : ""}`}>
       {showOverview ? (
           <>
-            <Card className="mb-4">
-              <CardHeader>
-                <CardTitle>{t("finances.newEntryTitle")}</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <form
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    void addEntryForm.handleSubmit();
-                  }}
-                >
-                  <div className="flex flex-wrap items-end gap-2">
-                    <addEntryForm.Field
-                      name="description"
-                      children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
-                        <div className="min-w-[220px] flex-1 space-y-1">
-                          <Label>{t("finances.entryNameLabel")}</Label>
-                          <Input
-                            value={field.state.value}
-                            onChange={(event) => {
-                              const nextValue = event.target.value;
-                              field.handleChange(nextValue);
-                              setPreviewDescription(nextValue);
-                              tryAutofillNewEntryFromDescription(nextValue);
-                            }}
-                            onBlur={(event) => {
-                              tryAutofillNewEntryFromDescription(event.target.value);
-                            }}
-                            placeholder={t("finances.descriptionPlaceholder")}
-                            list={entryNameSuggestions.length > 0 ? entryNameSuggestionsListId : undefined}
-                            required
-                          />
-                        </div>
-                      )}
-                    />
-                    <addEntryForm.Field
-                      name="amount"
-                      children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
-                        <div className="w-36 space-y-1">
-                          <Label>{t("finances.entryAmountLabel")}</Label>
-                          <InputWithSuffix
-                            suffix="€"
-                            type="number"
-                            inputMode="decimal"
-                            step="0.01"
-                            min="0"
-                            value={field.state.value}
-                            onChange={(event) => {
-                              field.handleChange(event.target.value);
-                              setPreviewAmountInput(event.target.value);
-                            }}
-                            placeholder={t("finances.amountPlaceholder")}
-                            required
-                            inputClassName="pr-7"
-                          />
-                        </div>
-                      )}
-                    />
-                    <Popover>
-                      <PopoverTrigger asChild>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          className="h-10 w-10 p-0"
-                          aria-label={t("finances.moreOptions")}
-                        >
-                          <MoreHorizontal className="h-4 w-4" />
-                        </Button>
-                      </PopoverTrigger>
-                      <PopoverContent align="end" className="w-[320px] space-y-3">
-                        <addEntryForm.Field
-                          name="category"
-                          children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
-                            <CategoryInputField
-                              label={t("finances.subscriptionCategoryLabel")}
-                              value={field.state.value}
-                              onChange={field.handleChange}
-                              placeholder={t("finances.categoryPlaceholder")}
-                              suggestionsListId={categorySuggestionsListId}
-                              hasSuggestions={categorySuggestions.length > 0}
-                            />
-                          )}
-                        />
-                        <addEntryForm.Field
-                          name="entryDate"
-                          children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
-                            <div className="space-y-1">
-                              <p className="text-xs font-medium text-slate-600 dark:text-slate-300">{t("finances.entryDate")}</p>
-                              <Input
-                                type="date"
-                                lang={locale}
-                                value={field.state.value}
-                                onChange={(event) => field.handleChange(event.target.value)}
-                                title={t("finances.entryDate")}
-                              />
-                            </div>
-                          )}
-                        />
-                        {renderEntryMemberFields(addEntryForm, true)}
-                      </PopoverContent>
-                    </Popover>
-                    <Button type="submit" disabled={busy}>
-                      {t("common.add")}
-                    </Button>
-                  </div>
-                </form>
+            {!isMobileAddEntryComposer ? (
+              <Card className={`relative mb-4 ${entryDescriptionFocused ? "z-40" : "z-0"}`}>
+                <CardHeader>
+                  <CardTitle>{t("finances.newEntryTitle")}</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {renderAddEntryComposer(false)}
 
-                {hasNewEntryDraftForPreview && reimbursementPreviewSummary ? (
-                  <p className="mt-3 text-sm text-slate-600 dark:text-slate-300">
-                    {reimbursementPreviewSummary}
-                  </p>
-                ) : null}
-              </CardContent>
-            </Card>
+                  {hasNewEntryDraftForPreview && reimbursementPreviewSummary ? (
+                    <p className="mt-3 text-sm text-slate-600 dark:text-slate-300">
+                      {reimbursementPreviewSummary}
+                    </p>
+                  ) : null}
+                  {receiptUploadError ? (
+                    <p className="mt-2 text-xs text-rose-600 dark:text-rose-300">{receiptUploadError}</p>
+                  ) : null}
+                </CardContent>
+              </Card>
+            ) : null}
+            {isMobileAddEntryComposer ? (
+              <div className="fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+4.25rem)] z-40 px-3 sm:hidden">
+                <div className="rounded-2xl border border-brand-200/70 bg-white/75 p-1.5 shadow-xl backdrop-blur-xl dark:border-slate-700/70 dark:bg-slate-900/75">
+                  {renderAddEntryComposer(true)}
+                </div>
+              </div>
+            ) : null}
 
           </>
         ) : null}
@@ -1472,16 +2018,18 @@ export const FinancesTab = ({
                             to: memberLabel(transfer.toMemberId),
                             amount: moneyLabel(transfer.amount)
                           })}
-                          {buildPaymentLinks(transfer.toMemberId, transfer.amount).length > 0 ? (
+                          {transfer.fromMemberId === userId &&
+                          buildPaymentLinks(transfer.toMemberId, transfer.amount, settlementReferenceDate).length > 0 ? (
                             <span className="ml-2 inline-flex gap-2 text-xs">
-                              {buildPaymentLinks(transfer.toMemberId, transfer.amount).map((link) => (
+                              {buildPaymentLinks(transfer.toMemberId, transfer.amount, settlementReferenceDate).map((link) => (
                                 <a
                                   key={`${transfer.fromMemberId}-${transfer.toMemberId}-${index}-${link.id}`}
                                   href={link.href}
                                   target="_blank"
                                   rel="noreferrer"
-                                  className="text-brand-700 underline decoration-brand-300 underline-offset-2 hover:text-brand-600 dark:text-brand-300 dark:decoration-brand-700"
+                                  className="inline-flex items-center gap-1 text-brand-700 underline decoration-brand-300 underline-offset-2 hover:text-brand-600 dark:text-brand-300 dark:decoration-brand-700"
                                 >
+                                  <PaymentBrandIcon brand={link.id} className="h-3.5 w-3.5" />
                                   {link.label}
                                 </a>
                               ))}
@@ -1744,16 +2292,26 @@ export const FinancesTab = ({
                               to: memberLabel(transfer.toMemberId),
                               amount: moneyLabel(transfer.amount)
                             })}
-                            {buildPaymentLinks(transfer.toMemberId, transfer.amount).length > 0 ? (
+                            {transfer.fromMemberId === userId &&
+                            buildPaymentLinks(
+                              transfer.toMemberId,
+                              transfer.amount,
+                              group.id.startsWith("audit-") ? group.id.replace("audit-", "") : settlementReferenceDate
+                            ).length > 0 ? (
                               <span className="ml-2 inline-flex gap-2 text-xs">
-                                {buildPaymentLinks(transfer.toMemberId, transfer.amount).map((link) => (
+                                {buildPaymentLinks(
+                                  transfer.toMemberId,
+                                  transfer.amount,
+                                  group.id.startsWith("audit-") ? group.id.replace("audit-", "") : settlementReferenceDate
+                                ).map((link) => (
                                   <a
                                     key={`${group.id}-transfer-link-${index}-${link.id}`}
                                     href={link.href}
                                     target="_blank"
                                     rel="noreferrer"
-                                    className="text-brand-700 underline decoration-brand-300 underline-offset-2 hover:text-brand-600 dark:text-brand-300 dark:decoration-brand-700"
+                                    className="inline-flex items-center gap-1 text-brand-700 underline decoration-brand-300 underline-offset-2 hover:text-brand-600 dark:text-brand-300 dark:decoration-brand-700"
                                   >
+                                    <PaymentBrandIcon brand={link.id} className="h-3.5 w-3.5" />
                                     {link.label}
                                   </a>
                                 ))}
@@ -1771,6 +2329,8 @@ export const FinancesTab = ({
                 entries={group.entries}
                 emptyText={t("finances.emptyFiltered")}
                 paidByText={paidByText}
+                receiptImageUrl={(entry) => entry.receipt_image_url}
+                receiptLabel={t("finances.receiptLink")}
                 formatMoney={moneyLabel}
                 virtualized
                 virtualHeight={420}
@@ -1795,250 +2355,512 @@ export const FinancesTab = ({
 
         {showSubscriptions ? (
           <>
-            <SectionPanel className="mt-4">
-              <p className="text-sm font-semibold text-brand-900 dark:text-brand-100">{t("finances.rentApartmentTitle")}</p>
-              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{t("finances.rentApartmentDescription")}</p>
-
-              <form
-                className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-[1fr_1fr_1fr_1fr_auto]"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  void rentHouseholdForm.handleSubmit();
-                }}
+            {!rentDetailsOpen ? (
+              <button
+                type="button"
+                className="mt-4 w-full rounded-xl border border-brand-100 bg-white p-3 text-left transition hover:border-brand-200 hover:bg-brand-50/30 dark:border-slate-700 dark:bg-slate-900 dark:hover:border-slate-600 dark:hover:bg-slate-800/70"
+                onClick={() => setRentDetailsOpen(true)}
               >
-                <rentHouseholdForm.Field
-                  name="apartmentSizeSqm"
-                  children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
-                    <div className="space-y-1">
-                      <Label>{t("settings.householdSizeLabel")}</Label>
-                      <InputWithSuffix
-                        suffix="m²"
-                        type="number"
-                        min="0.1"
-                        step="0.1"
-                        disabled={!canEditApartment}
-                        value={field.state.value}
-                        onChange={(event) => field.handleChange(event.target.value)}
-                        placeholder={t("settings.householdSizeLabel")}
-                      />
-                    </div>
-                  )}
-                />
-                <rentHouseholdForm.Field
-                  name="coldRentMonthly"
-                  children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
-                    <div className="space-y-1">
-                      <Label>{t("settings.coldRentLabel")}</Label>
-                      <InputWithSuffix
-                        suffix="€"
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        disabled={!canEditApartment}
-                        value={field.state.value}
-                        onChange={(event) => field.handleChange(event.target.value)}
-                        placeholder={t("settings.coldRentLabel")}
-                        inputClassName="pr-7"
-                      />
-                    </div>
-                  )}
-                />
-                <rentHouseholdForm.Field
-                  name="utilitiesMonthly"
-                  children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
-                    <div className="space-y-1">
-                      <Label>{t("settings.utilitiesLabel")}</Label>
-                      <InputWithSuffix
-                        suffix="€"
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        disabled={!canEditApartment}
-                        value={field.state.value}
-                        onChange={(event) => field.handleChange(event.target.value)}
-                        placeholder={t("settings.utilitiesLabel")}
-                        inputClassName="pr-7"
-                      />
-                    </div>
-                  )}
-                />
-                <rentHouseholdForm.Field
-                  name="utilitiesOnRoomSqmPercent"
-                  children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
-                    <div className="space-y-1">
-                      <Label>{t("settings.utilitiesOnRoomSqmPercentLabel")}</Label>
-                      <InputWithSuffix
-                        suffix="%"
-                        type="number"
-                        min="0"
-                        max="100"
-                        step="0.1"
-                        disabled={!canEditApartment}
-                        value={field.state.value}
-                        onChange={(event) => field.handleChange(event.target.value)}
-                        placeholder={t("settings.utilitiesOnRoomSqmPercentLabel")}
-                        inputClassName="pr-7"
-                      />
-                    </div>
-                  )}
-                />
-                <Button type="submit" disabled={busy || !canEditApartment}>
-                  {t("finances.rentSave")}
-                </Button>
-              </form>
-
-              {!canEditApartment ? (
-                <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">{t("finances.rentOwnerOnlyHint")}</p>
-              ) : null}
-
-              {rentFormError ? (
-                <p className="mt-2 rounded-lg border border-rose-300 bg-rose-50 px-3 py-2 text-xs text-rose-700 dark:border-rose-900 dark:bg-rose-950/60 dark:text-rose-200">
-                  {rentFormError}
-                </p>
-              ) : null}
-
-              <div className="mt-3 rounded-lg border border-brand-100 bg-brand-50/30 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800/40">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-slate-600 dark:text-slate-300">{t("finances.rentColdPerSqmLabel")}</span>
-                  <span className="font-semibold text-slate-900 dark:text-slate-100">{formatMoneyPerSqm(rentColdPerSqm)}</span>
-                </div>
-                <div className="mt-1 flex items-center justify-between gap-2">
-                  <span className="text-slate-600 dark:text-slate-300">{t("finances.rentRoomPerSqmWithUtilitiesLabel")}</span>
-                  <span className="font-semibold text-slate-900 dark:text-slate-100">
-                    {formatMoneyPerSqm(rentRoomPerSqmWithUtilities)}
-                  </span>
-                </div>
-                <div className="mt-1 flex items-center justify-between gap-2">
-                  <span className="text-slate-600 dark:text-slate-300">{t("finances.rentTotalPerSqmLabel")}</span>
-                  <span className="font-semibold text-slate-900 dark:text-slate-100">{formatMoneyPerSqm(rentTotalPerSqm)}</span>
-                </div>
-                <div className="mt-1 flex items-center justify-between gap-2">
-                  <span className="text-slate-600 dark:text-slate-300">{t("finances.rentTotalMonthlyLabel")}</span>
-                  <span className="font-semibold text-slate-900 dark:text-slate-100">
+                <p className="text-sm font-semibold text-brand-900 dark:text-brand-100">{t("finances.rentCardTitle")}</p>
+                <div className="mt-2 flex items-center justify-between gap-2">
+                  <span className="text-sm text-slate-600 dark:text-slate-300">{t("finances.rentTotalMonthlyLabel")}</span>
+                  <span className="text-sm font-semibold text-slate-900 dark:text-slate-100">
                     {rentTotalMonthly === null ? "-" : moneyLabel(rentTotalMonthly)}
                   </span>
                 </div>
-              </div>
-            </SectionPanel>
+                {members.length > 0 ? (
+                  <ul className="mt-2 space-y-1 border-t border-brand-100 pt-2 dark:border-slate-700">
+                    {members.map((member) => {
+                      const perMemberRent = costTableData.byMember.get(member.user_id)?.totalBeforeContracts ?? null;
+                      return (
+                        <li key={`rent-card-member-${member.user_id}`} className="flex items-center justify-between gap-2 text-xs">
+                          <span className="text-slate-600 dark:text-slate-300">{memberLabel(member.user_id)}</span>
+                          <span className="font-medium text-slate-900 dark:text-slate-100">
+                            {perMemberRent === null ? "-" : moneyLabel(perMemberRent)}
+                          </span>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                ) : null}
+              </button>
+            ) : null}
 
-            <SectionPanel className="mt-4">
-              <p className="text-sm font-semibold text-brand-900 dark:text-brand-100">{t("finances.rentMineTitle")}</p>
-              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{t("finances.rentMineDescription")}</p>
-
-              <form
-                className="mt-3 grid gap-2 sm:grid-cols-[1fr_1fr_auto]"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  void rentMemberForm.handleSubmit();
-                }}
-              >
-                <rentMemberForm.Field
-                  name="roomSizeSqm"
-                  children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
-                    <div className="space-y-1">
-                      <Label>{t("settings.roomSizeLabel")}</Label>
-                      <InputWithSuffix
-                        suffix="m²"
-                        type="number"
-                        min="0.1"
-                        step="0.1"
-                        value={field.state.value}
-                        onChange={(event) => field.handleChange(event.target.value)}
-                        placeholder={t("settings.roomSizeLabel")}
-                      />
-                    </div>
-                  )}
-                />
-                <rentMemberForm.Field
-                  name="commonAreaFactor"
-                  children={(field: { state: { value: string }; handleChange: (value: string) => void }) => {
-                    const parsed = Number(field.state.value);
-                    const sliderValue = Number.isFinite(parsed) ? clamp(parsed, COMMON_FACTOR_MIN, COMMON_FACTOR_MAX) : 1;
-                    const percentage = Math.round(sliderValue * 100);
-                    const levelIndex = Math.min(9, Math.floor((sliderValue / COMMON_FACTOR_MAX) * 10));
-                    const level = commonFactorLevelMeta[levelIndex];
-                    const LevelIcon = level.icon;
-                    const hue = Math.round((sliderValue / COMMON_FACTOR_MAX) * 120);
-                    const sliderStyle = {
-                      "--slider-gradient": "linear-gradient(90deg, #ef4444 0%, #f59e0b 25%, #22c55e 50%, #16a34a 75%, #15803d 100%)",
-                      "--slider-thumb": `hsl(${hue} 80% 42%)`
-                    } as CSSProperties;
-
-                    return (
-                      <div className="space-y-2 sm:col-span-2">
-                        <input
-                          type="range"
-                          min={COMMON_FACTOR_MIN}
-                          max={COMMON_FACTOR_MAX}
-                          step="0.01"
-                          value={sliderValue}
-                          onChange={(event) => field.handleChange(event.target.value)}
-                          className="common-factor-slider w-full"
-                          style={sliderStyle}
-                          aria-label={t("settings.commonFactorLabel")}
-                        />
-                        <div className="flex items-center justify-between text-xs">
-                          <span className="font-semibold text-rose-600 dark:text-rose-400">0</span>
-                          <span className="font-semibold text-emerald-700 dark:text-emerald-400">1.00</span>
-                          <span className="font-semibold text-emerald-600 dark:text-emerald-400">2.00</span>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <div className={`inline-flex items-center gap-1 text-xs font-semibold ${level.className}`}>
-                            <LevelIcon className="h-3.5 w-3.5" />
-                            {t(`settings.commonFactorLevel${levelIndex + 1}`)}
-                          </div>
-                          <div className="text-right text-xs font-semibold text-slate-600 dark:text-slate-300">
-                            {percentage}% ({sliderValue.toFixed(2)})
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  }}
-                />
-                <Button type="submit" variant="outline" disabled={busy}>
-                  {t("finances.rentSaveMine")}
+            {rentDetailsOpen ? (
+            <>
+              <div className="mb-3">
+                <Button type="button" variant="ghost" size="sm" onClick={() => setRentDetailsOpen(false)}>
+                  <ChevronLeft className="mr-1 h-4 w-4" />
+                  {t("common.back")}
                 </Button>
-              </form>
+              </div>
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <p className="text-sm font-semibold text-brand-900 dark:text-brand-100">{t("finances.rentCardTitle")}</p>
+                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{t("finances.rentCardDescription")}</p>
+                </div>
+              </div>
 
-              {memberRentFormError ? (
-                <p className="mt-2 rounded-lg border border-rose-300 bg-rose-50 px-3 py-2 text-xs text-rose-700 dark:border-rose-900 dark:bg-rose-950/60 dark:text-rose-200">
-                  {memberRentFormError}
-                </p>
-              ) : null}
-            </SectionPanel>
+              <SectionPanel className="mt-4">
+                <>
+                  <p className="text-sm font-semibold text-brand-900 dark:text-brand-100">{t("finances.rentApartmentTitle")}</p>
+                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{t("finances.rentApartmentDescription")}</p>
 
-            <SectionPanel className="mt-4">
-              <p className="text-sm font-semibold text-brand-900 dark:text-brand-100">{t("finances.rentOverviewTitle")}</p>
-              <ul className="mt-2 space-y-2">
-                {members.map((member) => (
-                  <li
-                    key={member.user_id}
-                    className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 rounded-lg border border-brand-100 bg-brand-50/40 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800/60"
+                  <form
+                    className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-[1fr_1fr_1fr_1fr_auto]"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      void rentHouseholdForm.handleSubmit();
+                    }}
                   >
-                    <span className={member.user_id === userId ? "font-semibold" : "text-slate-700 dark:text-slate-300"}>
-                      {memberLabel(member.user_id)}
-                    </span>
-                    <span className="text-slate-600 dark:text-slate-300">
-                      {formatSqm(member.room_size_sqm)}
-                    </span>
-                    <span className="text-slate-600 dark:text-slate-300">
-                      {t("finances.rentFactorValue", { value: member.common_area_factor.toFixed(2) })}
-                    </span>
-                  </li>
-                ))}
-                <li className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 rounded-lg border border-dashed border-brand-200 bg-brand-50/20 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800/40">
-                  <span className="font-semibold text-slate-700 dark:text-slate-300">{t("finances.sharedAreaLabel")}</span>
-                  <span className="text-slate-600 dark:text-slate-300">{formatSqm(sharedAreaSqm)}</span>
-                  <span className="text-slate-500 dark:text-slate-400">-</span>
-                </li>
-              </ul>
-              {members.length === 0 ? (
-                <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">{t("finances.rentAreaOverviewEmpty")}</p>
-              ) : null}
-            </SectionPanel>
+                    <rentHouseholdForm.Field
+                      name="apartmentSizeSqm"
+                      children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
+                        <div className="space-y-1">
+                          <Label>{t("settings.householdSizeLabel")}</Label>
+                          <InputWithSuffix
+                            suffix="m²"
+                            type="number"
+                            min="0.1"
+                            step="0.1"
+                            disabled={!canEditApartment}
+                            value={field.state.value}
+                            onChange={(event) => field.handleChange(event.target.value)}
+                            placeholder={t("settings.householdSizeLabel")}
+                          />
+                        </div>
+                      )}
+                    />
+                    <rentHouseholdForm.Field
+                      name="coldRentMonthly"
+                      children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
+                        <div className="space-y-1">
+                          <Label>{t("settings.coldRentLabel")}</Label>
+                          <InputWithSuffix
+                            suffix="€"
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            disabled={!canEditApartment}
+                            value={field.state.value}
+                            onChange={(event) => field.handleChange(event.target.value)}
+                            placeholder={t("settings.coldRentLabel")}
+                            inputClassName="pr-7"
+                          />
+                        </div>
+                      )}
+                    />
+                    <rentHouseholdForm.Field
+                      name="utilitiesMonthly"
+                      children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
+                        <div className="space-y-1">
+                          <Label>{t("settings.utilitiesLabel")}</Label>
+                          <InputWithSuffix
+                            suffix="€"
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            disabled={!canEditApartment}
+                            value={field.state.value}
+                            onChange={(event) => field.handleChange(event.target.value)}
+                            placeholder={t("settings.utilitiesLabel")}
+                            inputClassName="pr-7"
+                          />
+                        </div>
+                      )}
+                    />
+                    <rentHouseholdForm.Field
+                      name="utilitiesOnRoomSqmPercent"
+                      children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
+                        <div className="space-y-1">
+                          <Label>{t("settings.utilitiesOnRoomSqmPercentLabel")}</Label>
+                          <InputWithSuffix
+                            suffix="%"
+                            type="number"
+                            min="0"
+                            max="100"
+                            step="0.1"
+                            disabled={!canEditApartment}
+                            value={field.state.value}
+                            onChange={(event) => field.handleChange(event.target.value)}
+                            placeholder={t("settings.utilitiesOnRoomSqmPercentLabel")}
+                            inputClassName="pr-7"
+                          />
+                        </div>
+                      )}
+                    />
+                    <Button type="submit" disabled={busy || !canEditApartment}>
+                      {t("finances.rentSave")}
+                    </Button>
+                  </form>
 
+                  {!canEditApartment ? (
+                    <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">{t("finances.rentOwnerOnlyHint")}</p>
+                  ) : null}
+
+                  {rentFormError ? (
+                    <p className="mt-2 rounded-lg border border-rose-300 bg-rose-50 px-3 py-2 text-xs text-rose-700 dark:border-rose-900 dark:bg-rose-950/60 dark:text-rose-200">
+                      {rentFormError}
+                    </p>
+                  ) : null}
+
+                  <div className="mt-3 rounded-lg border border-brand-100 bg-brand-50/30 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800/40">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-slate-600 dark:text-slate-300">{t("finances.rentColdPerSqmLabel")}</span>
+                      <span className="font-semibold text-slate-900 dark:text-slate-100">{formatMoneyPerSqm(rentColdPerSqm)}</span>
+                    </div>
+                    <div className="mt-1 flex items-center justify-between gap-2">
+                      <span className="text-slate-600 dark:text-slate-300">{t("finances.rentRoomPerSqmWithUtilitiesLabel")}</span>
+                      <span className="font-semibold text-slate-900 dark:text-slate-100">
+                        {formatMoneyPerSqm(rentRoomPerSqmWithUtilities)}
+                      </span>
+                    </div>
+                    <div className="mt-1 flex items-center justify-between gap-2">
+                      <span className="text-slate-600 dark:text-slate-300">{t("finances.rentTotalPerSqmLabel")}</span>
+                      <span className="font-semibold text-slate-900 dark:text-slate-100">{formatMoneyPerSqm(rentTotalPerSqm)}</span>
+                    </div>
+                    <div className="mt-1 flex items-center justify-between gap-2">
+                      <span className="text-slate-600 dark:text-slate-300">{t("finances.rentTotalMonthlyLabel")}</span>
+                      <span className="font-semibold text-slate-900 dark:text-slate-100">
+                        {rentTotalMonthly === null ? "-" : moneyLabel(rentTotalMonthly)}
+                      </span>
+                    </div>
+                  </div>
+                </>
+              </SectionPanel>
+
+              <SectionPanel className="mt-4">
+                <>
+                  <p className="text-sm font-semibold text-brand-900 dark:text-brand-100">{t("finances.rentMineTitle")}</p>
+                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{t("finances.rentMineDescription")}</p>
+
+                  <form
+                    className="mt-3 grid gap-2 sm:grid-cols-[1fr_1fr_auto]"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      void rentMemberForm.handleSubmit();
+                    }}
+                  >
+                    <rentMemberForm.Field
+                      name="roomSizeSqm"
+                      children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
+                        <div className="space-y-1">
+                          <Label>{t("settings.roomSizeLabel")}</Label>
+                          <InputWithSuffix
+                            suffix="m²"
+                            type="number"
+                            min="0.1"
+                            step="0.1"
+                            value={field.state.value}
+                            onChange={(event) => field.handleChange(event.target.value)}
+                            placeholder={t("settings.roomSizeLabel")}
+                          />
+                        </div>
+                      )}
+                    />
+                    <rentMemberForm.Field
+                      name="commonAreaFactor"
+                      children={(field: { state: { value: string }; handleChange: (value: string) => void }) => {
+                        const parsed = Number(field.state.value);
+                        const sliderValue = Number.isFinite(parsed) ? clamp(parsed, COMMON_FACTOR_MIN, COMMON_FACTOR_MAX) : 1;
+                        const percentage = Math.round(sliderValue * 100);
+                        const levelIndex = Math.min(9, Math.floor((sliderValue / COMMON_FACTOR_MAX) * 10));
+                        const level = commonFactorLevelMeta[levelIndex];
+                        const LevelIcon = level.icon;
+                        const hue = Math.round((sliderValue / COMMON_FACTOR_MAX) * 120);
+                        const sliderStyle = {
+                          "--slider-gradient": "linear-gradient(90deg, #ef4444 0%, #f59e0b 25%, #22c55e 50%, #16a34a 75%, #15803d 100%)",
+                          "--slider-thumb": `hsl(${hue} 80% 42%)`
+                        } as CSSProperties;
+
+                        return (
+                          <div className="space-y-2 sm:col-span-2">
+                            <input
+                              type="range"
+                              min={COMMON_FACTOR_MIN}
+                              max={COMMON_FACTOR_MAX}
+                              step="0.01"
+                              value={sliderValue}
+                              onChange={(event) => field.handleChange(event.target.value)}
+                              className="common-factor-slider w-full"
+                              style={sliderStyle}
+                              aria-label={t("settings.commonFactorLabel")}
+                            />
+                            <div className="flex items-center justify-between text-xs">
+                              <span className="font-semibold text-rose-600 dark:text-rose-400">0</span>
+                              <span className="font-semibold text-emerald-700 dark:text-emerald-400">1.00</span>
+                              <span className="font-semibold text-emerald-600 dark:text-emerald-400">2.00</span>
+                            </div>
+                            <div className="flex items-center justify-between">
+                              <div className={`inline-flex items-center gap-1 text-xs font-semibold ${level.className}`}>
+                                <LevelIcon className="h-3.5 w-3.5" />
+                                {t(`settings.commonFactorLevel${levelIndex + 1}`)}
+                              </div>
+                              <div className="text-right text-xs font-semibold text-slate-600 dark:text-slate-300">
+                                {percentage}% ({sliderValue.toFixed(2)})
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      }}
+                    />
+                    <Button type="submit" variant="outline" disabled={busy}>
+                      {t("finances.rentSaveMine")}
+                    </Button>
+                  </form>
+
+                  {memberRentFormError ? (
+                    <p className="mt-2 rounded-lg border border-rose-300 bg-rose-50 px-3 py-2 text-xs text-rose-700 dark:border-rose-900 dark:bg-rose-950/60 dark:text-rose-200">
+                      {memberRentFormError}
+                    </p>
+                  ) : null}
+                </>
+              </SectionPanel>
+
+              <SectionPanel className="mt-4">
+                <>
+                  <p className="text-sm font-semibold text-brand-900 dark:text-brand-100">{t("finances.rentOverviewTitle")}</p>
+                  <div className="mt-2 overflow-x-auto rounded-xl border border-brand-100 dark:border-slate-700">
+                    <table className="min-w-[200px] w-full text-sm">
+                      <thead className="bg-brand-50/50 dark:bg-slate-800/60">
+                        <tr>
+                          <th className="px-3 py-2 text-left font-semibold text-slate-700 dark:text-slate-200">
+                            {t("common.memberFallback")}
+                          </th>
+                          <th className="px-3 py-2 text-left font-semibold text-slate-700 dark:text-slate-200">
+                            {t("settings.roomSizeLabel")}
+                          </th>
+                          <th className="px-3 py-2 text-left font-semibold text-slate-700 dark:text-slate-200">
+                            {t("settings.commonFactorLabel")}
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {members.map((member) => (
+                          <tr key={member.user_id} className="border-t border-brand-100 dark:border-slate-700">
+                            <td
+                              className={`px-3 py-2 ${
+                                member.user_id === userId ? "font-semibold text-slate-900 dark:text-slate-100" : "text-slate-700 dark:text-slate-300"
+                              }`}
+                            >
+                              {memberLabel(member.user_id)}
+                            </td>
+                            <td className="px-3 py-2">
+                              {canEditApartment ? (
+                                <div className="w-28">
+                                  <InputWithSuffix
+                                    suffix="m²"
+                                    type="number"
+                                    min="0.1"
+                                    step="0.1"
+                                    value={memberOverviewDrafts[member.user_id]?.roomSizeSqm ?? ""}
+                                    onChange={(event) =>
+                                      setOverviewMemberDraft(member.user_id, { roomSizeSqm: event.target.value })
+                                    }
+                                    placeholder={t("settings.roomSizeLabel")}
+                                  />
+                                </div>
+                              ) : (
+                                <span className="text-slate-600 dark:text-slate-300">{formatSqm(member.room_size_sqm)}</span>
+                              )}
+                            </td>
+                            <td className="px-3 py-2">
+                              {canEditApartment ? (
+                                <Input
+                                  className="w-24"
+                                  type="number"
+                                  min="0"
+                                  max="2"
+                                  step="0.01"
+                                  value={memberOverviewDrafts[member.user_id]?.commonAreaFactor ?? "1"}
+                                  onChange={(event) =>
+                                    setOverviewMemberDraft(member.user_id, { commonAreaFactor: event.target.value })
+                                  }
+                                  placeholder={t("settings.commonFactorLabel")}
+                                />
+                              ) : (
+                                <span className="text-slate-600 dark:text-slate-300">
+                                  {t("finances.rentFactorValue", { value: member.common_area_factor.toFixed(2) })}
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                        <tr className="border-t border-dashed border-brand-200 bg-brand-50/20 dark:border-slate-700 dark:bg-slate-800/40">
+                          <td className="px-3 py-2 font-semibold text-slate-700 dark:text-slate-300">{t("finances.sharedAreaLabel")}</td>
+                          <td className="px-3 py-2 text-slate-600 dark:text-slate-300">{formatSqm(sharedAreaSqm)}</td>
+                          <td className="px-3 py-2 text-slate-500 dark:text-slate-400">-</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                  {canEditApartment && members.length > 0 ? (
+                    <div className="mt-3 flex justify-end">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => void onSaveAllOverviewMemberSettings()}
+                        disabled={busy || savingOverviewMemberId !== null}
+                      >
+                        {t("finances.rentSaveMember")}
+                      </Button>
+                    </div>
+                  ) : null}
+                  {overviewMemberRentFormError ? (
+                    <p className="mt-2 rounded-lg border border-rose-300 bg-rose-50 px-3 py-2 text-xs text-rose-700 dark:border-rose-900 dark:bg-rose-950/60 dark:text-rose-200">
+                      {overviewMemberRentFormError}
+                    </p>
+                  ) : null}
+                  {members.length === 0 ? (
+                    <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">{t("finances.rentAreaOverviewEmpty")}</p>
+                  ) : null}
+                </>
+              </SectionPanel>
+
+              <SectionPanel className="mt-4">
+                <>
+                  <p className="text-sm font-semibold text-brand-900 dark:text-brand-100">
+                    {t("finances.costBreakdownTitle")}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                    {t("finances.costBreakdownDescription")}
+                  </p>
+
+                  <div className="mt-3 overflow-x-auto rounded-xl border border-brand-100 dark:border-slate-700">
+                    <table className="min-w-[860px] w-full text-sm">
+                      <thead className="bg-brand-50/50 dark:bg-slate-800/60">
+                        <tr>
+                          <th className="px-3 py-2 text-left font-semibold text-slate-700 dark:text-slate-200">
+                            {t("finances.costBreakdownRowLabel")}
+                          </th>
+                          {members.map((member) => (
+                            <th
+                              key={`cost-breakdown-head-${member.user_id}`}
+                              className="px-3 py-2 text-right font-semibold text-slate-700 dark:text-slate-200"
+                            >
+                              {memberLabel(member.user_id)}
+                            </th>
+                          ))}
+                          <th className="px-3 py-2 text-right font-semibold text-slate-700 dark:text-slate-200">
+                            {t("finances.costBreakdownTotalColumn")}
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr className="border-t border-brand-100 dark:border-slate-700">
+                          <td className="px-3 py-2 text-slate-600 dark:text-slate-300">{t("finances.costBreakdownColdRoom")}</td>
+                          {members.map((member) => {
+                            const value = costTableData.byMember.get(member.user_id)?.coldForRoom ?? null;
+                            return (
+                              <td key={`cost-breakdown-cold-${member.user_id}`} className="px-3 py-2 text-right font-medium text-slate-900 dark:text-slate-100">
+                                {value === null ? "-" : moneyLabel(value)}
+                              </td>
+                            );
+                          })}
+                          <td className="px-3 py-2 text-right font-semibold text-slate-900 dark:text-slate-100">
+                            {costTableTotals.coldForRoom === null ? "-" : moneyLabel(costTableTotals.coldForRoom)}
+                          </td>
+                        </tr>
+                        <tr className="border-t border-brand-100 dark:border-slate-700">
+                          <td className="px-3 py-2 text-slate-600 dark:text-slate-300">{t("finances.costBreakdownUtilitiesRoom")}</td>
+                          {members.map((member) => {
+                            const value = costTableData.byMember.get(member.user_id)?.utilitiesForRoom ?? null;
+                            return (
+                              <td key={`cost-breakdown-utilities-${member.user_id}`} className="px-3 py-2 text-right font-medium text-slate-900 dark:text-slate-100">
+                                {value === null ? "-" : moneyLabel(value)}
+                              </td>
+                            );
+                          })}
+                          <td className="px-3 py-2 text-right font-semibold text-slate-900 dark:text-slate-100">
+                            {costTableTotals.utilitiesForRoom === null ? "-" : moneyLabel(costTableTotals.utilitiesForRoom)}
+                          </td>
+                        </tr>
+                        <tr className="border-t-4 border-double border-brand-300 dark:border-slate-500 bg-brand-50/20 dark:bg-slate-800/30">
+                          <td className="px-3 py-2 font-semibold text-slate-700 dark:text-slate-200">{t("finances.costBreakdownRoomSubtotal")}</td>
+                          {members.map((member) => {
+                            const value = costTableData.byMember.get(member.user_id)?.roomSubtotal ?? null;
+                            return (
+                              <td key={`cost-breakdown-subtotal-${member.user_id}`} className="px-3 py-2 text-right font-semibold text-slate-900 dark:text-slate-100">
+                                {value === null ? "-" : moneyLabel(value)}
+                              </td>
+                            );
+                          })}
+                          <td className="px-3 py-2 text-right font-semibold text-slate-900 dark:text-slate-100">
+                            {costTableTotals.roomSubtotal === null ? "-" : moneyLabel(costTableTotals.roomSubtotal)}
+                          </td>
+                        </tr>
+                        <tr className="border-t-4 border-double border-brand-300 dark:border-slate-500">
+                          <td className="px-3 py-2 font-medium text-slate-600 dark:text-slate-300">{t("finances.costBreakdownSharedAreaCosts")}</td>
+                          {members.map((member) => (
+                            <td key={`cost-breakdown-shared-area-empty-${member.user_id}`} className="px-3 py-2 text-right font-medium text-slate-500 dark:text-slate-300">
+                              -
+                            </td>
+                          ))}
+                          <td className="px-3 py-2 text-right font-semibold text-slate-900 dark:text-slate-100">
+                            {costTableTotals.sharedAreaColdCosts === null ? "-" : moneyLabel(costTableTotals.sharedAreaColdCosts)}
+                          </td>
+                        </tr>
+                        <tr className="border-t border-brand-100 dark:border-slate-700">
+                          <td className="px-3 py-2 font-medium text-slate-600 dark:text-slate-300">{t("finances.costBreakdownSharedUtilitiesCosts")}</td>
+                          {members.map((member) => (
+                            <td key={`cost-breakdown-shared-utilities-empty-${member.user_id}`} className="px-3 py-2 text-right font-medium text-slate-500 dark:text-slate-300">
+                              -
+                            </td>
+                          ))}
+                          <td className="px-3 py-2 text-right font-semibold text-slate-900 dark:text-slate-100">
+                            {costTableTotals.sharedUtilitiesCosts === null ? "-" : moneyLabel(costTableTotals.sharedUtilitiesCosts)}
+                          </td>
+                        </tr>
+                        <tr className="border-t border-brand-100 dark:border-slate-700">
+                          <td className="px-3 py-2 font-medium text-slate-600 dark:text-slate-300">{t("finances.costBreakdownRemainingApartment")}</td>
+                          {members.map((member) => (
+                            <td key={`cost-breakdown-remaining-empty-${member.user_id}`} className="px-3 py-2 text-right font-medium text-slate-500 dark:text-slate-300">
+                              -
+                            </td>
+                          ))}
+                          <td className="px-3 py-2 text-right font-semibold text-slate-900 dark:text-slate-100">
+                            {costTableTotals.remainingApartmentCosts === null ? "-" : moneyLabel(costTableTotals.remainingApartmentCosts)}
+                          </td>
+                        </tr>
+                        <tr className="border-t border-brand-100 dark:border-slate-700">
+                          <td className="px-3 py-2 text-slate-600 dark:text-slate-300">{t("finances.costBreakdownCommonShare")}</td>
+                          {members.map((member) => {
+                            const value = costTableData.byMember.get(member.user_id)?.commonCostsShare ?? null;
+                            return (
+                              <td key={`cost-breakdown-common-${member.user_id}`} className="px-3 py-2 text-right font-medium text-slate-900 dark:text-slate-100">
+                                {value === null ? "-" : moneyLabel(value)}
+                              </td>
+                            );
+                          })}
+                          <td className="px-3 py-2 text-right font-semibold text-slate-900 dark:text-slate-100">
+                            {costTableTotals.commonCostsShare === null ? "-" : moneyLabel(costTableTotals.commonCostsShare)}
+                          </td>
+                        </tr>
+                        <tr className="border-t-4 border-double border-brand-300 dark:border-slate-500 bg-brand-50/20 dark:bg-slate-800/30">
+                          <td className="px-3 py-2 font-semibold text-slate-700 dark:text-slate-200">{t("finances.costBreakdownTotal")}</td>
+                          {members.map((member) => {
+                            const value = costTableData.byMember.get(member.user_id)?.totalBeforeContracts ?? null;
+                            return (
+                              <td key={`cost-breakdown-total-${member.user_id}`} className="px-3 py-2 text-right font-semibold text-slate-900 dark:text-slate-100">
+                                {value === null ? "-" : moneyLabel(value)}
+                              </td>
+                            );
+                          })}
+                          <td className="px-3 py-2 text-right font-semibold text-slate-900 dark:text-slate-100">
+                            {costTableTotals.totalBeforeContracts === null ? "-" : moneyLabel(costTableTotals.totalBeforeContracts)}
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              </SectionPanel>
+            </>
+            ) : null}
+
+            {!rentDetailsOpen ? (
             <SectionPanel className="mt-4">
               <div className="flex items-center justify-between gap-2">
                 <div>
@@ -2106,17 +2928,14 @@ export const FinancesTab = ({
                 </ul>
               )}
             </SectionPanel>
+            ) : null}
 
+            {!rentDetailsOpen ? (
             <SectionPanel className="mt-4">
-              <p className="text-sm font-semibold text-brand-900 dark:text-brand-100">
-                {t("finances.costBreakdownTitle")}
-              </p>
-              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                {t("finances.costBreakdownDescription")}
-              </p>
-
+              <p className="text-sm font-semibold text-brand-900 dark:text-brand-100">{t("finances.rentSummaryTitle")}</p>
+              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{t("finances.rentSummaryDescription")}</p>
               <div className="mt-3 overflow-x-auto rounded-xl border border-brand-100 dark:border-slate-700">
-                <table className="min-w-[860px] w-full text-sm">
+                <table className="min-w-[760px] w-full text-sm">
                   <thead className="bg-brand-50/50 dark:bg-slate-800/60">
                     <tr>
                       <th className="px-3 py-2 text-left font-semibold text-slate-700 dark:text-slate-200">
@@ -2124,7 +2943,7 @@ export const FinancesTab = ({
                       </th>
                       {members.map((member) => (
                         <th
-                          key={`cost-breakdown-head-${member.user_id}`}
+                          key={`rent-summary-head-${member.user_id}`}
                           className="px-3 py-2 text-right font-semibold text-slate-700 dark:text-slate-200"
                         >
                           {memberLabel(member.user_id)}
@@ -2137,100 +2956,11 @@ export const FinancesTab = ({
                   </thead>
                   <tbody>
                     <tr className="border-t border-brand-100 dark:border-slate-700">
-                      <td className="px-3 py-2 text-slate-600 dark:text-slate-300">{t("finances.costBreakdownColdRoom")}</td>
-                      {members.map((member) => {
-                        const value = costTableData.byMember.get(member.user_id)?.coldForRoom ?? null;
-                        return (
-                          <td key={`cost-breakdown-cold-${member.user_id}`} className="px-3 py-2 text-right font-medium text-slate-900 dark:text-slate-100">
-                            {value === null ? "-" : moneyLabel(value)}
-                          </td>
-                        );
-                      })}
-                      <td className="px-3 py-2 text-right font-semibold text-slate-900 dark:text-slate-100">
-                        {costTableTotals.coldForRoom === null ? "-" : moneyLabel(costTableTotals.coldForRoom)}
-                      </td>
-                    </tr>
-                    <tr className="border-t border-brand-100 dark:border-slate-700">
-                      <td className="px-3 py-2 text-slate-600 dark:text-slate-300">{t("finances.costBreakdownUtilitiesRoom")}</td>
-                      {members.map((member) => {
-                        const value = costTableData.byMember.get(member.user_id)?.utilitiesForRoom ?? null;
-                        return (
-                          <td key={`cost-breakdown-utilities-${member.user_id}`} className="px-3 py-2 text-right font-medium text-slate-900 dark:text-slate-100">
-                            {value === null ? "-" : moneyLabel(value)}
-                          </td>
-                        );
-                      })}
-                      <td className="px-3 py-2 text-right font-semibold text-slate-900 dark:text-slate-100">
-                        {costTableTotals.utilitiesForRoom === null ? "-" : moneyLabel(costTableTotals.utilitiesForRoom)}
-                      </td>
-                    </tr>
-                    <tr className="border-t-4 border-double border-brand-300 dark:border-slate-500 bg-brand-50/20 dark:bg-slate-800/30">
-                      <td className="px-3 py-2 font-semibold text-slate-700 dark:text-slate-200">{t("finances.costBreakdownRoomSubtotal")}</td>
-                      {members.map((member) => {
-                        const value = costTableData.byMember.get(member.user_id)?.roomSubtotal ?? null;
-                        return (
-                          <td key={`cost-breakdown-subtotal-${member.user_id}`} className="px-3 py-2 text-right font-semibold text-slate-900 dark:text-slate-100">
-                            {value === null ? "-" : moneyLabel(value)}
-                          </td>
-                        );
-                      })}
-                      <td className="px-3 py-2 text-right font-semibold text-slate-900 dark:text-slate-100">
-                        {costTableTotals.roomSubtotal === null ? "-" : moneyLabel(costTableTotals.roomSubtotal)}
-                      </td>
-                    </tr>
-                    <tr className="border-t-4 border-double border-brand-300 dark:border-slate-500">
-                      <td className="px-3 py-2 font-medium text-slate-600 dark:text-slate-300">{t("finances.costBreakdownSharedAreaCosts")}</td>
-                      {members.map((member) => (
-                        <td key={`cost-breakdown-shared-area-empty-${member.user_id}`} className="px-3 py-2 text-right font-medium text-slate-500 dark:text-slate-300">
-                          -
-                        </td>
-                      ))}
-                      <td className="px-3 py-2 text-right font-semibold text-slate-900 dark:text-slate-100">
-                        {costTableTotals.sharedAreaColdCosts === null ? "-" : moneyLabel(costTableTotals.sharedAreaColdCosts)}
-                      </td>
-                    </tr>
-                    <tr className="border-t border-brand-100 dark:border-slate-700">
-                      <td className="px-3 py-2 font-medium text-slate-600 dark:text-slate-300">{t("finances.costBreakdownSharedUtilitiesCosts")}</td>
-                      {members.map((member) => (
-                        <td key={`cost-breakdown-shared-utilities-empty-${member.user_id}`} className="px-3 py-2 text-right font-medium text-slate-500 dark:text-slate-300">
-                          -
-                        </td>
-                      ))}
-                      <td className="px-3 py-2 text-right font-semibold text-slate-900 dark:text-slate-100">
-                        {costTableTotals.sharedUtilitiesCosts === null ? "-" : moneyLabel(costTableTotals.sharedUtilitiesCosts)}
-                      </td>
-                    </tr>
-                    <tr className="border-t border-brand-100 dark:border-slate-700">
-                      <td className="px-3 py-2 font-medium text-slate-600 dark:text-slate-300">{t("finances.costBreakdownRemainingApartment")}</td>
-                      {members.map((member) => (
-                        <td key={`cost-breakdown-remaining-empty-${member.user_id}`} className="px-3 py-2 text-right font-medium text-slate-500 dark:text-slate-300">
-                          -
-                        </td>
-                      ))}
-                      <td className="px-3 py-2 text-right font-semibold text-slate-900 dark:text-slate-100">
-                        {costTableTotals.remainingApartmentCosts === null ? "-" : moneyLabel(costTableTotals.remainingApartmentCosts)}
-                      </td>
-                    </tr>
-                    <tr className="border-t border-brand-100 dark:border-slate-700">
-                      <td className="px-3 py-2 text-slate-600 dark:text-slate-300">{t("finances.costBreakdownCommonShare")}</td>
-                      {members.map((member) => {
-                        const value = costTableData.byMember.get(member.user_id)?.commonCostsShare ?? null;
-                        return (
-                          <td key={`cost-breakdown-common-${member.user_id}`} className="px-3 py-2 text-right font-medium text-slate-900 dark:text-slate-100">
-                            {value === null ? "-" : moneyLabel(value)}
-                          </td>
-                        );
-                      })}
-                      <td className="px-3 py-2 text-right font-semibold text-slate-900 dark:text-slate-100">
-                        {costTableTotals.commonCostsShare === null ? "-" : moneyLabel(costTableTotals.commonCostsShare)}
-                      </td>
-                    </tr>
-                    <tr className="border-t-4 border-double border-brand-300 dark:border-slate-500 bg-brand-50/20 dark:bg-slate-800/30">
-                      <td className="px-3 py-2 font-semibold text-slate-700 dark:text-slate-200">{t("finances.costBreakdownTotal")}</td>
+                      <td className="px-3 py-2 text-slate-600 dark:text-slate-300">{t("finances.rentSummarySubtotal")}</td>
                       {members.map((member) => {
                         const value = costTableData.byMember.get(member.user_id)?.totalBeforeContracts ?? null;
                         return (
-                          <td key={`cost-breakdown-total-${member.user_id}`} className="px-3 py-2 text-right font-semibold text-slate-900 dark:text-slate-100">
+                          <td key={`rent-summary-subtotal-${member.user_id}`} className="px-3 py-2 text-right font-semibold text-slate-900 dark:text-slate-100">
                             {value === null ? "-" : moneyLabel(value)}
                           </td>
                         );
@@ -2239,14 +2969,12 @@ export const FinancesTab = ({
                         {costTableTotals.totalBeforeContracts === null ? "-" : moneyLabel(costTableTotals.totalBeforeContracts)}
                       </td>
                     </tr>
-                  </tbody>
-                  <tbody className="border-t-2 border-brand-200 dark:border-slate-600">
                     <tr className="border-t border-brand-100 dark:border-slate-700">
-                      <td className="px-3 py-2 text-slate-600 dark:text-slate-300">{t("finances.costBreakdownExtraContracts")}</td>
+                      <td className="px-3 py-2 text-slate-600 dark:text-slate-300">{t("finances.rentSummaryContracts")}</td>
                       {members.map((member) => {
                         const value = costTableData.byMember.get(member.user_id)?.extraContracts ?? 0;
                         return (
-                          <td key={`cost-breakdown-contracts-${member.user_id}`} className="px-3 py-2 text-right font-medium text-slate-900 dark:text-slate-100">
+                          <td key={`rent-summary-contracts-${member.user_id}`} className="px-3 py-2 text-right font-semibold text-slate-900 dark:text-slate-100">
                             {moneyLabel(value)}
                           </td>
                         );
@@ -2256,11 +2984,11 @@ export const FinancesTab = ({
                       </td>
                     </tr>
                     <tr className="border-t border-brand-100 bg-brand-100/40 dark:border-slate-700 dark:bg-slate-700/30">
-                      <td className="px-3 py-2 font-semibold text-slate-800 dark:text-slate-100">{t("finances.costBreakdownGrandTotal")}</td>
+                      <td className="px-3 py-2 font-semibold text-slate-800 dark:text-slate-100">{t("finances.rentSummaryGrandTotal")}</td>
                       {members.map((member) => {
                         const value = costTableData.byMember.get(member.user_id)?.grandTotal ?? null;
                         return (
-                          <td key={`cost-breakdown-grand-${member.user_id}`} className="px-3 py-2 text-right font-semibold text-slate-900 dark:text-slate-100">
+                          <td key={`rent-summary-grand-${member.user_id}`} className="px-3 py-2 text-right font-semibold text-slate-900 dark:text-slate-100">
                             {value === null ? "-" : moneyLabel(value)}
                           </td>
                         );
@@ -2273,6 +3001,7 @@ export const FinancesTab = ({
                 </table>
               </div>
             </SectionPanel>
+            ) : null}
           </>
         ) : null}
 
@@ -2282,6 +3011,7 @@ export const FinancesTab = ({
 
       {showOverview ? (
         <FinanceHistoryCard
+          className="relative z-0"
           title={t("finances.currentEntriesTitle")}
           description={t("finances.currentEntriesDescription")}
           headerRight={
@@ -2299,6 +3029,8 @@ export const FinancesTab = ({
           emptyText={t("finances.empty")}
           paidByText={paidByText}
           entryDateText={entryDateText}
+          receiptImageUrl={(entry) => entry.receipt_image_url}
+          receiptLabel={t("finances.receiptLink")}
           formatMoney={moneyLabel}
           entryChipText={personalEntryDeltaLabel}
           entryChipClassName={personalEntryDeltaChipClassName}
@@ -2380,7 +3112,10 @@ export const FinancesTab = ({
         open={editEntryDialogOpen}
         onOpenChange={(open) => {
           setEditEntryDialogOpen(open);
-          if (!open) setEntryBeingEdited(null);
+          if (!open) {
+            setEntryBeingEdited(null);
+            setReceiptUploadError(null);
+          }
         }}
       >
         <DialogContent>
@@ -2459,7 +3194,18 @@ export const FinancesTab = ({
                 </div>
               )}
             />
+            {renderReceiptFields(
+              editEntryForm,
+              {
+                uploadInputRef: editReceiptUploadInputRef,
+                cameraInputRef: editReceiptCameraInputRef
+              },
+              false
+            )}
             {renderEntryMemberFields(editEntryForm, false)}
+            {receiptUploadError ? (
+              <p className="text-xs text-rose-600 dark:text-rose-300">{receiptUploadError}</p>
+            ) : null}
             <div className="flex justify-end gap-2">
               <DialogClose asChild>
                 <Button variant="ghost">{t("common.cancel")}</Button>
@@ -2469,6 +3215,96 @@ export const FinancesTab = ({
               </Button>
             </div>
           </form>
+        </DialogContent>
+      </Dialog>
+      <Dialog
+        open={ocrCameraDialogOpen}
+        onOpenChange={(open) => {
+          setOcrCameraDialogOpen(open);
+          if (!open) setOcrError(null);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("finances.ocrDialogTitle")}</DialogTitle>
+            <DialogDescription>{t("finances.ocrDialogDescription")}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="overflow-hidden rounded-xl border border-brand-100 bg-black dark:border-slate-700">
+              <video ref={ocrVideoRef} className="h-64 w-full object-cover" autoPlay muted playsInline />
+            </div>
+            <canvas ref={ocrCanvasRef} className="hidden" />
+            {ocrError ? <p className="text-xs text-rose-600 dark:text-rose-300">{ocrError}</p> : null}
+            <div className="flex justify-end gap-2">
+              <DialogClose asChild>
+                <Button variant="ghost" type="button">
+                  {t("common.cancel")}
+                </Button>
+              </DialogClose>
+              <Button type="button" onClick={() => void captureAndAnalyzeOcr()} disabled={ocrBusy}>
+                {ocrBusy ? t("finances.ocrReadingButton") : t("finances.ocrCaptureButton")}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+      <Dialog
+        open={ocrConfirmDialogOpen}
+        onOpenChange={(open) => {
+          setOcrConfirmDialogOpen(open);
+          if (!open) setOcrCandidate(null);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("finances.ocrConfirmTitle")}</DialogTitle>
+            <DialogDescription>{t("finances.ocrConfirmDescription")}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="rounded-xl border border-brand-100 bg-brand-50/40 p-3 text-sm dark:border-slate-700 dark:bg-slate-800/50">
+              <p>
+                <span className="font-semibold">{t("finances.entryNameLabel")}:</span>{" "}
+                {ocrCandidate?.description || "-"}
+              </p>
+              <p>
+                <span className="font-semibold">{t("finances.entryAmountLabel")}:</span>{" "}
+                {ocrCandidate?.amount || "-"}
+              </p>
+            </div>
+            {ocrCandidate?.fullText ? (
+              <details className="text-xs text-slate-500 dark:text-slate-400">
+                <summary className="cursor-pointer">{t("finances.ocrRawTextToggle")}</summary>
+                <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap rounded-lg border border-brand-100 bg-white p-2 dark:border-slate-700 dark:bg-slate-900">
+                  {ocrCandidate.fullText}
+                </pre>
+              </details>
+            ) : null}
+            <div className="flex justify-end gap-2">
+              <DialogClose asChild>
+                <Button variant="ghost" type="button">
+                  {t("common.cancel")}
+                </Button>
+              </DialogClose>
+              <DialogClose asChild>
+                <Button
+                  type="button"
+                  onClick={() => {
+                    if (!ocrCandidate) return;
+                    if (!addEntryForm.state.values.description.trim() && ocrCandidate.description) {
+                      addEntryForm.setFieldValue("description", ocrCandidate.description);
+                      setPreviewDescription(ocrCandidate.description);
+                    }
+                    if (!addEntryForm.state.values.amount.trim() && ocrCandidate.amount) {
+                      addEntryForm.setFieldValue("amount", ocrCandidate.amount);
+                      setPreviewAmountInput(ocrCandidate.amount);
+                    }
+                  }}
+                >
+                  {t("finances.ocrApplyButton")}
+                </Button>
+              </DialogClose>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
       {categorySuggestions.length > 0 ? (

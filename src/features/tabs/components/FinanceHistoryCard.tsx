@@ -14,6 +14,8 @@ interface FinanceHistoryCardProps {
   emptyText: string;
   paidByText: (entry: FinanceEntry) => string;
   entryDateText?: (entry: FinanceEntry) => string | null;
+  receiptImageUrl?: (entry: FinanceEntry) => string | null;
+  receiptLabel?: string;
   formatMoney: (value: number) => string;
   headerRight?: ReactNode;
   entryChipText?: (entry: FinanceEntry) => string | null;
@@ -43,6 +45,8 @@ export const FinanceHistoryCard = ({
   emptyText,
   paidByText,
   entryDateText,
+  receiptImageUrl,
+  receiptLabel,
   formatMoney,
   headerRight,
   entryChipText,
@@ -69,6 +73,8 @@ export const FinanceHistoryCard = ({
         formatMoney={formatMoney}
         paidByText={paidByText}
         entryDateText={entryDateText}
+        receiptImageUrl={receiptImageUrl}
+        receiptLabel={receiptLabel}
         entryChipText={entryChipText}
         entryChipClassName={entryChipClassName}
         amountClassName={amountClassName}
@@ -110,12 +116,12 @@ export const FinanceHistoryCard = ({
   return (
     <Card className={className}>
       <CardHeader>
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div>
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
             <CardTitle>{title}</CardTitle>
             {description ? <CardDescription>{description}</CardDescription> : null}
           </div>
-          {headerRight}
+          {headerRight ? <div className="ml-auto shrink-0 self-start">{headerRight}</div> : null}
         </div>
         {summaryText ? <div className="text-xs text-slate-500 dark:text-slate-400">{summaryText}</div> : null}
       </CardHeader>

@@ -12,6 +12,7 @@ const createEntry = (partial: Partial<FinanceEntry>): FinanceEntry => ({
   description: partial.description ?? "Entry",
   category: partial.category ?? "general",
   amount: partial.amount ?? 0,
+  receipt_image_url: partial.receipt_image_url ?? null,
   paid_by: partial.paid_by ?? "u-1",
   paid_by_user_ids: partial.paid_by_user_ids ?? [],
   beneficiary_user_ids: partial.beneficiary_user_ids ?? [],

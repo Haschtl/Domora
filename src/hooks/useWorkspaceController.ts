@@ -34,6 +34,7 @@ import {
   updateMemberSettings,
   resetHouseholdPimpers,
   updateMemberTaskLaziness,
+  updateShoppingItem,
   updateShoppingItemStatus,
   updateUserAvatar,
   updateUserDisplayName,
@@ -195,6 +196,24 @@ export const useWorkspaceController = () => {
     [activeHousehold, runWithWorkspaceInvalidation, userId]
   );
 
+  const onUpdateShoppingItem = useCallback(
+    async (
+      item: ShoppingItem,
+      input: {
+        title: string;
+        tags: string[];
+        recurrenceInterval: { value: number; unit: ShoppingRecurrenceUnit } | null;
+      }
+    ) => {
+      if (!activeHousehold) return;
+
+      await runWithWorkspaceInvalidation(async () => {
+        await updateShoppingItem(item.id, input);
+      });
+    },
+    [activeHousehold, runWithWorkspaceInvalidation]
+  );
+
   const onDeleteShoppingItem = useCallback(
     async (item: ShoppingItem) => {
       if (!activeHousehold) return;
@@ -296,6 +315,7 @@ export const useWorkspaceController = () => {
       description: string;
       amount: number;
       category: string;
+      receiptImageUrl?: string | null;
       paidByUserIds: string[];
       beneficiaryUserIds: string[];
       entryDate?: string | null;
@@ -316,6 +336,7 @@ export const useWorkspaceController = () => {
         description: string;
         amount: number;
         category: string;
+        receiptImageUrl?: string | null;
         paidByUserIds: string[];
         beneficiaryUserIds: string[];
         entryDate?: string | null;
@@ -436,6 +457,18 @@ export const useWorkspaceController = () => {
       });
     },
     [activeHousehold, runWithWorkspaceInvalidation, t, userId]
+  );
+
+  const onUpdateMemberSettingsForUser = useCallback(
+    async (targetUserId: string, input: { roomSizeSqm: number | null; commonAreaFactor: number }) => {
+      if (!activeHousehold) return;
+
+      await runWithWorkspaceInvalidation(async () => {
+        await updateMemberSettings(activeHousehold.id, targetUserId, input);
+        setMessage(t("settings.memberSaved"));
+      });
+    },
+    [activeHousehold, runWithWorkspaceInvalidation, t]
   );
 
   const onUpdateMemberTaskLaziness = useCallback(
@@ -579,6 +612,7 @@ export const useWorkspaceController = () => {
     onJoinHousehold,
     onAddShoppingItem,
     onToggleShoppingItem,
+    onUpdateShoppingItem,
     onDeleteShoppingItem,
     onAddTask,
     onCompleteTask,
@@ -598,6 +632,7 @@ export const useWorkspaceController = () => {
     onUpdateHomeMarkdown,
     onUpdateHousehold,
     onUpdateMemberSettings,
+    onUpdateMemberSettingsForUser,
     onUpdateMemberTaskLaziness,
     onResetHouseholdPimpers,
     onUpdateUserAvatar,

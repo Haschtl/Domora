@@ -9,6 +9,7 @@ import { createDiceBearAvatarDataUri } from "../../lib/avatar";
 import { createTrianglifyBannerBackground } from "../../lib/banner";
 import { createMemberLabelGetter } from "../../lib/member-label";
 import { ThemeLanguageControls } from "../../components/theme-language-controls";
+import { PaymentBrandIcon } from "../../components/payment-brand-icon";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
 import {
@@ -503,7 +504,10 @@ export const SettingsTab = ({
                 name="paypalName"
                 children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
                   <div className="space-y-1">
-                    <Label htmlFor="paypal-name">{t("settings.paypalNameLabel")}</Label>
+                    <Label htmlFor="paypal-name" className="inline-flex items-center gap-1.5">
+                      <PaymentBrandIcon brand="paypal" className="h-4 w-4" />
+                      <span>{t("settings.paypalNameLabel")}</span>
+                    </Label>
                     <Input
                       id="paypal-name"
                       value={field.state.value}
@@ -517,7 +521,10 @@ export const SettingsTab = ({
                 name="revolutName"
                 children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
                   <div className="space-y-1">
-                    <Label htmlFor="revolut-name">{t("settings.revolutNameLabel")}</Label>
+                    <Label htmlFor="revolut-name" className="inline-flex items-center gap-1.5">
+                      <PaymentBrandIcon brand="revolut" className="h-4 w-4" />
+                      <span>{t("settings.revolutNameLabel")}</span>
+                    </Label>
                     <Input
                       id="revolut-name"
                       value={field.state.value}
@@ -531,7 +538,10 @@ export const SettingsTab = ({
                 name="weroName"
                 children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
                   <div className="space-y-1">
-                    <Label htmlFor="wero-name">{t("settings.weroNameLabel")}</Label>
+                    <Label htmlFor="wero-name" className="inline-flex items-center gap-1.5">
+                      <PaymentBrandIcon brand="wero" className="h-4 w-4" />
+                      <span>{t("settings.weroNameLabel")}</span>
+                    </Label>
                     <Input
                       id="wero-name"
                       value={field.state.value}

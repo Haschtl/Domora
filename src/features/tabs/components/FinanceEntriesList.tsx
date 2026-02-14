@@ -16,6 +16,8 @@ interface FinanceEntriesListProps {
   formatMoney: (value: number) => string;
   paidByText: (entry: FinanceEntry) => string;
   entryDateText?: (entry: FinanceEntry) => string | null;
+  receiptImageUrl?: (entry: FinanceEntry) => string | null;
+  receiptLabel?: string;
   entryChipText?: (entry: FinanceEntry) => string | null;
   entryChipClassName?: (entry: FinanceEntry) => string | undefined;
   amountClassName?: string;
@@ -36,6 +38,8 @@ export const FinanceEntriesList = ({
   formatMoney,
   paidByText,
   entryDateText,
+  receiptImageUrl,
+  receiptLabel = "Receipt",
   entryChipText,
   entryChipClassName,
   amountClassName = "text-sm font-semibold text-brand-800 dark:text-brand-200",
@@ -106,10 +110,20 @@ export const FinanceEntriesList = ({
         </div>
       </div>
       <div className="mt-1 flex items-end justify-between gap-2">
-        <p className="text-xs text-slate-500 dark:text-slate-400">{paidByText(entry)}</p>
-        {entryDateText ? (
-          <p className="shrink-0 text-xs text-slate-500 dark:text-slate-400">{entryDateText(entry)}</p>
-        ) : null}
+        <div className="min-w-0">
+          <p className="text-xs text-slate-500 dark:text-slate-400">{paidByText(entry)}</p>
+          {receiptImageUrl && receiptImageUrl(entry) ? (
+            <a
+              href={receiptImageUrl(entry) ?? "#"}
+              target="_blank"
+              rel="noreferrer"
+              className="mt-1 inline-flex items-center text-xs text-brand-700 underline decoration-brand-300 underline-offset-2 hover:text-brand-600 dark:text-brand-300 dark:decoration-brand-700"
+            >
+              {receiptLabel}
+            </a>
+          ) : null}
+        </div>
+        {entryDateText ? <p className="shrink-0 text-xs text-slate-500 dark:text-slate-400">{entryDateText(entry)}</p> : null}
       </div>
     </li>
   );

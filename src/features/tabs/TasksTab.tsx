@@ -9,8 +9,7 @@ import {
   useSensor,
   useSensors
 } from "@dnd-kit/core";
-import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
+import { SortableContext, arrayMove, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import {
   BarElement,
   CategoryScale,
@@ -31,12 +30,12 @@ import {
   Coffee,
   Flame,
   Frown,
-  GripVertical,
   MoonStar,
   Medal,
   MoreHorizontal,
   Plus,
-  Sparkles
+  Sparkles,
+  X
 } from "lucide-react";
 import { Bar, Line } from "react-chartjs-2";
 import { useTranslation } from "react-i18next";
@@ -70,7 +69,9 @@ import { useSmartSuggestions } from "../../hooks/use-smart-suggestions";
 import { formatDateTime, formatShortDay, isDueNow } from "../../lib/date";
 import { createDiceBearAvatarDataUri } from "../../lib/avatar";
 import { createMemberLabelGetter } from "../../lib/member-label";
+import { SortableRotationItem } from "./components/SortableRotationItem";
 import { useTaskSuggestions, type TaskSuggestion } from "./hooks/use-task-suggestions";
+import { buildCalendarEntriesByDay, buildCompletionSpansByDay, buildMonthGrid, dayKey, startOfMonth } from "./tasks-calendar";
 
 ChartJS.register(
   CategoryScale,
@@ -84,7 +85,7 @@ ChartJS.register(
 );
 
 interface TasksTabProps {
-  section?: "overview" | "stats" | "history";
+  section?: "overview" | "stats" | "history" | "settings";
   tasks: TaskItem[];
   completions: TaskCompletion[];
   members: HouseholdMember[];
@@ -110,12 +111,32 @@ type PendingTaskAction = {
   task: TaskItem;
 };
 
+type TaskFormValues = {
+  title: string;
+  description: string;
+  startDate: string;
+  frequencyDays: string;
+  effortPimpers: string;
+  prioritizeLowPimpers: boolean;
+  assigneeFairnessMode: "actual" | "projection";
+};
+
 const toDateInputValue = (date: Date) => {
   const year = date.getFullYear();
   const month = `${date.getMonth() + 1}`.padStart(2, "0");
   const day = `${date.getDate()}`.padStart(2, "0");
   return `${year}-${month}-${day}`;
 };
+
+const createDefaultTaskFormValues = (): TaskFormValues => ({
+  title: "",
+  description: "",
+  startDate: toDateInputValue(new Date()),
+  frequencyDays: "7",
+  effortPimpers: "1",
+  prioritizeLowPimpers: true,
+  assigneeFairnessMode: "actual"
+});
 
 const relativeDueChipLabel = (
   dueAtIso: string,
@@ -151,90 +172,6 @@ const relativeDueChipLabel = (
 
   return isFuture ? t("tasks.dueIn", { value: valueLabel }) : t("tasks.dueSince", { value: valueLabel });
 };
-const startOfMonth = (date: Date) => new Date(date.getFullYear(), date.getMonth(), 1);
-const endOfMonth = (date: Date) => new Date(date.getFullYear(), date.getMonth() + 1, 0);
-const dayKey = (date: Date) =>
-  `${date.getFullYear()}-${`${date.getMonth() + 1}`.padStart(2, "0")}-${`${date.getDate()}`.padStart(2, "0")}`;
-const startOfDay = (date: Date) => new Date(date.getFullYear(), date.getMonth(), date.getDate());
-
-const buildMonthGrid = (monthDate: Date) => {
-  const firstDay = startOfMonth(monthDate);
-  const lastDay = endOfMonth(monthDate);
-  const firstWeekday = (firstDay.getDay() + 6) % 7;
-  const daysInMonth = lastDay.getDate();
-  const cells: Array<{ date: Date; inCurrentMonth: boolean }> = [];
-
-  for (let index = firstWeekday - 1; index >= 0; index -= 1) {
-    const date = new Date(firstDay);
-    date.setDate(firstDay.getDate() - (index + 1));
-    cells.push({ date, inCurrentMonth: false });
-  }
-
-  for (let day = 1; day <= daysInMonth; day += 1) {
-    cells.push({ date: new Date(monthDate.getFullYear(), monthDate.getMonth(), day), inCurrentMonth: true });
-  }
-
-  while (cells.length % 7 !== 0) {
-    const lastDate = cells[cells.length - 1]?.date ?? lastDay;
-    const date = new Date(lastDate);
-    date.setDate(lastDate.getDate() + 1);
-    cells.push({ date, inCurrentMonth: false });
-  }
-
-  return cells;
-};
-
-interface SortableRotationItemProps {
-  id: string;
-  label: string;
-  onRemove: (userId: string) => void;
-  removeLabel: string;
-  pimperCount: number;
-  dragHandleLabel: string;
-}
-
-const SortableRotationItem = ({ id, label, onRemove, removeLabel, pimperCount, dragHandleLabel }: SortableRotationItemProps) => {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition
-  };
-
-  return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      className={`flex items-center justify-between gap-2 rounded-lg border p-2 ${
-        isDragging
-          ? "border-brand-300 bg-brand-50 dark:border-brand-700 dark:bg-slate-800"
-          : "border-brand-100 bg-white/90 dark:border-slate-700 dark:bg-slate-900"
-      }`}
-    >
-      <div className="flex items-center gap-2">
-        <button
-          type="button"
-          className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-brand-200 text-slate-600 touch-none dark:border-slate-700 dark:text-slate-300"
-          aria-label={dragHandleLabel}
-          {...attributes}
-          {...listeners}
-        >
-          <GripVertical className="h-4 w-4" />
-        </button>
-        <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{label}</p>
-      </div>
-
-      <div className="flex items-center gap-2">
-        <Badge className="inline-flex items-center gap-1">
-          <span>{pimperCount}</span>
-          <PimpersIcon />
-        </Badge>
-        <Button type="button" size="sm" variant="ghost" onClick={() => onRemove(id)}>
-          {removeLabel}
-        </Button>
-      </div>
-    </div>
-  );
-};
 
 export const TasksTab = ({
   section = "overview",
@@ -269,11 +206,14 @@ export const TasksTab = ({
   const [taskBeingEdited, setTaskBeingEdited] = useState<TaskItem | null>(null);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [taskPendingDelete, setTaskPendingDelete] = useState<TaskItem | null>(null);
+  const [taskPendingToggleActive, setTaskPendingToggleActive] = useState<TaskItem | null>(null);
   const [pendingTaskAction, setPendingTaskAction] = useState<PendingTaskAction | null>(null);
   const [isResetPimpersDialogOpen, setIsResetPimpersDialogOpen] = useState(false);
   const [lazinessDraftByUserId, setLazinessDraftByUserId] = useState<Record<string, number>>({});
   const [statsForecastTaskId, setStatsForecastTaskId] = useState<string>("");
   const [calendarMonthDate, setCalendarMonthDate] = useState(() => startOfMonth(new Date()));
+  const [isCoarsePointer, setIsCoarsePointer] = useState(false);
+  const [openCalendarTooltipDay, setOpenCalendarTooltipDay] = useState<string | null>(null);
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: { distance: 6 }
@@ -284,28 +224,12 @@ export const TasksTab = ({
   );
 
   const taskForm = useForm({
-    defaultValues: {
-      title: "",
-      description: "",
-      startDate: toDateInputValue(new Date()),
-      frequencyDays: "7",
-      effortPimpers: "1",
-      prioritizeLowPimpers: true,
-      assigneeFairnessMode: "actual" as "actual" | "projection"
-    },
+    defaultValues: createDefaultTaskFormValues(),
     onSubmit: async ({
       value,
       formApi
     }: {
-      value: {
-        title: string;
-        description: string;
-        startDate: string;
-        frequencyDays: string;
-        effortPimpers: string;
-        prioritizeLowPimpers: boolean;
-        assigneeFairnessMode: "actual" | "projection";
-      };
+      value: TaskFormValues;
       formApi: { reset: () => void };
     }) => {
       const trimmedTitle = value.title.trim();
@@ -343,27 +267,11 @@ export const TasksTab = ({
   });
 
   const editTaskForm = useForm({
-    defaultValues: {
-      title: "",
-      description: "",
-      startDate: toDateInputValue(new Date()),
-      frequencyDays: "7",
-      effortPimpers: "1",
-      prioritizeLowPimpers: true,
-      assigneeFairnessMode: "actual" as "actual" | "projection"
-    },
+    defaultValues: createDefaultTaskFormValues(),
     onSubmit: async ({
       value
     }: {
-      value: {
-        title: string;
-        description: string;
-        startDate: string;
-        frequencyDays: string;
-        effortPimpers: string;
-        prioritizeLowPimpers: boolean;
-        assigneeFairnessMode: "actual" | "projection";
-      };
+      value: TaskFormValues;
     }) => {
       if (!taskBeingEdited) return;
 
@@ -482,6 +390,17 @@ export const TasksTab = ({
     if (activeForecastTasks.some((task) => task.id === statsForecastTaskId)) return;
     setStatsForecastTaskId(activeForecastTasks[0]?.id ?? "");
   }, [activeForecastTasks, statsForecastTaskId]);
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
+    const media = window.matchMedia("(hover: none), (pointer: coarse)");
+    const update = () => setIsCoarsePointer(media.matches);
+    update();
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, []);
+  useEffect(() => {
+    setOpenCalendarTooltipDay(null);
+  }, [calendarMonthDate]);
   const projectionByTaskId = useMemo(() => {
     const lazinessByUserId = new Map<string, number>();
     members.forEach((member) => lazinessByUserId.set(member.user_id, getLazinessFactor(member)));
@@ -596,6 +515,7 @@ export const TasksTab = ({
   const showOverview = section === "overview";
   const showStats = section === "stats";
   const showHistory = section === "history";
+  const showSettings = section === "settings";
   const taskTitleQuery = taskForm.state.values.title.trim();
   const userLabel = useMemo(
     () =>
@@ -720,7 +640,7 @@ export const TasksTab = ({
     return [...active, ...inactive];
   }, [tasks]);
 
-  const lazinessCard = showStats ? (
+  const lazinessCard = showSettings ? (
     <Card className="mb-4">
       <CardHeader className="gap-3">
         <div className="flex items-start justify-between gap-2">
@@ -838,6 +758,66 @@ export const TasksTab = ({
     });
   };
 
+  const editRotationVariants = useMemo(() => {
+    if (editRotationUserIds.length === 0) return null;
+
+    const theoretical = [...editRotationUserIds];
+    const orderIndex = new Map(theoretical.map((memberId, index) => [memberId, index]));
+    const lazinessByUserId = new Map(members.map((member) => [member.user_id, getLazinessFactor(member)]));
+    const editedTaskId = taskBeingEdited?.id ?? "";
+    const parsedFrequency = Number(editTaskForm.state.values.frequencyDays);
+    const intervalDays = Number.isFinite(parsedFrequency) ? Math.max(1, Math.floor(parsedFrequency)) : Math.max(1, taskBeingEdited?.frequency_days ?? 7);
+    const assigneeIndex = taskBeingEdited?.assignee_id ? theoretical.indexOf(taskBeingEdited.assignee_id) : -1;
+    const currentIndex = assigneeIndex >= 0 ? assigneeIndex : 0;
+
+    const projectedUntilTurnByUserId = new Map<string, number>();
+    theoretical.forEach((rotationUserId, index) => {
+      const turnsUntilTurn = index >= currentIndex ? index - currentIndex : theoretical.length - currentIndex + index;
+      const horizonDays = turnsUntilTurn * intervalDays;
+      const projectedUntilTurn = tasks.reduce((sum, otherTask) => {
+        if (!otherTask.is_active || otherTask.id === editedTaskId) return sum;
+        if (!otherTask.rotation_user_ids.includes(rotationUserId) || otherTask.rotation_user_ids.length === 0) return sum;
+
+        const otherIntervalDays = Math.max(1, otherTask.frequency_days);
+        const expectedOccurrences = Math.max(0, Math.floor(horizonDays / otherIntervalDays));
+        const share = 1 / otherTask.rotation_user_ids.length;
+        return sum + expectedOccurrences * Math.max(1, otherTask.effort_pimpers) * share;
+      }, 0);
+
+      projectedUntilTurnByUserId.set(rotationUserId, projectedUntilTurn);
+    });
+
+    const fairnessActual = [...theoretical].sort((left, right) => {
+      const leftPimpers = pimperByUserId.get(left) ?? 0;
+      const rightPimpers = pimperByUserId.get(right) ?? 0;
+      const leftFactor = Math.max(lazinessByUserId.get(left) ?? 1, 0.0001);
+      const rightFactor = Math.max(lazinessByUserId.get(right) ?? 1, 0.0001);
+      const leftScore = leftPimpers / leftFactor;
+      const rightScore = rightPimpers / rightFactor;
+      if (leftScore !== rightScore) return leftScore - rightScore;
+      return (orderIndex.get(left) ?? 0) - (orderIndex.get(right) ?? 0);
+    });
+
+    const fairnessProjection = [...theoretical].sort((left, right) => {
+      const leftPimpers = pimperByUserId.get(left) ?? 0;
+      const rightPimpers = pimperByUserId.get(right) ?? 0;
+      const leftProjected = projectedUntilTurnByUserId.get(left) ?? 0;
+      const rightProjected = projectedUntilTurnByUserId.get(right) ?? 0;
+      const leftFactor = Math.max(lazinessByUserId.get(left) ?? 1, 0.0001);
+      const rightFactor = Math.max(lazinessByUserId.get(right) ?? 1, 0.0001);
+      const leftScore = (leftPimpers + leftProjected) / leftFactor;
+      const rightScore = (rightPimpers + rightProjected) / rightFactor;
+      if (leftScore !== rightScore) return leftScore - rightScore;
+      return (orderIndex.get(left) ?? 0) - (orderIndex.get(right) ?? 0);
+    });
+
+    return {
+      theoretical,
+      fairnessActual,
+      fairnessProjection
+    };
+  }, [editRotationUserIds, editTaskForm.state.values.frequencyDays, members, pimperByUserId, taskBeingEdited, tasks]);
+
   const onRotationDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
@@ -894,6 +874,12 @@ export const TasksTab = ({
     setIsDeleteDialogOpen(false);
   };
 
+  const onConfirmToggleActiveTask = async () => {
+    if (!taskPendingToggleActive) return;
+    await onToggleActive(taskPendingToggleActive);
+    setTaskPendingToggleActive(null);
+  };
+
   const onConfirmTaskAction = async () => {
     if (!pendingTaskAction) return;
 
@@ -921,48 +907,7 @@ export const TasksTab = ({
     () => new Intl.DateTimeFormat(language, { month: "long", year: "numeric" }).format(calendarMonthDate),
     [calendarMonthDate, language]
   );
-  const calendarEntriesByDay = useMemo(() => {
-    const map = new Map<
-      string,
-      {
-        dueTasks: TaskItem[];
-        completedTasks: TaskCompletion[];
-        memberIds: string[];
-      }
-    >();
-
-    tasks.forEach((task) => {
-      if (!task.is_active) return;
-      const taskDueDate = new Date(task.due_at);
-      if (Number.isNaN(taskDueDate.getTime())) return;
-      const key = dayKey(taskDueDate);
-      const current = map.get(key) ?? { dueTasks: [], completedTasks: [], memberIds: [] };
-      current.dueTasks.push(task);
-
-      const assigneeKey = task.assignee_id ?? "__unassigned__";
-      if (!current.memberIds.includes(assigneeKey)) {
-        current.memberIds.push(assigneeKey);
-      }
-
-      map.set(key, current);
-    });
-
-    completions.forEach((completion) => {
-      const completedAt = new Date(completion.completed_at);
-      if (Number.isNaN(completedAt.getTime())) return;
-      const key = dayKey(completedAt);
-      const current = map.get(key) ?? { dueTasks: [], completedTasks: [], memberIds: [] };
-      current.completedTasks.push(completion);
-
-      if (!current.memberIds.includes(completion.user_id)) {
-        current.memberIds.push(completion.user_id);
-      }
-
-      map.set(key, current);
-    });
-
-    return map;
-  }, [completions, tasks]);
+  const calendarEntriesByDay = useMemo(() => buildCalendarEntriesByDay(tasks, completions), [completions, tasks]);
 
   const memberById = useMemo(() => {
     const map = new Map<string, HouseholdMember>();
@@ -974,67 +919,15 @@ export const TasksTab = ({
     const lastDate = monthCells[monthCells.length - 1]?.date;
     if (!firstDate || !lastDate) return null;
     return {
-      start: startOfDay(firstDate),
-      end: startOfDay(lastDate)
+      start: new Date(firstDate.getFullYear(), firstDate.getMonth(), firstDate.getDate()),
+      end: new Date(lastDate.getFullYear(), lastDate.getMonth(), lastDate.getDate())
     };
   }, [monthCells]);
   const visibleCalendarDayKeys = useMemo(() => new Set(monthCells.map((cell) => dayKey(cell.date))), [monthCells]);
-  const completionSpansByDay = useMemo(() => {
-    type SpanPart = {
-      id: string;
-      userId: string;
-      kind: "single" | "start" | "mid" | "end";
-    };
-
-    const map = new Map<string, SpanPart[]>();
-    const visibleStart = visibleCalendarRange?.start;
-    const visibleEnd = visibleCalendarRange?.end;
-    if (!visibleStart || !visibleEnd) return map;
-
-    completions.forEach((completion) => {
-      const completedDate = new Date(completion.completed_at);
-      if (Number.isNaN(completedDate.getTime())) return;
-
-      const dueDate = completion.due_at_snapshot ? new Date(completion.due_at_snapshot) : completedDate;
-      const normalizedDue = Number.isNaN(dueDate.getTime()) ? completedDate : dueDate;
-
-      const rangeStart = startOfDay(normalizedDue <= completedDate ? normalizedDue : completedDate);
-      const rangeEnd = startOfDay(normalizedDue <= completedDate ? completedDate : normalizedDue);
-      const visibleRangeStart = rangeStart.getTime() < visibleStart.getTime() ? visibleStart : rangeStart;
-      const visibleRangeEnd = rangeEnd.getTime() > visibleEnd.getTime() ? visibleEnd : rangeEnd;
-
-      if (visibleRangeStart.getTime() > visibleRangeEnd.getTime()) return;
-
-      const startKey = dayKey(rangeStart);
-      const endKey = dayKey(rangeEnd);
-
-      const cursor = new Date(visibleRangeStart);
-      while (cursor.getTime() <= visibleRangeEnd.getTime()) {
-        const key = dayKey(cursor);
-        if (visibleCalendarDayKeys.has(key)) {
-          const kind =
-            key === startKey && key === endKey
-              ? "single"
-              : key === startKey
-                ? "start"
-                : key === endKey
-                  ? "end"
-                  : "mid";
-
-          const current = map.get(key) ?? [];
-          current.push({
-            id: completion.id,
-            userId: completion.user_id,
-            kind
-          });
-          map.set(key, current);
-        }
-        cursor.setDate(cursor.getDate() + 1);
-      }
-    });
-
-    return map;
-  }, [completions, visibleCalendarDayKeys, visibleCalendarRange]);
+  const completionSpansByDay = useMemo(
+    () => buildCompletionSpansByDay(completions, visibleCalendarDayKeys, visibleCalendarRange),
+    [completions, visibleCalendarDayKeys, visibleCalendarRange]
+  );
 
   const calendarCard = showOverview ? (
     <Card>
@@ -1087,69 +980,82 @@ export const TasksTab = ({
         <TooltipProvider>
           <div className="grid grid-cols-7 gap-1">
             {monthCells.map((cell) => {
-              const isToday = dayKey(cell.date) === dayKey(new Date());
-              const entry = calendarEntriesByDay.get(dayKey(cell.date));
+              const cellDayKey = dayKey(cell.date);
+              const isToday = cellDayKey === dayKey(new Date());
+              const entry = calendarEntriesByDay.get(cellDayKey);
+              const dueTasks = entry?.dueTasks ?? [];
+              const completedTasks = entry?.completedTasks ?? [];
               const completionSpans = completionSpansByDay.get(dayKey(cell.date)) ?? [];
               const memberIds = entry?.memberIds ?? [];
               const visibleMemberIds = memberIds.slice(0, 4);
               const overflowCount = Math.max(0, memberIds.length - visibleMemberIds.length);
 
               return (
-                <div
-                  key={dayKey(cell.date)}
-                  className={`min-h-[70px] rounded-lg border px-1.5 py-1 ${
-                    cell.inCurrentMonth
-                      ? "border-brand-100 bg-white/90 dark:border-slate-700 dark:bg-slate-900"
-                      : "border-brand-50 bg-white/40 opacity-65 dark:border-slate-800 dark:bg-slate-900/40"
-                  }`}
+                <Tooltip
+                  key={cellDayKey}
+                  open={isCoarsePointer ? openCalendarTooltipDay === cellDayKey : undefined}
+                  onOpenChange={(open) => {
+                    if (!isCoarsePointer) return;
+                    setOpenCalendarTooltipDay(open ? cellDayKey : null);
+                  }}
                 >
-                  <p
-                    className={`text-xs font-medium ${
-                      isToday
-                        ? "text-brand-700 dark:text-brand-300"
-                        : "text-slate-700 dark:text-slate-300"
-                    }`}
-                  >
-                    {cell.date.getDate()}
-                  </p>
-                  {completionSpans.length > 0 ? (
-                    <div className="mt-1 space-y-0.5">
-                      {completionSpans.map((span) => {
-                        const member = memberById.get(span.userId);
-                        const displayName = userLabel(span.userId);
-                        const avatarUrl = member?.avatar_url?.trim() ?? "";
-                        const avatarSrc = avatarUrl || createDiceBearAvatarDataUri(member?.display_name?.trim() || displayName || span.userId);
-                        const segmentClassName =
-                          span.kind === "single"
-                            ? "mx-0 rounded-full"
-                            : span.kind === "start"
-                              ? "-mr-2 rounded-l-full"
-                              : span.kind === "end"
-                                ? "-ml-2 rounded-r-full"
-                                : "-mx-2";
+                  <TooltipTrigger asChild>
+                    <div
+                      onClick={() => {
+                        if (!isCoarsePointer) return;
+                        setOpenCalendarTooltipDay((current) => (current === cellDayKey ? null : cellDayKey));
+                      }}
+                      className={`min-h-[70px] rounded-lg border px-1.5 py-1 ${
+                        cell.inCurrentMonth
+                          ? "border-brand-100 bg-white/90 dark:border-slate-700 dark:bg-slate-900"
+                          : "border-brand-50 bg-white/40 opacity-65 dark:border-slate-800 dark:bg-slate-900/40"
+                      }`}
+                    >
+                      <p
+                        className={`text-xs font-medium ${
+                          isToday
+                            ? "text-brand-700 dark:text-brand-300"
+                            : "text-slate-700 dark:text-slate-300"
+                        }`}
+                      >
+                        {cell.date.getDate()}
+                      </p>
+                      {completionSpans.length > 0 ? (
+                        <div className="mt-1 space-y-0.5">
+                          {completionSpans.map((span) => {
+                            const member = memberById.get(span.userId);
+                            const displayName = userLabel(span.userId);
+                            const avatarUrl = member?.avatar_url?.trim() ?? "";
+                            const avatarSrc = avatarUrl || createDiceBearAvatarDataUri(member?.display_name?.trim() || displayName || span.userId);
+                            const segmentClassName =
+                              span.kind === "single"
+                                ? "mx-0 rounded-full"
+                                : span.kind === "start"
+                                  ? "-mr-2 rounded-l-full"
+                                  : span.kind === "end"
+                                    ? "-ml-2 rounded-r-full"
+                                    : "-mx-2";
 
-                        return (
-                          <div
-                            key={`${dayKey(cell.date)}-span-${span.id}-${span.kind}`}
-                            className={`relative z-10 h-1.5 bg-emerald-300/90 dark:bg-emerald-700/90 ${segmentClassName}`}
-                          >
-                            {(span.kind === "end" || span.kind === "single") && avatarSrc ? (
+                            return (
                               <div
-                                className="absolute -right-1 top-1/2 h-3.5 w-3.5 -translate-y-1/2 overflow-hidden rounded-full border border-white bg-white dark:border-slate-900 dark:bg-slate-900"
-                                title={displayName}
+                                key={`${dayKey(cell.date)}-span-${span.id}-${span.kind}`}
+                                className={`relative z-10 h-1.5 bg-emerald-300/90 dark:bg-emerald-700/90 ${segmentClassName}`}
                               >
-                                <img src={avatarSrc} alt={displayName} className="h-full w-full object-cover" />
+                                {(span.kind === "end" || span.kind === "single") && avatarSrc ? (
+                                  <div
+                                    className="absolute -right-1 top-1/2 h-3.5 w-3.5 -translate-y-1/2 overflow-hidden rounded-full border border-white bg-white dark:border-slate-900 dark:bg-slate-900"
+                                    title={displayName}
+                                  >
+                                    <img src={avatarSrc} alt={displayName} className="h-full w-full object-cover" />
+                                  </div>
+                                ) : null}
                               </div>
-                            ) : null}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ) : null}
+                            );
+                          })}
+                        </div>
+                      ) : null}
 
-                  {entry && (entry.dueTasks.length > 0 || entry.completedTasks.length > 0) ? (
-                    <Tooltip>
-                      <TooltipTrigger asChild>
+                      {memberIds.length > 0 ? (
                         <div className="mt-1 flex items-center">
                           {visibleMemberIds.map((memberId, index) => {
                             const member = memberById.get(memberId);
@@ -1188,31 +1094,59 @@ export const TasksTab = ({
                             </div>
                           ) : null}
                         </div>
-                      </TooltipTrigger>
-                      <TooltipContent className="max-w-[280px]">
-                        <p className="mb-1 font-semibold">
-                          {t("tasks.calendarTooltipTitle", {
-                            date: formatShortDay(dayKey(cell.date), language, dayKey(cell.date))
-                          })}
+                      ) : null}
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent className="max-w-[320px]">
+                    <p className="mb-2 font-semibold">
+                      {t("tasks.calendarTooltipTitle", {
+                        date: formatShortDay(dayKey(cell.date), language, dayKey(cell.date))
+                      })}
+                    </p>
+                    <div className="space-y-2">
+                      <div>
+                        <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                          {t("tasks.calendarShouldHappen")}
                         </p>
-                        <ul className="space-y-1">
-                          {entry.dueTasks.map((task) => (
-                            <li key={`${dayKey(cell.date)}-due-${task.id}`} className="text-xs">
-                              <span className="font-medium">{t("tasks.statusDue")}:</span>{" "}
-                              {task.title} · {task.assignee_id ? userLabel(task.assignee_id) : t("tasks.unassigned")}
-                            </li>
-                          ))}
-                          {entry.completedTasks.map((completion) => (
-                            <li key={`${dayKey(cell.date)}-done-${completion.id}`} className="text-xs">
-                              <span className="font-medium">{t("tasks.statusCompleted")}:</span>{" "}
-                              {(completion.task_title_snapshot || t("tasks.fallbackTitle"))} · {userLabel(completion.user_id)}
-                            </li>
-                          ))}
-                        </ul>
-                      </TooltipContent>
-                    </Tooltip>
-                  ) : null}
-                </div>
+                        {dueTasks.length > 0 ? (
+                          <ul className="mt-1 space-y-1">
+                            {dueTasks.map((task) => (
+                              <li key={`${dayKey(cell.date)}-due-${task.id}`} className="text-xs">
+                                <span className="font-medium">{t("tasks.statusDue")}:</span>{" "}
+                                {task.title} · {task.assignee_id ? userLabel(task.assignee_id) : t("tasks.unassigned")}
+                              </li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{t("tasks.calendarNoEvents")}</p>
+                        )}
+                      </div>
+                      <div>
+                        <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                          {t("tasks.calendarHappened")}
+                        </p>
+                        {completedTasks.length > 0 ? (
+                          <ul className="mt-1 space-y-1">
+                            {completedTasks.map((completion) => (
+                              <li key={`${dayKey(cell.date)}-done-${completion.id}`} className="text-xs">
+                                <span className="font-medium">{t("tasks.statusCompleted")}:</span>{" "}
+                                {(completion.task_title_snapshot || t("tasks.fallbackTitle"))} · {userLabel(completion.user_id)}
+                                {completion.delay_minutes > 0 ? (
+                                  <>
+                                    {" "}
+                                    · <span className="font-medium">{t("tasks.calendarDelay", { value: formatDelayLabel(completion.delay_minutes) })}</span>
+                                  </>
+                                ) : null}
+                              </li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{t("tasks.calendarNoEvents")}</p>
+                        )}
+                      </div>
+                    </div>
+                  </TooltipContent>
+                </Tooltip>
               );
             })}
           </div>
@@ -1232,6 +1166,9 @@ export const TasksTab = ({
                 <CardTitle>{t("tasks.title")}</CardTitle>
                 <CardDescription>{t("tasks.description")}</CardDescription>
               </div>
+              <Button type="button" size="sm" aria-label={t("tasks.createTask")} onClick={() => setIsCreateDialogOpen(true)}>
+                <Plus className="h-4 w-4" />
+              </Button>
             </div>
           </CardHeader>
 
@@ -1261,11 +1198,7 @@ export const TasksTab = ({
                   onOpenChange={setIsCreateDialogOpen}
                   title={t("tasks.createTask")}
                   description={t("tasks.description")}
-                  trigger={
-                    <Button type="button" size="sm" aria-label={t("tasks.createTask")}>
-                      <Plus className="h-4 w-4" />
-                    </Button>
-                  }
+                  trigger={<span className="hidden" aria-hidden="true" />}
                 >
                   <form
                     className="space-y-3"
@@ -1563,8 +1496,8 @@ export const TasksTab = ({
                             <Badge
                               className={
                                 isDue
-                                  ? "bg-rose-100 text-rose-800 dark:bg-rose-900 dark:text-rose-100"
-                                  : "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                                  ? "whitespace-nowrap bg-rose-100 text-rose-800 dark:bg-rose-900 dark:text-rose-100"
+                                  : "whitespace-nowrap bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200"
                               }
                             >
                               {dueChipText}
@@ -1574,67 +1507,8 @@ export const TasksTab = ({
                             <p>{t("tasks.frequencyValue", { count: task.frequency_days })}</p>
                           </TooltipContent>
                         </Tooltip>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="ghost"
-                              className="h-8 w-8 p-0"
-                              aria-label={t("tasks.taskActions")}
-                              disabled={busy}
-                            >
-                              <MoreHorizontal className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem
-                              onClick={() => {
-                                void onToggleActive(task);
-                              }}
-                            >
-                              {task.is_active ? t("tasks.deactivate") : t("tasks.activate")}
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => onStartEditTask(task)}>
-                              {t("tasks.editTask")}
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onClick={() => onStartDeleteTask(task)}
-                              className="text-rose-600 dark:text-rose-300"
-                            >
-                              {t("tasks.deleteTask")}
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
                       </div>
                     </div>
-
-                    {task.rotation_user_ids.length > 0 ? (
-                      <div className="mt-2 flex items-center">
-                        {task.rotation_user_ids.slice(0, 5).map((memberId, index) => {
-                          const member = memberById.get(memberId);
-                          const displayName = userLabel(memberId);
-                          const avatarUrl = member?.avatar_url?.trim() ?? "";
-                          const avatarSrc = avatarUrl || createDiceBearAvatarDataUri(member?.display_name?.trim() || displayName || memberId);
-                          return (
-                            <div
-                              key={`${task.id}-rotation-${memberId}`}
-                              className={`h-7 w-7 overflow-hidden rounded-full border-2 border-white bg-brand-100 text-[11px] font-semibold text-brand-800 dark:border-slate-900 dark:bg-brand-900 dark:text-brand-100 ${
-                                index > 0 ? "-ml-2" : ""
-                              }`}
-                              title={displayName}
-                            >
-                              <img src={avatarSrc} alt={displayName} className="h-full w-full object-cover" />
-                            </div>
-                          );
-                        })}
-                        {task.rotation_user_ids.length > 5 ? (
-                          <div className="-ml-2 flex h-7 w-7 items-center justify-center rounded-full border-2 border-white bg-slate-200 text-[10px] font-semibold text-slate-700 dark:border-slate-900 dark:bg-slate-700 dark:text-slate-100">
-                            +{task.rotation_user_ids.length - 5}
-                          </div>
-                        ) : null}
-                      </div>
-                    ) : null}
 
                     <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
                       <p className="text-xs text-slate-500 dark:text-slate-400">
@@ -1663,15 +1537,53 @@ export const TasksTab = ({
                         >
                           {t("tasks.skip")}
                         </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          disabled={!canComplete}
-                          onClick={() => setPendingTaskAction({ kind: "complete", task })}
-                        >
-                          <CheckCircle2 className="mr-1 h-4 w-4" />
-                          {t("tasks.complete")}
-                        </Button>
+                        {!canTakeover ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            disabled={!canComplete}
+                            onClick={() => setPendingTaskAction({ kind: "complete", task })}
+                          >
+                            <CheckCircle2 className="mr-1 h-4 w-4" />
+                            {t("tasks.complete")}
+                          </Button>
+                        ) : null}
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="ghost"
+                              className="h-8 w-8 p-0"
+                              aria-label={t("tasks.taskActions")}
+                              disabled={busy}
+                            >
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem
+                              onClick={() => {
+                                if (!task.is_active) {
+                                  void onToggleActive(task);
+                                  return;
+                                }
+                                setTaskPendingToggleActive(task);
+                              }}
+                            >
+                              {task.is_active ? t("tasks.deactivate") : t("tasks.activate")}
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => onStartEditTask(task)}>
+                              {t("tasks.editTask")}
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => onStartDeleteTask(task)}
+                              className="text-rose-600 dark:text-rose-300"
+                            >
+                              {t("tasks.deleteTask")}
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </div>
                     </div>
                   </li>
@@ -1683,50 +1595,6 @@ export const TasksTab = ({
           </CardContent>
         </Card>
       ) : null}
-
-        {showStats && sortedMemberRows.length > 0 ? (
-          <Card className="mb-4">
-            <CardHeader>
-              <CardTitle>{t("tasks.backlogTitle")}</CardTitle>
-              <CardDescription>{t("tasks.backlogDescription")}</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="grid gap-2 sm:grid-cols-3">
-                <div className="rounded-lg border border-brand-100 bg-white/90 p-3 dark:border-slate-700 dark:bg-slate-900">
-                  <p className="text-xs text-slate-500 dark:text-slate-400">{t("tasks.backlogDueNow")}</p>
-                  <p className="text-xl font-semibold text-slate-900 dark:text-slate-100">{backlogAndDelayStats.overdueTasksCount}</p>
-                </div>
-                <div className="rounded-lg border border-brand-100 bg-white/90 p-3 dark:border-slate-700 dark:bg-slate-900">
-                  <p className="text-xs text-slate-500 dark:text-slate-400">{t("tasks.backlogOpen")}</p>
-                  <p className="text-xl font-semibold text-slate-900 dark:text-slate-100">{backlogAndDelayStats.dueTasksCount}</p>
-                </div>
-                <div className="rounded-lg border border-brand-100 bg-white/90 p-3 dark:border-slate-700 dark:bg-slate-900">
-                  <p className="text-xs text-slate-500 dark:text-slate-400">{t("tasks.averageDelayOverall")}</p>
-                  <p className="text-xl font-semibold text-slate-900 dark:text-slate-100">
-                    {formatDelayLabel(backlogAndDelayStats.overallDelayMinutes)}
-                  </p>
-                </div>
-              </div>
-              {backlogAndDelayStats.memberRows.length > 0 ? (
-                <div>
-                  <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                    {t("tasks.averageDelayByMember")}
-                  </p>
-                  <ul className="space-y-1">
-                    {backlogAndDelayStats.memberRows.map((row) => (
-                      <li key={`delay-${row.userId}`} className="flex items-center justify-between text-sm">
-                        <span className="text-slate-700 dark:text-slate-300">{userLabel(row.userId)}</span>
-                        <span className="font-medium text-slate-900 dark:text-slate-100">
-                          {formatDelayLabel(row.averageDelayMinutes)}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
-            </CardContent>
-          </Card>
-        ) : null}
 
         {showStats && sortedMemberRows.length > 0 ? (
           <Card className="mb-4">
@@ -1801,6 +1669,89 @@ export const TasksTab = ({
             </CardContent>
           </Card>
         ) : null}
+
+        {showStats && sortedMemberRows.length > 0 ? (
+          <Card className="mb-4">
+            <CardHeader>
+              <CardTitle>{t("tasks.backlogTitle")}</CardTitle>
+              <CardDescription>{t("tasks.backlogDescription")}</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="grid gap-2 sm:grid-cols-3">
+                <div className="rounded-lg border border-brand-100 bg-white/90 p-3 dark:border-slate-700 dark:bg-slate-900">
+                  <p className="text-xs text-slate-500 dark:text-slate-400">{t("tasks.backlogDueNow")}</p>
+                  <p className="text-xl font-semibold text-slate-900 dark:text-slate-100">{backlogAndDelayStats.overdueTasksCount}</p>
+                </div>
+                <div className="rounded-lg border border-brand-100 bg-white/90 p-3 dark:border-slate-700 dark:bg-slate-900">
+                  <p className="text-xs text-slate-500 dark:text-slate-400">{t("tasks.backlogOpen")}</p>
+                  <p className="text-xl font-semibold text-slate-900 dark:text-slate-100">{backlogAndDelayStats.dueTasksCount}</p>
+                </div>
+                <div className="rounded-lg border border-brand-100 bg-white/90 p-3 dark:border-slate-700 dark:bg-slate-900">
+                  <p className="text-xs text-slate-500 dark:text-slate-400">{t("tasks.averageDelayOverall")}</p>
+                  <p className="text-xl font-semibold text-slate-900 dark:text-slate-100">
+                    {formatDelayLabel(backlogAndDelayStats.overallDelayMinutes)}
+                  </p>
+                </div>
+              </div>
+              {backlogAndDelayStats.memberRows.length > 0 ? (
+                <div>
+                  <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                    {t("tasks.averageDelayByMember")}
+                  </p>
+                  <ul className="space-y-1">
+                    {backlogAndDelayStats.memberRows.map((row) => (
+                      <li key={`delay-${row.userId}`} className="flex items-center justify-between text-sm">
+                        <span className="text-slate-700 dark:text-slate-300">{userLabel(row.userId)}</span>
+                        <span className="font-medium text-slate-900 dark:text-slate-100">
+                          {formatDelayLabel(row.averageDelayMinutes)}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+            </CardContent>
+          </Card>
+        ) : null}
+
+        {lazinessCard}
+
+        {showStats && pimpersByUserSeries.labels.length > 0 ? (
+          <Card className="mb-4">
+            <CardHeader>
+              <CardTitle>{t("tasks.historyChartPimpers")}</CardTitle>
+            </CardHeader>
+            <CardContent>
+            <div className="rounded-lg bg-white p-2 dark:bg-slate-900">
+              <Bar
+                data={{
+                  labels: pimpersByUserSeries.labels,
+                  datasets: [
+                    {
+                      label: t("tasks.historyChartPimpers"),
+                      data: pimpersByUserSeries.values,
+                      backgroundColor: "rgba(16, 185, 129, 0.65)",
+                      borderRadius: 6
+                    }
+                  ]
+                }}
+                options={{
+                  responsive: true,
+                  maintainAspectRatio: false,
+                  plugins: {
+                    legend: { display: false }
+                  },
+                  scales: {
+                    y: { beginAtZero: true, ticks: { precision: 0 } }
+                  }
+                }}
+                height={170}
+              />
+            </div>
+            </CardContent>
+          </Card>
+        ) : null}
+
         {showStats && selectedForecastTask ? (
           <Card className="mb-4">
             <CardHeader>
@@ -1848,43 +1799,6 @@ export const TasksTab = ({
                   </li>
                 ))}
               </ul>
-            </CardContent>
-          </Card>
-        ) : null}
-        {lazinessCard}
-
-        {showStats && pimpersByUserSeries.labels.length > 0 ? (
-          <Card className="mb-4">
-            <CardHeader>
-              <CardTitle>{t("tasks.historyChartPimpers")}</CardTitle>
-            </CardHeader>
-            <CardContent>
-            <div className="rounded-lg bg-white p-2 dark:bg-slate-900">
-              <Bar
-                data={{
-                  labels: pimpersByUserSeries.labels,
-                  datasets: [
-                    {
-                      label: t("tasks.historyChartPimpers"),
-                      data: pimpersByUserSeries.values,
-                      backgroundColor: "rgba(16, 185, 129, 0.65)",
-                      borderRadius: 6
-                    }
-                  ]
-                }}
-                options={{
-                  responsive: true,
-                  maintainAspectRatio: false,
-                  plugins: {
-                    legend: { display: false }
-                  },
-                  scales: {
-                    y: { beginAtZero: true, ticks: { precision: 0 } }
-                  }
-                }}
-                height={170}
-              />
-            </div>
             </CardContent>
           </Card>
         ) : null}
@@ -1992,6 +1906,16 @@ export const TasksTab = ({
           }}
         >
           <DialogContent className="sm:max-w-lg">
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              className="absolute right-3 top-3 h-8 w-8 p-0"
+              onClick={() => setPendingTaskAction(null)}
+              aria-label={t("common.cancel")}
+            >
+              <X className="h-4 w-4" />
+            </Button>
             <DialogHeader>
               <DialogTitle>
                 {pendingTaskAction?.kind === "skip"
@@ -2244,11 +2168,75 @@ export const TasksTab = ({
                 </p>
               ) : null}
 
-              <div className="flex justify-end">
+              <div className="flex justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => {
+                    setIsEditDialogOpen(false);
+                    setTaskBeingEdited(null);
+                    setEditFormError(null);
+                    setEditRotationUserIds([]);
+                  }}
+                >
+                  {t("tasks.discardChanges")}
+                </Button>
                 <Button type="submit" disabled={busy}>
                   {t("tasks.saveTask")}
                 </Button>
               </div>
+              {editRotationUserIds.length > 0 ? (
+                <div className="rounded-xl border border-brand-100 bg-brand-50/40 p-2 dark:border-slate-700 dark:bg-slate-800/40">
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                    {t("tasks.rotationTitle")}
+                  </p>
+                  <div className="flex items-center">
+                    {editRotationUserIds.slice(0, 8).map((memberId, index) => {
+                      const member = memberById.get(memberId);
+                      const displayName = userLabel(memberId);
+                      const avatarUrl = member?.avatar_url?.trim() ?? "";
+                      const avatarSrc = avatarUrl || createDiceBearAvatarDataUri(member?.display_name?.trim() || displayName || memberId);
+                      return (
+                        <div
+                          key={`edit-rotation-preview-${memberId}`}
+                          className={`h-7 w-7 overflow-hidden rounded-full border-2 border-white bg-brand-100 text-[11px] font-semibold text-brand-800 dark:border-slate-900 dark:bg-brand-900 dark:text-brand-100 ${
+                            index > 0 ? "-ml-2" : ""
+                          }`}
+                          title={displayName}
+                        >
+                          <img src={avatarSrc} alt={displayName} className="h-full w-full object-cover" />
+                        </div>
+                      );
+                    })}
+                    {editRotationUserIds.length > 8 ? (
+                      <div className="-ml-2 flex h-7 w-7 items-center justify-center rounded-full border-2 border-white bg-slate-200 text-[10px] font-semibold text-slate-700 dark:border-slate-900 dark:bg-slate-700 dark:text-slate-100">
+                        +{editRotationUserIds.length - 8}
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
+              {editRotationVariants ? (
+                <div className="rounded-xl border border-brand-100 bg-white/80 p-2 dark:border-slate-700 dark:bg-slate-900/70">
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                    {t("tasks.rotationOrderPreviewTitle")}
+                  </p>
+                  <div className="space-y-1 text-xs text-slate-700 dark:text-slate-300">
+                    <p>
+                      <span className="font-semibold">{t("tasks.rotationOrderPreviewTheoretical")}:</span>{" "}
+                      {editRotationVariants.theoretical.map((memberId) => userLabel(memberId)).join(" \u2192 ")}
+                    </p>
+                    <p>
+                      <span className="font-semibold">{t("tasks.rotationOrderPreviewFairness")}:</span>{" "}
+                      {editRotationVariants.fairnessActual.map((memberId) => userLabel(memberId)).join(" \u2192 ")}
+                    </p>
+                    <p>
+                      <span className="font-semibold">{t("tasks.rotationOrderPreviewFairnessProjection")}:</span>{" "}
+                      {editRotationVariants.fairnessProjection.map((memberId) => userLabel(memberId)).join(" \u2192 ")}
+                    </p>
+                  </div>
+                </div>
+              ) : null}
             </form>
           </DialogContent>
         </Dialog>
@@ -2287,6 +2275,36 @@ export const TasksTab = ({
                 onClick={() => void onConfirmDeleteTask()}
               >
                 {t("tasks.deleteTask")}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+        <Dialog
+          open={taskPendingToggleActive !== null}
+          onOpenChange={(open) => {
+            if (!open) setTaskPendingToggleActive(null);
+          }}
+        >
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>{t("tasks.confirmDeactivateTitle")}</DialogTitle>
+              <DialogDescription>
+                {t("tasks.confirmDeactivateDescription", {
+                  title: taskPendingToggleActive?.title ?? t("tasks.fallbackTitle")
+                })}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={() => setTaskPendingToggleActive(null)}>
+                {t("common.cancel")}
+              </Button>
+              <Button
+                type="button"
+                disabled={busy}
+                className="bg-rose-600 text-white hover:bg-rose-700 dark:bg-rose-700 dark:hover:bg-rose-600"
+                onClick={() => void onConfirmToggleActiveTask()}
+              >
+                {t("tasks.confirmDeactivateAction")}
               </Button>
             </div>
           </DialogContent>

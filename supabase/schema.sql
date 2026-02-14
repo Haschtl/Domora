@@ -138,6 +138,7 @@ create table if not exists finance_entries (
   description text not null,
   category text not null default 'general',
   amount numeric(12, 2) not null check (amount >= 0),
+  receipt_image_url text,
   paid_by uuid not null references auth.users(id) on delete cascade,
   paid_by_user_ids uuid[] not null default '{}',
   beneficiary_user_ids uuid[] not null default '{}',
@@ -345,6 +346,7 @@ alter table task_completions add column if not exists task_title_snapshot text n
 alter table task_completions add column if not exists due_at_snapshot timestamptz;
 alter table task_completions add column if not exists delay_minutes integer not null default 0;
 alter table finance_entries add column if not exists category text not null default 'general';
+alter table finance_entries add column if not exists receipt_image_url text;
 alter table finance_entries add column if not exists paid_by_user_ids uuid[] not null default '{}';
 alter table finance_entries add column if not exists beneficiary_user_ids uuid[] not null default '{}';
 alter table finance_entries add column if not exists entry_date date not null default current_date;
@@ -1228,6 +1230,39 @@ begin
 end;
 $$;
 
+revoke all on function run_all_households_data_maintenance(boolean) from public;
+grant execute on function run_all_households_data_maintenance(boolean) to service_role;
+
+revoke all on function is_household_member(uuid) from public;
+grant execute on function is_household_member(uuid) to authenticated, service_role;
+
+revoke all on function is_household_owner(uuid) from public;
+grant execute on function is_household_owner(uuid) to authenticated, service_role;
+
+revoke all on function task_cron_interval_days(text, integer) from public;
+grant execute on function task_cron_interval_days(text, integer) to authenticated, service_role;
+
+revoke all on function reset_due_recurring_shopping_items(uuid) from public;
+grant execute on function reset_due_recurring_shopping_items(uuid) to authenticated, service_role;
+
+revoke all on function choose_next_task_assignee(uuid, boolean, text) from public;
+grant execute on function choose_next_task_assignee(uuid, boolean, text) to authenticated, service_role;
+
+revoke all on function complete_task(uuid, uuid) from public;
+grant execute on function complete_task(uuid, uuid) to authenticated, service_role;
+
+revoke all on function reopen_due_tasks(uuid) from public;
+grant execute on function reopen_due_tasks(uuid) to authenticated, service_role;
+
+revoke all on function skip_task(uuid, uuid) from public;
+grant execute on function skip_task(uuid, uuid) to authenticated, service_role;
+
+revoke all on function reset_household_pimpers(uuid) from public;
+grant execute on function reset_household_pimpers(uuid) to authenticated, service_role;
+
+revoke all on function run_household_data_maintenance(uuid, boolean, boolean) from public;
+grant execute on function run_household_data_maintenance(uuid, boolean, boolean) to authenticated, service_role;
+
 do $$
 begin
   if exists (
@@ -1323,7 +1358,17 @@ drop policy if exists user_profiles_select on user_profiles;
 create policy user_profiles_select on user_profiles
 for select
 to authenticated
-using (true);
+using (
+  auth.uid() = user_id
+  or exists (
+    select 1
+    from household_members hm_viewer
+    join household_members hm_target
+      on hm_target.household_id = hm_viewer.household_id
+    where hm_viewer.user_id = auth.uid()
+      and hm_target.user_id = user_profiles.user_id
+  )
+);
 
 drop policy if exists user_profiles_insert on user_profiles;
 create policy user_profiles_insert on user_profiles
