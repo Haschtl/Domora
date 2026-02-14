@@ -1423,7 +1423,7 @@ export const TasksTab = ({
                       ) : null}
                     </div>
                   </TooltipTrigger>
-                  <TooltipContent className="max-w-[320px]">
+                  <TooltipContent className="max-w-[320px] border border-slate-200 bg-white text-slate-900 shadow-lg dark:border-slate-700 dark:bg-slate-900 dark:text-slate-50">
                     <p className="mb-2 font-semibold">
                       {t("tasks.calendarTooltipTitle", {
                         date: formatShortDay(dayKey(cell.date), language, dayKey(cell.date))
@@ -1485,403 +1485,408 @@ export const TasksTab = ({
     <TooltipProvider>
       <div className="space-y-4">
         {showOverview ? (
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between gap-2">
-                <div>
-                  <CardTitle>{t("tasks.title")}</CardTitle>
-                  <CardDescription>{t("tasks.description")}</CardDescription>
-                </div>
-                <Button
-                  type="button"
-                  size="sm"
-                  aria-label={t("tasks.createTask")}
-                  onClick={() => {
-                    setTaskImageUploadError(null);
-                    setIsCreateDialogOpen(true);
-                  }}
-                >
-                  <Plus className="h-4 w-4" />
-                </Button>
-              </div>
-            </CardHeader>
-
-            <CardContent>
-              <div className="mb-4 flex items-center justify-end gap-2">
-                <MobileSubpageDialog
-                  open={isCreateDialogOpen}
-                  onOpenChange={(open) => {
-                    setIsCreateDialogOpen(open);
-                    if (!open) {
+          <>
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <CardTitle>{t("tasks.title")}</CardTitle>
+                    <CardDescription>{t("tasks.description")}</CardDescription>
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    aria-label={t("tasks.createTask")}
+                    onClick={() => {
                       setTaskImageUploadError(null);
-                    }
-                  }}
-                  title={t("tasks.createTask")}
-                  description={t("tasks.description")}
-                  trigger={<span className="hidden" aria-hidden="true" />}
-                >
-                  <form
-                    className="space-y-3"
-                    onSubmit={(event) => {
-                      event.preventDefault();
-                      event.stopPropagation();
-                      void taskForm.handleSubmit();
+                      setIsCreateDialogOpen(true);
                     }}
                   >
-                    <taskForm.Field
-                      name="title"
-                      children={(field: {
-                        state: { value: string };
-                        handleChange: (value: string) => void;
-                      }) => (
-                        <div className="relative space-y-1">
-                          <Label>{t("tasks.titleLabel")}</Label>
-                          <Input
-                            value={field.state.value}
-                            onChange={(event) =>
-                              field.handleChange(event.target.value)
-                            }
-                            onFocus={onTitleFocus}
-                            onBlur={onTitleBlur}
-                            onKeyDown={onTitleKeyDown}
-                            placeholder={t("tasks.placeholder")}
-                            autoComplete="off"
-                            required
-                          />
-                          {titleFocused && taskSuggestions.length > 0 ? (
-                            <div className="absolute left-0 right-0 top-[calc(100%+0.4rem)] z-20 rounded-xl border border-brand-100 bg-white p-1 shadow-lg dark:border-slate-700 dark:bg-slate-900">
-                              <p className="px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                                {t("tasks.suggestionsTitle")}
-                              </p>
-                              <ul className="max-h-56 overflow-y-auto">
-                                {taskSuggestions.map((suggestion, index) => (
-                                  <li key={suggestion.key}>
-                                    <button
-                                      type="button"
-                                      className={`flex w-full items-center justify-between gap-2 rounded-lg px-2 py-2 text-left hover:bg-brand-50 dark:hover:bg-slate-800 ${
-                                        index === activeSuggestionIndex
-                                          ? "bg-brand-50 dark:bg-slate-800"
-                                          : ""
-                                      }`}
-                                      onMouseDown={(event) =>
-                                        event.preventDefault()
-                                      }
-                                      onClick={() => {
-                                        onSelectTaskSuggestion(suggestion);
-                                      }}
-                                    >
-                                      <div className="min-w-0">
-                                        <p className="truncate text-sm font-medium text-slate-900 dark:text-slate-100">
-                                          {suggestion.title}
-                                        </p>
-                                        {suggestion.tags.length > 0 ? (
-                                          <p className="truncate text-[11px] text-slate-500 dark:text-slate-400">
-                                            #{suggestion.tags.join(" #")}
-                                          </p>
-                                        ) : null}
-                                      </div>
-                                      <Badge className="text-[10px]">
-                                        {suggestion.source === "history"
-                                          ? t("tasks.suggestionUsedCount", {
-                                              count: suggestion.count,
-                                            })
-                                          : t("tasks.suggestionLibraryBadge")}
-                                      </Badge>
-                                    </button>
-                                  </li>
-                                ))}
-                              </ul>
-                            </div>
-                          ) : null}
-                        </div>
-                      )}
-                    />
+                    <Plus className="h-4 w-4" />
+                  </Button>
+                </div>
+              </CardHeader>
 
-                    <taskForm.Field
-                      name="description"
-                      children={(field: {
-                        state: { value: string };
-                        handleChange: (value: string) => void;
-                      }) => (
-                        <div className="space-y-1">
-                          <Label>{t("tasks.descriptionLabel")}</Label>
-                          <textarea
-                            className="min-h-[90px] w-full rounded-xl border border-brand-200 bg-white p-3 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-400"
-                            placeholder={t("tasks.descriptionPlaceholder")}
-                            value={field.state.value}
-                            onChange={(event) =>
-                              field.handleChange(event.target.value)
-                            }
-                          />
-                        </div>
-                      )}
-                    />
-
-                    <div className="grid gap-2 sm:grid-cols-2">
-                      {renderTaskStateImageField(taskForm, {
-                        fieldName: "currentStateImageUrl",
-                        label: t("tasks.currentStateImageLabel"),
-                        previewAlt: t("tasks.currentStateImagePreviewAlt"),
-                        uploadInputRef: addCurrentStateUploadInputRef,
-                        cameraInputRef: addCurrentStateCameraInputRef,
-                        setError: setTaskImageUploadError,
-                      })}
-                      {renderTaskStateImageField(taskForm, {
-                        fieldName: "targetStateImageUrl",
-                        label: t("tasks.targetStateImageLabel"),
-                        previewAlt: t("tasks.targetStateImagePreviewAlt"),
-                        uploadInputRef: addTargetStateUploadInputRef,
-                        cameraInputRef: addTargetStateCameraInputRef,
-                        setError: setTaskImageUploadError,
-                      })}
-                    </div>
-
-                    <div className="grid gap-2 sm:grid-cols-3">
+              <CardContent>
+                <div className="flex items-center justify-end gap-2">
+                  <MobileSubpageDialog
+                    open={isCreateDialogOpen}
+                    onOpenChange={(open) => {
+                      setIsCreateDialogOpen(open);
+                      if (!open) {
+                        setTaskImageUploadError(null);
+                      }
+                    }}
+                    title={t("tasks.createTask")}
+                    description={t("tasks.description")}
+                    trigger={<span className="hidden" aria-hidden="true" />}
+                  >
+                    <form
+                      className="space-y-3"
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        void taskForm.handleSubmit();
+                      }}
+                    >
                       <taskForm.Field
-                        name="startDate"
+                        name="title"
                         children={(field: {
                           state: { value: string };
                           handleChange: (value: string) => void;
                         }) => (
-                          <div className="space-y-1">
-                            <Label>{t("tasks.startDate")}</Label>
+                          <div className="relative space-y-1">
+                            <Label>{t("tasks.titleLabel")}</Label>
                             <Input
-                              type="date"
-                              lang={language}
                               value={field.state.value}
                               onChange={(event) =>
                                 field.handleChange(event.target.value)
                               }
-                              title={t("tasks.startDate")}
+                              onFocus={onTitleFocus}
+                              onBlur={onTitleBlur}
+                              onKeyDown={onTitleKeyDown}
+                              placeholder={t("tasks.placeholder")}
+                              autoComplete="off"
                               required
                             />
+                            {titleFocused && taskSuggestions.length > 0 ? (
+                              <div className="absolute left-0 right-0 top-[calc(100%+0.4rem)] z-20 rounded-xl border border-brand-100 bg-white p-1 shadow-lg dark:border-slate-700 dark:bg-slate-900">
+                                <p className="px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                                  {t("tasks.suggestionsTitle")}
+                                </p>
+                                <ul className="max-h-56 overflow-y-auto">
+                                  {taskSuggestions.map((suggestion, index) => (
+                                    <li key={suggestion.key}>
+                                      <button
+                                        type="button"
+                                        className={`flex w-full items-center justify-between gap-2 rounded-lg px-2 py-2 text-left hover:bg-brand-50 dark:hover:bg-slate-800 ${
+                                          index === activeSuggestionIndex
+                                            ? "bg-brand-50 dark:bg-slate-800"
+                                            : ""
+                                        }`}
+                                        onMouseDown={(event) =>
+                                          event.preventDefault()
+                                        }
+                                        onClick={() => {
+                                          onSelectTaskSuggestion(suggestion);
+                                        }}
+                                      >
+                                        <div className="min-w-0">
+                                          <p className="truncate text-sm font-medium text-slate-900 dark:text-slate-100">
+                                            {suggestion.title}
+                                          </p>
+                                          {suggestion.tags.length > 0 ? (
+                                            <p className="truncate text-[11px] text-slate-500 dark:text-slate-400">
+                                              #{suggestion.tags.join(" #")}
+                                            </p>
+                                          ) : null}
+                                        </div>
+                                        <Badge className="text-[10px]">
+                                          {suggestion.source === "history"
+                                            ? t("tasks.suggestionUsedCount", {
+                                                count: suggestion.count,
+                                              })
+                                            : t("tasks.suggestionLibraryBadge")}
+                                        </Badge>
+                                      </button>
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            ) : null}
                           </div>
                         )}
                       />
+
                       <taskForm.Field
-                        name="frequencyDays"
+                        name="description"
                         children={(field: {
                           state: { value: string };
                           handleChange: (value: string) => void;
                         }) => (
                           <div className="space-y-1">
-                            <Label>{t("tasks.frequencyDays")}</Label>
-                            <InputWithSuffix
-                              suffix="d"
-                              type="number"
-                              min="1"
-                              inputMode="numeric"
+                            <Label>{t("tasks.descriptionLabel")}</Label>
+                            <textarea
+                              className="min-h-[90px] w-full rounded-xl border border-brand-200 bg-white p-3 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-400"
+                              placeholder={t("tasks.descriptionPlaceholder")}
                               value={field.state.value}
                               onChange={(event) =>
                                 field.handleChange(event.target.value)
                               }
-                              placeholder={t("tasks.frequencyDays")}
+                            />
+                          </div>
+                        )}
+                      />
+
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        {renderTaskStateImageField(taskForm, {
+                          fieldName: "currentStateImageUrl",
+                          label: t("tasks.currentStateImageLabel"),
+                          previewAlt: t("tasks.currentStateImagePreviewAlt"),
+                          uploadInputRef: addCurrentStateUploadInputRef,
+                          cameraInputRef: addCurrentStateCameraInputRef,
+                          setError: setTaskImageUploadError,
+                        })}
+                        {renderTaskStateImageField(taskForm, {
+                          fieldName: "targetStateImageUrl",
+                          label: t("tasks.targetStateImageLabel"),
+                          previewAlt: t("tasks.targetStateImagePreviewAlt"),
+                          uploadInputRef: addTargetStateUploadInputRef,
+                          cameraInputRef: addTargetStateCameraInputRef,
+                          setError: setTaskImageUploadError,
+                        })}
+                      </div>
+
+                      <div className="grid gap-2 sm:grid-cols-3">
+                        <taskForm.Field
+                          name="startDate"
+                          children={(field: {
+                            state: { value: string };
+                            handleChange: (value: string) => void;
+                          }) => (
+                            <div className="space-y-1">
+                              <Label>{t("tasks.startDate")}</Label>
+                              <Input
+                                type="date"
+                                lang={language}
+                                value={field.state.value}
+                                onChange={(event) =>
+                                  field.handleChange(event.target.value)
+                                }
+                                title={t("tasks.startDate")}
+                                required
+                              />
+                            </div>
+                          )}
+                        />
+                        <taskForm.Field
+                          name="frequencyDays"
+                          children={(field: {
+                            state: { value: string };
+                            handleChange: (value: string) => void;
+                          }) => (
+                            <div className="space-y-1">
+                              <Label>{t("tasks.frequencyDays")}</Label>
+                              <InputWithSuffix
+                                suffix="d"
+                                type="number"
+                                min="1"
+                                inputMode="numeric"
+                                value={field.state.value}
+                                onChange={(event) =>
+                                  field.handleChange(event.target.value)
+                                }
+                                placeholder={t("tasks.frequencyDays")}
+                              />
+                            </div>
+                          )}
+                        />
+                        <taskForm.Field
+                          name="effortPimpers"
+                          children={(field: {
+                            state: { value: string };
+                            handleChange: (value: string) => void;
+                          }) => (
+                            <div className="space-y-1">
+                              <Label>{t("tasks.effortPimpers")}</Label>
+                              <InputWithSuffix
+                                suffix={<PimpersIcon />}
+                                type="number"
+                                min="1"
+                                inputMode="numeric"
+                                value={field.state.value}
+                                onChange={(event) =>
+                                  field.handleChange(event.target.value)
+                                }
+                                placeholder={t("tasks.effortPimpers")}
+                              />
+                            </div>
+                          )}
+                        />
+                      </div>
+                      <taskForm.Field
+                        name="prioritizeLowPimpers"
+                        children={(field: {
+                          state: { value: boolean };
+                          handleChange: (value: boolean) => void;
+                        }) => (
+                          <div className="flex items-center justify-between rounded-xl border border-brand-200 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900">
+                            <div>
+                              <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
+                                {t("tasks.prioritizeLowPimpers")}
+                              </p>
+                              <p className="text-xs text-slate-500 dark:text-slate-400">
+                                {t("tasks.prioritizeLowPimpersHint")}
+                              </p>
+                            </div>
+                            <Switch
+                              checked={field.state.value}
+                              onCheckedChange={field.handleChange}
                             />
                           </div>
                         )}
                       />
                       <taskForm.Field
-                        name="effortPimpers"
+                        name="assigneeFairnessMode"
                         children={(field: {
-                          state: { value: string };
-                          handleChange: (value: string) => void;
+                          state: { value: "actual" | "projection" };
+                          handleChange: (value: "actual" | "projection") => void;
                         }) => (
                           <div className="space-y-1">
-                            <Label>{t("tasks.effortPimpers")}</Label>
-                            <InputWithSuffix
-                              suffix={<PimpersIcon />}
-                              type="number"
-                              min="1"
-                              inputMode="numeric"
+                            <Label>{t("tasks.assigneeFairnessModeLabel")}</Label>
+                            <select
+                              className="h-10 w-full rounded-xl border border-brand-200 bg-white px-3 text-sm text-slate-900 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                               value={field.state.value}
                               onChange={(event) =>
-                                field.handleChange(event.target.value)
+                                field.handleChange(
+                                  event.target.value as "actual" | "projection",
+                                )
                               }
-                              placeholder={t("tasks.effortPimpers")}
-                            />
-                          </div>
-                        )}
-                      />
-                    </div>
-                    <taskForm.Field
-                      name="prioritizeLowPimpers"
-                      children={(field: {
-                        state: { value: boolean };
-                        handleChange: (value: boolean) => void;
-                      }) => (
-                        <div className="flex items-center justify-between rounded-xl border border-brand-200 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900">
-                          <div>
-                            <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
-                              {t("tasks.prioritizeLowPimpers")}
-                            </p>
+                              disabled={
+                                !taskForm.state.values.prioritizeLowPimpers
+                              }
+                            >
+                              <option value="actual">
+                                {t("tasks.assigneeFairnessModeActual")}
+                              </option>
+                              <option value="projection">
+                                {t("tasks.assigneeFairnessModeProjection")}
+                              </option>
+                            </select>
                             <p className="text-xs text-slate-500 dark:text-slate-400">
-                              {t("tasks.prioritizeLowPimpersHint")}
+                              {t("tasks.assigneeFairnessModeHint")}
                             </p>
                           </div>
-                          <Switch
-                            checked={field.state.value}
-                            onCheckedChange={field.handleChange}
-                          />
-                        </div>
-                      )}
-                    />
-                    <taskForm.Field
-                      name="assigneeFairnessMode"
-                      children={(field: {
-                        state: { value: "actual" | "projection" };
-                        handleChange: (value: "actual" | "projection") => void;
-                      }) => (
-                        <div className="space-y-1">
-                          <Label>{t("tasks.assigneeFairnessModeLabel")}</Label>
-                          <select
-                            className="h-10 w-full rounded-xl border border-brand-200 bg-white px-3 text-sm text-slate-900 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                            value={field.state.value}
-                            onChange={(event) =>
-                              field.handleChange(
-                                event.target.value as "actual" | "projection",
-                              )
-                            }
-                            disabled={
-                              !taskForm.state.values.prioritizeLowPimpers
-                            }
-                          >
-                            <option value="actual">
-                              {t("tasks.assigneeFairnessModeActual")}
-                            </option>
-                            <option value="projection">
-                              {t("tasks.assigneeFairnessModeProjection")}
-                            </option>
-                          </select>
-                          <p className="text-xs text-slate-500 dark:text-slate-400">
-                            {t("tasks.assigneeFairnessModeHint")}
+                        )}
+                      />
+
+                      <SectionPanel className="bg-brand-50/40">
+                        <p className="mb-2 text-sm font-semibold text-slate-900 dark:text-slate-100">
+                          {t("tasks.rotationTitle")}
+                        </p>
+                        <p className="mb-3 text-xs text-slate-600 dark:text-slate-300">
+                          {t("tasks.rotationHint")}
+                        </p>
+
+                        {members.length === 0 ? (
+                          <p className="text-sm text-slate-500 dark:text-slate-400">
+                            {t("tasks.noMembers")}
                           </p>
-                        </div>
-                      )}
-                    />
+                        ) : null}
 
-                    <SectionPanel className="bg-brand-50/40">
-                      <p className="mb-2 text-sm font-semibold text-slate-900 dark:text-slate-100">
-                        {t("tasks.rotationTitle")}
-                      </p>
-                      <p className="mb-3 text-xs text-slate-600 dark:text-slate-300">
-                        {t("tasks.rotationHint")}
-                      </p>
+                        <PersonSelect
+                          mode="multiple"
+                          members={members}
+                          value={rotationUserIds}
+                          onChange={(nextSelection) => {
+                            const nextSet = new Set(nextSelection);
+                            const mergedOrder = [
+                              ...rotationUserIds.filter((memberId) =>
+                                nextSet.has(memberId),
+                              ),
+                              ...nextSelection.filter(
+                                (memberId) =>
+                                  !rotationUserIds.includes(memberId),
+                              ),
+                            ];
+                            setRotationUserIds(mergedOrder);
+                          }}
+                          currentUserId={userId}
+                          youLabel={t("common.you")}
+                          placeholder={t("tasks.rotationTitle")}
+                        />
 
-                      {members.length === 0 ? (
-                        <p className="text-sm text-slate-500 dark:text-slate-400">
-                          {t("tasks.noMembers")}
+                        {rotationUserIds.length > 0 ? (
+                          <div className="mt-3 space-y-2">
+                            <DndContext
+                              sensors={sensors}
+                              collisionDetection={closestCenter}
+                              onDragEnd={onRotationDragEnd}
+                            >
+                              <SortableContext
+                                items={rotationUserIds}
+                                strategy={verticalListSortingStrategy}
+                              >
+                                {rotationUserIds.map((rotationUserId) => {
+                                  const score =
+                                    pimperByUserId.get(rotationUserId) ?? 0;
+                                  return (
+                                    <SortableRotationItem
+                                      key={rotationUserId}
+                                      id={rotationUserId}
+                                      label={userLabel(rotationUserId)}
+                                      onRemove={removeRotationMember}
+                                      removeLabel={t("tasks.removeFromRotation")}
+                                      pimperCount={score}
+                                      dragHandleLabel={t("tasks.dragHandle")}
+                                    />
+                                  );
+                                })}
+                              </SortableContext>
+                            </DndContext>
+                          </div>
+                        ) : null}
+                      </SectionPanel>
+
+                      {formError ? (
+                        <p className="rounded-lg border border-rose-300 bg-rose-50 px-3 py-2 text-xs text-rose-700 dark:border-rose-900 dark:bg-rose-950/60 dark:text-rose-200">
+                          {formError}
+                        </p>
+                      ) : null}
+                      {taskImageUploadError ? (
+                        <p className="rounded-lg border border-rose-300 bg-rose-50 px-3 py-2 text-xs text-rose-700 dark:border-rose-900 dark:bg-rose-950/60 dark:text-rose-200">
+                          {taskImageUploadError}
                         </p>
                       ) : null}
 
-                      <PersonSelect
-                        mode="multiple"
-                        members={members}
-                        value={rotationUserIds}
-                        onChange={(nextSelection) => {
-                          const nextSet = new Set(nextSelection);
-                          const mergedOrder = [
-                            ...rotationUserIds.filter((memberId) =>
-                              nextSet.has(memberId),
-                            ),
-                            ...nextSelection.filter(
-                              (memberId) => !rotationUserIds.includes(memberId),
-                            ),
-                          ];
-                          setRotationUserIds(mergedOrder);
-                        }}
-                        currentUserId={userId}
-                        youLabel={t("common.you")}
-                        placeholder={t("tasks.rotationTitle")}
-                      />
+                      <div className="flex justify-end">
+                        <Button type="submit" disabled={busy}>
+                          {t("tasks.createTask")}
+                        </Button>
+                      </div>
+                    </form>
+                  </MobileSubpageDialog>
+                </div>
+              </CardContent>
+            </Card>
 
-                      {rotationUserIds.length > 0 ? (
-                        <div className="mt-3 space-y-2">
-                          <DndContext
-                            sensors={sensors}
-                            collisionDetection={closestCenter}
-                            onDragEnd={onRotationDragEnd}
-                          >
-                            <SortableContext
-                              items={rotationUserIds}
-                              strategy={verticalListSortingStrategy}
-                            >
-                              {rotationUserIds.map((rotationUserId) => {
-                                const score =
-                                  pimperByUserId.get(rotationUserId) ?? 0;
-                                return (
-                                  <SortableRotationItem
-                                    key={rotationUserId}
-                                    id={rotationUserId}
-                                    label={userLabel(rotationUserId)}
-                                    onRemove={removeRotationMember}
-                                    removeLabel={t("tasks.removeFromRotation")}
-                                    pimperCount={score}
-                                    dragHandleLabel={t("tasks.dragHandle")}
-                                  />
-                                );
-                              })}
-                            </SortableContext>
-                          </DndContext>
-                        </div>
-                      ) : null}
-                    </SectionPanel>
-
-                    {formError ? (
-                      <p className="rounded-lg border border-rose-300 bg-rose-50 px-3 py-2 text-xs text-rose-700 dark:border-rose-900 dark:bg-rose-950/60 dark:text-rose-200">
-                        {formError}
-                      </p>
-                    ) : null}
-                    {taskImageUploadError ? (
-                      <p className="rounded-lg border border-rose-300 bg-rose-50 px-3 py-2 text-xs text-rose-700 dark:border-rose-900 dark:bg-rose-950/60 dark:text-rose-200">
-                        {taskImageUploadError}
-                      </p>
-                    ) : null}
-
-                    <div className="flex justify-end">
-                      <Button type="submit" disabled={busy}>
-                        {t("tasks.createTask")}
-                      </Button>
-                    </div>
-                  </form>
-                </MobileSubpageDialog>
-              </div>
-
-              <ul className="space-y-2">
-                {visibleTasks.map((task) => {
-                  const isDue =
-                    task.is_active && !task.done && isDueNow(task.due_at);
-                  const isAssignedToCurrentUser = task.assignee_id === userId;
-                  const canComplete = isDue && isAssignedToCurrentUser && !busy;
-                  const canSkip = isDue && isAssignedToCurrentUser && !busy;
-                  const canTakeover =
-                    isDue &&
-                    task.assignee_id !== null &&
-                    !isAssignedToCurrentUser &&
-                    !busy;
-                  const dueChipText = relativeDueChipLabel(task.due_at, t);
-                  const assigneeText = task.assignee_id
-                    ? userLabel(task.assignee_id)
-                    : t("tasks.unassigned");
-                  const assigneeMember = task.assignee_id
-                    ? memberById.get(task.assignee_id)
+            <div className="space-y-2">
+              {visibleTasks.map((task) => {
+                const isDue =
+                  task.is_active && !task.done && isDueNow(task.due_at);
+                const isAssignedToCurrentUser = task.assignee_id === userId;
+                const canComplete = isDue && isAssignedToCurrentUser && !busy;
+                const canSkip = isDue && isAssignedToCurrentUser && !busy;
+                const canTakeover =
+                  isDue &&
+                  task.assignee_id !== null &&
+                  !isAssignedToCurrentUser &&
+                  !busy;
+                const dueChipText = relativeDueChipLabel(task.due_at, t);
+                const assigneeText = task.assignee_id
+                  ? userLabel(task.assignee_id)
+                  : t("tasks.unassigned");
+                const assigneeMember = task.assignee_id
+                  ? memberById.get(task.assignee_id)
+                  : null;
+                const assigneeAvatarSrc =
+                  task.assignee_id && assigneeText
+                    ? assigneeMember?.avatar_url?.trim() ||
+                      createDiceBearAvatarDataUri(
+                        assigneeMember?.display_name?.trim() ||
+                          assigneeText ||
+                          task.assignee_id,
+                      )
                     : null;
-                  const assigneeAvatarSrc =
-                    task.assignee_id && assigneeText
-                      ? assigneeMember?.avatar_url?.trim() ||
-                        createDiceBearAvatarDataUri(
-                          assigneeMember?.display_name?.trim() ||
-                            assigneeText ||
-                            task.assignee_id,
-                        )
-                      : null;
 
-                  return (
-                    <li
-                      key={task.id}
-                      className={`rounded-xl border border-brand-100 bg-white p-3 dark:border-slate-700 dark:bg-slate-900 ${
-                        !task.is_active ? "opacity-60 grayscale-[0.35]" : ""
-                      }`}
-                    >
+                return (
+                  <Card
+                    key={task.id}
+                    className={`rounded-xl border border-slate-300 bg-white/88 p-3 text-slate-800 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-100 mb-4 ${
+                      !task.is_active ? "opacity-60 grayscale-[0.35]" : ""
+                    }`}
+                  >
+                    <CardContent>
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0 space-y-1">
                           <div className="flex items-center gap-2">
@@ -2073,18 +2078,18 @@ export const TasksTab = ({
                           </DropdownMenu>
                         </div>
                       </div>
-                    </li>
-                  );
-                })}
-              </ul>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
 
-              {visibleTasks.length === 0 ? (
-                <p className="text-sm text-slate-500 dark:text-slate-400">
-                  {t("tasks.empty")}
-                </p>
-              ) : null}
-            </CardContent>
-          </Card>
+            {visibleTasks.length === 0 ? (
+              <p className="text-sm text-slate-500 dark:text-slate-400">
+                {t("tasks.empty")}
+              </p>
+            ) : null}
+          </>
         ) : null}
 
         {showStats ? (

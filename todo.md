@@ -2,12 +2,12 @@ server-seitig, wo deployen?
 push-notifications sicher machen
 
 
-aufgaben:übersicht, finanz:übersicht,  unwrappen, 
-
+liht-mode fixen
 bild-anzeige im background bei tasks
 bewertung-darstellung+input besser machen
 
 
+neues pimper-icon
 
 texte frecher machen
 
