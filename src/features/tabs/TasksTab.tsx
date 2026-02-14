@@ -2547,23 +2547,52 @@ export const TasksTab = ({
                               {t("tasks.ratingNoVotes")}
                             </p>
                           )} */}
-                          {entry.user_id !== userId &&
-                          latestCompletionIdByTask.get(entry.task_id) ===
-                            entry.id ? (
-                            <div className="ml-auto">
-                              <StarRating
-                                value={entry.my_rating ?? 0}
-                                displayValue={entry.rating_average ?? 0}
-                                disabled={busy}
-                                onChange={(rating) =>
-                                  void onRateTaskCompletion(entry.id, rating)
-                                }
-                                getLabel={(rating) =>
-                                  t("tasks.rateAction", { rating })
-                                }
-                              />
-                            </div>
-                          ) : null}
+                          <div className="ml-auto">
+                            {entry.rating_count > 0 || entry.my_rating ? (
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <div>
+                                    <StarRating
+                                      value={entry.my_rating ?? 0}
+                                      displayValue={entry.rating_average ?? 0}
+                                      disabled={
+                                        busy ||
+                                        !(
+                                          entry.user_id !== userId &&
+                                          latestCompletionIdByTask.get(entry.task_id) === entry.id
+                                        )
+                                      }
+                                      onChange={(rating) =>
+                                        void onRateTaskCompletion(entry.id, rating)
+                                      }
+                                      getLabel={(rating) =>
+                                        t("tasks.rateAction", { rating })
+                                      }
+                                    />
+                                  </div>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  <p className="text-xs">
+                                    {t("tasks.ratingTooltipCount", { count: entry.rating_count })}
+                                  </p>
+                                  <p className="text-xs">
+                                    {t("tasks.ratingTooltipAverage", {
+                                      average: Number((entry.rating_average ?? 0).toFixed(1))
+                                    })}
+                                  </p>
+                                  <p className="text-xs">
+                                    {t("tasks.ratingTooltipMine", {
+                                      rating: entry.my_rating ?? "-"
+                                    })}
+                                  </p>
+                                </TooltipContent>
+                              </Tooltip>
+                            ) : (
+                              <p className="text-xs text-slate-500 dark:text-slate-400">
+                                {t("tasks.ratingNoVotes")}
+                              </p>
+                            )}
+                          </div>
                         </div>
                       </li>
                     ))}
