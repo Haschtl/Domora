@@ -192,21 +192,13 @@ export const HomeTab = ({
         "",
         `## ${t("home.defaultLandingWidgetsHeading")}`,
         "",
-        "{{widget:tasks-overview}}",
-        "",
         "{{widget:tasks-for-you}}",
         "",
         "{{widget:your-balance}}",
         "",
-        "{{widget:household-balance}}",
-        "",
         "{{widget:recent-activity}}",
         "",
-        "{{widget:fairness-score}}",
-        "",
-        "{{widget:expenses-by-month}}",
-        "",
-        "{{widget:fairness-by-member}}"
+        "{{widget:tasks-overview}}"
       ].join("\n"),
     [household.name, t]
   );

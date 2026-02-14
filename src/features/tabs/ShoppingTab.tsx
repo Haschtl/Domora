@@ -204,6 +204,7 @@ export const ShoppingTab = ({
   }, [completions, language]);
   const showList = section === "list";
   const showHistory = section === "history";
+  const openItemsCount = useMemo(() => items.filter((item) => !item.done).length, [items]);
   const completedItemsCount = useMemo(() => items.filter((item) => item.done).length, [items]);
   const visibleItems = useMemo(
     () => (showCompletedItems ? items : items.filter((item) => !item.done)),
@@ -215,7 +216,10 @@ export const ShoppingTab = ({
       <div className="space-y-4">
         <Card>
           <CardHeader>
-            <CardTitle>{t("shopping.title")}</CardTitle>
+            <div className="flex items-center justify-between gap-2">
+              <CardTitle>{t("shopping.title")}</CardTitle>
+              <Badge>{t("shopping.openCount", { count: openItemsCount })}</Badge>
+            </div>
             <CardDescription>{t("shopping.description")}</CardDescription>
           </CardHeader>
           <CardContent>

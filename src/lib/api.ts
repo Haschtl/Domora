@@ -113,6 +113,7 @@ const taskSchema = z.object({
   frequency_days: z.coerce.number().int().positive(),
   effort_pimpers: z.coerce.number().int().positive(),
   prioritize_low_pimpers: z.coerce.boolean().default(true),
+  assignee_fairness_mode: z.enum(["actual", "projection"]).default("actual"),
   is_active: z.coerce.boolean().default(true),
   done: z.coerce.boolean(),
   done_at: z.string().nullable().optional().transform((value) => value ?? null),
@@ -1104,6 +1105,7 @@ export const addTask = async (
     frequencyDays: z.coerce.number().int().positive(),
     effortPimpers: z.coerce.number().int().positive(),
     prioritizeLowPimpers: z.coerce.boolean(),
+    assigneeFairnessMode: z.enum(["actual", "projection"]).default("actual"),
     rotationUserIds: z.array(z.string().uuid()).min(1)
   }).parse({
     householdId,
@@ -1114,6 +1116,7 @@ export const addTask = async (
     frequencyDays: input.frequencyDays,
     effortPimpers: input.effortPimpers,
     prioritizeLowPimpers: input.prioritizeLowPimpers,
+    assigneeFairnessMode: input.assigneeFairnessMode,
     rotationUserIds: input.rotationUserIds.filter((entry, index, all) => all.indexOf(entry) === index)
   });
 
@@ -1136,6 +1139,7 @@ export const addTask = async (
       frequency_days: parsedInput.frequencyDays,
       effort_pimpers: parsedInput.effortPimpers,
       prioritize_low_pimpers: parsedInput.prioritizeLowPimpers,
+      assignee_fairness_mode: parsedInput.assigneeFairnessMode,
       assignee_id: rotationUserIds[0],
       done: false,
       created_by: parsedInput.userId
@@ -1169,6 +1173,7 @@ export const updateTask = async (taskId: string, input: NewTaskInput): Promise<v
     frequencyDays: z.coerce.number().int().positive(),
     effortPimpers: z.coerce.number().int().positive(),
     prioritizeLowPimpers: z.coerce.boolean(),
+    assigneeFairnessMode: z.enum(["actual", "projection"]).default("actual"),
     rotationUserIds: z.array(z.string().uuid()).min(1)
   }).parse({
     taskId,
@@ -1178,6 +1183,7 @@ export const updateTask = async (taskId: string, input: NewTaskInput): Promise<v
     frequencyDays: input.frequencyDays,
     effortPimpers: input.effortPimpers,
     prioritizeLowPimpers: input.prioritizeLowPimpers,
+    assigneeFairnessMode: input.assigneeFairnessMode,
     rotationUserIds: input.rotationUserIds.filter((entry, index, all) => all.indexOf(entry) === index)
   });
 
@@ -1196,6 +1202,7 @@ export const updateTask = async (taskId: string, input: NewTaskInput): Promise<v
       frequency_days: parsedInput.frequencyDays,
       effort_pimpers: parsedInput.effortPimpers,
       prioritize_low_pimpers: parsedInput.prioritizeLowPimpers,
+      assignee_fairness_mode: parsedInput.assigneeFairnessMode,
       assignee_id: assigneeId
     })
     .eq("id", parsedInput.taskId);

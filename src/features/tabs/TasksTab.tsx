@@ -155,6 +155,7 @@ const startOfMonth = (date: Date) => new Date(date.getFullYear(), date.getMonth(
 const endOfMonth = (date: Date) => new Date(date.getFullYear(), date.getMonth() + 1, 0);
 const dayKey = (date: Date) =>
   `${date.getFullYear()}-${`${date.getMonth() + 1}`.padStart(2, "0")}-${`${date.getDate()}`.padStart(2, "0")}`;
+const startOfDay = (date: Date) => new Date(date.getFullYear(), date.getMonth(), date.getDate());
 
 const buildMonthGrid = (monthDate: Date) => {
   const firstDay = startOfMonth(monthDate);
@@ -271,6 +272,7 @@ export const TasksTab = ({
   const [pendingTaskAction, setPendingTaskAction] = useState<PendingTaskAction | null>(null);
   const [isResetPimpersDialogOpen, setIsResetPimpersDialogOpen] = useState(false);
   const [lazinessDraftByUserId, setLazinessDraftByUserId] = useState<Record<string, number>>({});
+  const [statsForecastTaskId, setStatsForecastTaskId] = useState<string>("");
   const [calendarMonthDate, setCalendarMonthDate] = useState(() => startOfMonth(new Date()));
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -288,7 +290,8 @@ export const TasksTab = ({
       startDate: toDateInputValue(new Date()),
       frequencyDays: "7",
       effortPimpers: "1",
-      prioritizeLowPimpers: true
+      prioritizeLowPimpers: true,
+      assigneeFairnessMode: "actual" as "actual" | "projection"
     },
     onSubmit: async ({
       value,
@@ -301,6 +304,7 @@ export const TasksTab = ({
         frequencyDays: string;
         effortPimpers: string;
         prioritizeLowPimpers: boolean;
+        assigneeFairnessMode: "actual" | "projection";
       };
       formApi: { reset: () => void };
     }) => {
@@ -327,6 +331,7 @@ export const TasksTab = ({
         frequencyDays: Number.isFinite(parsedFrequencyDays) ? Math.max(1, Math.floor(parsedFrequencyDays)) : 7,
         effortPimpers: Number.isFinite(parsedEffort) ? Math.max(1, Math.floor(parsedEffort)) : 1,
         prioritizeLowPimpers: value.prioritizeLowPimpers,
+        assigneeFairnessMode: value.assigneeFairnessMode,
         rotationUserIds
       };
 
@@ -344,7 +349,8 @@ export const TasksTab = ({
       startDate: toDateInputValue(new Date()),
       frequencyDays: "7",
       effortPimpers: "1",
-      prioritizeLowPimpers: true
+      prioritizeLowPimpers: true,
+      assigneeFairnessMode: "actual" as "actual" | "projection"
     },
     onSubmit: async ({
       value
@@ -356,6 +362,7 @@ export const TasksTab = ({
         frequencyDays: string;
         effortPimpers: string;
         prioritizeLowPimpers: boolean;
+        assigneeFairnessMode: "actual" | "projection";
       };
     }) => {
       if (!taskBeingEdited) return;
@@ -383,6 +390,7 @@ export const TasksTab = ({
         frequencyDays: Number.isFinite(parsedFrequencyDays) ? Math.max(1, Math.floor(parsedFrequencyDays)) : 7,
         effortPimpers: Number.isFinite(parsedEffort) ? Math.max(1, Math.floor(parsedEffort)) : 1,
         prioritizeLowPimpers: value.prioritizeLowPimpers,
+        assigneeFairnessMode: value.assigneeFairnessMode,
         rotationUserIds: editRotationUserIds
       };
 
@@ -462,6 +470,84 @@ export const TasksTab = ({
     Math.min(2, Math.max(0, Number.isFinite(member.task_laziness_factor) ? member.task_laziness_factor : 1));
   const getScaledPimpers = (rawPimpers: number, lazinessFactor: number) =>
     lazinessFactor <= 0 ? null : rawPimpers / lazinessFactor;
+  const activeForecastTasks = useMemo(
+    () => tasks.filter((task) => task.is_active && task.rotation_user_ids.length > 0),
+    [tasks]
+  );
+  useEffect(() => {
+    if (activeForecastTasks.length === 0) {
+      setStatsForecastTaskId("");
+      return;
+    }
+    if (activeForecastTasks.some((task) => task.id === statsForecastTaskId)) return;
+    setStatsForecastTaskId(activeForecastTasks[0]?.id ?? "");
+  }, [activeForecastTasks, statsForecastTaskId]);
+  const projectionByTaskId = useMemo(() => {
+    const lazinessByUserId = new Map<string, number>();
+    members.forEach((member) => lazinessByUserId.set(member.user_id, getLazinessFactor(member)));
+
+    const projectedByTask = new Map<
+      string,
+      Array<{
+        user_id: string;
+        current_pimpers: number;
+        projected_until_turn: number;
+        projected_total_scaled: number | null;
+      }>
+    >();
+
+    activeForecastTasks.forEach((task) => {
+      const rotation = task.rotation_user_ids.filter((userIdInRotation) =>
+        members.some((member) => member.user_id === userIdInRotation)
+      );
+      if (rotation.length === 0) {
+        projectedByTask.set(task.id, []);
+        return;
+      }
+
+      const intervalDays = Math.max(1, task.frequency_days);
+      const assigneeIndex = task.assignee_id ? rotation.indexOf(task.assignee_id) : -1;
+      const currentIndex = assigneeIndex >= 0 ? assigneeIndex : 0;
+
+      const rows = rotation.map((rotationUserId, index) => {
+        const turnsUntilTurn = index >= currentIndex ? index - currentIndex : rotation.length - currentIndex + index;
+        const horizonDays = turnsUntilTurn * intervalDays;
+        const projectedUntilTurn = tasks.reduce((sum, otherTask) => {
+          if (!otherTask.is_active || otherTask.id === task.id) return sum;
+          if (!otherTask.rotation_user_ids.includes(rotationUserId) || otherTask.rotation_user_ids.length === 0) return sum;
+
+          const otherIntervalDays = Math.max(1, otherTask.frequency_days);
+          const expectedOccurrences = Math.max(0, Math.floor(horizonDays / otherIntervalDays));
+          const share = 1 / otherTask.rotation_user_ids.length;
+          return sum + expectedOccurrences * Math.max(1, otherTask.effort_pimpers) * share;
+        }, 0);
+
+        const currentPimpers = pimperByUserId.get(rotationUserId) ?? 0;
+        const lazinessFactor = lazinessByUserId.get(rotationUserId) ?? 1;
+        const projectedTotalScaled =
+          lazinessFactor <= 0 ? null : (currentPimpers + projectedUntilTurn) / Math.max(lazinessFactor, 0.0001);
+
+        return {
+          user_id: rotationUserId,
+          current_pimpers: currentPimpers,
+          projected_until_turn: projectedUntilTurn,
+          projected_total_scaled: projectedTotalScaled
+        };
+      });
+
+      projectedByTask.set(task.id, rows);
+    });
+
+    return projectedByTask;
+  }, [activeForecastTasks, members, pimperByUserId, tasks]);
+  const selectedForecastTask = useMemo(
+    () => activeForecastTasks.find((task) => task.id === statsForecastTaskId) ?? null,
+    [activeForecastTasks, statsForecastTaskId]
+  );
+  const selectedForecastRows = useMemo(
+    () => (selectedForecastTask ? projectionByTaskId.get(selectedForecastTask.id) ?? [] : []),
+    [projectionByTaskId, selectedForecastTask]
+  );
   const statsMemberRows = useMemo(
     () =>
       members
@@ -784,6 +870,7 @@ export const TasksTab = ({
     editTaskForm.setFieldValue("frequencyDays", String(task.frequency_days));
     editTaskForm.setFieldValue("effortPimpers", String(task.effort_pimpers));
     editTaskForm.setFieldValue("prioritizeLowPimpers", task.prioritize_low_pimpers);
+    editTaskForm.setFieldValue("assigneeFairnessMode", task.assignee_fairness_mode);
 
     const nextRotation = task.rotation_user_ids.length > 0
       ? task.rotation_user_ids
@@ -834,11 +921,12 @@ export const TasksTab = ({
     () => new Intl.DateTimeFormat(language, { month: "long", year: "numeric" }).format(calendarMonthDate),
     [calendarMonthDate, language]
   );
-  const dueTasksByDay = useMemo(() => {
+  const calendarEntriesByDay = useMemo(() => {
     const map = new Map<
       string,
       {
-        tasks: TaskItem[];
+        dueTasks: TaskItem[];
+        completedTasks: TaskCompletion[];
         memberIds: string[];
       }
     >();
@@ -848,8 +936,8 @@ export const TasksTab = ({
       const taskDueDate = new Date(task.due_at);
       if (Number.isNaN(taskDueDate.getTime())) return;
       const key = dayKey(taskDueDate);
-      const current = map.get(key) ?? { tasks: [], memberIds: [] };
-      current.tasks.push(task);
+      const current = map.get(key) ?? { dueTasks: [], completedTasks: [], memberIds: [] };
+      current.dueTasks.push(task);
 
       const assigneeKey = task.assignee_id ?? "__unassigned__";
       if (!current.memberIds.includes(assigneeKey)) {
@@ -859,14 +947,94 @@ export const TasksTab = ({
       map.set(key, current);
     });
 
+    completions.forEach((completion) => {
+      const completedAt = new Date(completion.completed_at);
+      if (Number.isNaN(completedAt.getTime())) return;
+      const key = dayKey(completedAt);
+      const current = map.get(key) ?? { dueTasks: [], completedTasks: [], memberIds: [] };
+      current.completedTasks.push(completion);
+
+      if (!current.memberIds.includes(completion.user_id)) {
+        current.memberIds.push(completion.user_id);
+      }
+
+      map.set(key, current);
+    });
+
     return map;
-  }, [tasks]);
+  }, [completions, tasks]);
 
   const memberById = useMemo(() => {
     const map = new Map<string, HouseholdMember>();
     members.forEach((member) => map.set(member.user_id, member));
     return map;
   }, [members]);
+  const visibleCalendarRange = useMemo(() => {
+    const firstDate = monthCells[0]?.date;
+    const lastDate = monthCells[monthCells.length - 1]?.date;
+    if (!firstDate || !lastDate) return null;
+    return {
+      start: startOfDay(firstDate),
+      end: startOfDay(lastDate)
+    };
+  }, [monthCells]);
+  const visibleCalendarDayKeys = useMemo(() => new Set(monthCells.map((cell) => dayKey(cell.date))), [monthCells]);
+  const completionSpansByDay = useMemo(() => {
+    type SpanPart = {
+      id: string;
+      userId: string;
+      kind: "single" | "start" | "mid" | "end";
+    };
+
+    const map = new Map<string, SpanPart[]>();
+    const visibleStart = visibleCalendarRange?.start;
+    const visibleEnd = visibleCalendarRange?.end;
+    if (!visibleStart || !visibleEnd) return map;
+
+    completions.forEach((completion) => {
+      const completedDate = new Date(completion.completed_at);
+      if (Number.isNaN(completedDate.getTime())) return;
+
+      const dueDate = completion.due_at_snapshot ? new Date(completion.due_at_snapshot) : completedDate;
+      const normalizedDue = Number.isNaN(dueDate.getTime()) ? completedDate : dueDate;
+
+      const rangeStart = startOfDay(normalizedDue <= completedDate ? normalizedDue : completedDate);
+      const rangeEnd = startOfDay(normalizedDue <= completedDate ? completedDate : normalizedDue);
+      const visibleRangeStart = rangeStart.getTime() < visibleStart.getTime() ? visibleStart : rangeStart;
+      const visibleRangeEnd = rangeEnd.getTime() > visibleEnd.getTime() ? visibleEnd : rangeEnd;
+
+      if (visibleRangeStart.getTime() > visibleRangeEnd.getTime()) return;
+
+      const startKey = dayKey(rangeStart);
+      const endKey = dayKey(rangeEnd);
+
+      let cursor = new Date(visibleRangeStart);
+      while (cursor.getTime() <= visibleRangeEnd.getTime()) {
+        const key = dayKey(cursor);
+        if (visibleCalendarDayKeys.has(key)) {
+          const kind =
+            key === startKey && key === endKey
+              ? "single"
+              : key === startKey
+                ? "start"
+                : key === endKey
+                  ? "end"
+                  : "mid";
+
+          const current = map.get(key) ?? [];
+          current.push({
+            id: completion.id,
+            userId: completion.user_id,
+            kind
+          });
+          map.set(key, current);
+        }
+        cursor.setDate(cursor.getDate() + 1);
+      }
+    });
+
+    return map;
+  }, [completions, visibleCalendarDayKeys, visibleCalendarRange]);
 
   const calendarCard = showOverview ? (
     <Card>
@@ -920,7 +1088,8 @@ export const TasksTab = ({
           <div className="grid grid-cols-7 gap-1">
             {monthCells.map((cell) => {
               const isToday = dayKey(cell.date) === dayKey(new Date());
-              const entry = dueTasksByDay.get(dayKey(cell.date));
+              const entry = calendarEntriesByDay.get(dayKey(cell.date));
+              const completionSpans = completionSpansByDay.get(dayKey(cell.date)) ?? [];
               const memberIds = entry?.memberIds ?? [];
               const visibleMemberIds = memberIds.slice(0, 4);
               const overflowCount = Math.max(0, memberIds.length - visibleMemberIds.length);
@@ -943,8 +1112,42 @@ export const TasksTab = ({
                   >
                     {cell.date.getDate()}
                   </p>
+                  {completionSpans.length > 0 ? (
+                    <div className="mt-1 space-y-0.5">
+                      {completionSpans.map((span) => {
+                        const member = memberById.get(span.userId);
+                        const displayName = userLabel(span.userId);
+                        const avatarUrl = member?.avatar_url?.trim() ?? "";
+                        const avatarSrc = avatarUrl || createDiceBearAvatarDataUri(member?.display_name?.trim() || displayName || span.userId);
+                        const segmentClassName =
+                          span.kind === "single"
+                            ? "mx-0 rounded-full"
+                            : span.kind === "start"
+                              ? "-mr-2 rounded-l-full"
+                              : span.kind === "end"
+                                ? "-ml-2 rounded-r-full"
+                                : "-mx-2";
 
-                  {entry && entry.tasks.length > 0 ? (
+                        return (
+                          <div
+                            key={`${dayKey(cell.date)}-span-${span.id}-${span.kind}`}
+                            className={`relative z-10 h-1.5 bg-emerald-300/90 dark:bg-emerald-700/90 ${segmentClassName}`}
+                          >
+                            {(span.kind === "end" || span.kind === "single") && avatarSrc ? (
+                              <div
+                                className="absolute -right-1 top-1/2 h-3.5 w-3.5 -translate-y-1/2 overflow-hidden rounded-full border border-white bg-white dark:border-slate-900 dark:bg-slate-900"
+                                title={displayName}
+                              >
+                                <img src={avatarSrc} alt={displayName} className="h-full w-full object-cover" />
+                              </div>
+                            ) : null}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : null}
+
+                  {entry && (entry.dueTasks.length > 0 || entry.completedTasks.length > 0) ? (
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <div className="mt-1 flex items-center">
@@ -993,9 +1196,16 @@ export const TasksTab = ({
                           })}
                         </p>
                         <ul className="space-y-1">
-                          {entry.tasks.map((task) => (
-                            <li key={`${dayKey(cell.date)}-${task.id}`} className="text-xs">
+                          {entry.dueTasks.map((task) => (
+                            <li key={`${dayKey(cell.date)}-due-${task.id}`} className="text-xs">
+                              <span className="font-medium">{t("tasks.statusDue")}:</span>{" "}
                               {task.title} · {task.assignee_id ? userLabel(task.assignee_id) : t("tasks.unassigned")}
+                            </li>
+                          ))}
+                          {entry.completedTasks.map((completion) => (
+                            <li key={`${dayKey(cell.date)}-done-${completion.id}`} className="text-xs">
+                              <span className="font-medium">{t("tasks.statusCompleted")}:</span>{" "}
+                              {(completion.task_title_snapshot || t("tasks.fallbackTitle"))} · {userLabel(completion.user_id)}
                             </li>
                           ))}
                         </ul>
@@ -1203,6 +1413,28 @@ export const TasksTab = ({
                             </p>
                           </div>
                           <Switch checked={field.state.value} onCheckedChange={field.handleChange} />
+                        </div>
+                      )}
+                    />
+                    <taskForm.Field
+                      name="assigneeFairnessMode"
+                      children={(
+                        field: { state: { value: "actual" | "projection" }; handleChange: (value: "actual" | "projection") => void }
+                      ) => (
+                        <div className="space-y-1">
+                          <Label>{t("tasks.assigneeFairnessModeLabel")}</Label>
+                          <select
+                            className="h-10 w-full rounded-xl border border-brand-200 bg-white px-3 text-sm text-slate-900 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                            value={field.state.value}
+                            onChange={(event) => field.handleChange(event.target.value as "actual" | "projection")}
+                            disabled={!taskForm.state.values.prioritizeLowPimpers}
+                          >
+                            <option value="actual">{t("tasks.assigneeFairnessModeActual")}</option>
+                            <option value="projection">{t("tasks.assigneeFairnessModeProjection")}</option>
+                          </select>
+                          <p className="text-xs text-slate-500 dark:text-slate-400">
+                            {t("tasks.assigneeFairnessModeHint")}
+                          </p>
                         </div>
                       )}
                     />
@@ -1569,6 +1801,56 @@ export const TasksTab = ({
             </CardContent>
           </Card>
         ) : null}
+        {showStats && selectedForecastTask ? (
+          <Card className="mb-4">
+            <CardHeader>
+              <CardTitle>{t("tasks.forecastTitle")}</CardTitle>
+              <CardDescription>{t("tasks.forecastDescription")}</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="space-y-1">
+                <Label>{t("tasks.forecastSelectLabel")}</Label>
+                <select
+                  className="h-10 w-full rounded-xl border border-brand-200 bg-white px-3 text-sm text-slate-900 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                  value={statsForecastTaskId}
+                  onChange={(event) => setStatsForecastTaskId(event.target.value)}
+                >
+                  {activeForecastTasks.map((task) => (
+                    <option key={`forecast-task-${task.id}`} value={task.id}>
+                      {task.title}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <ul className="space-y-2">
+                {selectedForecastRows.map((row) => (
+                  <li
+                    key={`forecast-row-${selectedForecastTask.id}-${row.user_id}`}
+                    className="rounded-lg border border-brand-100 bg-white/90 p-2 dark:border-slate-700 dark:bg-slate-900"
+                  >
+                    <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{userLabel(row.user_id)}</p>
+                    <div className="mt-1 grid gap-1 text-xs text-slate-600 dark:text-slate-300 sm:grid-cols-3">
+                      <span>{t("tasks.forecastCurrentPimpers", { value: row.current_pimpers })}</span>
+                      <span>
+                        {t("tasks.forecastProjectedUntilTurn", {
+                          value: Number(row.projected_until_turn.toFixed(2))
+                        })}
+                      </span>
+                      <span>
+                        {t("tasks.forecastProjectedScore", {
+                          value:
+                            row.projected_total_scaled === null
+                              ? "-"
+                              : Number(row.projected_total_scaled.toFixed(2))
+                        })}
+                      </span>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </CardContent>
+          </Card>
+        ) : null}
         {lazinessCard}
 
         {showStats && pimpersByUserSeries.labels.length > 0 ? (
@@ -1883,6 +2165,28 @@ export const TasksTab = ({
                       </p>
                     </div>
                     <Switch checked={field.state.value} onCheckedChange={field.handleChange} />
+                  </div>
+                )}
+              />
+              <editTaskForm.Field
+                name="assigneeFairnessMode"
+                children={(
+                  field: { state: { value: "actual" | "projection" }; handleChange: (value: "actual" | "projection") => void }
+                ) => (
+                  <div className="space-y-1">
+                    <Label>{t("tasks.assigneeFairnessModeLabel")}</Label>
+                    <select
+                      className="h-10 w-full rounded-xl border border-brand-200 bg-white px-3 text-sm text-slate-900 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                      value={field.state.value}
+                      onChange={(event) => field.handleChange(event.target.value as "actual" | "projection")}
+                      disabled={!editTaskForm.state.values.prioritizeLowPimpers}
+                    >
+                      <option value="actual">{t("tasks.assigneeFairnessModeActual")}</option>
+                      <option value="projection">{t("tasks.assigneeFairnessModeProjection")}</option>
+                    </select>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      {t("tasks.assigneeFairnessModeHint")}
+                    </p>
                   </div>
                 )}
               />

@@ -13,6 +13,7 @@ const task = (partial: Partial<TaskItem>): TaskItem => ({
   frequency_days: partial.frequency_days ?? 7,
   effort_pimpers: partial.effort_pimpers ?? 1,
   prioritize_low_pimpers: partial.prioritize_low_pimpers ?? true,
+  assignee_fairness_mode: partial.assignee_fairness_mode ?? "actual",
   is_active: partial.is_active ?? true,
   done: partial.done ?? false,
   done_at: partial.done_at ?? null,

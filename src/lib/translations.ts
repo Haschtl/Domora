@@ -181,6 +181,8 @@ export const resources = {
         suggestionsTitle: "Schon mal gekauft",
         suggestionBoughtCount: "{{count}}x",
         suggestionLibraryBadge: "Tipp",
+        openCount_one: "{{count}} offen",
+        openCount_other: "{{count}} offen",
         recurrenceValueLabel: "Wiederholung",
         recurrenceValuePlaceholder: "Wiederholung (optional)",
         recurrenceUnitLabel: "Einheit",
@@ -230,6 +232,11 @@ export const resources = {
         prioritizeLowPimpers: "Fairness nach Pimpers nutzen",
         prioritizeLowPimpersHint:
           "Wenn aktiv, kommen Personen mit weniger Pimpers eher wieder dran.",
+        assigneeFairnessModeLabel: "Fairness-Modus",
+        assigneeFairnessModeHint:
+          "Ist-Wert nutzt nur aktuelle Pimpers. Prognose berücksichtigt erwartete Pimpers bis zum nächsten Turn.",
+        assigneeFairnessModeActual: "Ist-Wert",
+        assigneeFairnessModeProjection: "Prognose bis Turn",
         rotationTitle: "Personen in Reihenfolge",
         rotationHint:
           "Auswählen und per Drag-and-drop (auch Touch) umsortieren.",
@@ -339,6 +346,13 @@ export const resources = {
         backlogOpen: "Offene aktive Aufgaben",
         averageDelayOverall: "Ø Verzögerung gesamt",
         averageDelayByMember: "Ø Verzögerung pro Person",
+        forecastTitle: "Prognose bis nächster Turn",
+        forecastDescription:
+          "Erwartete Pimpers pro Mitglied bis es in der ausgewählten Aufgabe wieder dran ist.",
+        forecastSelectLabel: "Aufgabe für Prognose",
+        forecastCurrentPimpers: "Aktuell: {{value}}",
+        forecastProjectedUntilTurn: "Erwartet bis Turn: {{value}}",
+        forecastProjectedScore: "Skaliert (inkl. Prognose): {{value}}",
         delayMinutesValue: "{{count}} min",
         delayHoursValue: "{{count}} h",
         delayDaysValue: "{{count}} d",
@@ -791,6 +805,8 @@ export const resources = {
         suggestionsTitle: "Bought before",
         suggestionBoughtCount: "{{count}}x",
         suggestionLibraryBadge: "Tip",
+        openCount_one: "{{count}} open",
+        openCount_other: "{{count}} open",
         recurrenceValueLabel: "Recurrence",
         recurrenceValuePlaceholder: "Recurrence (optional)",
         recurrenceUnitLabel: "Unit",
@@ -840,6 +856,11 @@ export const resources = {
         prioritizeLowPimpers: "Use pimpers-based fairness",
         prioritizeLowPimpersHint:
           "When enabled, members with fewer pimpers are picked earlier.",
+        assigneeFairnessModeLabel: "Fairness mode",
+        assigneeFairnessModeHint:
+          "Actual uses current pimpers only. Projection includes expected pimpers until the next turn.",
+        assigneeFairnessModeActual: "Actual only",
+        assigneeFairnessModeProjection: "Projection to turn",
         rotationTitle: "People in order",
         rotationHint:
           "Select people and reorder with drag and drop (touch-friendly).",
@@ -948,6 +969,13 @@ export const resources = {
         backlogOpen: "Open active tasks",
         averageDelayOverall: "Avg delay overall",
         averageDelayByMember: "Avg delay by member",
+        forecastTitle: "Projection until next turn",
+        forecastDescription:
+          "Expected pimpers per member until their next turn in the selected task.",
+        forecastSelectLabel: "Task for projection",
+        forecastCurrentPimpers: "Current: {{value}}",
+        forecastProjectedUntilTurn: "Expected to turn: {{value}}",
+        forecastProjectedScore: "Scaled (with projection): {{value}}",
         delayMinutesValue: "{{count}} min",
         delayHoursValue: "{{count}} h",
         delayDaysValue: "{{count}} d",

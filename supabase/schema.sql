@@ -78,6 +78,7 @@ create table if not exists tasks (
   frequency_days integer not null default 7,
   effort_pimpers integer not null default 1,
   prioritize_low_pimpers boolean not null default true,
+  assignee_fairness_mode text not null default 'actual' check (assignee_fairness_mode in ('actual', 'projection')),
   is_active boolean not null default true,
   done boolean not null default false,
   done_at timestamptz,
@@ -588,9 +589,32 @@ alter table tasks add column if not exists cron_pattern text not null default '0
 alter table tasks add column if not exists frequency_days integer not null default 7;
 alter table tasks add column if not exists effort_pimpers integer not null default 1;
 alter table tasks add column if not exists prioritize_low_pimpers boolean not null default true;
+alter table tasks add column if not exists assignee_fairness_mode text not null default 'actual';
 alter table tasks add column if not exists is_active boolean not null default true;
 alter table tasks add column if not exists done_at timestamptz;
 alter table tasks add column if not exists done_by uuid references auth.users(id) on delete set null;
+
+update tasks
+set assignee_fairness_mode = 'actual'
+where assignee_fairness_mode is null
+   or assignee_fairness_mode not in ('actual', 'projection');
+
+alter table tasks
+alter column assignee_fairness_mode set not null;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'tasks_assignee_fairness_mode_allowed_check'
+  ) then
+    alter table tasks
+      add constraint tasks_assignee_fairness_mode_allowed_check
+      check (assignee_fairness_mode in ('actual', 'projection'));
+  end if;
+end;
+$$;
 
 update tasks
 set cron_pattern = format('0 9 */%s * *', greatest(frequency_days, 1))
@@ -704,7 +728,8 @@ $$;
 
 create or replace function choose_next_task_assignee(
   p_task_id uuid,
-  p_prioritize_low_pimpers boolean default true
+  p_prioritize_low_pimpers boolean default true,
+  p_assignee_fairness_mode text default 'actual'
 )
 returns uuid
 language sql
@@ -712,35 +737,107 @@ stable
 set search_path = public
 as $$
   with task_info as (
-    select household_id
-    from tasks
-    where id = p_task_id
+    select
+      t.id as task_id,
+      t.household_id,
+      t.assignee_id,
+      greatest(task_cron_interval_days(t.cron_pattern, t.frequency_days), 1)::integer as interval_days
+    from tasks t
+    where t.id = p_task_id
   ),
-  candidates as (
+  rotation as (
     select
       trm.user_id,
       trm.position,
-      coalesce(hmp.total_pimpers, 0) as total_pimpers,
-      coalesce(hm.task_laziness_factor, 1) as task_laziness_factor
+      row_number() over (order by trm.position asc, trm.user_id asc) - 1 as rotation_index
     from task_rotation_members trm
+    where trm.task_id = p_task_id
+  ),
+  rotation_meta as (
+    select
+      count(*)::integer as rotation_count,
+      coalesce(
+        (
+          select r.rotation_index
+          from rotation r
+          join task_info ti on true
+          where r.user_id = ti.assignee_id
+          limit 1
+        ),
+        0
+      ) as current_rotation_index
+    from rotation
+  ),
+  candidates as (
+    select
+      r.user_id,
+      r.position,
+      r.rotation_index,
+      coalesce(hmp.total_pimpers, 0)::numeric as total_pimpers,
+      coalesce(hm.task_laziness_factor, 1)::numeric as task_laziness_factor,
+      rm.rotation_count,
+      case
+        when rm.rotation_count <= 0 then 0
+        when r.rotation_index >= rm.current_rotation_index then r.rotation_index - rm.current_rotation_index
+        else rm.rotation_count - rm.current_rotation_index + r.rotation_index
+      end as turns_until_turn
+    from rotation r
+    join rotation_meta rm on true
     join task_info ti on true
     left join household_member_pimpers hmp
       on hmp.household_id = ti.household_id
-     and hmp.user_id = trm.user_id
+     and hmp.user_id = r.user_id
     left join household_members hm
       on hm.household_id = ti.household_id
-     and hm.user_id = trm.user_id
-    where trm.task_id = p_task_id
+     and hm.user_id = r.user_id
+  ),
+  projected as (
+    select
+      c.*,
+      coalesce(
+        (
+          select sum(
+            greatest(
+              floor(
+                (c.turns_until_turn * ti.interval_days)::numeric
+                / greatest(task_cron_interval_days(t2.cron_pattern, t2.frequency_days), 1)::numeric
+              ),
+              0
+            )
+            * greatest(t2.effort_pimpers, 1)::numeric
+            / rot.rotation_count
+          )
+          from task_info ti
+          join tasks t2
+            on t2.household_id = ti.household_id
+           and t2.id <> ti.task_id
+           and t2.is_active = true
+          join lateral (
+            select
+              count(*)::numeric as rotation_count,
+              bool_or(trm2.user_id = c.user_id) as includes_member
+            from task_rotation_members trm2
+            where trm2.task_id = t2.id
+          ) rot on true
+          where rot.includes_member = true
+            and rot.rotation_count > 0
+        ),
+        0
+      ) as projected_pimpers_until_turn
+    from candidates c
   )
-  select user_id
-  from candidates
+  select p.user_id
+  from projected p
   order by
     case
-      when p_prioritize_low_pimpers and task_laziness_factor <= 0 then 999999999::numeric
-      when p_prioritize_low_pimpers then total_pimpers / greatest(task_laziness_factor, 0.0001)
+      when p_prioritize_low_pimpers and p.task_laziness_factor <= 0 then 999999999::numeric
+      when p_prioritize_low_pimpers and lower(coalesce(p_assignee_fairness_mode, 'actual')) = 'projection' then
+        (p.total_pimpers + p.projected_pimpers_until_turn) / greatest(p.task_laziness_factor, 0.0001)
+      when p_prioritize_low_pimpers then p.total_pimpers / greatest(p.task_laziness_factor, 0.0001)
       else 0
     end asc,
-    position asc
+    p.position asc,
+    p.user_id asc
   limit 1;
 $$;
 
@@ -831,7 +928,11 @@ begin
     total_pimpers = household_member_pimpers.total_pimpers + excluded.total_pimpers,
     updated_at = now();
 
-  v_next_assignee := choose_next_task_assignee(v_task.id, v_task.prioritize_low_pimpers);
+  v_next_assignee := choose_next_task_assignee(
+    v_task.id,
+    v_task.prioritize_low_pimpers,
+    v_task.assignee_fairness_mode
+  );
 
   update tasks
   set
@@ -911,7 +1012,11 @@ begin
 
   v_interval_days := task_cron_interval_days(v_task.cron_pattern, v_task.frequency_days);
   v_next_due := greatest(v_task.due_at, now()) + make_interval(days => greatest(v_interval_days, 1));
-  v_next_assignee := choose_next_task_assignee(v_task.id, v_task.prioritize_low_pimpers);
+  v_next_assignee := choose_next_task_assignee(
+    v_task.id,
+    v_task.prioritize_low_pimpers,
+    v_task.assignee_fairness_mode
+  );
 
   update tasks
   set
