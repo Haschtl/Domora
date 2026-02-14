@@ -435,7 +435,8 @@ export const SettingsTab = ({
   const quietHoursStart = pushPreferences?.quiet_hours?.start ?? "";
   const quietHoursEnd = pushPreferences?.quiet_hours?.end ?? "";
   const quietHoursPartial = Boolean(quietHoursStart) !== Boolean(quietHoursEnd);
-  const quietHoursInvalid = quietHoursPartial || (quietHoursStart && quietHoursEnd && quietHoursStart === quietHoursEnd);
+  const quietHoursInvalid =
+    quietHoursPartial || Boolean(quietHoursStart && quietHoursEnd && quietHoursStart === quietHoursEnd);
   const pushPreferencesControlsDisabled = pushPreferencesBusy || !(pushPreferences?.enabled ?? true);
   const pushPreferencesSaveDisabled = pushPreferencesBusy || !pushPreferencesDirty || quietHoursInvalid;
   const inviteUrl = useMemo(() => {

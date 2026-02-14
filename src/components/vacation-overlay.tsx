@@ -1,22 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {  useEffect, useMemo, useState } from "react";
 import Particles from "@tsparticles/react";
-import { loadSlim } from "@tsparticles/slim";
-import { loadTextShape } from "@tsparticles/shape-text";
 import type { ISourceOptions } from "@tsparticles/engine";
 import { useTheme } from "../lib/use-theme";
 
 export const VacationOverlay = () => {
   const { resolvedTheme } = useTheme();
   const [reduceMotion, setReduceMotion] = useState(false);
-
-  const particlesInit = useCallback(async (engine: Parameters<typeof loadSlim>[0]) => {
-    await loadSlim(engine);
-    try {
-      await loadTextShape(engine);
-    } catch {
-      // Emoji shapes are optional; particles still render as circles.
-    }
-  }, []);
 
   useEffect(() => {
     const media = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -56,7 +45,11 @@ export const VacationOverlay = () => {
   return (
     <div className="pointer-events-none fixed inset-0 z-120 h-dvh w-dvw overflow-hidden">
       <div className="absolute inset-0 bg-gradient-to-br from-amber-50/35 via-emerald-50/20 to-sky-50/35 dark:from-amber-900/20 dark:via-emerald-900/10 dark:to-sky-900/15" />
-      <Particles id="domora-vacation" init={particlesInit} className="absolute inset-0 h-full w-full" options={options} />
+      <Particles
+        id="domora-vacation"
+        className="absolute inset-0 h-full w-full"
+        options={options}
+      />
     </div>
   );
 };
