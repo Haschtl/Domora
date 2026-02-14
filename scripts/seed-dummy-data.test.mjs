@@ -58,6 +58,8 @@ describe("seed-dummy-data", () => {
       title: entry.title,
       done: entry.done,
       done_by: entry.done_by,
+      assignee_id: entry.assignee_id,
+      frequency_days: entry.frequency_days,
       effort_pimpers: entry.effort_pimpers,
       due_at: entry.due_at
     }));
@@ -68,6 +70,18 @@ describe("seed-dummy-data", () => {
     const completionRows = buildCompletionRows({ insertedTasks, householdId });
     expect(completionRows.every((entry) => entry.household_id === householdId)).toBe(true);
     expect(completionRows.every((entry) => entry.pimpers_earned > 0)).toBe(true);
+    expect(
+      completionRows.every(
+        (entry) => Number.isFinite(entry.delay_minutes) && entry.delay_minutes >= 24 * 60 && entry.delay_minutes <= 30 * 24 * 60
+      )
+    ).toBe(true);
+    const completionBucketsByDate = completionRows.reduce((acc, entry) => {
+      const key = String(entry.completed_at).slice(0, 10);
+      acc.set(key, (acc.get(key) ?? 0) + 1);
+      return acc;
+    }, new Map());
+    const sharedCompletionDates = [...completionBucketsByDate.values()].filter((count) => count >= 2);
+    expect(sharedCompletionDates.length).toBeGreaterThan(0);
 
     const pimperRows = buildPimperRows({ users, householdId, completionRows });
     expect(pimperRows).toHaveLength(users.length);

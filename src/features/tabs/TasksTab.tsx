@@ -1008,7 +1008,7 @@ export const TasksTab = ({
       const startKey = dayKey(rangeStart);
       const endKey = dayKey(rangeEnd);
 
-      let cursor = new Date(visibleRangeStart);
+      const cursor = new Date(visibleRangeStart);
       while (cursor.getTime() <= visibleRangeEnd.getTime()) {
         const key = dayKey(cursor);
         if (visibleCalendarDayKeys.has(key)) {

@@ -61,7 +61,7 @@ export const useTaskNotifications = (tasks: TaskItem[], householdEvents: Househo
         if (window.localStorage.getItem(key) === "1") return;
 
         const payload = event.payload ?? {};
-        let title = i18n.t("app.pushHouseholdTitle");
+        let title:string|undefined = undefined;
         let body = "";
 
         if (event.event_type === "task_completed") {

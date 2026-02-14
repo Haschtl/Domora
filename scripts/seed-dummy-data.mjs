@@ -141,25 +141,28 @@ export const buildRotationRows = ({ insertedTasks, users }) => {
 
 export const buildCompletionRows = ({ insertedTasks, householdId }) => {
   const rows = [];
+  const now = new Date();
+  const dayMs = 24 * 60 * 60 * 1000;
 
   insertedTasks.forEach((task, index) => {
-    const dueAt = new Date(task.due_at);
-    if (Number.isNaN(dueAt.getTime())) return;
-
-    const intervalDays = Math.max(1, Number(task.frequency_days ?? 7));
     const userId = task.done_by ?? task.assignee_id;
     if (!userId) return;
 
-    // Build a realistic history: completed tasks get richer history,
-    // active/open tasks still get some older completions.
     const completionCount = task.done ? 4 + (index % 4) : 2 + (index % 2);
-    const latestCompletedAt = task.done
-      ? new Date(dueAt.getTime() + 2 * 60 * 60 * 1000)
-      : new Date(dueAt.getTime() - intervalDays * 24 * 60 * 60 * 1000 + 2 * 60 * 60 * 1000);
+    const pairIndex = Math.floor(index / 2);
+    const pairCycleDays = 6 + (pairIndex % 4);
+    const baseCompletedAt = new Date(now.getTime() - pairIndex * 3 * dayMs);
 
-    for (let offset = completionCount - 1; offset >= 0; offset -= 1) {
-      const completedAt = new Date(latestCompletedAt.getTime() - offset * intervalDays * 24 * 60 * 60 * 1000);
-      const delayMinutes = Math.max(0, Math.floor((completedAt.getTime() - dueAt.getTime()) / (60 * 1000)));
+    for (let round = 0; round < completionCount; round += 1) {
+      // Paired tasks (index 0/1, 2/3, ...) share many completion timestamps.
+      // This creates more realistic "we did two chores together" patterns.
+      const completedAt = new Date(baseCompletedAt.getTime() - round * pairCycleDays * dayMs);
+      completedAt.setUTCHours(18 + (pairIndex % 3), (round * 7) % 60, 0, 0);
+
+      // Realistic late completions: between 1 and 30 days after due date.
+      const delayDays = 1 + ((pairIndex * 7 + round * 11 + (index % 2) * 3) % 30);
+      const delayMinutes = delayDays * 24 * 60;
+      const dueAt = new Date(completedAt.getTime() - delayDays * dayMs);
       rows.push({
         task_id: task.id,
         household_id: householdId,
