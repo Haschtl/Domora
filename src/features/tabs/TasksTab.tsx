@@ -31,12 +31,12 @@ import {
   MoonStar,
   Medal,
   MoreHorizontal,
-  Paperclip,
   Plus,
-  Sparkles,
+  Sparkles as SparklesIcon,
   Star,
   X
 } from "lucide-react";
+import SparklesEffect from "react-sparkle";
 import { Bar } from "react-chartjs-2";
 import { useTranslation } from "react-i18next";
 import type {
@@ -322,13 +322,9 @@ export const TasksTab = ({
   const [openCalendarTooltipDay, setOpenCalendarTooltipDay] = useState<string | null>(null);
   const [skipChallengeAnswerInput, setSkipChallengeAnswerInput] = useState("");
   const addCurrentStateUploadInputRef = useRef<HTMLInputElement | null>(null);
-  const addCurrentStateCameraInputRef = useRef<HTMLInputElement | null>(null);
   const addTargetStateUploadInputRef = useRef<HTMLInputElement | null>(null);
-  const addTargetStateCameraInputRef = useRef<HTMLInputElement | null>(null);
   const editCurrentStateUploadInputRef = useRef<HTMLInputElement | null>(null);
-  const editCurrentStateCameraInputRef = useRef<HTMLInputElement | null>(null);
   const editTargetStateUploadInputRef = useRef<HTMLInputElement | null>(null);
-  const editTargetStateCameraInputRef = useRef<HTMLInputElement | null>(null);
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: { distance: 6 }
@@ -528,9 +524,9 @@ export const TasksTab = ({
       { max: 0.35, icon: MoonStar, label: t("tasks.lazinessLevel2"), className: "text-slate-500 dark:text-slate-300" },
       { max: 0.6, icon: Coffee, label: t("tasks.lazinessLevel3"), className: "text-amber-600 dark:text-amber-300" },
       { max: 0.85, icon: Coffee, label: t("tasks.lazinessLevel4"), className: "text-amber-600 dark:text-amber-300" },
-      { max: 1.1, icon: Sparkles, label: t("tasks.lazinessLevel5"), className: "text-emerald-600 dark:text-emerald-300" },
-      { max: 1.35, icon: Sparkles, label: t("tasks.lazinessLevel6"), className: "text-emerald-600 dark:text-emerald-300" },
-      { max: 1.6, icon: Sparkles, label: t("tasks.lazinessLevel7"), className: "text-cyan-600 dark:text-cyan-300" },
+      { max: 1.1, icon: SparklesIcon, label: t("tasks.lazinessLevel5"), className: "text-emerald-600 dark:text-emerald-300" },
+      { max: 1.35, icon: SparklesIcon, label: t("tasks.lazinessLevel6"), className: "text-emerald-600 dark:text-emerald-300" },
+      { max: 1.6, icon: SparklesIcon, label: t("tasks.lazinessLevel7"), className: "text-cyan-600 dark:text-cyan-300" },
       { max: 1.85, icon: Flame, label: t("tasks.lazinessLevel8"), className: "text-cyan-600 dark:text-cyan-300" },
       { max: 2.01, icon: Flame, label: t("tasks.lazinessLevel9"), className: "text-indigo-600 dark:text-indigo-300" }
     ],
@@ -675,6 +671,26 @@ export const TasksTab = ({
   };
   const formatScaledPimpers = (value: number | null | undefined) =>
     value === null || value === undefined ? "-" : Number(value.toFixed(2)).toString();
+  const renderSparkleIcon = (Icon: (props: { className?: string }) => JSX.Element) => {
+    const icon = <Icon className="h-3.5 w-3.5" />;
+    if (Icon !== SparklesIcon) return icon;
+    return (
+      <span className="relative inline-flex h-4 w-4 items-center justify-center">
+        {icon}
+        <span className="pointer-events-none absolute inset-0">
+          <SparklesEffect
+            color="currentColor"
+            count={6}
+            minSize={2}
+            maxSize={4}
+            overflowPx={4}
+            fadeOutSpeed={8}
+            flicker={false}
+          />
+        </span>
+      </span>
+    );
+  };
   const podiumRows = useMemo(
     () =>
       [...sortedMemberRows]
@@ -736,7 +752,6 @@ export const TasksTab = ({
       label: string;
       previewAlt: string;
       uploadInputRef: RefObject<HTMLInputElement | null>;
-      cameraInputRef: RefObject<HTMLInputElement | null>;
       setError: (message: string | null) => void;
     }
   ) => (
@@ -745,71 +760,53 @@ export const TasksTab = ({
       children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
         <div className="space-y-2">
           <Label>{options.label}</Label>
-          <div className="flex flex-wrap gap-2">
-            <input
-              ref={options.uploadInputRef}
-              type="file"
-              accept="image/*"
-              className="sr-only"
-              onChange={(event) => {
-                const file = event.target.files?.[0];
-                if (!file) return;
-                void handleTaskImageFileSelect(file, options.setError).then((dataUrl) => {
-                  if (dataUrl) field.handleChange(dataUrl);
-                });
-                event.currentTarget.value = "";
-              }}
-            />
-            <input
-              ref={options.cameraInputRef}
-              type="file"
-              accept="image/*"
-              capture="environment"
-              className="sr-only"
-              onChange={(event) => {
-                const file = event.target.files?.[0];
-                if (!file) return;
-                void handleTaskImageFileSelect(file, options.setError).then((dataUrl) => {
-                  if (dataUrl) field.handleChange(dataUrl);
-                });
-                event.currentTarget.value = "";
-              }}
-            />
-            <Button
+          <input
+            ref={options.uploadInputRef}
+            type="file"
+            accept="image/*"
+            className="sr-only"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              if (!file) return;
+              void handleTaskImageFileSelect(file, options.setError).then((dataUrl) => {
+                if (dataUrl) field.handleChange(dataUrl);
+              });
+              event.currentTarget.value = "";
+            }}
+          />
+          <div className="relative">
+            <button
               type="button"
-              variant="outline"
-              size="sm"
+              className="relative inline-flex h-28 w-full items-center justify-center overflow-hidden rounded-xl border border-brand-200 bg-brand-50 text-slate-600 transition hover:border-brand-300 hover:bg-brand-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:bg-slate-800"
               onClick={() => options.uploadInputRef.current?.click()}
+              aria-label={options.label}
+              title={options.label}
             >
-              <Paperclip className="mr-1 h-4 w-4" />
-              {t("tasks.stateImageUploadButton")}
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => options.cameraInputRef.current?.click()}
-            >
-              <Camera className="mr-1 h-4 w-4" />
-              {t("tasks.stateImageCameraButton")}
-            </Button>
+              {field.state.value.trim().length > 0 ? (
+                <span
+                  aria-label={options.previewAlt}
+                  className="absolute inset-0 bg-cover bg-center"
+                  style={{ backgroundImage: `url(${field.state.value})` }}
+                />
+              ) : null}
+              <span className="absolute inset-0 bg-gradient-to-r from-slate-900/25 via-slate-900/5 to-slate-900/30" />
+              <span className="absolute bottom-2 right-2 inline-flex h-7 w-7 items-center justify-center rounded-full bg-white/90 text-slate-700 dark:bg-slate-900/90 dark:text-slate-200">
+                <Camera className="h-4 w-4" />
+              </span>
+            </button>
             {field.state.value.trim().length > 0 ? (
-              <Button type="button" variant="ghost" size="sm" onClick={() => field.handleChange("")}>
-                {t("tasks.stateImageRemoveButton")}
+              <Button
+                type="button"
+                size="sm"
+                variant="danger"
+                className="absolute -right-1 -top-1 h-6 w-6 rounded-full p-0"
+                onClick={() => field.handleChange("")}
+                aria-label={t("tasks.stateImageRemoveButton")}
+              >
+                <X className="h-3.5 w-3.5" />
               </Button>
             ) : null}
           </div>
-          {field.state.value.trim().length > 0 ? (
-            <a
-              href={field.state.value}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center gap-2 rounded-lg border border-brand-100 bg-white px-2 py-1 text-xs text-brand-700 hover:text-brand-600 dark:border-slate-700 dark:bg-slate-900 dark:text-brand-300"
-            >
-              <img src={field.state.value} alt={options.previewAlt} className="h-8 w-8 rounded object-cover" />
-              <span>{t("tasks.stateImagePreviewLink")}</span>
-            </a>
-          ) : null}
         </div>
       )}
     />
@@ -1000,7 +997,7 @@ export const TasksTab = ({
                 </div>
                 <div className="mt-2 flex items-center justify-between gap-2">
                   <span className={`inline-flex items-center gap-1 text-xs font-semibold ${level.className}`}>
-                    <LevelIcon className="h-3.5 w-3.5" />
+                    {renderSparkleIcon(LevelIcon)}
                     {level.label}
                   </span>
                   <span className="text-xs text-slate-600 dark:text-slate-300">
@@ -1057,20 +1054,6 @@ export const TasksTab = ({
       }))
     };
   }, [language, sortedMemberRows, statsFilteredCompletions, statsFilteredTasks, t, userLabel]);
-
-  const removeRotationMember = (targetUserId: string) => {
-    setRotationUserIds((current) => {
-      if (!current.includes(targetUserId)) return current;
-      return current.filter((entry) => entry !== targetUserId);
-    });
-  };
-
-  const removeEditRotationMember = (targetUserId: string) => {
-    setEditRotationUserIds((current) => {
-      if (!current.includes(targetUserId)) return current;
-      return current.filter((entry) => entry !== targetUserId);
-    });
-  };
 
   const editRotationVariants = useMemo(() => {
     if (editRotationUserIds.length === 0) return null;
@@ -1131,6 +1114,41 @@ export const TasksTab = ({
       fairnessProjection
     };
   }, [editRotationUserIds, editTaskForm.state.values.frequencyDays, members, pimperByUserId, taskBeingEdited, tasks]);
+
+  const renderRotationAvatarStack = (memberIds: string[], maxCount = 8) => (
+    <div className="flex items-center">
+      {memberIds.slice(0, maxCount).map((memberId, index) => {
+        const member = memberById.get(memberId);
+        const displayName = userLabel(memberId);
+        const avatarUrl = member?.avatar_url?.trim() ?? "";
+        const avatarSrc =
+          avatarUrl ||
+          createDiceBearAvatarDataUri(
+            member?.display_name?.trim() || displayName || memberId,
+          );
+        return (
+          <div
+            key={`rotation-avatar-${memberId}-${index}`}
+            className={`h-7 w-7 overflow-hidden rounded-full border-2 border-white bg-brand-100 text-[11px] font-semibold text-brand-800 dark:border-slate-900 dark:bg-brand-900 dark:text-brand-100 ${
+              index > 0 ? "-ml-2" : ""
+            }`}
+            title={displayName}
+          >
+            <img
+              src={avatarSrc}
+              alt={displayName}
+              className="h-full w-full object-cover"
+            />
+          </div>
+        );
+      })}
+      {memberIds.length > maxCount ? (
+        <div className="-ml-2 flex h-7 w-7 items-center justify-center rounded-full border-2 border-white bg-slate-200 text-[10px] font-semibold text-slate-700 dark:border-slate-900 dark:bg-slate-700 dark:text-slate-100">
+          +{memberIds.length - maxCount}
+        </div>
+      ) : null}
+    </div>
+  );
 
   const onRotationDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
@@ -1624,7 +1642,6 @@ export const TasksTab = ({
                           label: t("tasks.currentStateImageLabel"),
                           previewAlt: t("tasks.currentStateImagePreviewAlt"),
                           uploadInputRef: addCurrentStateUploadInputRef,
-                          cameraInputRef: addCurrentStateCameraInputRef,
                           setError: setTaskImageUploadError,
                         })}
                         {renderTaskStateImageField(taskForm, {
@@ -1632,7 +1649,6 @@ export const TasksTab = ({
                           label: t("tasks.targetStateImageLabel"),
                           previewAlt: t("tasks.targetStateImagePreviewAlt"),
                           uploadInputRef: addTargetStateUploadInputRef,
-                          cameraInputRef: addTargetStateCameraInputRef,
                           setError: setTaskImageUploadError,
                         })}
                       </div>
@@ -1807,21 +1823,30 @@ export const TasksTab = ({
                                 items={rotationUserIds}
                                 strategy={verticalListSortingStrategy}
                               >
-                                {rotationUserIds.map((rotationUserId) => {
-                                  const score =
-                                    pimperByUserId.get(rotationUserId) ?? 0;
-                                  return (
-                                    <SortableRotationItem
-                                      key={rotationUserId}
-                                      id={rotationUserId}
-                                      label={userLabel(rotationUserId)}
-                                      onRemove={removeRotationMember}
-                                      removeLabel={t("tasks.removeFromRotation")}
-                                      pimperCount={score}
-                                      dragHandleLabel={t("tasks.dragHandle")}
-                                    />
+                              {rotationUserIds.map((rotationUserId) => {
+                                const score =
+                                  pimperByUserId.get(rotationUserId) ?? 0;
+                                const member = memberById.get(rotationUserId);
+                                const displayName = userLabel(rotationUserId);
+                                const avatarUrl = member?.avatar_url?.trim() ?? "";
+                                const avatarSrc =
+                                  avatarUrl ||
+                                  createDiceBearAvatarDataUri(
+                                    member?.display_name?.trim() ||
+                                      displayName ||
+                                      rotationUserId,
                                   );
-                                })}
+                                return (
+                                  <SortableRotationItem
+                                    key={rotationUserId}
+                                    id={rotationUserId}
+                                    label={userLabel(rotationUserId)}
+                                    avatarSrc={avatarSrc}
+                                    pimperCount={score}
+                                    dragHandleLabel={t("tasks.dragHandle")}
+                                  />
+                                );
+                              })}
                               </SortableContext>
                             </DndContext>
                           </div>
@@ -1862,6 +1887,14 @@ export const TasksTab = ({
                   task.assignee_id !== null &&
                   !isAssignedToCurrentUser &&
                   !busy;
+                const primaryImageUrl = isDue
+                  ? task.current_state_image_url
+                  : task.target_state_image_url;
+                const secondaryImageUrl = isDue
+                  ? task.target_state_image_url
+                  : null;
+                const hasPrimaryImage = Boolean(primaryImageUrl);
+                const hasSecondaryImage = Boolean(secondaryImageUrl);
                 const dueChipText = relativeDueChipLabel(task.due_at, t);
                 const assigneeText = task.assignee_id
                   ? userLabel(task.assignee_id)
@@ -1882,11 +1915,33 @@ export const TasksTab = ({
                 return (
                   <Card
                     key={task.id}
-                    className={`rounded-xl border border-slate-300 bg-white/88 p-3 text-slate-800 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-100 mb-4 ${
+                    className={`group relative overflow-hidden rounded-xl border border-slate-300 bg-white/88 text-slate-800 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-100 mb-4 ${
                       !task.is_active ? "opacity-60 grayscale-[0.35]" : ""
                     }`}
                   >
-                    <CardContent>
+                    {hasPrimaryImage ? (
+                      <>
+                        <div
+                          aria-hidden="true"
+                          className="absolute inset-0 bg-cover bg-center transition-opacity duration-700"
+                          style={{ backgroundImage: `url(${primaryImageUrl})` }}
+                        />
+                        {hasSecondaryImage ? (
+                          <div
+                            aria-hidden="true"
+                            className="absolute inset-0 bg-cover bg-center opacity-0 transition-opacity duration-700 group-hover:opacity-100"
+                            style={{
+                              backgroundImage: `url(${secondaryImageUrl})`,
+                            }}
+                          />
+                        ) : null}
+                        <div
+                          aria-hidden="true"
+                          className="absolute inset-0 bg-white/85 dark:bg-slate-900/80"
+                        />
+                      </>
+                    ) : null}
+                    <CardContent className="relative z-10">
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0 space-y-1">
                           <div className="flex items-center gap-2">
@@ -1927,45 +1982,6 @@ export const TasksTab = ({
                               {task.description}
                             </p>
                           ) : null}
-                          {task.current_state_image_url ||
-                          task.target_state_image_url ? (
-                            <div className="flex flex-wrap items-center gap-2 pt-1">
-                              {task.current_state_image_url ? (
-                                <a
-                                  href={task.current_state_image_url}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="inline-flex items-center gap-2 rounded-lg border border-brand-100 bg-white px-2 py-1 text-xs text-brand-700 hover:text-brand-600 dark:border-slate-700 dark:bg-slate-900 dark:text-brand-300"
-                                >
-                                  <img
-                                    src={task.current_state_image_url}
-                                    alt={t("tasks.currentStateImagePreviewAlt")}
-                                    className="h-8 w-8 rounded object-cover"
-                                  />
-                                  <span>
-                                    {t("tasks.currentStateImageLabel")}
-                                  </span>
-                                </a>
-                              ) : null}
-                              {task.target_state_image_url ? (
-                                <a
-                                  href={task.target_state_image_url}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="inline-flex items-center gap-2 rounded-lg border border-brand-100 bg-white px-2 py-1 text-xs text-brand-700 hover:text-brand-600 dark:border-slate-700 dark:bg-slate-900 dark:text-brand-300"
-                                >
-                                  <img
-                                    src={task.target_state_image_url}
-                                    alt={t("tasks.targetStateImagePreviewAlt")}
-                                    className="h-8 w-8 rounded object-cover"
-                                  />
-                                  <span>
-                                    {t("tasks.targetStateImageLabel")}
-                                  </span>
-                                </a>
-                              ) : null}
-                            </div>
-                          ) : null}
                         </div>
 
                         <div className="flex items-center gap-2">
@@ -1993,12 +2009,25 @@ export const TasksTab = ({
                       </div>
 
                       <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-                        <p className="text-xs text-slate-500 dark:text-slate-400">
-                          <span className="inline-flex items-center gap-1">
-                            <span>{task.effort_pimpers}</span>
-                            <PimpersIcon />
-                          </span>
-                        </p>
+                        <div className="flex items-center">
+                          <div className="flex items-center -space-x-2 text-brand-600 dark:text-brand-300">
+                            {Array.from({
+                              length: Math.min(task.effort_pimpers, 6),
+                            }).map((_, index) => (
+                              <span
+                                key={`${task.id}-pimper-${index}`}
+                                className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-white/70 bg-white/80 shadow-sm dark:border-slate-900/70 dark:bg-slate-900/70"
+                              >
+                                <PimpersIcon className="h-3 w-3" />
+                              </span>
+                            ))}
+                          </div>
+                          {task.effort_pimpers > 6 ? (
+                            <span className="ml-2 text-xs text-slate-500 dark:text-slate-400">
+                              +{task.effort_pimpers - 6}
+                            </span>
+                          ) : null}
+                        </div>
                         <div className="flex flex-wrap justify-end gap-2">
                           {canTakeover ? (
                             <Button
@@ -2775,7 +2804,6 @@ export const TasksTab = ({
                   label: t("tasks.currentStateImageLabel"),
                   previewAlt: t("tasks.currentStateImagePreviewAlt"),
                   uploadInputRef: editCurrentStateUploadInputRef,
-                  cameraInputRef: editCurrentStateCameraInputRef,
                   setError: setEditTaskImageUploadError,
                 })}
                 {renderTaskStateImageField(editTaskForm, {
@@ -2783,7 +2811,6 @@ export const TasksTab = ({
                   label: t("tasks.targetStateImageLabel"),
                   previewAlt: t("tasks.targetStateImagePreviewAlt"),
                   uploadInputRef: editTargetStateUploadInputRef,
-                  cameraInputRef: editTargetStateCameraInputRef,
                   setError: setEditTaskImageUploadError,
                 })}
               </div>
@@ -2957,13 +2984,22 @@ export const TasksTab = ({
                       >
                         {editRotationUserIds.map((rotationUserId) => {
                           const score = pimperByUserId.get(rotationUserId) ?? 0;
+                          const member = memberById.get(rotationUserId);
+                          const displayName = userLabel(rotationUserId);
+                          const avatarUrl = member?.avatar_url?.trim() ?? "";
+                          const avatarSrc =
+                            avatarUrl ||
+                            createDiceBearAvatarDataUri(
+                              member?.display_name?.trim() ||
+                                displayName ||
+                                rotationUserId,
+                            );
                           return (
                             <SortableRotationItem
                               key={`edit-row-${rotationUserId}`}
                               id={rotationUserId}
                               label={userLabel(rotationUserId)}
-                              onRemove={removeEditRotationMember}
-                              removeLabel={t("tasks.removeFromRotation")}
+                              avatarSrc={avatarSrc}
                               pimperCount={score}
                               dragHandleLabel={t("tasks.dragHandle")}
                             />
@@ -3008,40 +3044,7 @@ export const TasksTab = ({
                   <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
                     {t("tasks.rotationTitle")}
                   </p>
-                  <div className="flex items-center">
-                    {editRotationUserIds.slice(0, 8).map((memberId, index) => {
-                      const member = memberById.get(memberId);
-                      const displayName = userLabel(memberId);
-                      const avatarUrl = member?.avatar_url?.trim() ?? "";
-                      const avatarSrc =
-                        avatarUrl ||
-                        createDiceBearAvatarDataUri(
-                          member?.display_name?.trim() ||
-                            displayName ||
-                            memberId,
-                        );
-                      return (
-                        <div
-                          key={`edit-rotation-preview-${memberId}`}
-                          className={`h-7 w-7 overflow-hidden rounded-full border-2 border-white bg-brand-100 text-[11px] font-semibold text-brand-800 dark:border-slate-900 dark:bg-brand-900 dark:text-brand-100 ${
-                            index > 0 ? "-ml-2" : ""
-                          }`}
-                          title={displayName}
-                        >
-                          <img
-                            src={avatarSrc}
-                            alt={displayName}
-                            className="h-full w-full object-cover"
-                          />
-                        </div>
-                      );
-                    })}
-                    {editRotationUserIds.length > 8 ? (
-                      <div className="-ml-2 flex h-7 w-7 items-center justify-center rounded-full border-2 border-white bg-slate-200 text-[10px] font-semibold text-slate-700 dark:border-slate-900 dark:bg-slate-700 dark:text-slate-100">
-                        +{editRotationUserIds.length - 8}
-                      </div>
-                    ) : null}
-                  </div>
+                  {renderRotationAvatarStack(editRotationUserIds)}
                 </div>
               ) : null}
               {editRotationVariants ? (
@@ -3049,31 +3052,25 @@ export const TasksTab = ({
                   <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
                     {t("tasks.rotationOrderPreviewTitle")}
                   </p>
-                  <div className="space-y-1 text-xs text-slate-700 dark:text-slate-300">
-                    <p>
+                  <div className="space-y-2 text-xs text-slate-700 dark:text-slate-300">
+                    <div className="flex items-center justify-between gap-2">
                       <span className="font-semibold">
                         {t("tasks.rotationOrderPreviewTheoretical")}:
-                      </span>{" "}
-                      {editRotationVariants.theoretical
-                        .map((memberId) => userLabel(memberId))
-                        .join(" \u2192 ")}
-                    </p>
-                    <p>
+                      </span>
+                      {renderRotationAvatarStack(editRotationVariants.theoretical)}
+                    </div>
+                    <div className="flex items-center justify-between gap-2">
                       <span className="font-semibold">
                         {t("tasks.rotationOrderPreviewFairness")}:
-                      </span>{" "}
-                      {editRotationVariants.fairnessActual
-                        .map((memberId) => userLabel(memberId))
-                        .join(" \u2192 ")}
-                    </p>
-                    <p>
+                      </span>
+                      {renderRotationAvatarStack(editRotationVariants.fairnessActual)}
+                    </div>
+                    <div className="flex items-center justify-between gap-2">
                       <span className="font-semibold">
                         {t("tasks.rotationOrderPreviewFairnessProjection")}:
-                      </span>{" "}
-                      {editRotationVariants.fairnessProjection
-                        .map((memberId) => userLabel(memberId))
-                        .join(" \u2192 ")}
-                    </p>
+                      </span>
+                      {renderRotationAvatarStack(editRotationVariants.fairnessProjection)}
+                    </div>
                   </div>
                 </div>
               ) : null}

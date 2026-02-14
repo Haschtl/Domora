@@ -23,9 +23,10 @@ import {
   Scale,
   SlidersHorizontal,
   Smile,
-  Sparkles,
+  Sparkles as SparklesIcon,
   TrendingDown
 } from "lucide-react";
+import SparklesEffect from "react-sparkle";
 import { Bar, Doughnut } from "react-chartjs-2";
 import { useTranslation } from "react-i18next";
 import { PersonSelect } from "../../components/person-select";
@@ -135,7 +136,7 @@ const commonFactorLevelMeta = [
   { icon: Scale, className: "text-amber-500 dark:text-amber-400" },
   { icon: Scale, className: "text-lime-600 dark:text-lime-400" },
   { icon: Leaf, className: "text-emerald-600 dark:text-emerald-400" },
-  { icon: Sparkles, className: "text-emerald-500 dark:text-emerald-300" },
+  { icon: SparklesIcon, className: "text-emerald-500 dark:text-emerald-300" },
   { icon: Smile, className: "text-teal-500 dark:text-teal-300" },
   { icon: PartyPopper, className: "text-cyan-500 dark:text-cyan-300" },
   { icon: Crown, className: "text-blue-500 dark:text-blue-300" }
@@ -147,6 +148,27 @@ const parseOptionalNumber = (value: string) => {
   if (!trimmed) return null;
   const parsed = Number(trimmed);
   return Number.isFinite(parsed) ? parsed : Number.NaN;
+};
+
+const renderSparkleIcon = (Icon: (props: { className?: string }) => JSX.Element) => {
+  const icon = <Icon className="h-3.5 w-3.5" />;
+  if (Icon !== SparklesIcon) return icon;
+  return (
+    <span className="relative inline-flex h-4 w-4 items-center justify-center">
+      {icon}
+      <span className="pointer-events-none absolute inset-0">
+        <SparklesEffect
+          color="currentColor"
+          count={6}
+          minSize={2}
+          maxSize={4}
+          overflowPx={4}
+          fadeOutSpeed={8}
+          flicker={false}
+        />
+      </span>
+    </span>
+  );
 };
 
 interface MemberMultiSelectFieldProps {
@@ -2877,7 +2899,7 @@ export const FinancesTab = ({
                               <div
                                 className={`inline-flex items-center gap-1 text-xs font-semibold ${level.className}`}
                               >
-                                <LevelIcon className="h-3.5 w-3.5" />
+                                {renderSparkleIcon(LevelIcon)}
                                 {t(
                                   `settings.commonFactorLevel${levelIndex + 1}`,
                                 )}

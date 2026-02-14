@@ -2,14 +2,12 @@ import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { GripVertical } from "lucide-react";
 import { Badge } from "../../../components/ui/badge";
-import { Button } from "../../../components/ui/button";
 import { PimpersIcon } from "../../../components/pimpers-icon";
 
 interface SortableRotationItemProps {
   id: string;
   label: string;
-  onRemove: (userId: string) => void;
-  removeLabel: string;
+  avatarSrc: string;
   pimperCount: number;
   dragHandleLabel: string;
 }
@@ -17,12 +15,19 @@ interface SortableRotationItemProps {
 export const SortableRotationItem = ({
   id,
   label,
-  onRemove,
-  removeLabel,
+  avatarSrc,
   pimperCount,
   dragHandleLabel
 }: SortableRotationItemProps) => {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    setActivatorNodeRef,
+    transform,
+    transition,
+    isDragging
+  } = useSortable({ id });
   const style = {
     transform: CSS.Transform.toString(transform),
     transition
@@ -43,11 +48,15 @@ export const SortableRotationItem = ({
           type="button"
           className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-brand-200 text-slate-600 touch-none dark:border-slate-700 dark:text-slate-300"
           aria-label={dragHandleLabel}
+          ref={setActivatorNodeRef}
           {...attributes}
           {...listeners}
         >
           <GripVertical className="h-4 w-4" />
         </button>
+        <div className="h-8 w-8 overflow-hidden rounded-full border border-brand-200 bg-brand-50 dark:border-slate-700 dark:bg-slate-800">
+          <img src={avatarSrc} alt={label} className="h-full w-full object-cover" />
+        </div>
         <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{label}</p>
       </div>
 
@@ -56,9 +65,6 @@ export const SortableRotationItem = ({
           <span>{pimperCount}</span>
           <PimpersIcon />
         </Badge>
-        <Button type="button" size="sm" variant="ghost" onClick={() => onRemove(id)}>
-          {removeLabel}
-        </Button>
       </div>
     </div>
   );
