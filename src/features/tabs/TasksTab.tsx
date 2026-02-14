@@ -1484,31 +1484,31 @@ export const TasksTab = ({
   return (
     <TooltipProvider>
       <div className="space-y-4">
-      {showOverview ? (
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between gap-2">
-              <div>
-                <CardTitle>{t("tasks.title")}</CardTitle>
-                <CardDescription>{t("tasks.description")}</CardDescription>
+        {showOverview ? (
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <CardTitle>{t("tasks.title")}</CardTitle>
+                  <CardDescription>{t("tasks.description")}</CardDescription>
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  aria-label={t("tasks.createTask")}
+                  onClick={() => {
+                    setTaskImageUploadError(null);
+                    setIsCreateDialogOpen(true);
+                  }}
+                >
+                  <Plus className="h-4 w-4" />
+                </Button>
               </div>
-              <Button
-                type="button"
-                size="sm"
-                aria-label={t("tasks.createTask")}
-                onClick={() => {
-                  setTaskImageUploadError(null);
-                  setIsCreateDialogOpen(true);
-                }}
-              >
-                <Plus className="h-4 w-4" />
-              </Button>
-            </div>
-          </CardHeader>
+            </CardHeader>
 
-          <CardContent>
-            <div className="mb-4 flex items-center justify-end gap-2">
-              <MobileSubpageDialog
+            <CardContent>
+              <div className="mb-4 flex items-center justify-end gap-2">
+                <MobileSubpageDialog
                   open={isCreateDialogOpen}
                   onOpenChange={(open) => {
                     setIsCreateDialogOpen(open);
@@ -1530,12 +1530,17 @@ export const TasksTab = ({
                   >
                     <taskForm.Field
                       name="title"
-                      children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
+                      children={(field: {
+                        state: { value: string };
+                        handleChange: (value: string) => void;
+                      }) => (
                         <div className="relative space-y-1">
                           <Label>{t("tasks.titleLabel")}</Label>
                           <Input
                             value={field.state.value}
-                            onChange={(event) => field.handleChange(event.target.value)}
+                            onChange={(event) =>
+                              field.handleChange(event.target.value)
+                            }
                             onFocus={onTitleFocus}
                             onBlur={onTitleBlur}
                             onKeyDown={onTitleKeyDown}
@@ -1554,9 +1559,13 @@ export const TasksTab = ({
                                     <button
                                       type="button"
                                       className={`flex w-full items-center justify-between gap-2 rounded-lg px-2 py-2 text-left hover:bg-brand-50 dark:hover:bg-slate-800 ${
-                                        index === activeSuggestionIndex ? "bg-brand-50 dark:bg-slate-800" : ""
+                                        index === activeSuggestionIndex
+                                          ? "bg-brand-50 dark:bg-slate-800"
+                                          : ""
                                       }`}
-                                      onMouseDown={(event) => event.preventDefault()}
+                                      onMouseDown={(event) =>
+                                        event.preventDefault()
+                                      }
                                       onClick={() => {
                                         onSelectTaskSuggestion(suggestion);
                                       }}
@@ -1573,7 +1582,9 @@ export const TasksTab = ({
                                       </div>
                                       <Badge className="text-[10px]">
                                         {suggestion.source === "history"
-                                          ? t("tasks.suggestionUsedCount", { count: suggestion.count })
+                                          ? t("tasks.suggestionUsedCount", {
+                                              count: suggestion.count,
+                                            })
                                           : t("tasks.suggestionLibraryBadge")}
                                       </Badge>
                                     </button>
@@ -1588,14 +1599,19 @@ export const TasksTab = ({
 
                     <taskForm.Field
                       name="description"
-                      children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
+                      children={(field: {
+                        state: { value: string };
+                        handleChange: (value: string) => void;
+                      }) => (
                         <div className="space-y-1">
                           <Label>{t("tasks.descriptionLabel")}</Label>
                           <textarea
                             className="min-h-[90px] w-full rounded-xl border border-brand-200 bg-white p-3 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-400"
                             placeholder={t("tasks.descriptionPlaceholder")}
                             value={field.state.value}
-                            onChange={(event) => field.handleChange(event.target.value)}
+                            onChange={(event) =>
+                              field.handleChange(event.target.value)
+                            }
                           />
                         </div>
                       )}
@@ -1608,7 +1624,7 @@ export const TasksTab = ({
                         previewAlt: t("tasks.currentStateImagePreviewAlt"),
                         uploadInputRef: addCurrentStateUploadInputRef,
                         cameraInputRef: addCurrentStateCameraInputRef,
-                        setError: setTaskImageUploadError
+                        setError: setTaskImageUploadError,
                       })}
                       {renderTaskStateImageField(taskForm, {
                         fieldName: "targetStateImageUrl",
@@ -1616,21 +1632,26 @@ export const TasksTab = ({
                         previewAlt: t("tasks.targetStateImagePreviewAlt"),
                         uploadInputRef: addTargetStateUploadInputRef,
                         cameraInputRef: addTargetStateCameraInputRef,
-                        setError: setTaskImageUploadError
+                        setError: setTaskImageUploadError,
                       })}
                     </div>
 
                     <div className="grid gap-2 sm:grid-cols-3">
                       <taskForm.Field
                         name="startDate"
-                        children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
+                        children={(field: {
+                          state: { value: string };
+                          handleChange: (value: string) => void;
+                        }) => (
                           <div className="space-y-1">
                             <Label>{t("tasks.startDate")}</Label>
                             <Input
                               type="date"
                               lang={language}
                               value={field.state.value}
-                              onChange={(event) => field.handleChange(event.target.value)}
+                              onChange={(event) =>
+                                field.handleChange(event.target.value)
+                              }
                               title={t("tasks.startDate")}
                               required
                             />
@@ -1639,7 +1660,10 @@ export const TasksTab = ({
                       />
                       <taskForm.Field
                         name="frequencyDays"
-                        children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
+                        children={(field: {
+                          state: { value: string };
+                          handleChange: (value: string) => void;
+                        }) => (
                           <div className="space-y-1">
                             <Label>{t("tasks.frequencyDays")}</Label>
                             <InputWithSuffix
@@ -1648,7 +1672,9 @@ export const TasksTab = ({
                               min="1"
                               inputMode="numeric"
                               value={field.state.value}
-                              onChange={(event) => field.handleChange(event.target.value)}
+                              onChange={(event) =>
+                                field.handleChange(event.target.value)
+                              }
                               placeholder={t("tasks.frequencyDays")}
                             />
                           </div>
@@ -1656,7 +1682,10 @@ export const TasksTab = ({
                       />
                       <taskForm.Field
                         name="effortPimpers"
-                        children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
+                        children={(field: {
+                          state: { value: string };
+                          handleChange: (value: string) => void;
+                        }) => (
                           <div className="space-y-1">
                             <Label>{t("tasks.effortPimpers")}</Label>
                             <InputWithSuffix
@@ -1665,7 +1694,9 @@ export const TasksTab = ({
                               min="1"
                               inputMode="numeric"
                               value={field.state.value}
-                              onChange={(event) => field.handleChange(event.target.value)}
+                              onChange={(event) =>
+                                field.handleChange(event.target.value)
+                              }
                               placeholder={t("tasks.effortPimpers")}
                             />
                           </div>
@@ -1674,7 +1705,10 @@ export const TasksTab = ({
                     </div>
                     <taskForm.Field
                       name="prioritizeLowPimpers"
-                      children={(field: { state: { value: boolean }; handleChange: (value: boolean) => void }) => (
+                      children={(field: {
+                        state: { value: boolean };
+                        handleChange: (value: boolean) => void;
+                      }) => (
                         <div className="flex items-center justify-between rounded-xl border border-brand-200 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900">
                           <div>
                             <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
@@ -1684,25 +1718,39 @@ export const TasksTab = ({
                               {t("tasks.prioritizeLowPimpersHint")}
                             </p>
                           </div>
-                          <Switch checked={field.state.value} onCheckedChange={field.handleChange} />
+                          <Switch
+                            checked={field.state.value}
+                            onCheckedChange={field.handleChange}
+                          />
                         </div>
                       )}
                     />
                     <taskForm.Field
                       name="assigneeFairnessMode"
-                      children={(
-                        field: { state: { value: "actual" | "projection" }; handleChange: (value: "actual" | "projection") => void }
-                      ) => (
+                      children={(field: {
+                        state: { value: "actual" | "projection" };
+                        handleChange: (value: "actual" | "projection") => void;
+                      }) => (
                         <div className="space-y-1">
                           <Label>{t("tasks.assigneeFairnessModeLabel")}</Label>
                           <select
                             className="h-10 w-full rounded-xl border border-brand-200 bg-white px-3 text-sm text-slate-900 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                             value={field.state.value}
-                            onChange={(event) => field.handleChange(event.target.value as "actual" | "projection")}
-                            disabled={!taskForm.state.values.prioritizeLowPimpers}
+                            onChange={(event) =>
+                              field.handleChange(
+                                event.target.value as "actual" | "projection",
+                              )
+                            }
+                            disabled={
+                              !taskForm.state.values.prioritizeLowPimpers
+                            }
                           >
-                            <option value="actual">{t("tasks.assigneeFairnessModeActual")}</option>
-                            <option value="projection">{t("tasks.assigneeFairnessModeProjection")}</option>
+                            <option value="actual">
+                              {t("tasks.assigneeFairnessModeActual")}
+                            </option>
+                            <option value="projection">
+                              {t("tasks.assigneeFairnessModeProjection")}
+                            </option>
                           </select>
                           <p className="text-xs text-slate-500 dark:text-slate-400">
                             {t("tasks.assigneeFairnessModeHint")}
@@ -1712,10 +1760,18 @@ export const TasksTab = ({
                     />
 
                     <SectionPanel className="bg-brand-50/40">
-                      <p className="mb-2 text-sm font-semibold text-slate-900 dark:text-slate-100">{t("tasks.rotationTitle")}</p>
-                      <p className="mb-3 text-xs text-slate-600 dark:text-slate-300">{t("tasks.rotationHint")}</p>
+                      <p className="mb-2 text-sm font-semibold text-slate-900 dark:text-slate-100">
+                        {t("tasks.rotationTitle")}
+                      </p>
+                      <p className="mb-3 text-xs text-slate-600 dark:text-slate-300">
+                        {t("tasks.rotationHint")}
+                      </p>
 
-                      {members.length === 0 ? <p className="text-sm text-slate-500 dark:text-slate-400">{t("tasks.noMembers")}</p> : null}
+                      {members.length === 0 ? (
+                        <p className="text-sm text-slate-500 dark:text-slate-400">
+                          {t("tasks.noMembers")}
+                        </p>
+                      ) : null}
 
                       <PersonSelect
                         mode="multiple"
@@ -1724,8 +1780,12 @@ export const TasksTab = ({
                         onChange={(nextSelection) => {
                           const nextSet = new Set(nextSelection);
                           const mergedOrder = [
-                            ...rotationUserIds.filter((memberId) => nextSet.has(memberId)),
-                            ...nextSelection.filter((memberId) => !rotationUserIds.includes(memberId))
+                            ...rotationUserIds.filter((memberId) =>
+                              nextSet.has(memberId),
+                            ),
+                            ...nextSelection.filter(
+                              (memberId) => !rotationUserIds.includes(memberId),
+                            ),
                           ];
                           setRotationUserIds(mergedOrder);
                         }}
@@ -1736,10 +1796,18 @@ export const TasksTab = ({
 
                       {rotationUserIds.length > 0 ? (
                         <div className="mt-3 space-y-2">
-                          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onRotationDragEnd}>
-                            <SortableContext items={rotationUserIds} strategy={verticalListSortingStrategy}>
+                          <DndContext
+                            sensors={sensors}
+                            collisionDetection={closestCenter}
+                            onDragEnd={onRotationDragEnd}
+                          >
+                            <SortableContext
+                              items={rotationUserIds}
+                              strategy={verticalListSortingStrategy}
+                            >
                               {rotationUserIds.map((rotationUserId) => {
-                                const score = pimperByUserId.get(rotationUserId) ?? 0;
+                                const score =
+                                  pimperByUserId.get(rotationUserId) ?? 0;
                                 return (
                                   <SortableRotationItem
                                     key={rotationUserId}
@@ -1775,207 +1843,253 @@ export const TasksTab = ({
                       </Button>
                     </div>
                   </form>
-              </MobileSubpageDialog>
-            </div>
+                </MobileSubpageDialog>
+              </div>
 
-            <ul className="space-y-2">
-              {visibleTasks.map((task) => {
-                const isDue = task.is_active && !task.done && isDueNow(task.due_at);
-                const isAssignedToCurrentUser = task.assignee_id === userId;
-                const canComplete = isDue && isAssignedToCurrentUser && !busy;
-                const canSkip = isDue && isAssignedToCurrentUser && !busy;
-                const canTakeover = isDue && task.assignee_id !== null && !isAssignedToCurrentUser && !busy;
-                const dueChipText = relativeDueChipLabel(task.due_at, t);
-                const assigneeText = task.assignee_id
-                  ? userLabel(task.assignee_id)
-                  : t("tasks.unassigned");
-                const assigneeMember = task.assignee_id ? memberById.get(task.assignee_id) : null;
-                const assigneeAvatarSrc =
-                  task.assignee_id && assigneeText
-                    ? assigneeMember?.avatar_url?.trim() ||
-                      createDiceBearAvatarDataUri(assigneeMember?.display_name?.trim() || assigneeText || task.assignee_id)
+              <ul className="space-y-2">
+                {visibleTasks.map((task) => {
+                  const isDue =
+                    task.is_active && !task.done && isDueNow(task.due_at);
+                  const isAssignedToCurrentUser = task.assignee_id === userId;
+                  const canComplete = isDue && isAssignedToCurrentUser && !busy;
+                  const canSkip = isDue && isAssignedToCurrentUser && !busy;
+                  const canTakeover =
+                    isDue &&
+                    task.assignee_id !== null &&
+                    !isAssignedToCurrentUser &&
+                    !busy;
+                  const dueChipText = relativeDueChipLabel(task.due_at, t);
+                  const assigneeText = task.assignee_id
+                    ? userLabel(task.assignee_id)
+                    : t("tasks.unassigned");
+                  const assigneeMember = task.assignee_id
+                    ? memberById.get(task.assignee_id)
                     : null;
+                  const assigneeAvatarSrc =
+                    task.assignee_id && assigneeText
+                      ? assigneeMember?.avatar_url?.trim() ||
+                        createDiceBearAvatarDataUri(
+                          assigneeMember?.display_name?.trim() ||
+                            assigneeText ||
+                            task.assignee_id,
+                        )
+                      : null;
 
-                return (
-                  <li
-                    key={task.id}
-                    className={`rounded-xl border border-brand-100 bg-white p-3 dark:border-slate-700 dark:bg-slate-900 ${
-                      !task.is_active ? "opacity-60 grayscale-[0.35]" : ""
-                    }`}
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0 space-y-1">
-                        <div className="flex items-center gap-2">
-                          <div
-                            className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full border border-brand-200 bg-brand-50 dark:border-slate-700 dark:bg-slate-800"
-                            title={assigneeText}
-                          >
-                            {assigneeAvatarSrc ? (
-                              <img src={assigneeAvatarSrc} alt={assigneeText} className="h-full w-full object-cover" />
-                            ) : (
-                              <div className="flex h-full w-full items-center justify-center text-slate-500 dark:text-slate-300">
-                                <CircleUserRound className="h-4 w-4" />
-                              </div>
-                            )}
+                  return (
+                    <li
+                      key={task.id}
+                      className={`rounded-xl border border-brand-100 bg-white p-3 dark:border-slate-700 dark:bg-slate-900 ${
+                        !task.is_active ? "opacity-60 grayscale-[0.35]" : ""
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0 space-y-1">
+                          <div className="flex items-center gap-2">
+                            <div
+                              className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full border border-brand-200 bg-brand-50 dark:border-slate-700 dark:bg-slate-800"
+                              title={assigneeText}
+                            >
+                              {assigneeAvatarSrc ? (
+                                <img
+                                  src={assigneeAvatarSrc}
+                                  alt={assigneeText}
+                                  className="h-full w-full object-cover"
+                                />
+                              ) : (
+                                <div className="flex h-full w-full items-center justify-center text-slate-500 dark:text-slate-300">
+                                  <CircleUserRound className="h-4 w-4" />
+                                </div>
+                              )}
+                            </div>
+                            <div className="min-w-0">
+                              <p
+                                className={
+                                  task.done
+                                    ? "line-through text-slate-400"
+                                    : "text-slate-900 dark:text-slate-100"
+                                }
+                              >
+                                {task.title}
+                              </p>
+                              <p className="text-xs text-slate-500 dark:text-slate-400">
+                                {t("tasks.assignee", { value: assigneeText })}
+                              </p>
+                            </div>
                           </div>
-                          <div className="min-w-0">
-                            <p className={task.done ? "line-through text-slate-400" : "text-slate-900 dark:text-slate-100"}>
-                              {task.title}
+
+                          {task.description ? (
+                            <p className="text-sm text-slate-600 dark:text-slate-300">
+                              {task.description}
                             </p>
-                            <p className="text-xs text-slate-500 dark:text-slate-400">
-                              {t("tasks.assignee", { value: assigneeText })}
-                            </p>
-                          </div>
+                          ) : null}
+                          {task.current_state_image_url ||
+                          task.target_state_image_url ? (
+                            <div className="flex flex-wrap items-center gap-2 pt-1">
+                              {task.current_state_image_url ? (
+                                <a
+                                  href={task.current_state_image_url}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="inline-flex items-center gap-2 rounded-lg border border-brand-100 bg-white px-2 py-1 text-xs text-brand-700 hover:text-brand-600 dark:border-slate-700 dark:bg-slate-900 dark:text-brand-300"
+                                >
+                                  <img
+                                    src={task.current_state_image_url}
+                                    alt={t("tasks.currentStateImagePreviewAlt")}
+                                    className="h-8 w-8 rounded object-cover"
+                                  />
+                                  <span>
+                                    {t("tasks.currentStateImageLabel")}
+                                  </span>
+                                </a>
+                              ) : null}
+                              {task.target_state_image_url ? (
+                                <a
+                                  href={task.target_state_image_url}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="inline-flex items-center gap-2 rounded-lg border border-brand-100 bg-white px-2 py-1 text-xs text-brand-700 hover:text-brand-600 dark:border-slate-700 dark:bg-slate-900 dark:text-brand-300"
+                                >
+                                  <img
+                                    src={task.target_state_image_url}
+                                    alt={t("tasks.targetStateImagePreviewAlt")}
+                                    className="h-8 w-8 rounded object-cover"
+                                  />
+                                  <span>
+                                    {t("tasks.targetStateImageLabel")}
+                                  </span>
+                                </a>
+                              ) : null}
+                            </div>
+                          ) : null}
                         </div>
 
-                        {task.description ? (
-                          <p className="text-sm text-slate-600 dark:text-slate-300">{task.description}</p>
-                        ) : null}
-                        {task.current_state_image_url || task.target_state_image_url ? (
-                          <div className="flex flex-wrap items-center gap-2 pt-1">
-                            {task.current_state_image_url ? (
-                              <a
-                                href={task.current_state_image_url}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="inline-flex items-center gap-2 rounded-lg border border-brand-100 bg-white px-2 py-1 text-xs text-brand-700 hover:text-brand-600 dark:border-slate-700 dark:bg-slate-900 dark:text-brand-300"
+                        <div className="flex items-center gap-2">
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Badge
+                                className={
+                                  isDue
+                                    ? "whitespace-nowrap bg-rose-100 text-rose-800 dark:bg-rose-900 dark:text-rose-100"
+                                    : "whitespace-nowrap bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                                }
                               >
-                                <img
-                                  src={task.current_state_image_url}
-                                  alt={t("tasks.currentStateImagePreviewAlt")}
-                                  className="h-8 w-8 rounded object-cover"
-                                />
-                                <span>{t("tasks.currentStateImageLabel")}</span>
-                              </a>
-                            ) : null}
-                            {task.target_state_image_url ? (
-                              <a
-                                href={task.target_state_image_url}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="inline-flex items-center gap-2 rounded-lg border border-brand-100 bg-white px-2 py-1 text-xs text-brand-700 hover:text-brand-600 dark:border-slate-700 dark:bg-slate-900 dark:text-brand-300"
-                              >
-                                <img
-                                  src={task.target_state_image_url}
-                                  alt={t("tasks.targetStateImagePreviewAlt")}
-                                  className="h-8 w-8 rounded object-cover"
-                                />
-                                <span>{t("tasks.targetStateImageLabel")}</span>
-                              </a>
-                            ) : null}
-                          </div>
-                        ) : null}
+                                {dueChipText}
+                              </Badge>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <p>
+                                {t("tasks.frequencyValue", {
+                                  count: task.frequency_days,
+                                })}
+                              </p>
+                            </TooltipContent>
+                          </Tooltip>
+                        </div>
                       </div>
 
-                      <div className="flex items-center gap-2">
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Badge
-                              className={
-                                isDue
-                                  ? "whitespace-nowrap bg-rose-100 text-rose-800 dark:bg-rose-900 dark:text-rose-100"
-                                  : "whitespace-nowrap bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                      <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+                        <p className="text-xs text-slate-500 dark:text-slate-400">
+                          <span className="inline-flex items-center gap-1">
+                            <span>{task.effort_pimpers}</span>
+                            <PimpersIcon />
+                          </span>
+                        </p>
+                        <div className="flex flex-wrap justify-end gap-2">
+                          {canTakeover ? (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              onClick={() =>
+                                setPendingTaskAction({ kind: "takeover", task })
                               }
                             >
-                              {dueChipText}
-                            </Badge>
-                          </TooltipTrigger>
-                          <TooltipContent>
-                            <p>{t("tasks.frequencyValue", { count: task.frequency_days })}</p>
-                          </TooltipContent>
-                        </Tooltip>
-                      </div>
-                    </div>
-
-                    <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-                      <p className="text-xs text-slate-500 dark:text-slate-400">
-                        <span className="inline-flex items-center gap-1">
-                          <span>{task.effort_pimpers}</span>
-                          <PimpersIcon />
-                        </span>
-                      </p>
-                      <div className="flex flex-wrap justify-end gap-2">
-                        {canTakeover ? (
+                              {t("tasks.takeOver")}
+                            </Button>
+                          ) : null}
                           <Button
                             type="button"
                             size="sm"
                             variant="outline"
-                            onClick={() => setPendingTaskAction({ kind: "takeover", task })}
+                            disabled={!canSkip}
+                            onClick={() =>
+                              setPendingTaskAction({ kind: "skip", task })
+                            }
                           >
-                            {t("tasks.takeOver")}
+                            {t("tasks.skip")}
                           </Button>
-                        ) : null}
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          disabled={!canSkip}
-                          onClick={() => setPendingTaskAction({ kind: "skip", task })}
-                        >
-                          {t("tasks.skip")}
-                        </Button>
-                        {!canTakeover ? (
-                          <Button
-                            type="button"
-                            size="sm"
-                            disabled={!canComplete}
-                            onClick={() => setPendingTaskAction({ kind: "complete", task })}
-                          >
-                            <CheckCircle2 className="mr-1 h-4 w-4" />
-                            {t("tasks.complete")}
-                          </Button>
-                        ) : null}
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
+                          {!canTakeover ? (
                             <Button
                               type="button"
                               size="sm"
-                              variant="ghost"
-                              className="h-8 w-8 p-0"
-                              aria-label={t("tasks.taskActions")}
-                              disabled={busy}
+                              disabled={!canComplete}
+                              onClick={() =>
+                                setPendingTaskAction({ kind: "complete", task })
+                              }
                             >
-                              <MoreHorizontal className="h-4 w-4" />
+                              <CheckCircle2 className="mr-1 h-4 w-4" />
+                              {t("tasks.complete")}
                             </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem
-                              onClick={() => {
-                                if (!task.is_active) {
-                                  void onToggleActive(task);
-                                  return;
-                                }
-                                setTaskPendingToggleActive(task);
-                              }}
-                            >
-                              {task.is_active ? t("tasks.deactivate") : t("tasks.activate")}
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => onStartEditTask(task)}>
-                              {t("tasks.editTask")}
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onClick={() => onStartDeleteTask(task)}
-                              className="text-rose-600 dark:text-rose-300"
-                            >
-                              {t("tasks.deleteTask")}
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
+                          ) : null}
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="ghost"
+                                className="h-8 w-8 p-0"
+                                aria-label={t("tasks.taskActions")}
+                                disabled={busy}
+                              >
+                                <MoreHorizontal className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem
+                                onClick={() => {
+                                  if (!task.is_active) {
+                                    void onToggleActive(task);
+                                    return;
+                                  }
+                                  setTaskPendingToggleActive(task);
+                                }}
+                              >
+                                {task.is_active
+                                  ? t("tasks.deactivate")
+                                  : t("tasks.activate")}
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() => onStartEditTask(task)}
+                              >
+                                {t("tasks.editTask")}
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() => onStartDeleteTask(task)}
+                                className="text-rose-600 dark:text-rose-300"
+                              >
+                                {t("tasks.deleteTask")}
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
                       </div>
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
+                    </li>
+                  );
+                })}
+              </ul>
 
-            {visibleTasks.length === 0 ? <p className="text-sm text-slate-500 dark:text-slate-400">{t("tasks.empty")}</p> : null}
-          </CardContent>
-        </Card>
-      ) : null}
+              {visibleTasks.length === 0 ? (
+                <p className="text-sm text-slate-500 dark:text-slate-400">
+                  {t("tasks.empty")}
+                </p>
+              ) : null}
+            </CardContent>
+          </Card>
+        ) : null}
 
         {showStats ? (
           <Card className="mb-4">
-            <CardContent className="pt-6">
+            <CardContent>
               <div className="space-y-1">
                 <Label>{t("tasks.statsTaskFilterLabel")}</Label>
                 <select
@@ -1985,7 +2099,10 @@ export const TasksTab = ({
                 >
                   <option value="all">{t("tasks.statsTaskFilterAll")}</option>
                   {visibleTasks.map((task) => (
-                    <option key={`stats-filter-task-${task.id}`} value={task.id}>
+                    <option
+                      key={`stats-filter-task-${task.id}`}
+                      value={task.id}
+                    >
                       {task.title}
                     </option>
                   ))}
@@ -1996,81 +2113,108 @@ export const TasksTab = ({
         ) : null}
 
         {showStats && sortedMemberRows.length > 0 ? (
-          <Card className="mb-4">
+          <Card className="rounded-xl border border-slate-300 bg-white/88 p-3 text-slate-800 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-100 mb-4">
             <CardHeader>
               <CardTitle>{t("tasks.scoreboardTitle")}</CardTitle>
             </CardHeader>
             <CardContent>
-            {podiumRows.length > 0 ? (
-              <div className="mb-4 rounded-xl border border-brand-100 bg-white/90 p-3 dark:border-slate-700 dark:bg-slate-900">
-                <div className="grid grid-cols-3 items-end gap-2">
-                  {[1, 0, 2].map((index) => {
-                    const member = podiumRows[index];
-                    if (!member) return <div key={`podium-empty-${index}`} />;
+              {podiumRows.length > 0 ? (
+                <div className="mb-4 rounded-xl border border-brand-100 bg-white/90 p-3 dark:border-slate-700 dark:bg-slate-900">
+                  <div className="grid grid-cols-3 items-end gap-2">
+                    {[1, 0, 2].map((index) => {
+                      const member = podiumRows[index];
+                      if (!member) return <div key={`podium-empty-${index}`} />;
 
-                    const rank = index + 1;
-                    const isGold = rank === 1;
-                    const isSilver = rank === 2;
-                    const pillarHeight = isGold ? "h-24" : isSilver ? "h-20" : "h-16";
-                    const pillarColor = isGold
-                      ? "bg-amber-100 text-amber-900 dark:bg-amber-900/40 dark:text-amber-200"
-                      : isSilver
-                        ? "bg-slate-200 text-slate-800 dark:bg-slate-700 dark:text-slate-100"
-                        : "bg-orange-100 text-orange-900 dark:bg-orange-900/40 dark:text-orange-200";
-                    const medalColor = isGold
-                      ? "text-amber-500"
-                      : isSilver
-                        ? "text-slate-400"
-                        : "text-orange-500";
-                    const rankLabel = isGold
-                      ? t("tasks.podiumGold")
-                      : isSilver
-                        ? t("tasks.podiumSilver")
-                        : t("tasks.podiumBronze");
+                      const rank = index + 1;
+                      const isGold = rank === 1;
+                      const isSilver = rank === 2;
+                      const pillarHeight = isGold
+                        ? "h-24"
+                        : isSilver
+                          ? "h-20"
+                          : "h-16";
+                      const pillarColor = isGold
+                        ? "bg-amber-100 text-amber-900 dark:bg-amber-900/40 dark:text-amber-200"
+                        : isSilver
+                          ? "bg-slate-200 text-slate-800 dark:bg-slate-700 dark:text-slate-100"
+                          : "bg-orange-100 text-orange-900 dark:bg-orange-900/40 dark:text-orange-200";
+                      const medalColor = isGold
+                        ? "text-amber-500"
+                        : isSilver
+                          ? "text-slate-400"
+                          : "text-orange-500";
+                      const rankLabel = isGold
+                        ? t("tasks.podiumGold")
+                        : isSilver
+                          ? t("tasks.podiumSilver")
+                          : t("tasks.podiumBronze");
 
-                    return (
-                      <div key={member.user_id} className="flex flex-col items-center">
-                        <img
-                          src={member.avatar_url?.trim() || createDiceBearAvatarDataUri(userLabel(member.user_id))}
-                          alt={userLabel(member.user_id)}
-                          className="h-8 w-8 rounded-full border border-brand-200 object-cover dark:border-slate-700"
-                        />
-                        <p className="mt-1 max-w-[90px] truncate text-center text-[11px] text-slate-600 dark:text-slate-300">
-                          {userLabel(member.user_id)}
-                        </p>
-                        <div className={`mt-2 flex w-full flex-col items-center justify-end rounded-t-lg ${pillarHeight} ${pillarColor}`}>
-                          <Medal className={`mb-1 h-4 w-4 ${medalColor}`} />
-                          <p className="text-[10px] font-semibold">{rankLabel}</p>
-                          <p className="mb-2 inline-flex items-center gap-1 text-xs font-bold">
-                            <span>{formatScaledPimpers(member.scaled_pimpers)}</span>
-                            <PimpersIcon />
+                      return (
+                        <div
+                          key={member.user_id}
+                          className="flex flex-col items-center"
+                        >
+                          <img
+                            src={
+                              member.avatar_url?.trim() ||
+                              createDiceBearAvatarDataUri(
+                                userLabel(member.user_id),
+                              )
+                            }
+                            alt={userLabel(member.user_id)}
+                            className="h-8 w-8 rounded-full border border-brand-200 object-cover dark:border-slate-700"
+                          />
+                          <p className="mt-1 max-w-[90px] truncate text-center text-[11px] text-slate-600 dark:text-slate-300">
+                            {userLabel(member.user_id)}
                           </p>
+                          <div
+                            className={`mt-2 flex w-full flex-col items-center justify-end rounded-t-lg ${pillarHeight} ${pillarColor}`}
+                          >
+                            <Medal className={`mb-1 h-4 w-4 ${medalColor}`} />
+                            <p className="text-[10px] font-semibold">
+                              {rankLabel}
+                            </p>
+                            <p className="mb-2 inline-flex items-center gap-1 text-xs font-bold">
+                              <span>
+                                {formatScaledPimpers(member.scaled_pimpers)}
+                              </span>
+                              <PimpersIcon />
+                            </p>
+                          </div>
                         </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
-            ) : null}
-            <ul className="space-y-1 text-sm">
-              {sortedMemberRows.map((member) => (
-                <li key={member.user_id} className="flex justify-between gap-2">
-                  <span className={member.user_id === userId ? "font-medium" : "text-slate-600 dark:text-slate-300"}>
-                    {userLabel(member.user_id)}
-                  </span>
-                  <span className="inline-flex items-center gap-1">
-                    <span>{formatScaledPimpers(member.scaled_pimpers)}</span>
-                    <PimpersIcon />
-                  </span>
-                </li>
-              ))}
-            </ul>
+              ) : null}
+              <ul className="space-y-1 text-sm">
+                {sortedMemberRows.map((member) => (
+                  <li
+                    key={member.user_id}
+                    className="flex justify-between gap-2"
+                  >
+                    <span
+                      className={
+                        member.user_id === userId
+                          ? "font-medium"
+                          : "text-slate-600 dark:text-slate-300"
+                      }
+                    >
+                      {userLabel(member.user_id)}
+                    </span>
+                    <span className="inline-flex items-center gap-1">
+                      <span>{formatScaledPimpers(member.scaled_pimpers)}</span>
+                      <PimpersIcon />
+                    </span>
+                  </li>
+                ))}
+              </ul>
             </CardContent>
           </Card>
         ) : null}
 
         {showStats && sortedMemberRows.length > 0 ? (
-          <Card className="mb-4">
+          <Card className="rounded-xl border border-slate-300 bg-white/88 p-3 text-slate-800 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-100 mb-4">
             <CardHeader>
               <CardTitle>{t("tasks.backlogTitle")}</CardTitle>
               <CardDescription>{t("tasks.backlogDescription")}</CardDescription>
@@ -2078,15 +2222,25 @@ export const TasksTab = ({
             <CardContent className="space-y-3">
               <div className="grid gap-2 sm:grid-cols-3">
                 <div className="rounded-lg border border-brand-100 bg-white/90 p-3 dark:border-slate-700 dark:bg-slate-900">
-                  <p className="text-xs text-slate-500 dark:text-slate-400">{t("tasks.backlogDueNow")}</p>
-                  <p className="text-xl font-semibold text-slate-900 dark:text-slate-100">{backlogAndDelayStats.overdueTasksCount}</p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    {t("tasks.backlogDueNow")}
+                  </p>
+                  <p className="text-xl font-semibold text-slate-900 dark:text-slate-100">
+                    {backlogAndDelayStats.overdueTasksCount}
+                  </p>
                 </div>
                 <div className="rounded-lg border border-brand-100 bg-white/90 p-3 dark:border-slate-700 dark:bg-slate-900">
-                  <p className="text-xs text-slate-500 dark:text-slate-400">{t("tasks.backlogOpen")}</p>
-                  <p className="text-xl font-semibold text-slate-900 dark:text-slate-100">{backlogAndDelayStats.dueTasksCount}</p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    {t("tasks.backlogOpen")}
+                  </p>
+                  <p className="text-xl font-semibold text-slate-900 dark:text-slate-100">
+                    {backlogAndDelayStats.dueTasksCount}
+                  </p>
                 </div>
                 <div className="rounded-lg border border-brand-100 bg-white/90 p-3 dark:border-slate-700 dark:bg-slate-900">
-                  <p className="text-xs text-slate-500 dark:text-slate-400">{t("tasks.averageDelayOverall")}</p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    {t("tasks.averageDelayOverall")}
+                  </p>
                   <p className="text-xl font-semibold text-slate-900 dark:text-slate-100">
                     {formatDelayLabel(backlogAndDelayStats.overallDelayMinutes)}
                   </p>
@@ -2099,8 +2253,13 @@ export const TasksTab = ({
                   </p>
                   <ul className="space-y-1">
                     {backlogAndDelayStats.memberRows.map((row) => (
-                      <li key={`delay-${row.userId}`} className="flex items-center justify-between text-sm">
-                        <span className="text-slate-700 dark:text-slate-300">{userLabel(row.userId)}</span>
+                      <li
+                        key={`delay-${row.userId}`}
+                        className="flex items-center justify-between text-sm"
+                      >
+                        <span className="text-slate-700 dark:text-slate-300">
+                          {userLabel(row.userId)}
+                        </span>
                         <span className="font-medium text-slate-900 dark:text-slate-100">
                           {formatDelayLabel(row.averageDelayMinutes)}
                         </span>
@@ -2115,25 +2274,27 @@ export const TasksTab = ({
 
         {lazinessCard}
 
-        {showStats && pimpersByUserSeries.labels.length > 0 && pimpersByUserSeries.datasets.length > 0 ? (
+        {showStats &&
+        pimpersByUserSeries.labels.length > 0 &&
+        pimpersByUserSeries.datasets.length > 0 ? (
           <Card className="mb-4">
             <CardHeader>
               <CardTitle>{t("tasks.historyChartPimpers")}</CardTitle>
             </CardHeader>
             <CardContent>
-            <div className="rounded-lg bg-white p-2 dark:bg-slate-900">
-              <Bar
-                data={{
-                  labels: pimpersByUserSeries.labels,
-                  datasets: pimpersByUserSeries.datasets
-                }}
-                options={{
-                  responsive: true,
-                  maintainAspectRatio: false,
-                  interaction: {
-                    mode: "index",
-                    intersect: false
-                  },
+              <div className="rounded-lg bg-white p-2 dark:bg-slate-900">
+                <Bar
+                  data={{
+                    labels: pimpersByUserSeries.labels,
+                    datasets: pimpersByUserSeries.datasets,
+                  }}
+                  options={{
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: {
+                      mode: "index",
+                      intersect: false,
+                    },
                     plugins: {
                       legend: { display: true, position: "bottom" },
                       tooltip: {
@@ -2143,29 +2304,38 @@ export const TasksTab = ({
                             return `${context.dataset.label ?? t("tasks.fallbackTitle")}: ${value}`;
                           },
                           footer: (items) => {
-                            const total = items.reduce((sum, item) => sum + Number(item.parsed.y ?? 0), 0);
+                            const total = items.reduce(
+                              (sum, item) => sum + Number(item.parsed.y ?? 0),
+                              0,
+                            );
                             return t("tasks.chartStackTotal", { value: total });
-                          }
-                        }
-                      }
+                          },
+                        },
+                      },
                     },
                     scales: {
                       x: { stacked: true },
-                      y: { stacked: true, beginAtZero: true, ticks: { precision: 0 } }
-                    }
+                      y: {
+                        stacked: true,
+                        beginAtZero: true,
+                        ticks: { precision: 0 },
+                      },
+                    },
                   }}
-                height={280}
-              />
-            </div>
+                  height={280}
+                />
+              </div>
             </CardContent>
           </Card>
         ) : null}
 
         {showStats && selectedForecastTask ? (
-          <Card className="mb-4">
+          <Card className="rounded-xl border border-slate-300 bg-white/88 p-3 text-slate-800 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-100 mb-4">
             <CardHeader>
               <CardTitle>{t("tasks.forecastTitle")}</CardTitle>
-              <CardDescription>{t("tasks.forecastDescription")}</CardDescription>
+              <CardDescription>
+                {t("tasks.forecastDescription")}
+              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
               <div className="space-y-1">
@@ -2173,7 +2343,9 @@ export const TasksTab = ({
                 <select
                   className="h-10 w-full rounded-xl border border-brand-200 bg-white px-3 text-sm text-slate-900 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                   value={statsForecastTaskId}
-                  onChange={(event) => setStatsForecastTaskId(event.target.value)}
+                  onChange={(event) =>
+                    setStatsForecastTaskId(event.target.value)
+                  }
                 >
                   {activeForecastTasks.map((task) => (
                     <option key={`forecast-task-${task.id}`} value={task.id}>
@@ -2188,12 +2360,18 @@ export const TasksTab = ({
                     key={`forecast-row-${selectedForecastTask.id}-${row.user_id}`}
                     className="rounded-lg border border-brand-100 bg-white/90 p-2 dark:border-slate-700 dark:bg-slate-900"
                   >
-                    <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{userLabel(row.user_id)}</p>
+                    <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
+                      {userLabel(row.user_id)}
+                    </p>
                     <div className="mt-1 grid gap-1 text-xs text-slate-600 dark:text-slate-300 sm:grid-cols-3">
-                      <span>{t("tasks.forecastCurrentPimpers", { value: row.current_pimpers })}</span>
+                      <span>
+                        {t("tasks.forecastCurrentPimpers", {
+                          value: row.current_pimpers,
+                        })}
+                      </span>
                       <span>
                         {t("tasks.forecastProjectedUntilTurn", {
-                          value: Number(row.projected_until_turn.toFixed(2))
+                          value: Number(row.projected_until_turn.toFixed(2)),
                         })}
                       </span>
                       <span>
@@ -2201,7 +2379,7 @@ export const TasksTab = ({
                           value:
                             row.projected_total_scaled === null
                               ? "-"
-                              : Number(row.projected_total_scaled.toFixed(2))
+                              : Number(row.projected_total_scaled.toFixed(2)),
                         })}
                       </span>
                     </div>
@@ -2213,123 +2391,166 @@ export const TasksTab = ({
         ) : null}
 
         {showHistory ? (
-          <Card>
-            <CardHeader>
-              <CardTitle>{t("tasks.historyTitle")}</CardTitle>
-            </CardHeader>
-            <CardContent>
+          <>
             {completionSeries.labels.length > 0 ? (
-              <div className="mb-3 rounded-lg bg-white p-2 dark:bg-slate-900">
-                <Bar
-                  data={{
-                    labels: completionSeries.labels,
-                    datasets: completionSeries.datasets
-                  }}
-                  options={{
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    interaction: {
-                      mode: "index",
-                      intersect: false
-                    },
-                    plugins: {
-                      legend: { display: true, position: "bottom" },
-                      tooltip: {
-                        callbacks: {
-                          title: (items) => {
-                            const first = items[0];
-                            if (!first) return "";
-                            const label = completionSeries.labels[first.dataIndex];
-                            return formatShortDay(label, language, label);
+              <Card className="mb-4">
+                <CardHeader>
+                  <CardTitle>{t("tasks.historyChartCompletions")}</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="rounded-lg bg-white p-2 dark:bg-slate-900">
+                    <Bar
+                      data={{
+                        labels: completionSeries.labels,
+                        datasets: completionSeries.datasets,
+                      }}
+                      options={{
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        interaction: {
+                          mode: "index",
+                          intersect: false,
+                        },
+                        plugins: {
+                          legend: { display: true, position: "bottom" },
+                          tooltip: {
+                            callbacks: {
+                              title: (items) => {
+                                const first = items[0];
+                                if (!first) return "";
+                                const label =
+                                  completionSeries.labels[first.dataIndex];
+                                return formatShortDay(label, language, label);
+                              },
+                              label: (context) => {
+                                const value = Number(context.parsed.y ?? 0);
+                                return `${context.dataset.label ?? t("tasks.fallbackTitle")}: ${value}`;
+                              },
+                              footer: (items) => {
+                                const total = items.reduce(
+                                  (sum, item) =>
+                                    sum + Number(item.parsed.y ?? 0),
+                                  0,
+                                );
+                                return t("tasks.chartStackTotal", {
+                                  value: total,
+                                });
+                              },
+                            },
                           },
-                          label: (context) => {
-                            const value = Number(context.parsed.y ?? 0);
-                            return `${context.dataset.label ?? t("tasks.fallbackTitle")}: ${value}`;
+                        },
+                        scales: {
+                          x: { stacked: true },
+                          y: {
+                            stacked: true,
+                            beginAtZero: true,
+                            ticks: { precision: 0 },
                           },
-                          footer: (items) => {
-                            const total = items.reduce((sum, item) => sum + Number(item.parsed.y ?? 0), 0);
-                            return t("tasks.chartStackTotal", { value: total });
-                          }
-                        }
-                      }
-                    },
-                    scales: {
-                      x: { stacked: true },
-                      y: { stacked: true, beginAtZero: true, ticks: { precision: 0 } }
-                    }
-                  }}
-                  height={170}
-                />
-              </div>
+                        },
+                      }}
+                      height={230}
+                    />
+                  </div>
+                </CardContent>
+              </Card>
             ) : null}
-            {completions.length === 0 ? <p className="text-sm text-slate-500 dark:text-slate-400">{t("tasks.historyEmpty")}</p> : null}
+            <Card className="rounded-xl border border-slate-300 bg-white/88 p-3 text-slate-800 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-100 mb-4">
+              <CardHeader>
+                <CardTitle>{t("tasks.historyTitle")}</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {completions.length === 0 ? (
+                  <p className="text-sm text-slate-500 dark:text-slate-400">
+                    {t("tasks.historyEmpty")}
+                  </p>
+                ) : null}
 
-            {completions.length > 0 ? (
-              <ul className="space-y-2">
-                {completions.map((entry) => (
-                  <li
-                    key={entry.id}
-                    className="rounded-lg border border-brand-100 bg-white/90 p-2 dark:border-slate-700 dark:bg-slate-900"
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
-                        {entry.task_title_snapshot || t("tasks.fallbackTitle")}
-                      </p>
-                      <p className="text-xs text-slate-500 dark:text-slate-400">
-                        {formatDateTime(entry.completed_at, language)}
-                      </p>
-                    </div>
-                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                      {t("tasks.historyLine", {
-                        user: userLabel(entry.user_id),
-                        pimpers: `${entry.pimpers_earned}`
-                      })}
-                      <span className="ml-1 inline-flex align-middle">
-                        <PimpersIcon />
-                      </span>
-                    </p>
-                    <div className="mt-2 flex flex-wrap items-center gap-2">
-                      {entry.rating_count > 0 ? (
-                        <p className="text-xs text-slate-500 dark:text-slate-400">
-                          {t("tasks.ratingSummary", {
-                            average: Number((entry.rating_average ?? 0).toFixed(1)),
-                            count: entry.rating_count
-                          })}
-                        </p>
-                      ) : (
-                        <p className="text-xs text-slate-500 dark:text-slate-400">{t("tasks.ratingNoVotes")}</p>
-                      )}
-                      {entry.user_id !== userId && latestCompletionIdByTask.get(entry.task_id) === entry.id ? (
-                        <div className="ml-auto flex items-center gap-0.5">
-                          {[1, 2, 3, 4, 5].map((starValue) => {
-                            const isSelected = (entry.my_rating ?? 0) >= starValue;
-                            return (
-                              <button
-                                key={`${entry.id}-rate-${starValue}`}
-                                type="button"
-                                className={`rounded p-1 transition ${
-                                  isSelected
-                                    ? "text-amber-500 hover:text-amber-600"
-                                    : "text-slate-300 hover:text-amber-400 dark:text-slate-600"
-                                }`}
-                                onClick={() => void onRateTaskCompletion(entry.id, starValue)}
-                                disabled={busy}
-                                aria-label={t("tasks.rateAction", { rating: starValue })}
-                                title={t("tasks.rateAction", { rating: starValue })}
-                              >
-                                <Star className={`h-4 w-4 ${isSelected ? "fill-current" : ""}`} />
-                              </button>
-                            );
-                          })}
+                {completions.length > 0 ? (
+                  <ul className="space-y-2">
+                    {completions.map((entry) => (
+                      <li
+                        key={entry.id}
+                        className="rounded-lg border border-brand-100 bg-white/90 p-2 dark:border-slate-700 dark:bg-slate-900"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
+                            {entry.task_title_snapshot ||
+                              t("tasks.fallbackTitle")}
+                          </p>
+                          <p className="text-xs text-slate-500 dark:text-slate-400">
+                            {formatDateTime(entry.completed_at, language)}
+                          </p>
                         </div>
-                      ) : null}
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            ) : null}
-            </CardContent>
-          </Card>
+                        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                          {t("tasks.historyLine", {
+                            user: userLabel(entry.user_id),
+                            pimpers: `${entry.pimpers_earned}`,
+                          })}
+                          <span className="ml-1 inline-flex align-middle">
+                            <PimpersIcon />
+                          </span>
+                        </p>
+                        <div className="mt-2 flex flex-wrap items-center gap-2">
+                          {entry.rating_count > 0 ? (
+                            <p className="text-xs text-slate-500 dark:text-slate-400">
+                              {t("tasks.ratingSummary", {
+                                average: Number(
+                                  (entry.rating_average ?? 0).toFixed(1),
+                                ),
+                                count: entry.rating_count,
+                              })}
+                            </p>
+                          ) : (
+                            <p className="text-xs text-slate-500 dark:text-slate-400">
+                              {t("tasks.ratingNoVotes")}
+                            </p>
+                          )}
+                          {entry.user_id !== userId &&
+                          latestCompletionIdByTask.get(entry.task_id) ===
+                            entry.id ? (
+                            <div className="ml-auto flex items-center gap-0.5">
+                              {[1, 2, 3, 4, 5].map((starValue) => {
+                                const isSelected =
+                                  (entry.my_rating ?? 0) >= starValue;
+                                return (
+                                  <button
+                                    key={`${entry.id}-rate-${starValue}`}
+                                    type="button"
+                                    className={`rounded p-1 transition ${
+                                      isSelected
+                                        ? "text-amber-500 hover:text-amber-600"
+                                        : "text-slate-300 hover:text-amber-400 dark:text-slate-600"
+                                    }`}
+                                    onClick={() =>
+                                      void onRateTaskCompletion(
+                                        entry.id,
+                                        starValue,
+                                      )
+                                    }
+                                    disabled={busy}
+                                    aria-label={t("tasks.rateAction", {
+                                      rating: starValue,
+                                    })}
+                                    title={t("tasks.rateAction", {
+                                      rating: starValue,
+                                    })}
+                                  >
+                                    <Star
+                                      className={`h-4 w-4 ${isSelected ? "fill-current" : ""}`}
+                                    />
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          ) : null}
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+              </CardContent>
+            </Card>
+          </>
         ) : null}
 
         <Dialog
@@ -2339,10 +2560,16 @@ export const TasksTab = ({
           <DialogContent className="sm:max-w-md">
             <DialogHeader>
               <DialogTitle>{t("tasks.resetPimpersConfirmTitle")}</DialogTitle>
-              <DialogDescription>{t("tasks.resetPimpersConfirmDescription")}</DialogDescription>
+              <DialogDescription>
+                {t("tasks.resetPimpersConfirmDescription")}
+              </DialogDescription>
             </DialogHeader>
             <div className="flex justify-end gap-2">
-              <Button type="button" variant="outline" onClick={() => setIsResetPimpersDialogOpen(false)}>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setIsResetPimpersDialogOpen(false)}
+              >
                 {t("common.cancel")}
               </Button>
               <Button
@@ -2385,15 +2612,21 @@ export const TasksTab = ({
               <DialogDescription>
                 {pendingTaskAction?.kind === "skip"
                   ? t("tasks.confirmSkipDescription", {
-                    title: pendingTaskAction?.task.title ?? t("tasks.fallbackTitle")
-                  })
+                      title:
+                        pendingTaskAction?.task.title ??
+                        t("tasks.fallbackTitle"),
+                    })
                   : pendingTaskAction?.kind === "takeover"
                     ? t("tasks.confirmTakeOverDescription", {
-                      title: pendingTaskAction?.task.title ?? t("tasks.fallbackTitle")
-                    })
+                        title:
+                          pendingTaskAction?.task.title ??
+                          t("tasks.fallbackTitle"),
+                      })
                     : t("tasks.confirmCompleteDescription", {
-                      title: pendingTaskAction?.task.title ?? t("tasks.fallbackTitle")
-                    })}
+                        title:
+                          pendingTaskAction?.task.title ??
+                          t("tasks.fallbackTitle"),
+                      })}
               </DialogDescription>
             </DialogHeader>
 
@@ -2409,18 +2642,25 @@ export const TasksTab = ({
                       {t("tasks.skipChallengeTitle")}
                     </p>
                     <p className="mt-1 text-sm text-slate-700 dark:text-slate-200">
-                      {t("tasks.skipChallengePrompt", { expression: skipMathChallenge.expression })}
+                      {t("tasks.skipChallengePrompt", {
+                        expression: skipMathChallenge.expression,
+                      })}
                     </p>
                     <Input
                       type="number"
                       inputMode="numeric"
                       value={skipChallengeAnswerInput}
-                      onChange={(event) => setSkipChallengeAnswerInput(event.target.value)}
+                      onChange={(event) =>
+                        setSkipChallengeAnswerInput(event.target.value)
+                      }
                       placeholder={t("tasks.skipChallengePlaceholder")}
                       className="mt-2"
                     />
-                    {skipChallengeAnswerInput.trim().length > 0 && !isSkipMathChallengeSolved ? (
-                      <p className="mt-2 text-xs text-rose-700 dark:text-rose-300">{t("tasks.skipChallengeIncorrect")}</p>
+                    {skipChallengeAnswerInput.trim().length > 0 &&
+                    !isSkipMathChallengeSolved ? (
+                      <p className="mt-2 text-xs text-rose-700 dark:text-rose-300">
+                        {t("tasks.skipChallengeIncorrect")}
+                      </p>
                     ) : null}
                   </div>
                 ) : null}
@@ -2428,12 +2668,20 @@ export const TasksTab = ({
             ) : null}
 
             <div className="flex justify-end gap-2">
-              <Button type="button" variant="outline" onClick={() => setPendingTaskAction(null)}>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setPendingTaskAction(null)}
+              >
                 {t("common.cancel")}
               </Button>
               <Button
                 type="button"
-                disabled={busy || (pendingTaskAction?.kind === "skip" && !isSkipMathChallengeSolved)}
+                disabled={
+                  busy ||
+                  (pendingTaskAction?.kind === "skip" &&
+                    !isSkipMathChallengeSolved)
+                }
                 className={
                   pendingTaskAction?.kind === "skip"
                     ? "bg-rose-600 text-white hover:bg-rose-700 dark:bg-rose-700 dark:hover:bg-rose-600"
@@ -2464,7 +2712,9 @@ export const TasksTab = ({
           <DialogContent>
             <DialogHeader>
               <DialogTitle>{t("tasks.editTaskTitle")}</DialogTitle>
-              <DialogDescription>{t("tasks.editTaskDescription")}</DialogDescription>
+              <DialogDescription>
+                {t("tasks.editTaskDescription")}
+              </DialogDescription>
             </DialogHeader>
             <form
               className="space-y-3"
@@ -2476,12 +2726,17 @@ export const TasksTab = ({
             >
               <editTaskForm.Field
                 name="title"
-                children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
+                children={(field: {
+                  state: { value: string };
+                  handleChange: (value: string) => void;
+                }) => (
                   <div className="space-y-1">
                     <Label>{t("tasks.titleLabel")}</Label>
                     <Input
                       value={field.state.value}
-                      onChange={(event) => field.handleChange(event.target.value)}
+                      onChange={(event) =>
+                        field.handleChange(event.target.value)
+                      }
                       placeholder={t("tasks.placeholder")}
                       required
                     />
@@ -2491,14 +2746,19 @@ export const TasksTab = ({
 
               <editTaskForm.Field
                 name="description"
-                children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
+                children={(field: {
+                  state: { value: string };
+                  handleChange: (value: string) => void;
+                }) => (
                   <div className="space-y-1">
                     <Label>{t("tasks.descriptionLabel")}</Label>
                     <textarea
                       className="min-h-[90px] w-full rounded-xl border border-brand-200 bg-white p-3 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-400"
                       placeholder={t("tasks.descriptionPlaceholder")}
                       value={field.state.value}
-                      onChange={(event) => field.handleChange(event.target.value)}
+                      onChange={(event) =>
+                        field.handleChange(event.target.value)
+                      }
                     />
                   </div>
                 )}
@@ -2511,7 +2771,7 @@ export const TasksTab = ({
                   previewAlt: t("tasks.currentStateImagePreviewAlt"),
                   uploadInputRef: editCurrentStateUploadInputRef,
                   cameraInputRef: editCurrentStateCameraInputRef,
-                  setError: setEditTaskImageUploadError
+                  setError: setEditTaskImageUploadError,
                 })}
                 {renderTaskStateImageField(editTaskForm, {
                   fieldName: "targetStateImageUrl",
@@ -2519,21 +2779,26 @@ export const TasksTab = ({
                   previewAlt: t("tasks.targetStateImagePreviewAlt"),
                   uploadInputRef: editTargetStateUploadInputRef,
                   cameraInputRef: editTargetStateCameraInputRef,
-                  setError: setEditTaskImageUploadError
+                  setError: setEditTaskImageUploadError,
                 })}
               </div>
 
               <div className="grid gap-2 sm:grid-cols-3">
                 <editTaskForm.Field
                   name="startDate"
-                  children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
+                  children={(field: {
+                    state: { value: string };
+                    handleChange: (value: string) => void;
+                  }) => (
                     <div className="space-y-1">
                       <Label>{t("tasks.startDate")}</Label>
                       <Input
                         type="date"
                         lang={language}
                         value={field.state.value}
-                        onChange={(event) => field.handleChange(event.target.value)}
+                        onChange={(event) =>
+                          field.handleChange(event.target.value)
+                        }
                         title={t("tasks.startDate")}
                         required
                       />
@@ -2542,7 +2807,10 @@ export const TasksTab = ({
                 />
                 <editTaskForm.Field
                   name="frequencyDays"
-                  children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
+                  children={(field: {
+                    state: { value: string };
+                    handleChange: (value: string) => void;
+                  }) => (
                     <div className="space-y-1">
                       <Label>{t("tasks.frequencyDays")}</Label>
                       <InputWithSuffix
@@ -2551,7 +2819,9 @@ export const TasksTab = ({
                         min="1"
                         inputMode="numeric"
                         value={field.state.value}
-                        onChange={(event) => field.handleChange(event.target.value)}
+                        onChange={(event) =>
+                          field.handleChange(event.target.value)
+                        }
                         placeholder={t("tasks.frequencyDays")}
                       />
                     </div>
@@ -2559,7 +2829,10 @@ export const TasksTab = ({
                 />
                 <editTaskForm.Field
                   name="effortPimpers"
-                  children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
+                  children={(field: {
+                    state: { value: string };
+                    handleChange: (value: string) => void;
+                  }) => (
                     <div className="space-y-1">
                       <Label>{t("tasks.effortPimpers")}</Label>
                       <InputWithSuffix
@@ -2568,7 +2841,9 @@ export const TasksTab = ({
                         min="1"
                         inputMode="numeric"
                         value={field.state.value}
-                        onChange={(event) => field.handleChange(event.target.value)}
+                        onChange={(event) =>
+                          field.handleChange(event.target.value)
+                        }
                         placeholder={t("tasks.effortPimpers")}
                       />
                     </div>
@@ -2577,7 +2852,10 @@ export const TasksTab = ({
               </div>
               <editTaskForm.Field
                 name="prioritizeLowPimpers"
-                children={(field: { state: { value: boolean }; handleChange: (value: boolean) => void }) => (
+                children={(field: {
+                  state: { value: boolean };
+                  handleChange: (value: boolean) => void;
+                }) => (
                   <div className="flex items-center justify-between rounded-xl border border-brand-200 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900">
                     <div>
                       <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
@@ -2587,25 +2865,37 @@ export const TasksTab = ({
                         {t("tasks.prioritizeLowPimpersHint")}
                       </p>
                     </div>
-                    <Switch checked={field.state.value} onCheckedChange={field.handleChange} />
+                    <Switch
+                      checked={field.state.value}
+                      onCheckedChange={field.handleChange}
+                    />
                   </div>
                 )}
               />
               <editTaskForm.Field
                 name="assigneeFairnessMode"
-                children={(
-                  field: { state: { value: "actual" | "projection" }; handleChange: (value: "actual" | "projection") => void }
-                ) => (
+                children={(field: {
+                  state: { value: "actual" | "projection" };
+                  handleChange: (value: "actual" | "projection") => void;
+                }) => (
                   <div className="space-y-1">
                     <Label>{t("tasks.assigneeFairnessModeLabel")}</Label>
                     <select
                       className="h-10 w-full rounded-xl border border-brand-200 bg-white px-3 text-sm text-slate-900 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                       value={field.state.value}
-                      onChange={(event) => field.handleChange(event.target.value as "actual" | "projection")}
+                      onChange={(event) =>
+                        field.handleChange(
+                          event.target.value as "actual" | "projection",
+                        )
+                      }
                       disabled={!editTaskForm.state.values.prioritizeLowPimpers}
                     >
-                      <option value="actual">{t("tasks.assigneeFairnessModeActual")}</option>
-                      <option value="projection">{t("tasks.assigneeFairnessModeProjection")}</option>
+                      <option value="actual">
+                        {t("tasks.assigneeFairnessModeActual")}
+                      </option>
+                      <option value="projection">
+                        {t("tasks.assigneeFairnessModeProjection")}
+                      </option>
                     </select>
                     <p className="text-xs text-slate-500 dark:text-slate-400">
                       {t("tasks.assigneeFairnessModeHint")}
@@ -2615,10 +2905,18 @@ export const TasksTab = ({
               />
 
               <SectionPanel className="bg-brand-50/40">
-                <p className="mb-2 text-sm font-semibold text-slate-900 dark:text-slate-100">{t("tasks.rotationTitle")}</p>
-                <p className="mb-3 text-xs text-slate-600 dark:text-slate-300">{t("tasks.rotationHint")}</p>
+                <p className="mb-2 text-sm font-semibold text-slate-900 dark:text-slate-100">
+                  {t("tasks.rotationTitle")}
+                </p>
+                <p className="mb-3 text-xs text-slate-600 dark:text-slate-300">
+                  {t("tasks.rotationHint")}
+                </p>
 
-                {members.length === 0 ? <p className="text-sm text-slate-500 dark:text-slate-400">{t("tasks.noMembers")}</p> : null}
+                {members.length === 0 ? (
+                  <p className="text-sm text-slate-500 dark:text-slate-400">
+                    {t("tasks.noMembers")}
+                  </p>
+                ) : null}
 
                 <PersonSelect
                   mode="multiple"
@@ -2627,8 +2925,12 @@ export const TasksTab = ({
                   onChange={(nextSelection) => {
                     const nextSet = new Set(nextSelection);
                     const mergedOrder = [
-                      ...editRotationUserIds.filter((memberId) => nextSet.has(memberId)),
-                      ...nextSelection.filter((memberId) => !editRotationUserIds.includes(memberId))
+                      ...editRotationUserIds.filter((memberId) =>
+                        nextSet.has(memberId),
+                      ),
+                      ...nextSelection.filter(
+                        (memberId) => !editRotationUserIds.includes(memberId),
+                      ),
                     ];
                     setEditRotationUserIds(mergedOrder);
                   }}
@@ -2639,8 +2941,15 @@ export const TasksTab = ({
 
                 {editRotationUserIds.length > 0 ? (
                   <div className="mt-3 space-y-2">
-                    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onEditRotationDragEnd}>
-                      <SortableContext items={editRotationUserIds} strategy={verticalListSortingStrategy}>
+                    <DndContext
+                      sensors={sensors}
+                      collisionDetection={closestCenter}
+                      onDragEnd={onEditRotationDragEnd}
+                    >
+                      <SortableContext
+                        items={editRotationUserIds}
+                        strategy={verticalListSortingStrategy}
+                      >
                         {editRotationUserIds.map((rotationUserId) => {
                           const score = pimperByUserId.get(rotationUserId) ?? 0;
                           return (
@@ -2699,7 +3008,13 @@ export const TasksTab = ({
                       const member = memberById.get(memberId);
                       const displayName = userLabel(memberId);
                       const avatarUrl = member?.avatar_url?.trim() ?? "";
-                      const avatarSrc = avatarUrl || createDiceBearAvatarDataUri(member?.display_name?.trim() || displayName || memberId);
+                      const avatarSrc =
+                        avatarUrl ||
+                        createDiceBearAvatarDataUri(
+                          member?.display_name?.trim() ||
+                            displayName ||
+                            memberId,
+                        );
                       return (
                         <div
                           key={`edit-rotation-preview-${memberId}`}
@@ -2708,7 +3023,11 @@ export const TasksTab = ({
                           }`}
                           title={displayName}
                         >
-                          <img src={avatarSrc} alt={displayName} className="h-full w-full object-cover" />
+                          <img
+                            src={avatarSrc}
+                            alt={displayName}
+                            className="h-full w-full object-cover"
+                          />
                         </div>
                       );
                     })}
@@ -2727,16 +3046,28 @@ export const TasksTab = ({
                   </p>
                   <div className="space-y-1 text-xs text-slate-700 dark:text-slate-300">
                     <p>
-                      <span className="font-semibold">{t("tasks.rotationOrderPreviewTheoretical")}:</span>{" "}
-                      {editRotationVariants.theoretical.map((memberId) => userLabel(memberId)).join(" \u2192 ")}
+                      <span className="font-semibold">
+                        {t("tasks.rotationOrderPreviewTheoretical")}:
+                      </span>{" "}
+                      {editRotationVariants.theoretical
+                        .map((memberId) => userLabel(memberId))
+                        .join(" \u2192 ")}
                     </p>
                     <p>
-                      <span className="font-semibold">{t("tasks.rotationOrderPreviewFairness")}:</span>{" "}
-                      {editRotationVariants.fairnessActual.map((memberId) => userLabel(memberId)).join(" \u2192 ")}
+                      <span className="font-semibold">
+                        {t("tasks.rotationOrderPreviewFairness")}:
+                      </span>{" "}
+                      {editRotationVariants.fairnessActual
+                        .map((memberId) => userLabel(memberId))
+                        .join(" \u2192 ")}
                     </p>
                     <p>
-                      <span className="font-semibold">{t("tasks.rotationOrderPreviewFairnessProjection")}:</span>{" "}
-                      {editRotationVariants.fairnessProjection.map((memberId) => userLabel(memberId)).join(" \u2192 ")}
+                      <span className="font-semibold">
+                        {t("tasks.rotationOrderPreviewFairnessProjection")}:
+                      </span>{" "}
+                      {editRotationVariants.fairnessProjection
+                        .map((memberId) => userLabel(memberId))
+                        .join(" \u2192 ")}
                     </p>
                   </div>
                 </div>
@@ -2757,7 +3088,7 @@ export const TasksTab = ({
               <DialogTitle>{t("tasks.deleteTaskConfirmTitle")}</DialogTitle>
               <DialogDescription>
                 {t("tasks.deleteTaskConfirmDescription", {
-                  title: taskPendingDelete?.title ?? t("tasks.fallbackTitle")
+                  title: taskPendingDelete?.title ?? t("tasks.fallbackTitle"),
                 })}
               </DialogDescription>
             </DialogHeader>
@@ -2794,12 +3125,17 @@ export const TasksTab = ({
               <DialogTitle>{t("tasks.confirmDeactivateTitle")}</DialogTitle>
               <DialogDescription>
                 {t("tasks.confirmDeactivateDescription", {
-                  title: taskPendingToggleActive?.title ?? t("tasks.fallbackTitle")
+                  title:
+                    taskPendingToggleActive?.title ?? t("tasks.fallbackTitle"),
                 })}
               </DialogDescription>
             </DialogHeader>
             <div className="flex justify-end gap-2">
-              <Button type="button" variant="outline" onClick={() => setTaskPendingToggleActive(null)}>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setTaskPendingToggleActive(null)}
+              >
                 {t("common.cancel")}
               </Button>
               <Button
@@ -2813,7 +3149,7 @@ export const TasksTab = ({
             </div>
           </DialogContent>
         </Dialog>
-      {calendarCard}
+        {calendarCard}
       </div>
     </TooltipProvider>
   );

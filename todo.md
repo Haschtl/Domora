@@ -2,6 +2,12 @@ server-seitig, wo deployen?
 push-notifications sicher machen
 
 
+aufgaben:übersicht, finanz:übersicht,  unwrappen, 
+
+bild-anzeige im background bei tasks
+bewertung-darstellung+input besser machen
+
+
 
 texte frecher machen
 

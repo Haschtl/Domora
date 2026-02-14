@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { CalendarCheck2, MoreHorizontal, Pencil, Plus, Receipt, ShoppingCart, Trash2, Wallet, X } from "lucide-react";
+import { CalendarCheck2, GripVertical, MoreHorizontal, Pencil, Plus, Receipt, ShoppingCart, Trash2, Wallet, X } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useTranslation } from "react-i18next";
 import type { Components } from "react-markdown";
-import { type JsxComponentDescriptor, useLexicalNodeRemove } from "@mdxeditor/editor";
+import { type JsxComponentDescriptor, type JsxEditorProps, useLexicalNodeRemove } from "@mdxeditor/editor";
 import { createTrianglifyBannerBackground } from "../../lib/banner";
 import { MXEditor } from "../../components/mx-editor";
 import { formatDateTime } from "../../lib/date";
@@ -86,12 +86,22 @@ const LANDING_WIDGET_COMPONENTS: Array<{ key: LandingWidgetKey; tag: string }> =
 const widgetTokenFromKey = (key: LandingWidgetKey) => `{{widget:${key}}}`;
 
 const convertLandingTokensToEditorJsx = (markdown: string) => {
-  let next = markdown;
-  LANDING_WIDGET_COMPONENTS.forEach(({ key, tag }) => {
-    const pattern = new RegExp(`\\{\\{\\s*widget:${key}\\s*\\}\\}`, "g");
-    next = next.replace(pattern, `<${tag} />`);
-  });
-  return next;
+  const segments = splitLandingContentSegments(markdown);
+  let widgetOrder = 0;
+  return segments
+    .map((segment) => {
+      if (segment.type === "markdown") {
+        return segment.content;
+      }
+      const component = LANDING_WIDGET_COMPONENTS.find((entry) => entry.key === segment.key);
+      if (!component) {
+        return widgetTokenFromKey(segment.key);
+      }
+      const jsx = `<${component.tag} domoraWidgetOrder="${widgetOrder}" />`;
+      widgetOrder += 1;
+      return jsx;
+    })
+    .join("");
 };
 
 const convertEditorJsxToLandingTokens = (markdown: string) => {
@@ -136,15 +146,105 @@ const splitLandingContentSegments = (markdown: string): LandingContentSegment[] 
   return segments;
 };
 
+const getWidgetOrderFromMdastNode = (mdastNode: JsxEditorProps["mdastNode"]): number | null => {
+  const attributes = Array.isArray(mdastNode.attributes) ? mdastNode.attributes : [];
+  for (const attribute of attributes) {
+    if (!attribute || typeof attribute !== "object") continue;
+    const candidate = attribute as { type?: string; name?: string; value?: unknown };
+    if (candidate.type !== "mdxJsxAttribute" || candidate.name !== "domoraWidgetOrder") continue;
+    if (typeof candidate.value !== "string" && typeof candidate.value !== "number") continue;
+    const parsed = Number.parseInt(String(candidate.value), 10);
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+  }
+  return null;
+};
+
+const moveWidgetInMarkdown = (markdown: string, fromWidgetIndex: number, toWidgetIndex: number) => {
+  if (fromWidgetIndex === toWidgetIndex) {
+    return markdown;
+  }
+
+  const segments = splitLandingContentSegments(markdown);
+  const widgetSegmentIndexes: number[] = [];
+  segments.forEach((segment, index) => {
+    if (segment.type === "widget") {
+      widgetSegmentIndexes.push(index);
+    }
+  });
+
+  const fromSegmentIndex = widgetSegmentIndexes[fromWidgetIndex];
+  const toSegmentIndex = widgetSegmentIndexes[toWidgetIndex];
+  if (fromSegmentIndex === undefined || toSegmentIndex === undefined) {
+    return markdown;
+  }
+
+  const nextSegments = [...segments];
+  const [moved] = nextSegments.splice(fromSegmentIndex, 1);
+  if (!moved) {
+    return markdown;
+  }
+  const targetInsertionIndex = toSegmentIndex - (fromSegmentIndex < toSegmentIndex ? 1 : 0);
+  nextSegments.splice(targetInsertionIndex, 0, moved);
+
+  return nextSegments
+    .map((segment) => (segment.type === "markdown" ? segment.content : widgetTokenFromKey(segment.key)))
+    .join("");
+};
+
 const LandingWidgetEditorShell = ({
   children,
-  onRemove
+  onRemove,
+  onMove,
+  dragHandleLabel,
+  widgetIndex
 }: {
   children: React.ReactNode;
   onRemove: () => void;
+  onMove: (sourceWidgetIndex: number, targetWidgetIndex: number) => void;
+  dragHandleLabel: string;
+  widgetIndex: number;
 }) => (
   <div className="not-prose my-2">
     <div className="relative">
+      <button
+        type="button"
+        className="absolute left-2 top-2 z-20 inline-flex h-7 w-7 cursor-grab touch-none items-center justify-center rounded-full border border-slate-300 bg-white/95 text-slate-600 shadow-sm hover:bg-slate-100 active:cursor-grabbing dark:border-slate-600 dark:bg-slate-900/95 dark:text-slate-300 dark:hover:bg-slate-800"
+        onMouseDown={(event) => {
+          event.stopPropagation();
+        }}
+        onClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+        }}
+        onDragStart={(event) => {
+          const sourceWidgetIndex = Number.parseInt(event.currentTarget.dataset.widgetIndex ?? "", 10);
+          if (!Number.isFinite(sourceWidgetIndex)) {
+            event.preventDefault();
+            return;
+          }
+          event.dataTransfer.setData("text/domora-widget-index", String(sourceWidgetIndex));
+          event.dataTransfer.effectAllowed = "move";
+        }}
+        onDragOver={(event) => {
+          event.preventDefault();
+          event.dataTransfer.dropEffect = "move";
+        }}
+        onDrop={(event) => {
+          event.preventDefault();
+          const sourceWidgetIndex = Number.parseInt(event.dataTransfer.getData("text/domora-widget-index"), 10);
+          const targetWidgetIndex = Number.parseInt(event.currentTarget.dataset.widgetIndex ?? "", 10);
+          if (!Number.isFinite(sourceWidgetIndex) || !Number.isFinite(targetWidgetIndex)) {
+            return;
+          }
+          onMove(sourceWidgetIndex, targetWidgetIndex);
+        }}
+        draggable
+        data-widget-index={widgetIndex}
+        aria-label={dragHandleLabel}
+        title={dragHandleLabel}
+      >
+        <GripVertical className="h-4 w-4" />
+      </button>
       <button
         type="button"
         className="absolute right-2 top-2 z-20 inline-flex h-7 w-7 items-center justify-center rounded-full border border-slate-300 bg-white/95 text-slate-600 shadow-sm hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-900/95 dark:text-slate-300 dark:hover:bg-slate-800"
@@ -788,9 +888,21 @@ export const HomeTab = ({
   const landingWidgetJsxDescriptors = useMemo<JsxComponentDescriptor[]>(
     () =>
       LANDING_WIDGET_COMPONENTS.map(({ key, tag }) => {
-        const DescriptorEditor = () => {
+        const DescriptorEditor = ({ mdastNode }: JsxEditorProps) => {
           const removeNode = useLexicalNodeRemove();
-          return <LandingWidgetEditorShell onRemove={removeNode}>{renderLandingWidget(key)}</LandingWidgetEditorShell>;
+          const widgetOrder = getWidgetOrderFromMdastNode(mdastNode) ?? 0;
+          return (
+            <LandingWidgetEditorShell
+              onRemove={removeNode}
+              onMove={(sourceWidgetIndex, targetWidgetIndex) => {
+                setMarkdownDraft((previous) => moveWidgetInMarkdown(previous, sourceWidgetIndex, targetWidgetIndex));
+              }}
+              dragHandleLabel={t("tasks.dragHandle")}
+              widgetIndex={widgetOrder}
+            >
+              {renderLandingWidget(key)}
+            </LandingWidgetEditorShell>
+          );
         };
         return {
           name: tag,
@@ -800,7 +912,7 @@ export const HomeTab = ({
           Editor: DescriptorEditor
         };
       }),
-    [renderLandingWidget]
+    [renderLandingWidget, t]
   );
 
   useEffect(() => {
@@ -911,401 +1023,483 @@ export const HomeTab = ({
   return (
     <div className="space-y-4">
       {showSummary ? (
-      <div className="relative overflow-hidden rounded-2xl border border-brand-200 shadow-card dark:border-slate-700">
-        <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: bannerBackgroundImage }} />
-        <div className="absolute inset-0 bg-gradient-to-r from-slate-900/45 via-slate-900/25 to-slate-900/55" />
-        <div className="relative flex min-h-44 items-end p-5 sm:min-h-56 sm:p-7">
-          <div className="min-w-0">
-            <p className="truncate text-xs font-medium uppercase tracking-[0.12em] text-white/80">{userLabel ?? t("app.noUserLabel")}</p>
-            <h1 className="mt-1 truncate text-2xl font-semibold text-white sm:text-3xl">{household.name}</h1>
+        <div className="relative overflow-hidden rounded-2xl border border-brand-200 shadow-card dark:border-slate-700">
+          <div
+            className="absolute inset-0 bg-cover bg-center"
+            style={{ backgroundImage: bannerBackgroundImage }}
+          />
+          <div className="absolute inset-0 bg-gradient-to-r from-slate-900/45 via-slate-900/25 to-slate-900/55" />
+          <div className="relative flex min-h-44 items-end p-5 sm:min-h-56 sm:p-7">
+            <div className="min-w-0">
+              <p className="truncate text-xs font-medium uppercase tracking-[0.12em] text-white/80">
+                {userLabel ?? t("app.noUserLabel")}
+              </p>
+              <h1 className="mt-1 truncate text-2xl font-semibold text-white sm:text-3xl">
+                {household.name}
+              </h1>
+            </div>
           </div>
         </div>
-      </div>
       ) : null}
 
       {showSummary ? (
-      <Card>
-        <CardContent className="relative">
-          {households.length > 1 ? (
-            <div className="mb-4 sm:max-w-[280px]">
-              <Select value={household.id} onValueChange={onSelectHousehold}>
-                <SelectTrigger>
-                  <SelectValue placeholder={t("home.switchHousehold")} />
-                </SelectTrigger>
-                <SelectContent>
-                  {households.map((entry) => (
-                    <SelectItem key={entry.id} value={entry.id}>
-                      {entry.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          ) : null}
-          {!isEditingLanding ? (
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              className="absolute right-2 top-2 z-10 h-9 w-9 rounded-full border-brand-200 bg-white/95 px-0 shadow-sm hover:bg-brand-50 dark:border-slate-700 dark:bg-slate-900/95 dark:hover:bg-slate-800"
-              onClick={() => setIsEditingLanding(true)}
-              disabled={!canEdit}
-              aria-label={t("home.editLanding")}
-              title={t("home.editLanding")}
-            >
-              <Pencil className="h-4 w-4" />
-            </Button>
-          ) : null}
-          {!canEdit ? (
-            <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">{t("home.editLandingOwnerOnly")}</p>
-          ) : null}
-          {canEdit && isEditingLanding ? (
-            <form
-              className="w-full space-y-3"
-              onSubmit={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                void (async () => {
-                  try {
-                    setIsSaving(true);
-                    await onSaveLandingMarkdown(markdownDraft);
-                    setIsEditingLanding(false);
-                  } finally {
-                    setIsSaving(false);
-                  }
-                })();
-              }}
-            >
-              <MXEditor
-                value={convertLandingTokensToEditorJsx(markdownDraft)}
-                onChange={(nextValue) => setMarkdownDraft(convertEditorJsxToLandingTokens(nextValue))}
-                placeholder={t("home.markdownPlaceholder")}
-                chrome="flat"
-                insertOptions={landingInsertOptionsForEditor}
-                insertPlaceholder={t("home.insertWidgetPlaceholder")}
-                insertButtonLabel={t("home.insertWidgetAction")}
-                jsxComponentDescriptors={landingWidgetJsxDescriptors}
-              />
-              <div className="flex justify-end gap-2">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  onClick={() => {
-                    setMarkdownDraft(effectiveMarkdown);
-                    setIsEditingLanding(false);
-                  }}
-                >
-                  {t("common.cancel")}
-                </Button>
-                <Button type="submit" disabled={busy || isSaving}>
-                  {t("home.saveLanding")}
-                </Button>
+        <Card className="rounded-xl border border-slate-300 bg-white/88 p-3 text-slate-800 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-100 mb-4">
+          <CardContent className="relative">
+            {households.length > 1 ? (
+              <div className="mb-4 sm:max-w-[280px]">
+                <Select value={household.id} onValueChange={onSelectHousehold}>
+                  <SelectTrigger>
+                    <SelectValue placeholder={t("home.switchHousehold")} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {households.map((entry) => (
+                      <SelectItem key={entry.id} value={entry.id}>
+                        {entry.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
-            </form>
-          ) : hasContent ? (
-            <div className="prose prose-slate max-w-none dark:prose-invert [&_*]:break-words">
-              {landingContentSegments.map((segment, index) =>
-                segment.type === "markdown" ? (
-                  <ReactMarkdown key={`md-${index}`} remarkPlugins={[remarkGfm]} components={markdownComponents}>
-                    {segment.content}
-                  </ReactMarkdown>
-                ) : (
-                  <div key={`widget-${segment.key}-${index}`} className="not-prose mt-4">
-                    {renderLandingWidget(segment.key)}
-                  </div>
-                )
-              )}
-            </div>
-          ) : (
-            <p className="text-sm text-slate-500 dark:text-slate-400">{t("home.landingEmpty")}</p>
-          )}
-        </CardContent>
-      </Card>
+            ) : null}
+            {!isEditingLanding ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="absolute right-2 top-2 z-10 h-9 w-9 rounded-full border-brand-200 bg-white/95 px-0 shadow-sm hover:bg-brand-50 dark:border-slate-700 dark:bg-slate-900/95 dark:hover:bg-slate-800"
+                onClick={() => setIsEditingLanding(true)}
+                disabled={!canEdit}
+                aria-label={t("home.editLanding")}
+                title={t("home.editLanding")}
+              >
+                <Pencil className="h-4 w-4" />
+              </Button>
+            ) : null}
+            {!canEdit ? (
+              <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">
+                {t("home.editLandingOwnerOnly")}
+              </p>
+            ) : null}
+            {canEdit && isEditingLanding ? (
+              <form
+                className="w-full space-y-3"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  void (async () => {
+                    try {
+                      setIsSaving(true);
+                      await onSaveLandingMarkdown(markdownDraft);
+                      setIsEditingLanding(false);
+                    } finally {
+                      setIsSaving(false);
+                    }
+                  })();
+                }}
+              >
+                <MXEditor
+                  value={convertLandingTokensToEditorJsx(markdownDraft)}
+                  onChange={(nextValue) =>
+                    setMarkdownDraft(convertEditorJsxToLandingTokens(nextValue))
+                  }
+                  placeholder={t("home.markdownPlaceholder")}
+                  chrome="flat"
+                  insertOptions={landingInsertOptionsForEditor}
+                  insertPlaceholder={t("home.insertWidgetPlaceholder")}
+                  insertButtonLabel={t("home.insertWidgetAction")}
+                  jsxComponentDescriptors={landingWidgetJsxDescriptors}
+                />
+                <div className="flex justify-end gap-2">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() => {
+                      setMarkdownDraft(effectiveMarkdown);
+                      setIsEditingLanding(false);
+                    }}
+                  >
+                    {t("common.cancel")}
+                  </Button>
+                  <Button type="submit" disabled={busy || isSaving}>
+                    {t("home.saveLanding")}
+                  </Button>
+                </div>
+              </form>
+            ) : hasContent ? (
+              <div className="prose prose-slate max-w-none dark:prose-invert [&_*]:break-words">
+                {landingContentSegments.map((segment, index) =>
+                  segment.type === "markdown" ? (
+                    <ReactMarkdown
+                      key={`md-${index}`}
+                      remarkPlugins={[remarkGfm]}
+                      components={markdownComponents}
+                    >
+                      {segment.content}
+                    </ReactMarkdown>
+                  ) : (
+                    <div
+                      key={`widget-${segment.key}-${index}`}
+                      className="not-prose mt-4"
+                    >
+                      {renderLandingWidget(segment.key)}
+                    </div>
+                  ),
+                )}
+              </div>
+            ) : (
+              <p className="text-sm text-slate-500 dark:text-slate-400">
+                {t("home.landingEmpty")}
+              </p>
+            )}
+          </CardContent>
+        </Card>
       ) : null}
 
       {showBucket ? (
-      <>
-      <Card>
-        <CardHeader>
-          <CardTitle>{t("home.bucketTitle")}</CardTitle>
-          <CardDescription>{t("home.bucketDescription")}</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {!isMobileBucketComposer ? renderBucketComposer(false) : null}
-          <p className="text-xs text-slate-500 dark:text-slate-400">
-            {t("home.bucketProgress", {
-              open: openBucketItemsCount,
-              done: doneBucketItemsCount
-            })}
-          </p>
-          {doneBucketItemsCount > 0 ? (
-            <div className="flex justify-end">
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="h-8 text-xs"
-                onClick={() => setShowCompletedBucketItems((current) => !current)}
-                disabled={busy}
-              >
-                {showCompletedBucketItems
-                  ? t("home.bucketHideCompleted")
-                  : t("home.bucketShowCompleted", { count: doneBucketItemsCount })}
-              </Button>
-            </div>
-          ) : null}
-          {visibleBucketItems.length === 0 ? (
-            <p className="text-sm text-slate-500 dark:text-slate-400">{t("home.bucketEmpty")}</p>
-          ) : null}
-        </CardContent>
-      </Card>
-      {visibleBucketItems.length > 0 ? (
-        <div className={`space-y-3 ${isMobileBucketComposer ? "pb-40" : ""}`}>
-          {visibleBucketItems.map((item) => (
-            <Card key={item.id}>
-              <CardContent className="space-y-2 pt-0">
-                <div className="flex items-center justify-between gap-2">
-                  <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-2">
-                    <Checkbox
-                      checked={item.done}
-                      onCheckedChange={() => {
-                        void onToggleBucketItem(item);
-                      }}
-                      aria-label={item.done ? t("home.bucketMarkOpen") : t("home.bucketMarkDone")}
-                      disabled={busy}
-                    />
-                    <span
-                      className={`truncate text-sm ${
-                        item.done ? "text-slate-400 line-through dark:text-slate-500" : "text-slate-700 dark:text-slate-300"
-                      }`}
-                    >
-                      {item.title}
-                    </span>
-                  </label>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        className="h-8 w-8 shrink-0 px-0"
-                        disabled={busy}
-                        aria-label={t("home.bucketItemActions")}
-                      >
-                        <MoreHorizontal className="h-4 w-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={() => onStartBucketEdit(item)} disabled={busy}>
-                        <Pencil className="mr-2 h-4 w-4" />
-                        {t("home.bucketEdit")}
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        onClick={() => setBucketItemPendingDelete(item)}
-                        disabled={busy}
-                        className="text-rose-600 dark:text-rose-300"
-                      >
-                        <Trash2 className="mr-2 h-4 w-4" />
-                        {t("home.bucketDelete")}
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+        <>
+          <Card>
+            <CardHeader>
+              <CardTitle>{t("home.bucketTitle")}</CardTitle>
+              <CardDescription>{t("home.bucketDescription")}</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {!isMobileBucketComposer ? renderBucketComposer(false) : null}
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                {t("home.bucketProgress", {
+                  open: openBucketItemsCount,
+                  done: doneBucketItemsCount,
+                })}
+              </p>
+              {doneBucketItemsCount > 0 ? (
+                <div className="flex justify-end">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 text-xs"
+                    onClick={() =>
+                      setShowCompletedBucketItems((current) => !current)
+                    }
+                    disabled={busy}
+                  >
+                    {showCompletedBucketItems
+                      ? t("home.bucketHideCompleted")
+                      : t("home.bucketShowCompleted", {
+                          count: doneBucketItemsCount,
+                        })}
+                  </Button>
                 </div>
-
-                {item.description_markdown.trim().length > 0 ? (
-                  <div className="prose prose-slate max-w-none text-sm dark:prose-invert [&_*]:break-words">
-                    <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-                      {item.description_markdown}
-                    </ReactMarkdown>
-                  </div>
-                ) : null}
-
-                {item.suggested_dates.length > 0 ? (
-                  <div className="space-y-2">
-                    <p className="text-xs font-medium text-slate-600 dark:text-slate-300">{t("home.bucketSuggestedDatesTitle")}</p>
-                    <ul className="space-y-1">
-                      {item.suggested_dates.map((dateValue) => {
-                        const voters = item.votes_by_date[dateValue] ?? [];
-                        const hasVoted = voters.includes(userId);
-                        return (
-                          <li
-                            key={`${item.id}-${dateValue}`}
-                            className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50/70 px-2 py-1.5 dark:border-slate-700 dark:bg-slate-800/60"
-                          >
-                            <span className="text-xs text-slate-700 dark:text-slate-300">{formatSuggestedDate(dateValue)}</span>
-                            <div className="flex items-center gap-2">
-                              <span className="text-xs text-slate-500 dark:text-slate-400">
-                                {t("home.bucketVotes", { count: voters.length })}
-                              </span>
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant={hasVoted ? "default" : "outline"}
-                                className="h-7 px-2 text-[11px]"
-                                disabled={busy}
-                                onClick={() => {
-                                  void onToggleBucketDateVote(item, dateValue, !hasVoted);
-                                }}
-                              >
-                                {hasVoted ? t("home.bucketVotedAction") : t("home.bucketVoteAction")}
-                              </Button>
-                            </div>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  </div>
-                ) : null}
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      ) : null}
-      <Dialog
-        open={bucketItemBeingEdited !== null}
-        onOpenChange={(open) => {
-          if (open) return;
-          setBucketItemBeingEdited(null);
-          setBucketEditTitle("");
-          setBucketEditDescriptionMarkdown("");
-          setBucketEditSuggestedDates([]);
-        }}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{t("home.bucketEditTitle")}</DialogTitle>
-            <DialogDescription>{t("home.bucketEditDescription")}</DialogDescription>
-          </DialogHeader>
-          <form className="space-y-3" onSubmit={(event) => void onSubmitBucketEdit(event)}>
-            <div className="space-y-1">
-              <Label>{t("home.bucketTitle")}</Label>
-              <Input
-                value={bucketEditTitle}
-                onChange={(event) => setBucketEditTitle(event.target.value)}
-                placeholder={t("home.bucketPlaceholder")}
-                required
-              />
-            </div>
-            <div className="space-y-1">
-              <Label>{t("home.bucketDescriptionPlaceholder")}</Label>
-              <textarea
-                value={bucketEditDescriptionMarkdown}
-                onChange={(event) => setBucketEditDescriptionMarkdown(event.target.value)}
-                placeholder={t("home.bucketDescriptionPlaceholder")}
-                className="min-h-[96px] w-full rounded-xl border border-brand-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-              />
-            </div>
-            <div className="space-y-1">
-              <p className="text-xs font-medium text-slate-600 dark:text-slate-300">{t("home.bucketDatesLabel")}</p>
-              <MultiDateCalendarSelect
-                value={bucketEditSuggestedDates}
-                onChange={setBucketEditSuggestedDates}
-                locale={language}
-                placeholder={t("home.bucketDatePickerPlaceholder")}
-                clearLabel={t("home.bucketDatePickerClear")}
-                doneLabel={t("home.bucketDatePickerDone")}
-                disabled={busy}
-              />
-            </div>
-            <div className="flex justify-end gap-2">
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={() => {
-                  setBucketItemBeingEdited(null);
-                  setBucketEditTitle("");
-                  setBucketEditDescriptionMarkdown("");
-                  setBucketEditSuggestedDates([]);
-                }}
-              >
-                {t("common.cancel")}
-              </Button>
-              <Button type="submit" disabled={busy || bucketEditTitle.trim().length === 0}>
-                {t("home.bucketEditSave")}
-              </Button>
-            </div>
-          </form>
-        </DialogContent>
-      </Dialog>
-      <Dialog
-        open={bucketItemPendingDelete !== null}
-        onOpenChange={(open) => {
-          if (!open) setBucketItemPendingDelete(null);
-        }}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{t("home.bucketDeleteConfirmTitle")}</DialogTitle>
-            <DialogDescription>
-              {t("home.bucketDeleteConfirmDescription", { title: bucketItemPendingDelete?.title ?? "" })}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="mt-4 flex justify-end gap-2">
-            <Button variant="ghost" onClick={() => setBucketItemPendingDelete(null)}>
-              {t("common.cancel")}
-            </Button>
-            <Button
-              variant="danger"
-              onClick={() => {
-                void onConfirmDeleteBucketItem();
-              }}
+              ) : null}
+              {visibleBucketItems.length === 0 ? (
+                <p className="text-sm text-slate-500 dark:text-slate-400">
+                  {t("home.bucketEmpty")}
+                </p>
+              ) : null}
+            </CardContent>
+          </Card>
+          {visibleBucketItems.length > 0 ? (
+            <div
+              className={`space-y-3 ${isMobileBucketComposer ? "pb-40" : ""}`}
             >
-              {t("home.bucketDeleteConfirmAction")}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-      {isMobileBucketComposer ? (
-        <div
-          className={`fixed inset-x-0 z-40 px-3 sm:hidden ${
-            mobileTabBarVisible
-              ? "bottom-[calc(env(safe-area-inset-bottom)+4.75rem)]"
-              : "bottom-[calc(env(safe-area-inset-bottom)+0.75rem)]"
-          }`}
-        >
-          <div
-            ref={bucketComposerContainerRef}
-            className="rounded-2xl border border-brand-200/70 bg-white/75 p-1.5 shadow-xl backdrop-blur-xl dark:border-slate-700/70 dark:bg-slate-900/75"
+              {visibleBucketItems.map((item) => (
+                <Card
+                  className="rounded-xl border border-slate-300 bg-white/88 p-3 text-slate-800 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-100 mb-4"
+                  key={item.id}
+                >
+                  <CardContent className="space-y-2 pt-0">
+                    <div className="flex items-center justify-between gap-2">
+                      <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-2">
+                        <Checkbox
+                          checked={item.done}
+                          onCheckedChange={() => {
+                            void onToggleBucketItem(item);
+                          }}
+                          aria-label={
+                            item.done
+                              ? t("home.bucketMarkOpen")
+                              : t("home.bucketMarkDone")
+                          }
+                          disabled={busy}
+                        />
+                        <span
+                          className={`truncate text-sm ${
+                            item.done
+                              ? "text-slate-400 line-through dark:text-slate-500"
+                              : "text-slate-700 dark:text-slate-300"
+                          }`}
+                        >
+                          {item.title}
+                        </span>
+                      </label>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            className="h-8 w-8 shrink-0 px-0"
+                            disabled={busy}
+                            aria-label={t("home.bucketItemActions")}
+                          >
+                            <MoreHorizontal className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem
+                            onClick={() => onStartBucketEdit(item)}
+                            disabled={busy}
+                          >
+                            <Pencil className="mr-2 h-4 w-4" />
+                            {t("home.bucketEdit")}
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() => setBucketItemPendingDelete(item)}
+                            disabled={busy}
+                            className="text-rose-600 dark:text-rose-300"
+                          >
+                            <Trash2 className="mr-2 h-4 w-4" />
+                            {t("home.bucketDelete")}
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
+
+                    {item.description_markdown.trim().length > 0 ? (
+                      <div className="prose prose-slate max-w-none text-sm dark:prose-invert [&_*]:break-words">
+                        <ReactMarkdown
+                          remarkPlugins={[remarkGfm]}
+                          components={markdownComponents}
+                        >
+                          {item.description_markdown}
+                        </ReactMarkdown>
+                      </div>
+                    ) : null}
+
+                    {item.suggested_dates.length > 0 ? (
+                      <div className="space-y-2">
+                        <p className="text-xs font-medium text-slate-600 dark:text-slate-300">
+                          {t("home.bucketSuggestedDatesTitle")}
+                        </p>
+                        <ul className="space-y-1">
+                          {item.suggested_dates.map((dateValue) => {
+                            const voters = item.votes_by_date[dateValue] ?? [];
+                            const hasVoted = voters.includes(userId);
+                            return (
+                              <li
+                                key={`${item.id}-${dateValue}`}
+                                className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50/70 px-2 py-1.5 dark:border-slate-700 dark:bg-slate-800/60"
+                              >
+                                <span className="text-xs text-slate-700 dark:text-slate-300">
+                                  {formatSuggestedDate(dateValue)}
+                                </span>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-xs text-slate-500 dark:text-slate-400">
+                                    {t("home.bucketVotes", {
+                                      count: voters.length,
+                                    })}
+                                  </span>
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant={hasVoted ? "default" : "outline"}
+                                    className="h-7 px-2 text-[11px]"
+                                    disabled={busy}
+                                    onClick={() => {
+                                      void onToggleBucketDateVote(
+                                        item,
+                                        dateValue,
+                                        !hasVoted,
+                                      );
+                                    }}
+                                  >
+                                    {hasVoted
+                                      ? t("home.bucketVotedAction")
+                                      : t("home.bucketVoteAction")}
+                                  </Button>
+                                </div>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      </div>
+                    ) : null}
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          ) : null}
+          <Dialog
+            open={bucketItemBeingEdited !== null}
+            onOpenChange={(open) => {
+              if (open) return;
+              setBucketItemBeingEdited(null);
+              setBucketEditTitle("");
+              setBucketEditDescriptionMarkdown("");
+              setBucketEditSuggestedDates([]);
+            }}
           >
-            {renderBucketComposer(true)}
-          </div>
-        </div>
-      ) : null}
-      </>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>{t("home.bucketEditTitle")}</DialogTitle>
+                <DialogDescription>
+                  {t("home.bucketEditDescription")}
+                </DialogDescription>
+              </DialogHeader>
+              <form
+                className="space-y-3"
+                onSubmit={(event) => void onSubmitBucketEdit(event)}
+              >
+                <div className="space-y-1">
+                  <Label>{t("home.bucketTitle")}</Label>
+                  <Input
+                    value={bucketEditTitle}
+                    onChange={(event) => setBucketEditTitle(event.target.value)}
+                    placeholder={t("home.bucketPlaceholder")}
+                    required
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label>{t("home.bucketDescriptionPlaceholder")}</Label>
+                  <textarea
+                    value={bucketEditDescriptionMarkdown}
+                    onChange={(event) =>
+                      setBucketEditDescriptionMarkdown(event.target.value)
+                    }
+                    placeholder={t("home.bucketDescriptionPlaceholder")}
+                    className="min-h-[96px] w-full rounded-xl border border-brand-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs font-medium text-slate-600 dark:text-slate-300">
+                    {t("home.bucketDatesLabel")}
+                  </p>
+                  <MultiDateCalendarSelect
+                    value={bucketEditSuggestedDates}
+                    onChange={setBucketEditSuggestedDates}
+                    locale={language}
+                    placeholder={t("home.bucketDatePickerPlaceholder")}
+                    clearLabel={t("home.bucketDatePickerClear")}
+                    doneLabel={t("home.bucketDatePickerDone")}
+                    disabled={busy}
+                  />
+                </div>
+                <div className="flex justify-end gap-2">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() => {
+                      setBucketItemBeingEdited(null);
+                      setBucketEditTitle("");
+                      setBucketEditDescriptionMarkdown("");
+                      setBucketEditSuggestedDates([]);
+                    }}
+                  >
+                    {t("common.cancel")}
+                  </Button>
+                  <Button
+                    type="submit"
+                    disabled={busy || bucketEditTitle.trim().length === 0}
+                  >
+                    {t("home.bucketEditSave")}
+                  </Button>
+                </div>
+              </form>
+            </DialogContent>
+          </Dialog>
+          <Dialog
+            open={bucketItemPendingDelete !== null}
+            onOpenChange={(open) => {
+              if (!open) setBucketItemPendingDelete(null);
+            }}
+          >
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>{t("home.bucketDeleteConfirmTitle")}</DialogTitle>
+                <DialogDescription>
+                  {t("home.bucketDeleteConfirmDescription", {
+                    title: bucketItemPendingDelete?.title ?? "",
+                  })}
+                </DialogDescription>
+              </DialogHeader>
+              <div className="mt-4 flex justify-end gap-2">
+                <Button
+                  variant="ghost"
+                  onClick={() => setBucketItemPendingDelete(null)}
+                >
+                  {t("common.cancel")}
+                </Button>
+                <Button
+                  variant="danger"
+                  onClick={() => {
+                    void onConfirmDeleteBucketItem();
+                  }}
+                >
+                  {t("home.bucketDeleteConfirmAction")}
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
+          {isMobileBucketComposer ? (
+            <div
+              className={`fixed inset-x-0 z-40 px-3 sm:hidden ${
+                mobileTabBarVisible
+                  ? "bottom-[calc(env(safe-area-inset-bottom)+4.75rem)]"
+                  : "bottom-[calc(env(safe-area-inset-bottom)+0.75rem)]"
+              }`}
+            >
+              <div
+                ref={bucketComposerContainerRef}
+                className="rounded-2xl border border-brand-200/70 bg-white/75 p-1.5 shadow-xl backdrop-blur-xl dark:border-slate-700/70 dark:bg-slate-900/75"
+              >
+                {renderBucketComposer(true)}
+              </div>
+            </div>
+          ) : null}
+        </>
       ) : null}
 
       {showFeed ? (
-      <Card>
-        <CardHeader>
-          <CardTitle>{t("home.activityTitle")}</CardTitle>
-          <CardDescription>{t("home.activityDescription")}</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {recentActivity.length > 0 ? (
-            <ul className="space-y-2">
-              {recentActivity.map((entry) => {
-                const Icon =
-                  entry.icon === "task" ? CalendarCheck2 : entry.icon === "shopping" ? ShoppingCart : entry.icon === "finance" ? Wallet : Receipt;
-                return (
-                  <li
-                    key={entry.id}
-                    className="flex items-start justify-between gap-2 rounded-xl border border-brand-100 bg-white/80 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900/70"
-                  >
-                    <div className="flex min-w-0 items-start gap-2">
-                      <Icon className="mt-0.5 h-4 w-4 shrink-0 text-brand-600 dark:text-brand-300" />
-                      <span className="min-w-0 text-slate-700 dark:text-slate-300">{entry.text}</span>
-                    </div>
-                    <span className="shrink-0 text-xs text-slate-500 dark:text-slate-400">
-                      {formatDateTime(entry.at, language, entry.at)}
-                    </span>
-                  </li>
-                );
-              })}
-            </ul>
-          ) : (
-            <p className="text-sm text-slate-500 dark:text-slate-400">{t("home.activityEmpty")}</p>
-          )}
-        </CardContent>
-      </Card>
+        <Card className="rounded-xl border border-slate-300 bg-white/88 p-3 text-slate-800 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-100 mb-4">
+          <CardHeader>
+            <CardTitle>{t("home.activityTitle")}</CardTitle>
+            <CardDescription>{t("home.activityDescription")}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {recentActivity.length > 0 ? (
+              <ul className="space-y-2">
+                {recentActivity.map((entry) => {
+                  const Icon =
+                    entry.icon === "task"
+                      ? CalendarCheck2
+                      : entry.icon === "shopping"
+                        ? ShoppingCart
+                        : entry.icon === "finance"
+                          ? Wallet
+                          : Receipt;
+                  return (
+                    <li
+                      key={entry.id}
+                      className="flex items-start justify-between gap-2 rounded-xl border border-brand-100 bg-white/80 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900/70"
+                    >
+                      <div className="flex min-w-0 items-start gap-2">
+                        <Icon className="mt-0.5 h-4 w-4 shrink-0 text-brand-600 dark:text-brand-300" />
+                        <span className="min-w-0 text-slate-700 dark:text-slate-300">
+                          {entry.text}
+                        </span>
+                      </div>
+                      <span className="shrink-0 text-xs text-slate-500 dark:text-slate-400">
+                        {formatDateTime(entry.at, language, entry.at)}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : (
+              <p className="text-sm text-slate-500 dark:text-slate-400">
+                {t("home.activityEmpty")}
+              </p>
+            )}
+          </CardContent>
+        </Card>
       ) : null}
 
       <Dialog
@@ -1329,15 +1523,23 @@ export const HomeTab = ({
             <DialogTitle>{t("tasks.confirmCompleteTitle")}</DialogTitle>
             <DialogDescription>
               {t("tasks.confirmCompleteDescription", {
-                title: pendingCompleteTask?.title ?? t("tasks.fallbackTitle")
+                title: pendingCompleteTask?.title ?? t("tasks.fallbackTitle"),
               })}
             </DialogDescription>
           </DialogHeader>
           <div className="flex justify-end gap-2">
-            <Button type="button" variant="outline" onClick={() => setPendingCompleteTask(null)}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setPendingCompleteTask(null)}
+            >
               {t("common.cancel")}
             </Button>
-            <Button type="button" disabled={busy} onClick={() => void onConfirmCompleteTask()}>
+            <Button
+              type="button"
+              disabled={busy}
+              onClick={() => void onConfirmCompleteTask()}
+            >
               {t("tasks.confirmCompleteAction")}
             </Button>
           </div>

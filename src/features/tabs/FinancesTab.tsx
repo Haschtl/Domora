@@ -42,7 +42,7 @@ import type {
 } from "../../lib/types";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
 import {
   Dialog,
   DialogClose,
@@ -1934,534 +1934,689 @@ export const FinancesTab = ({
   );
 
   return (
-    <div className={`space-y-4 ${showOverview && isMobileAddEntryComposer ? "pb-44" : ""}`}>
+    <div
+      className={`space-y-4 ${showOverview && isMobileAddEntryComposer ? "pb-44" : ""}`}
+    >
       {showOverview ? (
-          <>
-            {!isMobileAddEntryComposer ? (
-              <Card className={`relative mb-4 ${entryDescriptionFocused ? "z-40" : "z-0"}`}>
-                <CardHeader>
-                  <CardTitle>{t("finances.newEntryTitle")}</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  {renderAddEntryComposer(false)}
+        <>
+          {!isMobileAddEntryComposer ? (
+            <Card
+              className={`relative mb-4 ${entryDescriptionFocused ? "z-40" : "z-0"}`}
+            >
+              <CardHeader>
+                <CardTitle>{t("finances.newEntryTitle")}</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {renderAddEntryComposer(false)}
 
-                  {hasNewEntryDraftForPreview && reimbursementPreviewSummary ? (
-                    <p className="mt-3 text-sm text-slate-600 dark:text-slate-300">
-                      {reimbursementPreviewSummary}
-                    </p>
-                  ) : null}
-                  {receiptUploadError ? (
-                    <p className="mt-2 text-xs text-rose-600 dark:text-rose-300">{receiptUploadError}</p>
-                  ) : null}
-                </CardContent>
-              </Card>
-            ) : null}
-            {isMobileAddEntryComposer ? (
+                {hasNewEntryDraftForPreview && reimbursementPreviewSummary ? (
+                  <p className="mt-3 text-sm text-slate-600 dark:text-slate-300">
+                    {reimbursementPreviewSummary}
+                  </p>
+                ) : null}
+                {receiptUploadError ? (
+                  <p className="mt-2 text-xs text-rose-600 dark:text-rose-300">
+                    {receiptUploadError}
+                  </p>
+                ) : null}
+              </CardContent>
+            </Card>
+          ) : null}
+          {isMobileAddEntryComposer ? (
+            <div
+              className={`fixed inset-x-0 z-40 px-3 sm:hidden ${
+                mobileTabBarVisible
+                  ? "bottom-[calc(env(safe-area-inset-bottom)+3.75rem)]"
+                  : "bottom-[calc(env(safe-area-inset-bottom)+0.75rem)]"
+              }`}
+            >
               <div
-                className={`fixed inset-x-0 z-40 px-3 sm:hidden ${
-                  mobileTabBarVisible
-                    ? "bottom-[calc(env(safe-area-inset-bottom)+3.75rem)]"
-                    : "bottom-[calc(env(safe-area-inset-bottom)+0.75rem)]"
-                }`}
+                ref={addEntryComposerContainerRef}
+                className="rounded-2xl border border-brand-200/70 bg-white/75 p-1.5 shadow-xl backdrop-blur-xl dark:border-slate-700/70 dark:bg-slate-900/75"
               >
-                <div
-                  ref={addEntryComposerContainerRef}
-                  className="rounded-2xl border border-brand-200/70 bg-white/75 p-1.5 shadow-xl backdrop-blur-xl dark:border-slate-700/70 dark:bg-slate-900/75"
-                >
-                  {renderAddEntryComposer(true)}
-                </div>
+                {renderAddEntryComposer(true)}
               </div>
-            ) : null}
+            </div>
+          ) : null}
+        </>
+      ) : null}
 
-          </>
-        ) : null}
+      {showStats ? (
+        <>
+          <SectionPanel className="mb-4">
+            <p className="text-sm font-semibold text-brand-900 dark:text-brand-100">
+              {t("finances.settlementTitle")}
+            </p>
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+              {lastCashAuditAt
+                ? t("finances.settlementSince", {
+                    date: formatDateOnly(
+                      lastCashAuditAt,
+                      language,
+                      lastCashAuditAt.slice(0, 10),
+                    ),
+                  })
+                : t("finances.settlementSinceStart")}
+            </p>
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+              {t("finances.settlementStats", {
+                count: entriesSinceLastAudit.length,
+                total: formatMoney(periodTotal, locale),
+              })}
+            </p>
 
-        {showStats ? (
-          <>
-            <SectionPanel className="mb-4">
-              <p className="text-sm font-semibold text-brand-900 dark:text-brand-100">{t("finances.settlementTitle")}</p>
-              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                {lastCashAuditAt
-                  ? t("finances.settlementSince", {
-                      date: formatDateOnly(lastCashAuditAt, language, lastCashAuditAt.slice(0, 10))
-                    })
-                  : t("finances.settlementSinceStart")}
-              </p>
-              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                {t("finances.settlementStats", {
-                  count: entriesSinceLastAudit.length,
-                  total: formatMoney(periodTotal, locale)
-                })}
-              </p>
-
-              {balancesByMember.length > 0 ? (
-                <ul className="mt-3 space-y-2">
-                  {balancesByMember.map((entry) => {
-                    const isPositive = entry.balance > 0.004;
-                    const isNegative = entry.balance < -0.004;
-                    return (
-                      <li
-                        key={entry.memberId}
-                        className="flex items-center justify-between rounded-lg border border-brand-100 bg-white/90 px-3 py-2 dark:border-slate-700 dark:bg-slate-900"
-                      >
-                        <div className="flex items-center gap-2">
-                          <div className="h-7 w-7 overflow-hidden rounded-full border border-brand-100 bg-brand-50 dark:border-slate-700 dark:bg-slate-800">
-                            <img
-                              src={memberAvatarSrc(entry.memberId)}
-                              alt={memberLabel(entry.memberId)}
-                              className="h-full w-full object-cover"
-                            />
-                          </div>
-                          <span className={entry.memberId === userId ? "font-semibold" : "text-slate-700 dark:text-slate-300"}>
-                            {memberLabel(entry.memberId)}
-                          </span>
+            {balancesByMember.length > 0 ? (
+              <ul className="mt-3 space-y-2">
+                {balancesByMember.map((entry) => {
+                  const isPositive = entry.balance > 0.004;
+                  const isNegative = entry.balance < -0.004;
+                  return (
+                    <li
+                      key={entry.memberId}
+                      className="flex items-center justify-between rounded-lg border border-brand-100 bg-white/90 px-3 py-2 dark:border-slate-700 dark:bg-slate-900"
+                    >
+                      <div className="flex items-center gap-2">
+                        <div className="h-7 w-7 overflow-hidden rounded-full border border-brand-100 bg-brand-50 dark:border-slate-700 dark:bg-slate-800">
+                          <img
+                            src={memberAvatarSrc(entry.memberId)}
+                            alt={memberLabel(entry.memberId)}
+                            className="h-full w-full object-cover"
+                          />
                         </div>
                         <span
                           className={
-                            isPositive
-                              ? "font-semibold text-emerald-700 dark:text-emerald-300"
-                              : isNegative
-                                ? "font-semibold text-rose-700 dark:text-rose-300"
-                                : "font-semibold text-slate-600 dark:text-slate-300"
+                            entry.memberId === userId
+                              ? "font-semibold"
+                              : "text-slate-700 dark:text-slate-300"
                           }
                         >
-                          {isPositive ? "+" : ""}
-                          {formatMoney(entry.balance, locale)}
+                          {memberLabel(entry.memberId)}
                         </span>
+                      </div>
+                      <span
+                        className={
+                          isPositive
+                            ? "font-semibold text-emerald-700 dark:text-emerald-300"
+                            : isNegative
+                              ? "font-semibold text-rose-700 dark:text-rose-300"
+                              : "font-semibold text-slate-600 dark:text-slate-300"
+                        }
+                      >
+                        {isPositive ? "+" : ""}
+                        {formatMoney(entry.balance, locale)}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : (
+              <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+                {t("finances.settlementEmpty")}
+              </p>
+            )}
+
+            <div className="mt-4">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setAuditDialogOpen(true)}
+              >
+                {t("finances.startAudit")}
+              </Button>
+            </div>
+          </SectionPanel>
+
+          <Dialog open={auditDialogOpen} onOpenChange={setAuditDialogOpen}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>{t("finances.auditDialogTitle")}</DialogTitle>
+                <DialogDescription>
+                  {t("finances.auditDialogDescription")}
+                </DialogDescription>
+              </DialogHeader>
+              <div className="mt-3 rounded-lg border border-brand-100 bg-brand-50/50 p-3 dark:border-slate-700 dark:bg-slate-800/50">
+                <p className="text-sm font-semibold text-brand-900 dark:text-brand-100">
+                  {t("finances.settlementPlanTitle")}
+                </p>
+                {settlementTransfers.length > 0 ? (
+                  <ul className="mt-2 space-y-1">
+                    {settlementTransfers.map((transfer, index) => (
+                      <li
+                        key={`${transfer.fromMemberId}-${transfer.toMemberId}-${index}`}
+                        className="text-sm text-slate-700 dark:text-slate-200"
+                      >
+                        {t("finances.settlementTransferLine", {
+                          from: memberLabel(transfer.fromMemberId),
+                          to: memberLabel(transfer.toMemberId),
+                          amount: moneyLabel(transfer.amount),
+                        })}
+                        {transfer.fromMemberId === userId &&
+                        buildPaymentLinks(
+                          transfer.toMemberId,
+                          transfer.amount,
+                          settlementReferenceDate,
+                        ).length > 0 ? (
+                          <span className="ml-2 inline-flex gap-2 text-xs">
+                            {buildPaymentLinks(
+                              transfer.toMemberId,
+                              transfer.amount,
+                              settlementReferenceDate,
+                            ).map((link) => (
+                              <a
+                                key={`${transfer.fromMemberId}-${transfer.toMemberId}-${index}-${link.id}`}
+                                href={link.href}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="inline-flex items-center gap-1 text-brand-700 underline decoration-brand-300 underline-offset-2 hover:text-brand-600 dark:text-brand-300 dark:decoration-brand-700"
+                              >
+                                <PaymentBrandIcon
+                                  brand={link.id}
+                                  className="h-3.5 w-3.5"
+                                />
+                                {link.label}
+                              </a>
+                            ))}
+                          </span>
+                        ) : null}
                       </li>
-                    );
-                  })}
-                </ul>
-              ) : (
-                <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">{t("finances.settlementEmpty")}</p>
-              )}
-
-              <div className="mt-4">
-                <Button type="button" variant="outline" onClick={() => setAuditDialogOpen(true)}>
-                  {t("finances.startAudit")}
-                </Button>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+                    {t("finances.settlementPlanEmpty")}
+                  </p>
+                )}
               </div>
-            </SectionPanel>
+              <div className="mt-4 flex justify-end gap-2">
+                <DialogClose asChild>
+                  <Button variant="ghost">{t("common.cancel")}</Button>
+                </DialogClose>
+                <DialogClose asChild>
+                  <Button
+                    onClick={() => {
+                      void onRequestCashAudit();
+                    }}
+                  >
+                    {t("common.trigger")}
+                  </Button>
+                </DialogClose>
+              </div>
+            </DialogContent>
+          </Dialog>
 
-            <Dialog open={auditDialogOpen} onOpenChange={setAuditDialogOpen}>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>{t("finances.auditDialogTitle")}</DialogTitle>
-                  <DialogDescription>{t("finances.auditDialogDescription")}</DialogDescription>
-                </DialogHeader>
-                <div className="mt-3 rounded-lg border border-brand-100 bg-brand-50/50 p-3 dark:border-slate-700 dark:bg-slate-800/50">
-                  <p className="text-sm font-semibold text-brand-900 dark:text-brand-100">{t("finances.settlementPlanTitle")}</p>
-                  {settlementTransfers.length > 0 ? (
-                    <ul className="mt-2 space-y-1">
-                      {settlementTransfers.map((transfer, index) => (
-                        <li key={`${transfer.fromMemberId}-${transfer.toMemberId}-${index}`} className="text-sm text-slate-700 dark:text-slate-200">
+          <SectionPanel>
+            <p className="mb-2 text-sm font-semibold text-brand-900 dark:text-brand-100">
+              {t("finances.historyTitle")}
+            </p>
+            <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+              {t("finances.filteredTotal", {
+                value: formatMoney(filteredTotal, locale),
+                count: filteredEntries.length,
+              })}
+            </p>
+
+            {historySeries.labels.length > 0 ? (
+              <div className="mt-3 rounded-lg bg-white p-2 dark:bg-slate-900">
+                <Bar
+                  data={{
+                    labels: historySeries.labels.map((label) =>
+                      formatShortDay(label, language, label),
+                    ),
+                    datasets: historySeries.datasets.map((dataset) => ({
+                      label: memberLabel(dataset.memberId),
+                      data: dataset.values,
+                      backgroundColor: resolveMemberColor(dataset.memberId),
+                      borderColor: "transparent",
+                      borderWidth: 0,
+                      borderRadius: 6,
+                    })),
+                  }}
+                  options={{
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: {
+                      mode: "index",
+                      intersect: false,
+                    },
+                    plugins: {
+                      legend: { display: true, position: "bottom" },
+                      tooltip: {
+                        callbacks: {
+                          label: (context) => {
+                            const value = Number(context.parsed.y ?? 0);
+                            return `${context.dataset.label ?? t("common.memberFallback")}: ${formatMoney(value, locale)}`;
+                          },
+                          footer: (items) => {
+                            const total = items.reduce(
+                              (sum, item) => sum + Number(item.parsed.y ?? 0),
+                              0,
+                            );
+                            return t("finances.chartStackTotal", {
+                              value: formatMoney(total, locale),
+                            });
+                          },
+                        },
+                      },
+                    },
+                    scales: {
+                      x: { stacked: true },
+                      y: { stacked: true, beginAtZero: true },
+                    },
+                  }}
+                  height={170}
+                />
+              </div>
+            ) : null}
+
+            {categorySeries.labels.length > 0 ? (
+              <div className="mt-3 rounded-lg bg-white p-2 dark:bg-slate-900">
+                <Doughnut
+                  data={{
+                    labels: categorySeries.labels,
+                    datasets: [
+                      {
+                        label: t("finances.chartCategoryShare"),
+                        data: categorySeries.values,
+                        backgroundColor: [
+                          "rgba(37, 99, 235, 0.7)",
+                          "rgba(16, 185, 129, 0.7)",
+                          "rgba(124, 58, 237, 0.7)",
+                          "rgba(245, 158, 11, 0.7)",
+                          "rgba(239, 68, 68, 0.7)",
+                          "rgba(14, 165, 233, 0.7)",
+                        ],
+                      },
+                    ],
+                  }}
+                  options={{
+                    responsive: true,
+                    maintainAspectRatio: false,
+                  }}
+                  height={210}
+                />
+              </div>
+            ) : null}
+          </SectionPanel>
+
+          {byUser.length > 0 ? (
+            <SectionPanel className="mt-4">
+              <p className="mb-2 text-sm font-semibold text-brand-900 dark:text-brand-100">
+                {t("finances.byMember")}
+              </p>
+              <ul className="space-y-1 text-sm">
+                {byUser.map(([memberId, value]) => (
+                  <li key={memberId} className="flex justify-between gap-2">
+                    <span
+                      className={
+                        memberId === userId
+                          ? "font-medium"
+                          : "text-slate-600 dark:text-slate-300"
+                      }
+                    >
+                      {memberLabel(memberId)}
+                    </span>
+                    <span>{moneyLabel(value)}</span>
+                  </li>
+                ))}
+              </ul>
+            </SectionPanel>
+          ) : null}
+        </>
+      ) : null}
+
+      {showArchive ? (
+        <>
+          <Card>
+            <CardHeader>
+              <CardTitle>
+
+            <div className="mb-2 flex items-center justify-between gap-2">
+                {t("finances.historyTitle")}
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setArchiveFilterDialogOpen(true)}
+              >
+                <SlidersHorizontal className="mr-1 h-4 w-4" />
+                {t("finances.filtersButton")}
+              </Button>
+            </div>
+              </CardTitle>
+            </CardHeader>
+
+            <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+              {t("finances.filteredTotal", {
+                value: formatMoney(filteredTotal, locale),
+                count: filteredEntries.length,
+              })}
+            </p>
+          </Card>
+
+          <Dialog
+            open={archiveFilterDialogOpen}
+            onOpenChange={setArchiveFilterDialogOpen}
+          >
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>{t("finances.filtersDialogTitle")}</DialogTitle>
+                <DialogDescription>
+                  {t("finances.filtersDialogDescription")}
+                </DialogDescription>
+              </DialogHeader>
+              <form
+                className="mt-2"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                }}
+              >
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <archiveFilterForm.Field
+                    name="filterFrom"
+                    children={(field: {
+                      state: { value: string };
+                      handleChange: (value: string) => void;
+                    }) => (
+                      <div className="space-y-1">
+                        <Label>{t("finances.filterFrom")}</Label>
+                        <Input
+                          type="date"
+                          lang={locale}
+                          value={field.state.value}
+                          onChange={(event) =>
+                            field.handleChange(event.target.value)
+                          }
+                          title={t("finances.filterFrom")}
+                        />
+                      </div>
+                    )}
+                  />
+                  <archiveFilterForm.Field
+                    name="filterTo"
+                    children={(field: {
+                      state: { value: string };
+                      handleChange: (value: string) => void;
+                    }) => (
+                      <div className="space-y-1">
+                        <Label>{t("finances.filterTo")}</Label>
+                        <Input
+                          type="date"
+                          lang={locale}
+                          value={field.state.value}
+                          onChange={(event) =>
+                            field.handleChange(event.target.value)
+                          }
+                          title={t("finances.filterTo")}
+                        />
+                      </div>
+                    )}
+                  />
+                  <archiveFilterForm.Field
+                    name="filterMember"
+                    children={(field: {
+                      state: { value: string };
+                      handleChange: (value: string) => void;
+                    }) => (
+                      <div className="space-y-1">
+                        <Label>{t("finances.filterByMember")}</Label>
+                        <PersonSelect
+                          mode="single"
+                          members={members}
+                          value={field.state.value}
+                          onChange={field.handleChange}
+                          currentUserId={userId}
+                          youLabel={t("common.you")}
+                          allValue="all"
+                          allLabel={t("finances.filterByMemberAll")}
+                          placeholder={t("finances.filterByMember")}
+                        />
+                      </div>
+                    )}
+                  />
+                  <archiveFilterForm.Field
+                    name="filterCategory"
+                    children={(field: {
+                      state: { value: string };
+                      handleChange: (value: string) => void;
+                    }) => (
+                      <div className="space-y-1">
+                        <Label>{t("finances.filterByCategory")}</Label>
+                        <Select
+                          value={field.state.value}
+                          onValueChange={field.handleChange}
+                        >
+                          <SelectTrigger
+                            aria-label={t("finances.filterByCategory")}
+                          >
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">
+                              {t("finances.filterByCategoryAll")}
+                            </SelectItem>
+                            {categories.map((entryCategory) => (
+                              <SelectItem
+                                key={entryCategory}
+                                value={entryCategory}
+                              >
+                                {entryCategory}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
+                  />
+                  <archiveFilterForm.Field
+                    name="searchText"
+                    children={(field: {
+                      state: { value: string };
+                      handleChange: (value: string) => void;
+                    }) => (
+                      <div className="space-y-1">
+                        <Label>{t("finances.searchLabel")}</Label>
+                        <Input
+                          value={field.state.value}
+                          onChange={(event) =>
+                            field.handleChange(event.target.value)
+                          }
+                          placeholder={t("finances.searchPlaceholder")}
+                        />
+                      </div>
+                    )}
+                  />
+                </div>
+              </form>
+
+              <div className="mt-4 flex justify-end gap-2">
+                <DialogClose asChild>
+                  <Button variant="ghost">{t("common.cancel")}</Button>
+                </DialogClose>
+              </div>
+            </DialogContent>
+          </Dialog>
+
+          {archiveGroupsWithSettlement.map((group) => (
+            <FinanceHistoryCard
+              key={group.id}
+              className="mt-4"
+              collapsible
+              defaultOpen={false}
+              title={group.title}
+              summaryText={
+                <>
+                  <div>
+                    {t("finances.filteredTotal", {
+                      value: moneyLabel(group.total),
+                      count: group.entries.length,
+                    })}
+                  </div>
+                  <div className="mt-1">
+                    {t("finances.settlementPlanTitle")}:
+                  </div>
+                  {group.settlementTransfers.length > 0 ? (
+                    <div className="mt-1">
+                      {group.settlementTransfers.map((transfer, index) => (
+                        <div key={`${group.id}-transfer-${index}`}>
                           {t("finances.settlementTransferLine", {
                             from: memberLabel(transfer.fromMemberId),
                             to: memberLabel(transfer.toMemberId),
-                            amount: moneyLabel(transfer.amount)
+                            amount: moneyLabel(transfer.amount),
                           })}
                           {transfer.fromMemberId === userId &&
-                          buildPaymentLinks(transfer.toMemberId, transfer.amount, settlementReferenceDate).length > 0 ? (
+                          buildPaymentLinks(
+                            transfer.toMemberId,
+                            transfer.amount,
+                            group.id.startsWith("audit-")
+                              ? group.id.replace("audit-", "")
+                              : settlementReferenceDate,
+                          ).length > 0 ? (
                             <span className="ml-2 inline-flex gap-2 text-xs">
-                              {buildPaymentLinks(transfer.toMemberId, transfer.amount, settlementReferenceDate).map((link) => (
+                              {buildPaymentLinks(
+                                transfer.toMemberId,
+                                transfer.amount,
+                                group.id.startsWith("audit-")
+                                  ? group.id.replace("audit-", "")
+                                  : settlementReferenceDate,
+                              ).map((link) => (
                                 <a
-                                  key={`${transfer.fromMemberId}-${transfer.toMemberId}-${index}-${link.id}`}
+                                  key={`${group.id}-transfer-link-${index}-${link.id}`}
                                   href={link.href}
                                   target="_blank"
                                   rel="noreferrer"
                                   className="inline-flex items-center gap-1 text-brand-700 underline decoration-brand-300 underline-offset-2 hover:text-brand-600 dark:text-brand-300 dark:decoration-brand-700"
                                 >
-                                  <PaymentBrandIcon brand={link.id} className="h-3.5 w-3.5" />
+                                  <PaymentBrandIcon
+                                    brand={link.id}
+                                    className="h-3.5 w-3.5"
+                                  />
                                   {link.label}
                                 </a>
                               ))}
                             </span>
                           ) : null}
-                        </li>
+                        </div>
                       ))}
-                    </ul>
-                  ) : (
-                    <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">{t("finances.settlementPlanEmpty")}</p>
-                  )}
-                </div>
-                <div className="mt-4 flex justify-end gap-2">
-                  <DialogClose asChild>
-                    <Button variant="ghost">{t("common.cancel")}</Button>
-                  </DialogClose>
-                  <DialogClose asChild>
-                    <Button
-                      onClick={() => {
-                        void onRequestCashAudit();
-                      }}
-                    >
-                      {t("common.trigger")}
-                    </Button>
-                  </DialogClose>
-                </div>
-              </DialogContent>
-            </Dialog>
-
-            <SectionPanel>
-              <p className="mb-2 text-sm font-semibold text-brand-900 dark:text-brand-100">{t("finances.historyTitle")}</p>
-              <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-                {t("finances.filteredTotal", { value: formatMoney(filteredTotal, locale), count: filteredEntries.length })}
-              </p>
-
-              {historySeries.labels.length > 0 ? (
-                <div className="mt-3 rounded-lg bg-white p-2 dark:bg-slate-900">
-                  <Bar
-                    data={{
-                      labels: historySeries.labels.map((label) => formatShortDay(label, language, label)),
-                      datasets: historySeries.datasets.map((dataset) => ({
-                        label: memberLabel(dataset.memberId),
-                        data: dataset.values,
-                        backgroundColor: resolveMemberColor(dataset.memberId),
-                        borderColor: "transparent",
-                        borderWidth: 0,
-                        borderRadius: 6
-                      }))
-                    }}
-                    options={{
-                      responsive: true,
-                      maintainAspectRatio: false,
-                      interaction: {
-                        mode: "index",
-                        intersect: false
-                      },
-                      plugins: {
-                        legend: { display: true, position: "bottom" },
-                        tooltip: {
-                          callbacks: {
-                            label: (context) => {
-                              const value = Number(context.parsed.y ?? 0);
-                              return `${context.dataset.label ?? t("common.memberFallback")}: ${formatMoney(value, locale)}`;
-                            },
-                            footer: (items) => {
-                              const total = items.reduce((sum, item) => sum + Number(item.parsed.y ?? 0), 0);
-                              return t("finances.chartStackTotal", { value: formatMoney(total, locale) });
-                            }
-                          }
-                        }
-                      },
-                      scales: {
-                        x: { stacked: true },
-                        y: { stacked: true, beginAtZero: true }
-                      }
-                    }}
-                    height={170}
-                  />
-                </div>
-              ) : null}
-
-              {categorySeries.labels.length > 0 ? (
-                <div className="mt-3 rounded-lg bg-white p-2 dark:bg-slate-900">
-                  <Doughnut
-                    data={{
-                      labels: categorySeries.labels,
-                      datasets: [
-                        {
-                          label: t("finances.chartCategoryShare"),
-                          data: categorySeries.values,
-                          backgroundColor: [
-                            "rgba(37, 99, 235, 0.7)",
-                            "rgba(16, 185, 129, 0.7)",
-                            "rgba(124, 58, 237, 0.7)",
-                            "rgba(245, 158, 11, 0.7)",
-                            "rgba(239, 68, 68, 0.7)",
-                            "rgba(14, 165, 233, 0.7)"
-                          ]
-                        }
-                      ]
-                    }}
-                    options={{
-                      responsive: true,
-                      maintainAspectRatio: false
-                    }}
-                    height={210}
-                  />
-                </div>
-              ) : null}
-            </SectionPanel>
-
-            {byUser.length > 0 ? (
-              <SectionPanel className="mt-4">
-                <p className="mb-2 text-sm font-semibold text-brand-900 dark:text-brand-100">{t("finances.byMember")}</p>
-                <ul className="space-y-1 text-sm">
-                  {byUser.map(([memberId, value]) => (
-                    <li key={memberId} className="flex justify-between gap-2">
-                      <span className={memberId === userId ? "font-medium" : "text-slate-600 dark:text-slate-300"}>
-                        {memberLabel(memberId)}
-                      </span>
-                      <span>{moneyLabel(value)}</span>
-                    </li>
-                  ))}
-                </ul>
-              </SectionPanel>
-            ) : null}
-          </>
-        ) : null}
-
-        {showArchive ? (
-          <>
-            <SectionPanel>
-              <div className="mb-2 flex items-center justify-between gap-2">
-                <p className="text-sm font-semibold text-brand-900 dark:text-brand-100">{t("finances.historyTitle")}</p>
-                <Button type="button" variant="outline" size="sm" onClick={() => setArchiveFilterDialogOpen(true)}>
-                  <SlidersHorizontal className="mr-1 h-4 w-4" />
-                  {t("finances.filtersButton")}
-                </Button>
-              </div>
-
-              <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-                {t("finances.filteredTotal", { value: formatMoney(filteredTotal, locale), count: filteredEntries.length })}
-              </p>
-            </SectionPanel>
-
-            <Dialog open={archiveFilterDialogOpen} onOpenChange={setArchiveFilterDialogOpen}>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>{t("finances.filtersDialogTitle")}</DialogTitle>
-                  <DialogDescription>{t("finances.filtersDialogDescription")}</DialogDescription>
-                </DialogHeader>
-                <form
-                  className="mt-2"
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                  }}
-                >
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    <archiveFilterForm.Field
-                      name="filterFrom"
-                      children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
-                        <div className="space-y-1">
-                          <Label>{t("finances.filterFrom")}</Label>
-                          <Input
-                            type="date"
-                            lang={locale}
-                            value={field.state.value}
-                            onChange={(event) => field.handleChange(event.target.value)}
-                            title={t("finances.filterFrom")}
-                          />
-                        </div>
-                      )}
-                    />
-                    <archiveFilterForm.Field
-                      name="filterTo"
-                      children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
-                        <div className="space-y-1">
-                          <Label>{t("finances.filterTo")}</Label>
-                          <Input
-                            type="date"
-                            lang={locale}
-                            value={field.state.value}
-                            onChange={(event) => field.handleChange(event.target.value)}
-                            title={t("finances.filterTo")}
-                          />
-                        </div>
-                      )}
-                    />
-                    <archiveFilterForm.Field
-                      name="filterMember"
-                      children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
-                        <div className="space-y-1">
-                          <Label>{t("finances.filterByMember")}</Label>
-                          <PersonSelect
-                            mode="single"
-                            members={members}
-                            value={field.state.value}
-                            onChange={field.handleChange}
-                            currentUserId={userId}
-                            youLabel={t("common.you")}
-                            allValue="all"
-                            allLabel={t("finances.filterByMemberAll")}
-                            placeholder={t("finances.filterByMember")}
-                          />
-                        </div>
-                      )}
-                    />
-                    <archiveFilterForm.Field
-                      name="filterCategory"
-                      children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
-                        <div className="space-y-1">
-                          <Label>{t("finances.filterByCategory")}</Label>
-                          <Select value={field.state.value} onValueChange={field.handleChange}>
-                            <SelectTrigger aria-label={t("finances.filterByCategory")}>
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="all">{t("finances.filterByCategoryAll")}</SelectItem>
-                              {categories.map((entryCategory) => (
-                                <SelectItem key={entryCategory} value={entryCategory}>
-                                  {entryCategory}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      )}
-                    />
-                    <archiveFilterForm.Field
-                      name="searchText"
-                      children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
-                        <div className="space-y-1">
-                          <Label>{t("finances.searchLabel")}</Label>
-                          <Input
-                            value={field.state.value}
-                            onChange={(event) => field.handleChange(event.target.value)}
-                            placeholder={t("finances.searchPlaceholder")}
-                          />
-                        </div>
-                      )}
-                    />
-                  </div>
-                </form>
-
-                <div className="mt-4 flex justify-end gap-2">
-                  <DialogClose asChild>
-                    <Button variant="ghost">{t("common.cancel")}</Button>
-                  </DialogClose>
-                </div>
-              </DialogContent>
-            </Dialog>
-
-            {archiveGroupsWithSettlement.map((group) => (
-              <FinanceHistoryCard
-                key={group.id}
-                className="mt-4"
-                collapsible
-                defaultOpen={false}
-                title={group.title}
-                summaryText={
-                  <>
-                    <div>
-                      {t("finances.filteredTotal", {
-                        value: moneyLabel(group.total),
-                        count: group.entries.length
-                      })}
                     </div>
-                    <div className="mt-1">{t("finances.settlementPlanTitle")}:</div>
-                    {group.settlementTransfers.length > 0 ? (
-                      <div className="mt-1">
-                        {group.settlementTransfers.map((transfer, index) => (
-                          <div key={`${group.id}-transfer-${index}`}>
-                            {t("finances.settlementTransferLine", {
-                              from: memberLabel(transfer.fromMemberId),
-                              to: memberLabel(transfer.toMemberId),
-                              amount: moneyLabel(transfer.amount)
-                            })}
-                            {transfer.fromMemberId === userId &&
-                            buildPaymentLinks(
-                              transfer.toMemberId,
-                              transfer.amount,
-                              group.id.startsWith("audit-") ? group.id.replace("audit-", "") : settlementReferenceDate
-                            ).length > 0 ? (
-                              <span className="ml-2 inline-flex gap-2 text-xs">
-                                {buildPaymentLinks(
-                                  transfer.toMemberId,
-                                  transfer.amount,
-                                  group.id.startsWith("audit-") ? group.id.replace("audit-", "") : settlementReferenceDate
-                                ).map((link) => (
-                                  <a
-                                    key={`${group.id}-transfer-link-${index}-${link.id}`}
-                                    href={link.href}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="inline-flex items-center gap-1 text-brand-700 underline decoration-brand-300 underline-offset-2 hover:text-brand-600 dark:text-brand-300 dark:decoration-brand-700"
-                                  >
-                                    <PaymentBrandIcon brand={link.id} className="h-3.5 w-3.5" />
-                                    {link.label}
-                                  </a>
-                                ))}
-                              </span>
-                            ) : null}
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="mt-1">{t("finances.settlementPlanEmpty")}</div>
-                    )}
-                  </>
-                }
-                totalBadgeText={moneyLabel(group.total)}
-                entries={group.entries}
-                emptyText={t("finances.emptyFiltered")}
-                paidByText={paidByText}
-                receiptImageUrl={(entry) => entry.receipt_image_url}
-                receiptLabel={t("finances.receiptLink")}
-                formatMoney={moneyLabel}
-                virtualized
-                virtualHeight={420}
-                onEdit={group.isEditable ? onStartEditEntry : undefined}
-                onDelete={
-                  group.isEditable
-                    ? (entry) => {
-                        void onDeleteEntry(entry);
-                      }
-                    : undefined
-                }
-                canEditEntry={group.isEditable ? canManageFinanceEntry : undefined}
-                canDeleteEntry={group.isEditable ? canManageFinanceEntry : undefined}
-                actionsLabel={t("finances.entryActions")}
-                editLabel={t("finances.editEntry")}
-                deleteLabel={t("finances.deleteEntry")}
-                busy={busy}
-              />
-            ))}
-          </>
-        ) : null}
+                  ) : (
+                    <div className="mt-1">
+                      {t("finances.settlementPlanEmpty")}
+                    </div>
+                  )}
+                </>
+              }
+              totalBadgeText={moneyLabel(group.total)}
+              entries={group.entries}
+              emptyText={t("finances.emptyFiltered")}
+              paidByText={paidByText}
+              receiptImageUrl={(entry) => entry.receipt_image_url}
+              receiptLabel={t("finances.receiptLink")}
+              formatMoney={moneyLabel}
+              virtualized
+              virtualHeight={420}
+              onEdit={group.isEditable ? onStartEditEntry : undefined}
+              onDelete={
+                group.isEditable
+                  ? (entry) => {
+                      void onDeleteEntry(entry);
+                    }
+                  : undefined
+              }
+              canEditEntry={
+                group.isEditable ? canManageFinanceEntry : undefined
+              }
+              canDeleteEntry={
+                group.isEditable ? canManageFinanceEntry : undefined
+              }
+              actionsLabel={t("finances.entryActions")}
+              editLabel={t("finances.editEntry")}
+              deleteLabel={t("finances.deleteEntry")}
+              busy={busy}
+            />
+          ))}
+        </>
+      ) : null}
 
-        {showSubscriptions ? (
-          <>
-            {!rentDetailsOpen ? (
-              <button
-                type="button"
-                className="mt-4 w-full rounded-xl border border-brand-100 bg-white p-3 text-left transition hover:border-brand-200 hover:bg-brand-50/30 dark:border-slate-700 dark:bg-slate-900 dark:hover:border-slate-600 dark:hover:bg-slate-800/70"
-                onClick={() => setRentDetailsOpen(true)}
-              >
-                <p className="text-sm font-semibold text-brand-900 dark:text-brand-100">{t("finances.rentCardTitle")}</p>
-                <div className="mt-2 flex items-center justify-between gap-2">
-                  <span className="text-sm text-slate-600 dark:text-slate-300">{t("finances.rentTotalMonthlyLabel")}</span>
-                  <span className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-                    {rentTotalMonthly === null ? "-" : moneyLabel(rentTotalMonthly)}
-                  </span>
-                </div>
-                {members.length > 0 ? (
-                  <ul className="mt-2 space-y-1 border-t border-brand-100 pt-2 dark:border-slate-700">
-                    {members.map((member) => {
-                      const perMemberRent = costTableData.byMember.get(member.user_id)?.totalBeforeContracts ?? null;
-                      return (
-                        <li key={`rent-card-member-${member.user_id}`} className="flex items-center justify-between gap-2 text-xs">
-                          <span className="text-slate-600 dark:text-slate-300">{memberLabel(member.user_id)}</span>
-                          <span className="font-medium text-slate-900 dark:text-slate-100">
-                            {perMemberRent === null ? "-" : moneyLabel(perMemberRent)}
-                          </span>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                ) : null}
-              </button>
-            ) : null}
+      {showSubscriptions ? (
+        <>
+          {!rentDetailsOpen ? (
+            <button
+              type="button"
+              className="mb-0 w-full rounded-xl border border-brand-100 bg-white p-3 text-left transition hover:border-brand-200 hover:bg-brand-50/30 dark:border-slate-700 dark:bg-slate-900 dark:hover:border-slate-600 dark:hover:bg-slate-800/70"
+              onClick={() => setRentDetailsOpen(true)}
+            >
+              <p className="text-sm font-semibold text-brand-900 dark:text-brand-100">
+                {t("finances.rentCardTitle")}
+              </p>
+              <div className="mt-2 flex items-center justify-between gap-2">
+                <span className="text-sm text-slate-600 dark:text-slate-300">
+                  {t("finances.rentTotalMonthlyLabel")}
+                </span>
+                <span className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                  {rentTotalMonthly === null
+                    ? "-"
+                    : moneyLabel(rentTotalMonthly)}
+                </span>
+              </div>
+              {members.length > 0 ? (
+                <ul className="mt-2 space-y-1 border-t border-brand-100 pt-2 dark:border-slate-700">
+                  {members.map((member) => {
+                    const perMemberRent =
+                      costTableData.byMember.get(member.user_id)
+                        ?.totalBeforeContracts ?? null;
+                    return (
+                      <li
+                        key={`rent-card-member-${member.user_id}`}
+                        className="flex items-center justify-between gap-2 text-xs"
+                      >
+                        <span className="text-slate-600 dark:text-slate-300">
+                          {memberLabel(member.user_id)}
+                        </span>
+                        <span className="font-medium text-slate-900 dark:text-slate-100">
+                          {perMemberRent === null
+                            ? "-"
+                            : moneyLabel(perMemberRent)}
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : null}
+            </button>
+          ) : null}
 
-            {rentDetailsOpen ? (
+          {rentDetailsOpen ? (
             <>
               <div className="mb-3">
-                <Button type="button" variant="ghost" size="sm" onClick={() => setRentDetailsOpen(false)}>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setRentDetailsOpen(false)}
+                >
                   <ChevronLeft className="mr-1 h-4 w-4" />
                   {t("common.back")}
                 </Button>
               </div>
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                 <div>
-                  <p className="text-sm font-semibold text-brand-900 dark:text-brand-100">{t("finances.rentCardTitle")}</p>
-                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{t("finances.rentCardDescription")}</p>
+                  <p className="text-sm font-semibold text-brand-900 dark:text-brand-100">
+                    {t("finances.rentCardTitle")}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                    {t("finances.rentCardDescription")}
+                  </p>
                 </div>
               </div>
 
               <SectionPanel className="mt-4">
                 <>
-                  <p className="text-sm font-semibold text-brand-900 dark:text-brand-100">{t("finances.rentApartmentTitle")}</p>
-                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{t("finances.rentApartmentDescription")}</p>
+                  <p className="text-sm font-semibold text-brand-900 dark:text-brand-100">
+                    {t("finances.rentApartmentTitle")}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                    {t("finances.rentApartmentDescription")}
+                  </p>
 
                   <form
                     className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-[1fr_1fr_1fr_1fr_auto]"
@@ -2473,7 +2628,10 @@ export const FinancesTab = ({
                   >
                     <rentHouseholdForm.Field
                       name="apartmentSizeSqm"
-                      children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
+                      children={(field: {
+                        state: { value: string };
+                        handleChange: (value: string) => void;
+                      }) => (
                         <div className="space-y-1">
                           <Label>{t("settings.householdSizeLabel")}</Label>
                           <InputWithSuffix
@@ -2483,7 +2641,9 @@ export const FinancesTab = ({
                             step="0.1"
                             disabled={!canEditApartment}
                             value={field.state.value}
-                            onChange={(event) => field.handleChange(event.target.value)}
+                            onChange={(event) =>
+                              field.handleChange(event.target.value)
+                            }
                             placeholder={t("settings.householdSizeLabel")}
                           />
                         </div>
@@ -2491,7 +2651,10 @@ export const FinancesTab = ({
                     />
                     <rentHouseholdForm.Field
                       name="coldRentMonthly"
-                      children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
+                      children={(field: {
+                        state: { value: string };
+                        handleChange: (value: string) => void;
+                      }) => (
                         <div className="space-y-1">
                           <Label>{t("settings.coldRentLabel")}</Label>
                           <InputWithSuffix
@@ -2501,7 +2664,9 @@ export const FinancesTab = ({
                             step="0.01"
                             disabled={!canEditApartment}
                             value={field.state.value}
-                            onChange={(event) => field.handleChange(event.target.value)}
+                            onChange={(event) =>
+                              field.handleChange(event.target.value)
+                            }
                             placeholder={t("settings.coldRentLabel")}
                             inputClassName="pr-7"
                           />
@@ -2510,7 +2675,10 @@ export const FinancesTab = ({
                     />
                     <rentHouseholdForm.Field
                       name="utilitiesMonthly"
-                      children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
+                      children={(field: {
+                        state: { value: string };
+                        handleChange: (value: string) => void;
+                      }) => (
                         <div className="space-y-1">
                           <Label>{t("settings.utilitiesLabel")}</Label>
                           <InputWithSuffix
@@ -2520,7 +2688,9 @@ export const FinancesTab = ({
                             step="0.01"
                             disabled={!canEditApartment}
                             value={field.state.value}
-                            onChange={(event) => field.handleChange(event.target.value)}
+                            onChange={(event) =>
+                              field.handleChange(event.target.value)
+                            }
                             placeholder={t("settings.utilitiesLabel")}
                             inputClassName="pr-7"
                           />
@@ -2529,9 +2699,14 @@ export const FinancesTab = ({
                     />
                     <rentHouseholdForm.Field
                       name="utilitiesOnRoomSqmPercent"
-                      children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
+                      children={(field: {
+                        state: { value: string };
+                        handleChange: (value: string) => void;
+                      }) => (
                         <div className="space-y-1">
-                          <Label>{t("settings.utilitiesOnRoomSqmPercentLabel")}</Label>
+                          <Label>
+                            {t("settings.utilitiesOnRoomSqmPercentLabel")}
+                          </Label>
                           <InputWithSuffix
                             suffix="%"
                             type="number"
@@ -2540,8 +2715,12 @@ export const FinancesTab = ({
                             step="0.1"
                             disabled={!canEditApartment}
                             value={field.state.value}
-                            onChange={(event) => field.handleChange(event.target.value)}
-                            placeholder={t("settings.utilitiesOnRoomSqmPercentLabel")}
+                            onChange={(event) =>
+                              field.handleChange(event.target.value)
+                            }
+                            placeholder={t(
+                              "settings.utilitiesOnRoomSqmPercentLabel",
+                            )}
                             inputClassName="pr-7"
                           />
                         </div>
@@ -2553,7 +2732,9 @@ export const FinancesTab = ({
                   </form>
 
                   {!canEditApartment ? (
-                    <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">{t("finances.rentOwnerOnlyHint")}</p>
+                    <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                      {t("finances.rentOwnerOnlyHint")}
+                    </p>
                   ) : null}
 
                   {rentFormError ? (
@@ -2564,23 +2745,37 @@ export const FinancesTab = ({
 
                   <div className="mt-3 rounded-lg border border-brand-100 bg-brand-50/30 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800/40">
                     <div className="flex items-center justify-between gap-2">
-                      <span className="text-slate-600 dark:text-slate-300">{t("finances.rentColdPerSqmLabel")}</span>
-                      <span className="font-semibold text-slate-900 dark:text-slate-100">{formatMoneyPerSqm(rentColdPerSqm)}</span>
+                      <span className="text-slate-600 dark:text-slate-300">
+                        {t("finances.rentColdPerSqmLabel")}
+                      </span>
+                      <span className="font-semibold text-slate-900 dark:text-slate-100">
+                        {formatMoneyPerSqm(rentColdPerSqm)}
+                      </span>
                     </div>
                     <div className="mt-1 flex items-center justify-between gap-2">
-                      <span className="text-slate-600 dark:text-slate-300">{t("finances.rentRoomPerSqmWithUtilitiesLabel")}</span>
+                      <span className="text-slate-600 dark:text-slate-300">
+                        {t("finances.rentRoomPerSqmWithUtilitiesLabel")}
+                      </span>
                       <span className="font-semibold text-slate-900 dark:text-slate-100">
                         {formatMoneyPerSqm(rentRoomPerSqmWithUtilities)}
                       </span>
                     </div>
                     <div className="mt-1 flex items-center justify-between gap-2">
-                      <span className="text-slate-600 dark:text-slate-300">{t("finances.rentTotalPerSqmLabel")}</span>
-                      <span className="font-semibold text-slate-900 dark:text-slate-100">{formatMoneyPerSqm(rentTotalPerSqm)}</span>
+                      <span className="text-slate-600 dark:text-slate-300">
+                        {t("finances.rentTotalPerSqmLabel")}
+                      </span>
+                      <span className="font-semibold text-slate-900 dark:text-slate-100">
+                        {formatMoneyPerSqm(rentTotalPerSqm)}
+                      </span>
                     </div>
                     <div className="mt-1 flex items-center justify-between gap-2">
-                      <span className="text-slate-600 dark:text-slate-300">{t("finances.rentTotalMonthlyLabel")}</span>
+                      <span className="text-slate-600 dark:text-slate-300">
+                        {t("finances.rentTotalMonthlyLabel")}
+                      </span>
                       <span className="font-semibold text-slate-900 dark:text-slate-100">
-                        {rentTotalMonthly === null ? "-" : moneyLabel(rentTotalMonthly)}
+                        {rentTotalMonthly === null
+                          ? "-"
+                          : moneyLabel(rentTotalMonthly)}
                       </span>
                     </div>
                   </div>
@@ -2589,8 +2784,12 @@ export const FinancesTab = ({
 
               <SectionPanel className="mt-4">
                 <>
-                  <p className="text-sm font-semibold text-brand-900 dark:text-brand-100">{t("finances.rentMineTitle")}</p>
-                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{t("finances.rentMineDescription")}</p>
+                  <p className="text-sm font-semibold text-brand-900 dark:text-brand-100">
+                    {t("finances.rentMineTitle")}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                    {t("finances.rentMineDescription")}
+                  </p>
 
                   <form
                     className="mt-3 grid gap-2 sm:grid-cols-[1fr_1fr_auto]"
@@ -2602,7 +2801,10 @@ export const FinancesTab = ({
                   >
                     <rentMemberForm.Field
                       name="roomSizeSqm"
-                      children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
+                      children={(field: {
+                        state: { value: string };
+                        handleChange: (value: string) => void;
+                      }) => (
                         <div className="space-y-1">
                           <Label>{t("settings.roomSizeLabel")}</Label>
                           <InputWithSuffix
@@ -2611,7 +2813,9 @@ export const FinancesTab = ({
                             min="0.1"
                             step="0.1"
                             value={field.state.value}
-                            onChange={(event) => field.handleChange(event.target.value)}
+                            onChange={(event) =>
+                              field.handleChange(event.target.value)
+                            }
                             placeholder={t("settings.roomSizeLabel")}
                           />
                         </div>
@@ -2619,17 +2823,28 @@ export const FinancesTab = ({
                     />
                     <rentMemberForm.Field
                       name="commonAreaFactor"
-                      children={(field: { state: { value: string }; handleChange: (value: string) => void }) => {
+                      children={(field: {
+                        state: { value: string };
+                        handleChange: (value: string) => void;
+                      }) => {
                         const parsed = Number(field.state.value);
-                        const sliderValue = Number.isFinite(parsed) ? clamp(parsed, COMMON_FACTOR_MIN, COMMON_FACTOR_MAX) : 1;
+                        const sliderValue = Number.isFinite(parsed)
+                          ? clamp(parsed, COMMON_FACTOR_MIN, COMMON_FACTOR_MAX)
+                          : 1;
                         const percentage = Math.round(sliderValue * 100);
-                        const levelIndex = Math.min(9, Math.floor((sliderValue / COMMON_FACTOR_MAX) * 10));
+                        const levelIndex = Math.min(
+                          9,
+                          Math.floor((sliderValue / COMMON_FACTOR_MAX) * 10),
+                        );
                         const level = commonFactorLevelMeta[levelIndex];
                         const LevelIcon = level.icon;
-                        const hue = Math.round((sliderValue / COMMON_FACTOR_MAX) * 120);
+                        const hue = Math.round(
+                          (sliderValue / COMMON_FACTOR_MAX) * 120,
+                        );
                         const sliderStyle = {
-                          "--slider-gradient": "linear-gradient(90deg, #ef4444 0%, #f59e0b 25%, #22c55e 50%, #16a34a 75%, #15803d 100%)",
-                          "--slider-thumb": `hsl(${hue} 80% 42%)`
+                          "--slider-gradient":
+                            "linear-gradient(90deg, #ef4444 0%, #f59e0b 25%, #22c55e 50%, #16a34a 75%, #15803d 100%)",
+                          "--slider-thumb": `hsl(${hue} 80% 42%)`,
                         } as CSSProperties;
 
                         return (
@@ -2640,20 +2855,32 @@ export const FinancesTab = ({
                               max={COMMON_FACTOR_MAX}
                               step="0.01"
                               value={sliderValue}
-                              onChange={(event) => field.handleChange(event.target.value)}
+                              onChange={(event) =>
+                                field.handleChange(event.target.value)
+                              }
                               className="common-factor-slider w-full"
                               style={sliderStyle}
                               aria-label={t("settings.commonFactorLabel")}
                             />
                             <div className="flex items-center justify-between text-xs">
-                              <span className="font-semibold text-rose-600 dark:text-rose-400">0</span>
-                              <span className="font-semibold text-emerald-700 dark:text-emerald-400">1.00</span>
-                              <span className="font-semibold text-emerald-600 dark:text-emerald-400">2.00</span>
+                              <span className="font-semibold text-rose-600 dark:text-rose-400">
+                                0
+                              </span>
+                              <span className="font-semibold text-emerald-700 dark:text-emerald-400">
+                                1.00
+                              </span>
+                              <span className="font-semibold text-emerald-600 dark:text-emerald-400">
+                                2.00
+                              </span>
                             </div>
                             <div className="flex items-center justify-between">
-                              <div className={`inline-flex items-center gap-1 text-xs font-semibold ${level.className}`}>
+                              <div
+                                className={`inline-flex items-center gap-1 text-xs font-semibold ${level.className}`}
+                              >
                                 <LevelIcon className="h-3.5 w-3.5" />
-                                {t(`settings.commonFactorLevel${levelIndex + 1}`)}
+                                {t(
+                                  `settings.commonFactorLevel${levelIndex + 1}`,
+                                )}
                               </div>
                               <div className="text-right text-xs font-semibold text-slate-600 dark:text-slate-300">
                                 {percentage}% ({sliderValue.toFixed(2)})
@@ -2678,7 +2905,9 @@ export const FinancesTab = ({
 
               <SectionPanel className="mt-4">
                 <>
-                  <p className="text-sm font-semibold text-brand-900 dark:text-brand-100">{t("finances.rentOverviewTitle")}</p>
+                  <p className="text-sm font-semibold text-brand-900 dark:text-brand-100">
+                    {t("finances.rentOverviewTitle")}
+                  </p>
                   <div className="mt-2 overflow-x-auto rounded-xl border border-brand-100 dark:border-slate-700">
                     <table className="min-w-[200px] w-full text-sm">
                       <thead className="bg-brand-50/50 dark:bg-slate-800/60">
@@ -2696,10 +2925,15 @@ export const FinancesTab = ({
                       </thead>
                       <tbody>
                         {members.map((member) => (
-                          <tr key={member.user_id} className="border-t border-brand-100 dark:border-slate-700">
+                          <tr
+                            key={member.user_id}
+                            className="border-t border-brand-100 dark:border-slate-700"
+                          >
                             <td
                               className={`px-3 py-2 ${
-                                member.user_id === userId ? "font-semibold text-slate-900 dark:text-slate-100" : "text-slate-700 dark:text-slate-300"
+                                member.user_id === userId
+                                  ? "font-semibold text-slate-900 dark:text-slate-100"
+                                  : "text-slate-700 dark:text-slate-300"
                               }`}
                             >
                               {memberLabel(member.user_id)}
@@ -2712,15 +2946,22 @@ export const FinancesTab = ({
                                     type="number"
                                     min="0.1"
                                     step="0.1"
-                                    value={memberOverviewDrafts[member.user_id]?.roomSizeSqm ?? ""}
+                                    value={
+                                      memberOverviewDrafts[member.user_id]
+                                        ?.roomSizeSqm ?? ""
+                                    }
                                     onChange={(event) =>
-                                      setOverviewMemberDraft(member.user_id, { roomSizeSqm: event.target.value })
+                                      setOverviewMemberDraft(member.user_id, {
+                                        roomSizeSqm: event.target.value,
+                                      })
                                     }
                                     placeholder={t("settings.roomSizeLabel")}
                                   />
                                 </div>
                               ) : (
-                                <span className="text-slate-600 dark:text-slate-300">{formatSqm(member.room_size_sqm)}</span>
+                                <span className="text-slate-600 dark:text-slate-300">
+                                  {formatSqm(member.room_size_sqm)}
+                                </span>
                               )}
                             </td>
                             <td className="px-3 py-2">
@@ -2731,24 +2972,37 @@ export const FinancesTab = ({
                                   min="0"
                                   max="2"
                                   step="0.01"
-                                  value={memberOverviewDrafts[member.user_id]?.commonAreaFactor ?? "1"}
+                                  value={
+                                    memberOverviewDrafts[member.user_id]
+                                      ?.commonAreaFactor ?? "1"
+                                  }
                                   onChange={(event) =>
-                                    setOverviewMemberDraft(member.user_id, { commonAreaFactor: event.target.value })
+                                    setOverviewMemberDraft(member.user_id, {
+                                      commonAreaFactor: event.target.value,
+                                    })
                                   }
                                   placeholder={t("settings.commonFactorLabel")}
                                 />
                               ) : (
                                 <span className="text-slate-600 dark:text-slate-300">
-                                  {t("finances.rentFactorValue", { value: member.common_area_factor.toFixed(2) })}
+                                  {t("finances.rentFactorValue", {
+                                    value: member.common_area_factor.toFixed(2),
+                                  })}
                                 </span>
                               )}
                             </td>
                           </tr>
                         ))}
                         <tr className="border-t border-dashed border-brand-200 bg-brand-50/20 dark:border-slate-700 dark:bg-slate-800/40">
-                          <td className="px-3 py-2 font-semibold text-slate-700 dark:text-slate-300">{t("finances.sharedAreaLabel")}</td>
-                          <td className="px-3 py-2 text-slate-600 dark:text-slate-300">{formatSqm(sharedAreaSqm)}</td>
-                          <td className="px-3 py-2 text-slate-500 dark:text-slate-400">-</td>
+                          <td className="px-3 py-2 font-semibold text-slate-700 dark:text-slate-300">
+                            {t("finances.sharedAreaLabel")}
+                          </td>
+                          <td className="px-3 py-2 text-slate-600 dark:text-slate-300">
+                            {formatSqm(sharedAreaSqm)}
+                          </td>
+                          <td className="px-3 py-2 text-slate-500 dark:text-slate-400">
+                            -
+                          </td>
                         </tr>
                       </tbody>
                     </table>
@@ -2771,7 +3025,9 @@ export const FinancesTab = ({
                     </p>
                   ) : null}
                   {members.length === 0 ? (
-                    <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">{t("finances.rentAreaOverviewEmpty")}</p>
+                    <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+                      {t("finances.rentAreaOverviewEmpty")}
+                    </p>
                   ) : null}
                 </>
               </SectionPanel>
@@ -2807,106 +3063,178 @@ export const FinancesTab = ({
                       </thead>
                       <tbody>
                         <tr className="border-t border-brand-100 dark:border-slate-700">
-                          <td className="px-3 py-2 text-slate-600 dark:text-slate-300">{t("finances.costBreakdownColdRoom")}</td>
+                          <td className="px-3 py-2 text-slate-600 dark:text-slate-300">
+                            {t("finances.costBreakdownColdRoom")}
+                          </td>
                           {members.map((member) => {
-                            const value = costTableData.byMember.get(member.user_id)?.coldForRoom ?? null;
+                            const value =
+                              costTableData.byMember.get(member.user_id)
+                                ?.coldForRoom ?? null;
                             return (
-                              <td key={`cost-breakdown-cold-${member.user_id}`} className="px-3 py-2 text-right font-medium text-slate-900 dark:text-slate-100">
+                              <td
+                                key={`cost-breakdown-cold-${member.user_id}`}
+                                className="px-3 py-2 text-right font-medium text-slate-900 dark:text-slate-100"
+                              >
                                 {value === null ? "-" : moneyLabel(value)}
                               </td>
                             );
                           })}
                           <td className="px-3 py-2 text-right font-semibold text-slate-900 dark:text-slate-100">
-                            {costTableTotals.coldForRoom === null ? "-" : moneyLabel(costTableTotals.coldForRoom)}
+                            {costTableTotals.coldForRoom === null
+                              ? "-"
+                              : moneyLabel(costTableTotals.coldForRoom)}
                           </td>
                         </tr>
                         <tr className="border-t border-brand-100 dark:border-slate-700">
-                          <td className="px-3 py-2 text-slate-600 dark:text-slate-300">{t("finances.costBreakdownUtilitiesRoom")}</td>
+                          <td className="px-3 py-2 text-slate-600 dark:text-slate-300">
+                            {t("finances.costBreakdownUtilitiesRoom")}
+                          </td>
                           {members.map((member) => {
-                            const value = costTableData.byMember.get(member.user_id)?.utilitiesForRoom ?? null;
+                            const value =
+                              costTableData.byMember.get(member.user_id)
+                                ?.utilitiesForRoom ?? null;
                             return (
-                              <td key={`cost-breakdown-utilities-${member.user_id}`} className="px-3 py-2 text-right font-medium text-slate-900 dark:text-slate-100">
+                              <td
+                                key={`cost-breakdown-utilities-${member.user_id}`}
+                                className="px-3 py-2 text-right font-medium text-slate-900 dark:text-slate-100"
+                              >
                                 {value === null ? "-" : moneyLabel(value)}
                               </td>
                             );
                           })}
                           <td className="px-3 py-2 text-right font-semibold text-slate-900 dark:text-slate-100">
-                            {costTableTotals.utilitiesForRoom === null ? "-" : moneyLabel(costTableTotals.utilitiesForRoom)}
+                            {costTableTotals.utilitiesForRoom === null
+                              ? "-"
+                              : moneyLabel(costTableTotals.utilitiesForRoom)}
                           </td>
                         </tr>
                         <tr className="border-t-4 border-double border-brand-300 dark:border-slate-500 bg-brand-50/20 dark:bg-slate-800/30">
-                          <td className="px-3 py-2 font-semibold text-slate-700 dark:text-slate-200">{t("finances.costBreakdownRoomSubtotal")}</td>
+                          <td className="px-3 py-2 font-semibold text-slate-700 dark:text-slate-200">
+                            {t("finances.costBreakdownRoomSubtotal")}
+                          </td>
                           {members.map((member) => {
-                            const value = costTableData.byMember.get(member.user_id)?.roomSubtotal ?? null;
+                            const value =
+                              costTableData.byMember.get(member.user_id)
+                                ?.roomSubtotal ?? null;
                             return (
-                              <td key={`cost-breakdown-subtotal-${member.user_id}`} className="px-3 py-2 text-right font-semibold text-slate-900 dark:text-slate-100">
+                              <td
+                                key={`cost-breakdown-subtotal-${member.user_id}`}
+                                className="px-3 py-2 text-right font-semibold text-slate-900 dark:text-slate-100"
+                              >
                                 {value === null ? "-" : moneyLabel(value)}
                               </td>
                             );
                           })}
                           <td className="px-3 py-2 text-right font-semibold text-slate-900 dark:text-slate-100">
-                            {costTableTotals.roomSubtotal === null ? "-" : moneyLabel(costTableTotals.roomSubtotal)}
+                            {costTableTotals.roomSubtotal === null
+                              ? "-"
+                              : moneyLabel(costTableTotals.roomSubtotal)}
                           </td>
                         </tr>
                         <tr className="border-t-4 border-double border-brand-300 dark:border-slate-500">
-                          <td className="px-3 py-2 font-medium text-slate-600 dark:text-slate-300">{t("finances.costBreakdownSharedAreaCosts")}</td>
+                          <td className="px-3 py-2 font-medium text-slate-600 dark:text-slate-300">
+                            {t("finances.costBreakdownSharedAreaCosts")}
+                          </td>
                           {members.map((member) => (
-                            <td key={`cost-breakdown-shared-area-empty-${member.user_id}`} className="px-3 py-2 text-right font-medium text-slate-500 dark:text-slate-300">
+                            <td
+                              key={`cost-breakdown-shared-area-empty-${member.user_id}`}
+                              className="px-3 py-2 text-right font-medium text-slate-500 dark:text-slate-300"
+                            >
                               -
                             </td>
                           ))}
                           <td className="px-3 py-2 text-right font-semibold text-slate-900 dark:text-slate-100">
-                            {costTableTotals.sharedAreaColdCosts === null ? "-" : moneyLabel(costTableTotals.sharedAreaColdCosts)}
+                            {costTableTotals.sharedAreaColdCosts === null
+                              ? "-"
+                              : moneyLabel(costTableTotals.sharedAreaColdCosts)}
                           </td>
                         </tr>
                         <tr className="border-t border-brand-100 dark:border-slate-700">
-                          <td className="px-3 py-2 font-medium text-slate-600 dark:text-slate-300">{t("finances.costBreakdownSharedUtilitiesCosts")}</td>
+                          <td className="px-3 py-2 font-medium text-slate-600 dark:text-slate-300">
+                            {t("finances.costBreakdownSharedUtilitiesCosts")}
+                          </td>
                           {members.map((member) => (
-                            <td key={`cost-breakdown-shared-utilities-empty-${member.user_id}`} className="px-3 py-2 text-right font-medium text-slate-500 dark:text-slate-300">
+                            <td
+                              key={`cost-breakdown-shared-utilities-empty-${member.user_id}`}
+                              className="px-3 py-2 text-right font-medium text-slate-500 dark:text-slate-300"
+                            >
                               -
                             </td>
                           ))}
                           <td className="px-3 py-2 text-right font-semibold text-slate-900 dark:text-slate-100">
-                            {costTableTotals.sharedUtilitiesCosts === null ? "-" : moneyLabel(costTableTotals.sharedUtilitiesCosts)}
+                            {costTableTotals.sharedUtilitiesCosts === null
+                              ? "-"
+                              : moneyLabel(
+                                  costTableTotals.sharedUtilitiesCosts,
+                                )}
                           </td>
                         </tr>
                         <tr className="border-t border-brand-100 dark:border-slate-700">
-                          <td className="px-3 py-2 font-medium text-slate-600 dark:text-slate-300">{t("finances.costBreakdownRemainingApartment")}</td>
+                          <td className="px-3 py-2 font-medium text-slate-600 dark:text-slate-300">
+                            {t("finances.costBreakdownRemainingApartment")}
+                          </td>
                           {members.map((member) => (
-                            <td key={`cost-breakdown-remaining-empty-${member.user_id}`} className="px-3 py-2 text-right font-medium text-slate-500 dark:text-slate-300">
+                            <td
+                              key={`cost-breakdown-remaining-empty-${member.user_id}`}
+                              className="px-3 py-2 text-right font-medium text-slate-500 dark:text-slate-300"
+                            >
                               -
                             </td>
                           ))}
                           <td className="px-3 py-2 text-right font-semibold text-slate-900 dark:text-slate-100">
-                            {costTableTotals.remainingApartmentCosts === null ? "-" : moneyLabel(costTableTotals.remainingApartmentCosts)}
+                            {costTableTotals.remainingApartmentCosts === null
+                              ? "-"
+                              : moneyLabel(
+                                  costTableTotals.remainingApartmentCosts,
+                                )}
                           </td>
                         </tr>
                         <tr className="border-t border-brand-100 dark:border-slate-700">
-                          <td className="px-3 py-2 text-slate-600 dark:text-slate-300">{t("finances.costBreakdownCommonShare")}</td>
+                          <td className="px-3 py-2 text-slate-600 dark:text-slate-300">
+                            {t("finances.costBreakdownCommonShare")}
+                          </td>
                           {members.map((member) => {
-                            const value = costTableData.byMember.get(member.user_id)?.commonCostsShare ?? null;
+                            const value =
+                              costTableData.byMember.get(member.user_id)
+                                ?.commonCostsShare ?? null;
                             return (
-                              <td key={`cost-breakdown-common-${member.user_id}`} className="px-3 py-2 text-right font-medium text-slate-900 dark:text-slate-100">
+                              <td
+                                key={`cost-breakdown-common-${member.user_id}`}
+                                className="px-3 py-2 text-right font-medium text-slate-900 dark:text-slate-100"
+                              >
                                 {value === null ? "-" : moneyLabel(value)}
                               </td>
                             );
                           })}
                           <td className="px-3 py-2 text-right font-semibold text-slate-900 dark:text-slate-100">
-                            {costTableTotals.commonCostsShare === null ? "-" : moneyLabel(costTableTotals.commonCostsShare)}
+                            {costTableTotals.commonCostsShare === null
+                              ? "-"
+                              : moneyLabel(costTableTotals.commonCostsShare)}
                           </td>
                         </tr>
                         <tr className="border-t-4 border-double border-brand-300 dark:border-slate-500 bg-brand-50/20 dark:bg-slate-800/30">
-                          <td className="px-3 py-2 font-semibold text-slate-700 dark:text-slate-200">{t("finances.costBreakdownTotal")}</td>
+                          <td className="px-3 py-2 font-semibold text-slate-700 dark:text-slate-200">
+                            {t("finances.costBreakdownTotal")}
+                          </td>
                           {members.map((member) => {
-                            const value = costTableData.byMember.get(member.user_id)?.totalBeforeContracts ?? null;
+                            const value =
+                              costTableData.byMember.get(member.user_id)
+                                ?.totalBeforeContracts ?? null;
                             return (
-                              <td key={`cost-breakdown-total-${member.user_id}`} className="px-3 py-2 text-right font-semibold text-slate-900 dark:text-slate-100">
+                              <td
+                                key={`cost-breakdown-total-${member.user_id}`}
+                                className="px-3 py-2 text-right font-semibold text-slate-900 dark:text-slate-100"
+                              >
                                 {value === null ? "-" : moneyLabel(value)}
                               </td>
                             );
                           })}
                           <td className="px-3 py-2 text-right font-semibold text-slate-900 dark:text-slate-100">
-                            {costTableTotals.totalBeforeContracts === null ? "-" : moneyLabel(costTableTotals.totalBeforeContracts)}
+                            {costTableTotals.totalBeforeContracts === null
+                              ? "-"
+                              : moneyLabel(
+                                  costTableTotals.totalBeforeContracts,
+                                )}
                           </td>
                         </tr>
                       </tbody>
@@ -2915,22 +3243,32 @@ export const FinancesTab = ({
                 </>
               </SectionPanel>
             </>
-            ) : null}
+          ) : null}
 
-            {!rentDetailsOpen ? (
+          {!rentDetailsOpen ? (
             <SectionPanel className="mt-4">
               <div className="flex items-center justify-between gap-2">
                 <div>
-                  <p className="text-sm font-semibold text-brand-900 dark:text-brand-100">{t("finances.subscriptionListTitle")}</p>
-                  <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{t("finances.subscriptionsDescription")}</p>
+                  <p className="text-sm font-semibold text-brand-900 dark:text-brand-100">
+                    {t("finances.subscriptionListTitle")}
+                  </p>
+                  <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+                    {t("finances.subscriptionsDescription")}
+                  </p>
                 </div>
-                <Button type="button" onClick={() => setSubscriptionDialogOpen(true)} disabled={busy}>
+                <Button
+                  type="button"
+                  onClick={() => setSubscriptionDialogOpen(true)}
+                  disabled={busy}
+                >
                   {t("finances.addSubscriptionAction")}
                 </Button>
               </div>
 
               {subscriptions.length === 0 ? (
-                <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">{t("finances.subscriptionEmpty")}</p>
+                <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+                  {t("finances.subscriptionEmpty")}
+                </p>
               ) : (
                 <ul className="mt-3 space-y-2">
                   {subscriptions.map((subscription) => (
@@ -2941,16 +3279,26 @@ export const FinancesTab = ({
                       <div className="flex items-start justify-between gap-2">
                         <div className="space-y-1">
                           <div className="flex items-center gap-2">
-                            <p className="font-medium text-slate-900 dark:text-slate-100">{subscription.name}</p>
-                            <Badge className="text-[10px]">{subscription.category}</Badge>
+                            <p className="font-medium text-slate-900 dark:text-slate-100">
+                              {subscription.name}
+                            </p>
+                            <Badge className="text-[10px]">
+                              {subscription.category}
+                            </Badge>
                           </div>
                           <p className="text-xs text-slate-500 dark:text-slate-400">
-                            {t("finances.subscriptionRecursLabel", { value: recurrenceLabel(subscription) })}
+                            {t("finances.subscriptionRecursLabel", {
+                              value: recurrenceLabel(subscription),
+                            })}
                           </p>
-                          <p className="text-xs text-slate-500 dark:text-slate-400">{subscriptionParticipantsText(subscription)}</p>
+                          <p className="text-xs text-slate-500 dark:text-slate-400">
+                            {subscriptionParticipantsText(subscription)}
+                          </p>
                         </div>
                         <div className="flex items-center gap-1">
-                          <p className="text-sm font-semibold text-brand-800 dark:text-brand-200">{moneyLabel(subscription.amount)}</p>
+                          <p className="text-sm font-semibold text-brand-800 dark:text-brand-200">
+                            {moneyLabel(subscription.amount)}
+                          </p>
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                               <Button
@@ -2965,7 +3313,11 @@ export const FinancesTab = ({
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
-                              <DropdownMenuItem onClick={() => onStartEditSubscription(subscription)}>
+                              <DropdownMenuItem
+                                onClick={() =>
+                                  onStartEditSubscription(subscription)
+                                }
+                              >
                                 {t("finances.editSubscriptionAction")}
                               </DropdownMenuItem>
                               <DropdownMenuItem
@@ -2985,12 +3337,16 @@ export const FinancesTab = ({
                 </ul>
               )}
             </SectionPanel>
-            ) : null}
+          ) : null}
 
-            {!rentDetailsOpen ? (
+          {!rentDetailsOpen ? (
             <SectionPanel className="mt-4">
-              <p className="text-sm font-semibold text-brand-900 dark:text-brand-100">{t("finances.rentSummaryTitle")}</p>
-              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{t("finances.rentSummaryDescription")}</p>
+              <p className="text-sm font-semibold text-brand-900 dark:text-brand-100">
+                {t("finances.rentSummaryTitle")}
+              </p>
+              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                {t("finances.rentSummaryDescription")}
+              </p>
               <div className="mt-3 overflow-x-auto rounded-xl border border-brand-100 dark:border-slate-700">
                 <table className="min-w-[760px] w-full text-sm">
                   <thead className="bg-brand-50/50 dark:bg-slate-800/60">
@@ -3013,25 +3369,41 @@ export const FinancesTab = ({
                   </thead>
                   <tbody>
                     <tr className="border-t border-brand-100 dark:border-slate-700">
-                      <td className="px-3 py-2 text-slate-600 dark:text-slate-300">{t("finances.rentSummarySubtotal")}</td>
+                      <td className="px-3 py-2 text-slate-600 dark:text-slate-300">
+                        {t("finances.rentSummarySubtotal")}
+                      </td>
                       {members.map((member) => {
-                        const value = costTableData.byMember.get(member.user_id)?.totalBeforeContracts ?? null;
+                        const value =
+                          costTableData.byMember.get(member.user_id)
+                            ?.totalBeforeContracts ?? null;
                         return (
-                          <td key={`rent-summary-subtotal-${member.user_id}`} className="px-3 py-2 text-right font-semibold text-slate-900 dark:text-slate-100">
+                          <td
+                            key={`rent-summary-subtotal-${member.user_id}`}
+                            className="px-3 py-2 text-right font-semibold text-slate-900 dark:text-slate-100"
+                          >
                             {value === null ? "-" : moneyLabel(value)}
                           </td>
                         );
                       })}
                       <td className="px-3 py-2 text-right font-semibold text-slate-900 dark:text-slate-100">
-                        {costTableTotals.totalBeforeContracts === null ? "-" : moneyLabel(costTableTotals.totalBeforeContracts)}
+                        {costTableTotals.totalBeforeContracts === null
+                          ? "-"
+                          : moneyLabel(costTableTotals.totalBeforeContracts)}
                       </td>
                     </tr>
                     <tr className="border-t border-brand-100 dark:border-slate-700">
-                      <td className="px-3 py-2 text-slate-600 dark:text-slate-300">{t("finances.rentSummaryContracts")}</td>
+                      <td className="px-3 py-2 text-slate-600 dark:text-slate-300">
+                        {t("finances.rentSummaryContracts")}
+                      </td>
                       {members.map((member) => {
-                        const value = costTableData.byMember.get(member.user_id)?.extraContracts ?? 0;
+                        const value =
+                          costTableData.byMember.get(member.user_id)
+                            ?.extraContracts ?? 0;
                         return (
-                          <td key={`rent-summary-contracts-${member.user_id}`} className="px-3 py-2 text-right font-semibold text-slate-900 dark:text-slate-100">
+                          <td
+                            key={`rent-summary-contracts-${member.user_id}`}
+                            className="px-3 py-2 text-right font-semibold text-slate-900 dark:text-slate-100"
+                          >
                             {moneyLabel(value)}
                           </td>
                         );
@@ -3041,75 +3413,172 @@ export const FinancesTab = ({
                       </td>
                     </tr>
                     <tr className="border-t border-brand-100 bg-brand-100/40 dark:border-slate-700 dark:bg-slate-700/30">
-                      <td className="px-3 py-2 font-semibold text-slate-800 dark:text-slate-100">{t("finances.rentSummaryGrandTotal")}</td>
+                      <td className="px-3 py-2 font-semibold text-slate-800 dark:text-slate-100">
+                        {t("finances.rentSummaryGrandTotal")}
+                      </td>
                       {members.map((member) => {
-                        const value = costTableData.byMember.get(member.user_id)?.grandTotal ?? null;
+                        const value =
+                          costTableData.byMember.get(member.user_id)
+                            ?.grandTotal ?? null;
                         return (
-                          <td key={`rent-summary-grand-${member.user_id}`} className="px-3 py-2 text-right font-semibold text-slate-900 dark:text-slate-100">
+                          <td
+                            key={`rent-summary-grand-${member.user_id}`}
+                            className="px-3 py-2 text-right font-semibold text-slate-900 dark:text-slate-100"
+                          >
                             {value === null ? "-" : moneyLabel(value)}
                           </td>
                         );
                       })}
                       <td className="px-3 py-2 text-right font-semibold text-slate-900 dark:text-slate-100">
-                        {costTableTotals.grandTotal === null ? "-" : moneyLabel(costTableTotals.grandTotal)}
+                        {costTableTotals.grandTotal === null
+                          ? "-"
+                          : moneyLabel(costTableTotals.grandTotal)}
                       </td>
                     </tr>
                   </tbody>
                 </table>
               </div>
             </SectionPanel>
-            ) : null}
-          </>
-        ) : null}
-
-        {showArchive && entries.length > 0 && filteredEntries.length === 0 ? (
-          <p className="text-sm text-slate-500 dark:text-slate-400">{t("finances.emptyFiltered")}</p>
-        ) : null}
-
-      {showOverview ? (
-        <FinanceHistoryCard
-          className="relative z-0"
-          title={t("finances.currentEntriesTitle")}
-          description={t("finances.currentEntriesDescription")}
-          headerRight={
-            <Badge
-              className={
-                isPersonalBalanceNegative
-                  ? "text-xs border-rose-200 bg-rose-100 text-rose-800 dark:border-rose-800/60 dark:bg-rose-900/40 dark:text-rose-200"
-                  : "text-xs border-emerald-200 bg-emerald-100 text-emerald-800 dark:border-emerald-800/60 dark:bg-emerald-900/40 dark:text-emerald-200"
-              }
-            >
-              {t("finances.personalBalanceChip", { value: personalBalanceLabel })}
-            </Badge>
-          }
-          entries={entriesSinceLastAudit}
-          emptyText={t("finances.empty")}
-          paidByText={paidByText}
-          entryDateText={entryDateText}
-          receiptImageUrl={(entry) => entry.receipt_image_url}
-          receiptLabel={t("finances.receiptLink")}
-          formatMoney={moneyLabel}
-          entryChipText={personalEntryDeltaLabel}
-          entryChipClassName={personalEntryDeltaChipClassName}
-          amountClassName="text-xs text-slate-500 dark:text-slate-400"
-          onEdit={onStartEditEntry}
-          onDelete={(entry) => {
-            void onDeleteEntry(entry);
-          }}
-          canEditEntry={canManageFinanceEntry}
-          canDeleteEntry={canManageFinanceEntry}
-          actionsLabel={t("finances.entryActions")}
-          editLabel={t("finances.editEntry")}
-          deleteLabel={t("finances.deleteEntry")}
-          busy={busy}
-        />
+          ) : null}
+        </>
       ) : null}
 
-      <Dialog open={subscriptionDialogOpen} onOpenChange={setSubscriptionDialogOpen}>
+      {showArchive && entries.length > 0 && filteredEntries.length === 0 ? (
+        <p className="text-sm text-slate-500 dark:text-slate-400">
+          {t("finances.emptyFiltered")}
+        </p>
+      ) : null}
+
+      {showOverview ? (
+        <>
+          <Card className="relative z-0">
+            <CardHeader>
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <CardTitle>{t("finances.currentEntriesTitle")}</CardTitle>
+                  <CardDescription>
+                    {t("finances.currentEntriesDescription")}
+                  </CardDescription>
+                </div>
+                <Badge
+                  className={
+                    isPersonalBalanceNegative
+                      ? "text-xs border-rose-200 bg-rose-100 text-rose-800 dark:border-rose-800/60 dark:bg-rose-900/40 dark:text-rose-200"
+                      : "text-xs border-emerald-200 bg-emerald-100 text-emerald-800 dark:border-emerald-800/60 dark:bg-emerald-900/40 dark:text-emerald-200"
+                  }
+                >
+                  {t("finances.personalBalanceChip", {
+                    value: personalBalanceLabel,
+                  })}
+                </Badge>
+              </div>
+            </CardHeader>
+          </Card>
+          {entriesSinceLastAudit.length > 0 ? (
+            <div className="mt-4 space-y-3">
+              {entriesSinceLastAudit.map((entry) => (
+                <Card
+                  key={entry.id}
+                  className="relative z-0 rounded-xl border border-slate-300 bg-white/88 p-3 text-slate-800 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-100 mb-4"
+                >
+                  <CardContent>
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex min-w-0 flex-col gap-1">
+                        <p className="truncate font-medium text-slate-900 dark:text-slate-100">
+                          {entry.description}
+                        </p>
+                        <Badge className="w-fit text-[10px]">
+                          {entry.category}
+                        </Badge>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <div className="flex flex-col items-end gap-1">
+                          {personalEntryDeltaLabel(entry) ? (
+                            <Badge
+                              className={personalEntryDeltaChipClassName(entry)}
+                            >
+                              {personalEntryDeltaLabel(entry)}
+                            </Badge>
+                          ) : null}
+                          <p className="text-xs text-slate-500 dark:text-slate-400">
+                            {moneyLabel(entry.amount)}
+                          </p>
+                        </div>
+                        {canManageFinanceEntry(entry) ? (
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="h-8 w-8 p-0"
+                                aria-label={t("finances.entryActions")}
+                                disabled={busy}
+                              >
+                                <MoreHorizontal className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem
+                                onClick={() => onStartEditEntry(entry)}
+                              >
+                                {t("finances.editEntry")}
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() => {
+                                  void onDeleteEntry(entry);
+                                }}
+                                className="text-rose-600 dark:text-rose-300"
+                              >
+                                {t("finances.deleteEntry")}
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        ) : null}
+                      </div>
+                    </div>
+                    <div className="mt-1 flex items-end justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="text-xs text-slate-500 dark:text-slate-400">
+                          {paidByText(entry)}
+                        </p>
+                        {entry.receipt_image_url ? (
+                          <a
+                            href={entry.receipt_image_url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="mt-1 inline-flex items-center text-xs text-brand-700 underline decoration-brand-300 underline-offset-2 hover:text-brand-600 dark:text-brand-300 dark:decoration-brand-700"
+                          >
+                            {t("finances.receiptLink")}
+                          </a>
+                        ) : null}
+                      </div>
+                      <p className="shrink-0 text-xs text-slate-500 dark:text-slate-400">
+                        {entryDateText(entry)}
+                      </p>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          ) : (
+            <p className="mt-4 text-sm text-slate-500 dark:text-slate-400">
+              {t("finances.empty")}
+            </p>
+          )}
+        </>
+      ) : null}
+
+      <Dialog
+        open={subscriptionDialogOpen}
+        onOpenChange={setSubscriptionDialogOpen}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{t("finances.addSubscriptionAction")}</DialogTitle>
-            <DialogDescription>{t("finances.subscriptionsDescription")}</DialogDescription>
+            <DialogDescription>
+              {t("finances.subscriptionsDescription")}
+            </DialogDescription>
           </DialogHeader>
           <form
             className="space-y-3"
@@ -3142,7 +3611,9 @@ export const FinancesTab = ({
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{t("finances.editSubscriptionTitle")}</DialogTitle>
-            <DialogDescription>{t("finances.editSubscriptionDescription")}</DialogDescription>
+            <DialogDescription>
+              {t("finances.editSubscriptionDescription")}
+            </DialogDescription>
           </DialogHeader>
           <form
             className="space-y-3"
@@ -3178,7 +3649,9 @@ export const FinancesTab = ({
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{t("finances.editEntryTitle")}</DialogTitle>
-            <DialogDescription>{t("finances.editEntryDescription")}</DialogDescription>
+            <DialogDescription>
+              {t("finances.editEntryDescription")}
+            </DialogDescription>
           </DialogHeader>
           <form
             className="space-y-3"
@@ -3190,14 +3663,21 @@ export const FinancesTab = ({
           >
             <editEntryForm.Field
               name="description"
-              children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
+              children={(field: {
+                state: { value: string };
+                handleChange: (value: string) => void;
+              }) => (
                 <div className="space-y-1">
                   <Label>{t("finances.entryNameLabel")}</Label>
                   <Input
                     value={field.state.value}
                     onChange={(event) => field.handleChange(event.target.value)}
                     placeholder={t("finances.descriptionPlaceholder")}
-                    list={entryNameSuggestions.length > 0 ? entryNameSuggestionsListId : undefined}
+                    list={
+                      entryNameSuggestions.length > 0
+                        ? entryNameSuggestionsListId
+                        : undefined
+                    }
                     required
                   />
                 </div>
@@ -3205,7 +3685,10 @@ export const FinancesTab = ({
             />
             <editEntryForm.Field
               name="amount"
-              children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
+              children={(field: {
+                state: { value: string };
+                handleChange: (value: string) => void;
+              }) => (
                 <div className="space-y-1">
                   <Label>{t("finances.entryAmountLabel")}</Label>
                   <InputWithSuffix
@@ -3225,7 +3708,10 @@ export const FinancesTab = ({
             />
             <editEntryForm.Field
               name="category"
-              children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
+              children={(field: {
+                state: { value: string };
+                handleChange: (value: string) => void;
+              }) => (
                 <CategoryInputField
                   label={t("finances.subscriptionCategoryLabel")}
                   value={field.state.value}
@@ -3238,7 +3724,10 @@ export const FinancesTab = ({
             />
             <editEntryForm.Field
               name="entryDate"
-              children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
+              children={(field: {
+                state: { value: string };
+                handleChange: (value: string) => void;
+              }) => (
                 <div className="space-y-1">
                   <Label>{t("finances.entryDate")}</Label>
                   <Input
@@ -3255,13 +3744,15 @@ export const FinancesTab = ({
               editEntryForm,
               {
                 uploadInputRef: editReceiptUploadInputRef,
-                cameraInputRef: editReceiptCameraInputRef
+                cameraInputRef: editReceiptCameraInputRef,
               },
-              false
+              false,
             )}
             {renderEntryMemberFields(editEntryForm, false)}
             {receiptUploadError ? (
-              <p className="text-xs text-rose-600 dark:text-rose-300">{receiptUploadError}</p>
+              <p className="text-xs text-rose-600 dark:text-rose-300">
+                {receiptUploadError}
+              </p>
             ) : null}
             <div className="flex justify-end gap-2">
               <DialogClose asChild>
@@ -3284,22 +3775,40 @@ export const FinancesTab = ({
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{t("finances.ocrDialogTitle")}</DialogTitle>
-            <DialogDescription>{t("finances.ocrDialogDescription")}</DialogDescription>
+            <DialogDescription>
+              {t("finances.ocrDialogDescription")}
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
             <div className="overflow-hidden rounded-xl border border-brand-100 bg-black dark:border-slate-700">
-              <video ref={ocrVideoRef} className="h-64 w-full object-cover" autoPlay muted playsInline />
+              <video
+                ref={ocrVideoRef}
+                className="h-64 w-full object-cover"
+                autoPlay
+                muted
+                playsInline
+              />
             </div>
             <canvas ref={ocrCanvasRef} className="hidden" />
-            {ocrError ? <p className="text-xs text-rose-600 dark:text-rose-300">{ocrError}</p> : null}
+            {ocrError ? (
+              <p className="text-xs text-rose-600 dark:text-rose-300">
+                {ocrError}
+              </p>
+            ) : null}
             <div className="flex justify-end gap-2">
               <DialogClose asChild>
                 <Button variant="ghost" type="button">
                   {t("common.cancel")}
                 </Button>
               </DialogClose>
-              <Button type="button" onClick={() => void captureAndAnalyzeOcr()} disabled={ocrBusy}>
-                {ocrBusy ? t("finances.ocrReadingButton") : t("finances.ocrCaptureButton")}
+              <Button
+                type="button"
+                onClick={() => void captureAndAnalyzeOcr()}
+                disabled={ocrBusy}
+              >
+                {ocrBusy
+                  ? t("finances.ocrReadingButton")
+                  : t("finances.ocrCaptureButton")}
               </Button>
             </div>
           </div>
@@ -3315,22 +3824,30 @@ export const FinancesTab = ({
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{t("finances.ocrConfirmTitle")}</DialogTitle>
-            <DialogDescription>{t("finances.ocrConfirmDescription")}</DialogDescription>
+            <DialogDescription>
+              {t("finances.ocrConfirmDescription")}
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
             <div className="rounded-xl border border-brand-100 bg-brand-50/40 p-3 text-sm dark:border-slate-700 dark:bg-slate-800/50">
               <p>
-                <span className="font-semibold">{t("finances.entryNameLabel")}:</span>{" "}
+                <span className="font-semibold">
+                  {t("finances.entryNameLabel")}:
+                </span>{" "}
                 {ocrCandidate?.description || "-"}
               </p>
               <p>
-                <span className="font-semibold">{t("finances.entryAmountLabel")}:</span>{" "}
+                <span className="font-semibold">
+                  {t("finances.entryAmountLabel")}:
+                </span>{" "}
                 {ocrCandidate?.amount || "-"}
               </p>
             </div>
             {ocrCandidate?.fullText ? (
               <details className="text-xs text-slate-500 dark:text-slate-400">
-                <summary className="cursor-pointer">{t("finances.ocrRawTextToggle")}</summary>
+                <summary className="cursor-pointer">
+                  {t("finances.ocrRawTextToggle")}
+                </summary>
                 <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap rounded-lg border border-brand-100 bg-white p-2 dark:border-slate-700 dark:bg-slate-900">
                   {ocrCandidate.fullText}
                 </pre>
@@ -3347,11 +3864,20 @@ export const FinancesTab = ({
                   type="button"
                   onClick={() => {
                     if (!ocrCandidate) return;
-                    if (!addEntryForm.state.values.description.trim() && ocrCandidate.description) {
-                      addEntryForm.setFieldValue("description", ocrCandidate.description);
+                    if (
+                      !addEntryForm.state.values.description.trim() &&
+                      ocrCandidate.description
+                    ) {
+                      addEntryForm.setFieldValue(
+                        "description",
+                        ocrCandidate.description,
+                      );
                       setPreviewDescription(ocrCandidate.description);
                     }
-                    if (!addEntryForm.state.values.amount.trim() && ocrCandidate.amount) {
+                    if (
+                      !addEntryForm.state.values.amount.trim() &&
+                      ocrCandidate.amount
+                    ) {
                       addEntryForm.setFieldValue("amount", ocrCandidate.amount);
                       setPreviewAmountInput(ocrCandidate.amount);
                     }
