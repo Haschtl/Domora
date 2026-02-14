@@ -168,6 +168,44 @@ Wichtig:
 
 - `SUPABASE_SECRET_KEY` niemals als `VITE_*` exponieren.
 
+### Supabase Edge Functions (Push)
+
+Die Push-Pipeline laeuft ueber Supabase Edge Functions (`dispatch-push-jobs`, `schedule-task-due`) und benoetigt eigene Secrets.
+
+In Supabase **Project Settings → Functions → Secrets** setzen:
+
+- `SUPABASE_URL`
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `SUPABASE_PUBLISHABLE_KEY` (entspricht dem frueheren `anon`-Key)
+- `FCM_PROJECT_ID`
+- `FCM_SERVICE_ACCOUNT_JSON` (voller JSON-String des Firebase Service Accounts)
+
+Optional fuer lokale Tests via CLI:
+
+```bash
+supabase secrets set \
+  SUPABASE_URL=... \
+  SUPABASE_SERVICE_ROLE_KEY=... \
+  SUPABASE_PUBLISHABLE_KEY=... \
+  FCM_PROJECT_ID=... \
+  FCM_SERVICE_ACCOUNT_JSON='{"type":"service_account",...}'
+```
+
+Deployment:
+
+```bash
+supabase functions deploy dispatch-push-jobs
+supabase functions deploy schedule-task-due
+supabase functions deploy register-push-token
+```
+
+Scheduler/Cron:
+
+- In `supabase/schema.sql` ist ein Cron-Block enthalten (Placeholder-URL ersetzen).
+- Der Scheduler ruft `dispatch-push-jobs` regelmaessig und `schedule-task-due` taeglich auf.
+
+Hinweis: Fuer Web-Client (FCM) wird zusaetzlich `public/firebase-config.json` benoetigt (siehe `public/firebase-config.example.json`) sowie `VITE_FIREBASE_*` Variablen in der `.env`.
+
 ## Datenbank und Security
 
 Die zentrale Logik liegt in `supabase/schema.sql`:

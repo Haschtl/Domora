@@ -4,13 +4,14 @@ import imageCompression from "browser-image-compression";
 import { Camera, Check, Crown, Share2, UserMinus, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import QRCode from "react-qr-code";
-import type { Household, HouseholdMember, UpdateHouseholdInput } from "../../lib/types";
+import type { Household, HouseholdMember, PushPreferences, UpdateHouseholdInput } from "../../lib/types";
 import { createDiceBearAvatarDataUri } from "../../lib/avatar";
 import { createTrianglifyBannerBackground } from "../../lib/banner";
 import { createMemberLabelGetter } from "../../lib/member-label";
 import { ThemeLanguageControls } from "../../components/theme-language-controls";
 import { PaymentBrandIcon } from "../../components/payment-brand-icon";
 import { Button } from "../../components/ui/button";
+import { Checkbox } from "../../components/ui/checkbox";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
 import {
   Dialog,
@@ -25,6 +26,7 @@ import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
 import { Switch } from "../../components/ui/switch";
+import { getPushPreferences, upsertPushPreferences } from "../../lib/api";
 
 interface SettingsTabProps {
   section?: "me" | "household";
@@ -139,6 +141,9 @@ export const SettingsTab = ({
   const [profileUploadError, setProfileUploadError] = useState<string | null>(null);
   const [householdUploadError, setHouseholdUploadError] = useState<string | null>(null);
   const [inviteCopied, setInviteCopied] = useState(false);
+  const [pushPreferences, setPushPreferences] = useState<PushPreferences | null>(null);
+  const [pushPreferencesBusy, setPushPreferencesBusy] = useState(false);
+  const [pushPreferencesError, setPushPreferencesError] = useState<string | null>(null);
   const profileUploadInputRef = useRef<HTMLInputElement | null>(null);
   const householdUploadInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -252,6 +257,25 @@ export const SettingsTab = ({
     profilePaymentsForm.setFieldValue("revolutName", userRevolutName ?? "");
     profilePaymentsForm.setFieldValue("weroName", userWeroName ?? "");
   }, [profilePaymentsForm, userPaypalName, userRevolutName, userWeroName]);
+  useEffect(() => {
+    if (!household?.id || !userId) return;
+    let isActive = true;
+    setPushPreferencesError(null);
+    void (async () => {
+      try {
+        const prefs = await getPushPreferences(household.id, userId);
+        if (isActive) setPushPreferences(prefs);
+      } catch (error) {
+        if (isActive) {
+          const message = error instanceof Error ? error.message : t("app.unknownError");
+          setPushPreferencesError(message);
+        }
+      }
+    })();
+    return () => {
+      isActive = false;
+    };
+  }, [household.id, t, userId]);
 
   const onProfileFileChange = async (file: File) => {
     try {
@@ -369,6 +393,21 @@ export const SettingsTab = ({
   const canDissolveHousehold = isOwner && uniqueMembers.length === 1 && uniqueMembers[0]?.user_id === userId;
   const pushEnabled = notificationPermission === "granted";
   const pushPermissionLabel = t(`settings.pushStatus.${notificationPermission}`);
+  const pushTopics = useMemo(
+    () => [
+      { id: "task_due", label: t("settings.pushUsedForTaskDue") },
+      { id: "task_completed", label: t("settings.pushUsedForTaskCompleted") },
+      { id: "task_skipped", label: t("settings.pushUsedForTaskSkipped") },
+      { id: "task_taken_over", label: t("settings.pushUsedForTaskTakenOver") },
+      { id: "finance_created", label: t("settings.pushUsedForFinanceCreated") },
+      { id: "shopping_added", label: t("settings.pushUsedForShoppingAdded") },
+      { id: "shopping_completed", label: t("settings.pushUsedForShoppingCompleted") },
+      { id: "bucket_added", label: t("settings.pushUsedForBucketAdded") },
+      { id: "cash_audit_requested", label: t("settings.pushUsedForCashAudit") }
+    ],
+    [t]
+  );
+  const isPushPreferencesReady = Boolean(pushPreferences);
   const inviteUrl = useMemo(() => {
     if (typeof window === "undefined") return `/?invite=${encodeURIComponent(household.invite_code)}`;
     return `${window.location.origin}/?invite=${encodeURIComponent(household.invite_code)}`;
@@ -394,6 +433,31 @@ export const SettingsTab = ({
       await navigator.clipboard.writeText(inviteUrl);
       setInviteCopied(true);
       return;
+    }
+  };
+
+  const updatePushPreferences = (updater: (current: PushPreferences) => PushPreferences) => {
+    setPushPreferences((current) => (current ? updater(current) : current));
+  };
+
+  const savePushPreferences = async () => {
+    if (!pushPreferences) return;
+    setPushPreferencesBusy(true);
+    setPushPreferencesError(null);
+    try {
+      const updated = await upsertPushPreferences({
+        householdId: pushPreferences.household_id,
+        userId: pushPreferences.user_id,
+        enabled: pushPreferences.enabled,
+        quietHours: pushPreferences.quiet_hours ?? {},
+        topics: pushPreferences.topics ?? []
+      });
+      setPushPreferences(updated);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t("app.unknownError");
+      setPushPreferencesError(message);
+    } finally {
+      setPushPreferencesBusy(false);
     }
   };
   const showMe = section === "me";
@@ -598,9 +662,142 @@ export const SettingsTab = ({
                 <ul className="mt-1 list-disc space-y-0.5 pl-4">
                   <li>{t("settings.pushUsedForTaskDue")}</li>
                   <li>{t("settings.pushUsedForTaskCompleted")}</li>
+                  <li>{t("settings.pushUsedForTaskSkipped")}</li>
+                  <li>{t("settings.pushUsedForTaskTakenOver")}</li>
                   <li>{t("settings.pushUsedForFinanceCreated")}</li>
+                  <li>{t("settings.pushUsedForShoppingAdded")}</li>
+                  <li>{t("settings.pushUsedForShoppingCompleted")}</li>
+                  <li>{t("settings.pushUsedForBucketAdded")}</li>
                   <li>{t("settings.pushUsedForCashAudit")}</li>
                 </ul>
+              </div>
+              <div className="mt-3 space-y-3 border-t border-brand-100 pt-3 text-xs dark:border-slate-700">
+                {!pushEnabled ? (
+                  <p className="text-slate-500 dark:text-slate-400">
+                    {t("settings.pushPreferencesHint")}
+                  </p>
+                ) : !isPushPreferencesReady ? (
+                  <p className="text-slate-500 dark:text-slate-400">
+                    {t("settings.pushPreferencesLoading")}
+                  </p>
+                ) : (
+                  <>
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
+                          {t("settings.pushPreferencesTitle")}
+                        </p>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">
+                          {t("settings.pushPreferencesDescription")}
+                        </p>
+                      </div>
+                      <Switch
+                        checked={pushPreferences?.enabled ?? true}
+                        onCheckedChange={(checked) => {
+                          updatePushPreferences((current) => ({
+                            ...current,
+                            enabled: checked
+                          }));
+                        }}
+                        disabled={pushPreferencesBusy}
+                        aria-label={t("settings.pushPreferencesTitle")}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <p className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                        {t("settings.pushPreferencesTopics")}
+                      </p>
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        {pushTopics.map((topic) => {
+                          const isChecked = (pushPreferences?.topics ?? []).includes(topic.id);
+                          return (
+                            <label key={topic.id} className="flex items-center gap-2">
+                              <Checkbox
+                                checked={isChecked}
+                                onCheckedChange={(checked) => {
+                                  updatePushPreferences((current) => {
+                                    const nextTopics = new Set(current.topics ?? []);
+                                    if (checked) {
+                                      nextTopics.add(topic.id);
+                                    } else {
+                                      nextTopics.delete(topic.id);
+                                    }
+                                    return {
+                                      ...current,
+                                      topics: Array.from(nextTopics)
+                                    };
+                                  });
+                                }}
+                                disabled={pushPreferencesBusy}
+                              />
+                              <span className="text-xs text-slate-700 dark:text-slate-200">{topic.label}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <p className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                        {t("settings.pushQuietHoursTitle")}
+                      </p>
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        <div className="space-y-1">
+                          <Label className="text-xs">{t("settings.pushQuietHoursStart")}</Label>
+                          <Input
+                            type="time"
+                            value={pushPreferences?.quiet_hours?.start ?? ""}
+                            onChange={(event) => {
+                              const start = event.target.value;
+                              updatePushPreferences((current) => ({
+                                ...current,
+                                quiet_hours: {
+                                  ...current.quiet_hours,
+                                  start,
+                                  timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+                                  offsetMinutes: -new Date().getTimezoneOffset()
+                                }
+                              }));
+                            }}
+                            disabled={pushPreferencesBusy}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-xs">{t("settings.pushQuietHoursEnd")}</Label>
+                          <Input
+                            type="time"
+                            value={pushPreferences?.quiet_hours?.end ?? ""}
+                            onChange={(event) => {
+                              const end = event.target.value;
+                              updatePushPreferences((current) => ({
+                                ...current,
+                                quiet_hours: {
+                                  ...current.quiet_hours,
+                                  end,
+                                  timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+                                  offsetMinutes: -new Date().getTimezoneOffset()
+                                }
+                              }));
+                            }}
+                            disabled={pushPreferencesBusy}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                    {pushPreferencesError ? (
+                      <p className="text-xs text-rose-600 dark:text-rose-300">{pushPreferencesError}</p>
+                    ) : null}
+                    <div className="flex justify-end">
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={() => void savePushPreferences()}
+                        disabled={pushPreferencesBusy}
+                      >
+                        {t("settings.pushPreferencesSave")}
+                      </Button>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
 

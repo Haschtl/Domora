@@ -1,14 +1,10 @@
-server-seitig, wo deployen? 
-
+Email-Hints im UI raus, es wird nichts per mail verschickt
 
 liht-mode fixen
 
 texte frecher machen
 
 
-Push-Notifications sicher machen
-Aktuell sind es nur clientseitige Browser-Notifications.
-Für „täglich fällig + assigned Person zuverlässig“ fehlt noch ein robuster serverseitiger Flow (z. B. Supabase Edge Function + Scheduler + Push-Token-Verwaltung).
+- Push notifications sofort, wenn jemand Finanzeinträge erstellt oder Aufgaben abschließt/skippt/übernimmt, oder jemand was auf die einkaufsliste setzt/abhakt, oder wenn jemand einen Kassensturz macht, oder wenn jemand einen bucketlist eintrag hinzufügt
+- Push notification wenn eine Aufgabe fällig wird und alle drei tage bis die aufgabe abgeschlossen ist, einmal
 
-Kassensturz Email an alle
-In der DB wird der Request angelegt (cash_audit_requests), aber der echte Mailversand-Worker/Edge-Function ist noch nicht angebunden.

@@ -207,6 +207,63 @@ create table if not exists finance_subscriptions (
   check (cardinality(beneficiary_user_ids) > 0)
 );
 
+create table if not exists push_tokens (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  household_id uuid not null references households(id) on delete cascade,
+  platform text not null check (platform in ('web', 'android', 'ios')),
+  provider text not null check (provider in ('fcm', 'webpush', 'apns')),
+  token text not null,
+  device_id text not null,
+  app_version text,
+  locale text,
+  timezone text,
+  status text not null default 'active' check (status in ('active', 'invalid')),
+  last_seen_at timestamptz not null default now(),
+  last_error text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (user_id, device_id, provider)
+);
+
+create table if not exists push_preferences (
+  user_id uuid not null references auth.users(id) on delete cascade,
+  household_id uuid not null references households(id) on delete cascade,
+  enabled boolean not null default true,
+  quiet_hours jsonb not null default '{}'::jsonb,
+  topics jsonb not null default '[]'::jsonb,
+  updated_at timestamptz not null default now(),
+  primary key (user_id, household_id)
+);
+
+create table if not exists push_jobs (
+  id uuid primary key default gen_random_uuid(),
+  type text not null,
+  household_id uuid not null references households(id) on delete cascade,
+  user_id uuid references auth.users(id) on delete set null,
+  payload jsonb not null default '{}'::jsonb,
+  scheduled_for timestamptz not null default now(),
+  status text not null default 'pending' check (status in ('pending', 'processing', 'sent', 'failed')),
+  dedupe_key text,
+  attempts int not null default 0,
+  last_error text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create unique index if not exists push_jobs_dedupe_key_uq
+  on push_jobs (dedupe_key)
+  where dedupe_key is not null;
+
+create table if not exists push_log (
+  id uuid primary key default gen_random_uuid(),
+  job_id uuid references push_jobs(id) on delete cascade,
+  token_id uuid references push_tokens(id) on delete cascade,
+  status text not null,
+  provider_response jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
 -- backward compatible upgrades if tables already existed
 alter table households add column if not exists image_url text;
 alter table households add column if not exists address text not null default '';
@@ -227,6 +284,219 @@ where utilities_on_room_sqm_percent is null;
 
 alter table households
 alter column utilities_on_room_sqm_percent set not null;
+
+alter table tasks add column if not exists last_due_notification_at timestamptz;
+
+create or replace function set_updated_at()
+returns trigger
+language plpgsql
+as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_push_tokens_updated_at on push_tokens;
+create trigger trg_push_tokens_updated_at
+before update on push_tokens
+for each row execute function set_updated_at();
+
+drop trigger if exists trg_push_jobs_updated_at on push_jobs;
+create trigger trg_push_jobs_updated_at
+before update on push_jobs
+for each row execute function set_updated_at();
+
+drop trigger if exists trg_push_preferences_updated_at on push_preferences;
+create trigger trg_push_preferences_updated_at
+before update on push_preferences
+for each row execute function set_updated_at();
+
+alter table push_tokens enable row level security;
+alter table push_preferences enable row level security;
+alter table push_jobs enable row level security;
+alter table push_log enable row level security;
+
+create policy if not exists "push_tokens_select_own"
+  on push_tokens for select
+  using (auth.uid() = user_id);
+
+create policy if not exists "push_tokens_insert_own"
+  on push_tokens for insert
+  with check (
+    auth.uid() = user_id
+    and exists (
+      select 1 from household_members
+      where household_members.household_id = push_tokens.household_id
+        and household_members.user_id = auth.uid()
+    )
+  );
+
+create policy if not exists "push_tokens_update_own"
+  on push_tokens for update
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+create policy if not exists "push_preferences_select_own"
+  on push_preferences for select
+  using (auth.uid() = user_id);
+
+create policy if not exists "push_preferences_upsert_own"
+  on push_preferences for insert
+  with check (
+    auth.uid() = user_id
+    and exists (
+      select 1 from household_members
+      where household_members.household_id = push_preferences.household_id
+        and household_members.user_id = auth.uid()
+    )
+  );
+
+create policy if not exists "push_preferences_update_own"
+  on push_preferences for update
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+create or replace function queue_push_from_household_event()
+returns trigger
+language plpgsql
+as $$
+declare
+  dedupe text;
+begin
+  dedupe := concat('event:', new.event_type, ':', new.id);
+  insert into push_jobs (type, household_id, user_id, payload, scheduled_for, dedupe_key)
+  values (
+    new.event_type,
+    new.household_id,
+    new.actor_user_id,
+    jsonb_build_object('event', new.event_type, 'payload', new.payload, 'actor_user_id', new.actor_user_id),
+    now(),
+    dedupe
+  )
+  on conflict do nothing;
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_household_events_queue_push on household_events;
+create trigger trg_household_events_queue_push
+after insert on household_events
+for each row execute function queue_push_from_household_event();
+
+create or replace function queue_push_on_shopping_add()
+returns trigger
+language plpgsql
+as $$
+declare
+  dedupe text;
+begin
+  dedupe := concat('shopping_added:', new.id);
+  insert into push_jobs (type, household_id, user_id, payload, scheduled_for, dedupe_key)
+  values (
+    'shopping_added',
+    new.household_id,
+    new.created_by,
+    jsonb_build_object('title', new.title, 'shoppingItemId', new.id, 'actor_user_id', new.created_by),
+    now(),
+    dedupe
+  )
+  on conflict do nothing;
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_shopping_items_queue_push on shopping_items;
+create trigger trg_shopping_items_queue_push
+after insert on shopping_items
+for each row execute function queue_push_on_shopping_add();
+
+create or replace function queue_push_on_bucket_add()
+returns trigger
+language plpgsql
+as $$
+declare
+  dedupe text;
+begin
+  dedupe := concat('bucket_added:', new.id);
+  insert into push_jobs (type, household_id, user_id, payload, scheduled_for, dedupe_key)
+  values (
+    'bucket_added',
+    new.household_id,
+    new.created_by,
+    jsonb_build_object('title', new.title, 'bucketItemId', new.id, 'actor_user_id', new.created_by),
+    now(),
+    dedupe
+  )
+  on conflict do nothing;
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_bucket_items_queue_push on bucket_items;
+create trigger trg_bucket_items_queue_push
+after insert on bucket_items
+for each row execute function queue_push_on_bucket_add();
+
+create or replace function queue_push_on_task_takeover()
+returns trigger
+language plpgsql
+as $$
+declare
+  dedupe text;
+begin
+  if new.assignee_id is distinct from old.assignee_id and new.done = false then
+    dedupe := concat('task_takeover:', new.id, ':', new.assignee_id);
+    insert into push_jobs (type, household_id, user_id, payload, scheduled_for, dedupe_key)
+    values (
+      'task_taken_over',
+      new.household_id,
+      new.assignee_id,
+      jsonb_build_object('title', new.title, 'taskId', new.id, 'actor_user_id', new.assignee_id),
+      now(),
+      dedupe
+    )
+    on conflict do nothing;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_tasks_queue_takeover_push on tasks;
+create trigger trg_tasks_queue_takeover_push
+after update of assignee_id on tasks
+for each row execute function queue_push_on_task_takeover();
+
+do $$
+begin
+  perform cron.schedule(
+    'dispatch-push-jobs',
+    '*/2 * * * *',
+    $cron$
+    select
+      net.http_post(
+        url:='https://YOUR_PROJECT_REF.functions.supabase.co/dispatch-push-jobs',
+        headers:='{"Content-Type": "application/json"}'::jsonb
+      );
+    $cron$
+  );
+  perform cron.schedule(
+    'schedule-task-due',
+    '0 9 * * *',
+    $cron$
+    select
+      net.http_post(
+        url:='https://YOUR_PROJECT_REF.functions.supabase.co/schedule-task-due',
+        headers:='{"Content-Type": "application/json"}'::jsonb
+      );
+    $cron$
+  );
+exception
+  when undefined_function then
+    raise notice 'cron.schedule not available';
+  when undefined_table then
+    raise notice 'net.http_post not available';
+end $$;
 
 do $$
 begin
@@ -1610,7 +1880,7 @@ drop policy if exists households_select on households;
 create policy households_select on households
 for select
 to authenticated
-using (is_household_member(id));
+using (is_household_member(id) or created_by = auth.uid());
 
 drop policy if exists households_insert on households;
 create policy households_insert on households

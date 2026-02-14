@@ -18,6 +18,7 @@ import type { LucideIcon } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { toast } from "react-toastify";
 import { isSupabaseConfigured } from "./lib/supabase";
+import { useForegroundPush } from "./hooks/useForegroundPush";
 import { isDueNow } from "./lib/date";
 import type { AppTab } from "./lib/types";
 import { Button } from "./components/ui/button";
@@ -229,6 +230,8 @@ const App = () => {
     onSetMemberRole,
     onRemoveMember
   } = useWorkspaceController();
+
+  useForegroundPush(notificationPermission === "granted");
 
   const tab = useMemo(() => resolveTabFromPathname(location.pathname), [location.pathname]);
   const paymentRedirectStatus = useMemo<"success" | "cancel" | null>(() => {

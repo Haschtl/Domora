@@ -22,6 +22,7 @@ import type {
   NewFinanceSubscriptionInput,
   NewTaskInput,
   UpdateHouseholdInput,
+  PushPreferences,
   ShoppingRecurrenceUnit,
   ShoppingItem,
   ShoppingItemCompletion,
@@ -1782,6 +1783,62 @@ export const getHouseholdEvents = async (householdId: string): Promise<Household
 
   if (error) throw error;
   return (data ?? []).map((entry) => normalizeHouseholdEvent(entry as Record<string, unknown>));
+};
+
+export const getPushPreferences = async (householdId: string, userId: string): Promise<PushPreferences> => {
+  const validatedHouseholdId = z.string().uuid().parse(householdId);
+  const validatedUserId = z.string().uuid().parse(userId);
+  const { data, error } = await supabase
+    .from("push_preferences")
+    .select("*")
+    .eq("household_id", validatedHouseholdId)
+    .eq("user_id", validatedUserId)
+    .single();
+  if (error) {
+    return {
+      user_id: validatedUserId,
+      household_id: validatedHouseholdId,
+      enabled: true,
+      quiet_hours: {},
+      topics: []
+    };
+  }
+  return {
+    ...(data as PushPreferences),
+    topics: Array.isArray((data as PushPreferences).topics) ? (data as PushPreferences).topics : []
+  };
+};
+
+export const upsertPushPreferences = async (input: {
+  householdId: string;
+  userId: string;
+  enabled: boolean;
+  quietHours: Record<string, unknown>;
+  topics: string[];
+}): Promise<PushPreferences> => {
+  const parsed = z
+    .object({
+      householdId: z.string().uuid(),
+      userId: z.string().uuid(),
+      enabled: z.coerce.boolean(),
+      quietHours: z.record(z.string(), z.unknown()).default({}),
+      topics: z.array(z.string()).default([])
+    })
+    .parse(input);
+
+  const { data, error } = await supabase
+    .from("push_preferences")
+    .upsert({
+      household_id: parsed.householdId,
+      user_id: parsed.userId,
+      enabled: parsed.enabled,
+      quiet_hours: parsed.quietHours,
+      topics: parsed.topics
+    })
+    .select("*")
+    .single();
+  if (error) throw error;
+  return data as PushPreferences;
 };
 
 export const getFinanceSubscriptions = async (householdId: string): Promise<FinanceSubscription[]> => {

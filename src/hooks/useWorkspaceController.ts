@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import {
@@ -65,6 +65,7 @@ import type {
 import { useTaskNotifications } from "./useTaskNotifications";
 import { useWorkspaceData } from "./use-workspace-data";
 import { useWorkspaceActions } from "./use-workspace-actions";
+import { registerWebPushToken } from "../lib/push-registration";
 
 export const useWorkspaceController = () => {
   const { t } = useTranslation();
@@ -494,12 +495,29 @@ export const useWorkspaceController = () => {
     await executeAction(async () => {
       const result = await requestPermission();
       if (result === "granted") {
+        if (activeHousehold) {
+          await registerWebPushToken({
+            householdId: activeHousehold.id,
+            locale: typeof navigator !== "undefined" ? navigator.language : undefined,
+            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone
+          });
+        }
         setMessage(t("app.pushEnabled"));
       } else {
         setError(t("app.pushDenied"));
       }
     });
-  }, [executeAction, requestPermission, t]);
+  }, [activeHousehold, executeAction, requestPermission, t]);
+
+  useEffect(() => {
+    if (!activeHousehold) return;
+    if (permission !== "granted") return;
+    void registerWebPushToken({
+      householdId: activeHousehold.id,
+      locale: typeof navigator !== "undefined" ? navigator.language : undefined,
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone
+    });
+  }, [activeHousehold, permission]);
 
   const onUpdateHousehold = useCallback(
     async (input: UpdateHouseholdInput) => {

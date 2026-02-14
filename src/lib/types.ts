@@ -53,6 +53,19 @@ export interface HouseholdMemberPimpers {
   updated_at: string;
 }
 
+export interface PushPreferences {
+  user_id: string;
+  household_id: string;
+  enabled: boolean;
+  quiet_hours: {
+    start?: string;
+    end?: string;
+    timezone?: string;
+    offsetMinutes?: number;
+  };
+  topics: string[];
+}
+
 export interface ShoppingItem {
   id: string;
   household_id: string;
