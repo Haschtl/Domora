@@ -1079,6 +1079,38 @@ export const addBucketItem = async (
   return normalizeBucketItem(data as Record<string, unknown>);
 };
 
+export const updateBucketItem = async (
+  id: string,
+  input: { title: string; descriptionMarkdown: string; suggestedDates: string[] }
+): Promise<void> => {
+  const parsed = z
+    .object({
+      id: z.string().uuid(),
+      title: z.string().trim().min(1).max(200),
+      descriptionMarkdown: z.string().max(20_000),
+      suggestedDates: z
+        .array(z.string().regex(/^\d{4}-\d{2}-\d{2}$/))
+        .max(15)
+    })
+    .parse({
+      id,
+      title: input.title,
+      descriptionMarkdown: input.descriptionMarkdown,
+      suggestedDates: input.suggestedDates
+    });
+
+  const { error } = await supabase
+    .from("bucket_items")
+    .update({
+      title: parsed.title,
+      description_markdown: parsed.descriptionMarkdown,
+      suggested_dates: [...new Set(parsed.suggestedDates)].sort()
+    })
+    .eq("id", parsed.id);
+
+  if (error) throw error;
+};
+
 export const updateBucketItemStatus = async (id: string, done: boolean, userId: string): Promise<void> => {
   const validatedId = z.string().uuid().parse(id);
   const validatedUserId = z.string().uuid().parse(userId);

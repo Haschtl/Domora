@@ -1960,7 +1960,7 @@ export const FinancesTab = ({
               <div
                 className={`fixed inset-x-0 z-40 px-3 sm:hidden ${
                   mobileTabBarVisible
-                    ? "bottom-[calc(env(safe-area-inset-bottom)+4.75rem)]"
+                    ? "bottom-[calc(env(safe-area-inset-bottom)+3.75rem)]"
                     : "bottom-[calc(env(safe-area-inset-bottom)+0.75rem)]"
                 }`}
               >
@@ -2124,8 +2124,24 @@ export const FinancesTab = ({
                     options={{
                       responsive: true,
                       maintainAspectRatio: false,
+                      interaction: {
+                        mode: "index",
+                        intersect: false
+                      },
                       plugins: {
-                        legend: { display: true, position: "bottom" }
+                        legend: { display: true, position: "bottom" },
+                        tooltip: {
+                          callbacks: {
+                            label: (context) => {
+                              const value = Number(context.parsed.y ?? 0);
+                              return `${context.dataset.label ?? t("common.memberFallback")}: ${formatMoney(value, locale)}`;
+                            },
+                            footer: (items) => {
+                              const total = items.reduce((sum, item) => sum + Number(item.parsed.y ?? 0), 0);
+                              return t("finances.chartStackTotal", { value: formatMoney(total, locale) });
+                            }
+                          }
+                        }
                       },
                       scales: {
                         x: { stacked: true },

@@ -191,6 +191,7 @@ const App = () => {
     onAddShoppingItem,
     onAddBucketItem,
     onToggleBucketItem,
+    onUpdateBucketItem,
     onDeleteBucketItem,
     onToggleBucketDateVote,
     onToggleShoppingItem,
@@ -784,6 +785,7 @@ const App = () => {
                         onSaveLandingMarkdown={onUpdateHomeMarkdown}
                         onAddBucketItem={onAddBucketItem}
                         onToggleBucketItem={onToggleBucketItem}
+                        onUpdateBucketItem={onUpdateBucketItem}
                         onDeleteBucketItem={onDeleteBucketItem}
                         onToggleBucketDateVote={onToggleBucketDateVote}
                         onCompleteTask={onCompleteTask}

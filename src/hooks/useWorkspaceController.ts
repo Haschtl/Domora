@@ -45,6 +45,7 @@ import {
   updateUserDisplayName,
   updateUserPaymentHandles,
   updateBucketDateVote,
+  updateBucketItem,
   updateBucketItemStatus
 } from "../lib/api";
 import { setActiveHouseholdId } from "../lib/app-store";
@@ -253,6 +254,17 @@ export const useWorkspaceController = () => {
       });
     },
     [activeHousehold, runWithWorkspaceInvalidation, userId]
+  );
+
+  const onUpdateBucketItem = useCallback(
+    async (item: BucketItem, input: { title: string; descriptionMarkdown: string; suggestedDates: string[] }) => {
+      if (!activeHousehold) return;
+
+      await runWithWorkspaceInvalidation(async () => {
+        await updateBucketItem(item.id, input);
+      });
+    },
+    [activeHousehold, runWithWorkspaceInvalidation]
   );
 
   const onDeleteBucketItem = useCallback(
@@ -705,6 +717,7 @@ export const useWorkspaceController = () => {
     onJoinHousehold,
     onAddBucketItem,
     onToggleBucketItem,
+    onUpdateBucketItem,
     onDeleteBucketItem,
     onToggleBucketDateVote,
     onAddShoppingItem,

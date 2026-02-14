@@ -1021,12 +1021,42 @@ export const TasksTab = ({
     const rows = [...sortedMemberRows].sort(
       (a, b) => (b.scaled_pimpers ?? 0) - (a.scaled_pimpers ?? 0) || a.user_id.localeCompare(b.user_id)
     );
+    const userIds = rows.map((entry) => entry.user_id);
+
+    const taskTitleById = new Map<string, string>();
+    statsFilteredTasks.forEach((task) => {
+      taskTitleById.set(task.id, task.title?.trim() || t("tasks.fallbackTitle"));
+    });
+    statsFilteredCompletions.forEach((entry) => {
+      if (taskTitleById.has(entry.task_id)) return;
+      taskTitleById.set(entry.task_id, entry.task_title_snapshot?.trim() || t("tasks.fallbackTitle"));
+    });
+
+    const taskIds = [...new Set(statsFilteredCompletions.map((entry) => entry.task_id))].sort((left, right) =>
+      (taskTitleById.get(left) ?? t("tasks.fallbackTitle")).localeCompare(
+        taskTitleById.get(right) ?? t("tasks.fallbackTitle"),
+        language
+      )
+    );
+
+    const pimpersByUserTaskKey = new Map<string, number>();
+    statsFilteredCompletions.forEach((entry) => {
+      const key = `${entry.user_id}::${entry.task_id}`;
+      pimpersByUserTaskKey.set(key, (pimpersByUserTaskKey.get(key) ?? 0) + Math.max(0, entry.pimpers_earned));
+    });
 
     return {
+      userIds,
       labels: rows.map((entry) => userLabel(entry.user_id)),
-      values: rows.map((entry) => Number((entry.scaled_pimpers ?? 0).toFixed(2)))
+      datasets: taskIds.map((taskId) => ({
+        label: taskTitleById.get(taskId) ?? t("tasks.fallbackTitle"),
+        data: userIds.map((memberId) => Number((pimpersByUserTaskKey.get(`${memberId}::${taskId}`) ?? 0).toFixed(2))),
+        backgroundColor: fallbackColorFromUserId(`task:${taskId}`),
+        borderColor: "transparent",
+        borderWidth: 0
+      }))
     };
-  }, [sortedMemberRows, userLabel]);
+  }, [language, sortedMemberRows, statsFilteredCompletions, statsFilteredTasks, t, userLabel]);
 
   const removeRotationMember = (targetUserId: string) => {
     setRotationUserIds((current) => {
@@ -1211,8 +1241,8 @@ export const TasksTab = ({
   }, [monthCells]);
   const visibleCalendarDayKeys = useMemo(() => new Set(monthCells.map((cell) => dayKey(cell.date))), [monthCells]);
   const completionSpansByDay = useMemo(
-    () => buildCompletionSpansByDay(completions, visibleCalendarDayKeys, visibleCalendarRange),
-    [completions, visibleCalendarDayKeys, visibleCalendarRange]
+    () => buildCompletionSpansByDay(statsFilteredCompletions, visibleCalendarDayKeys, visibleCalendarRange),
+    [statsFilteredCompletions, visibleCalendarDayKeys, visibleCalendarRange]
   );
   const latestCompletionIdByTask = useMemo(() => {
     const map = new Map<string, string>();
@@ -1334,7 +1364,8 @@ export const TasksTab = ({
                             return (
                               <div
                                 key={`${dayKey(cell.date)}-span-${span.id}-${span.kind}`}
-                                className={`relative z-10 h-1.5 bg-emerald-300/90 dark:bg-emerald-700/90 ${segmentClassName}`}
+                                className={`relative z-10 h-1.5 ${segmentClassName}`}
+                                style={{ backgroundColor: resolveMemberColor(span.userId) }}
                               >
                                 {(span.kind === "end" || span.kind === "single") && avatarSrc ? (
                                   <div
@@ -2084,7 +2115,7 @@ export const TasksTab = ({
 
         {lazinessCard}
 
-        {showStats && pimpersByUserSeries.labels.length > 0 ? (
+        {showStats && pimpersByUserSeries.labels.length > 0 && pimpersByUserSeries.datasets.length > 0 ? (
           <Card className="mb-4">
             <CardHeader>
               <CardTitle>{t("tasks.historyChartPimpers")}</CardTitle>
@@ -2094,26 +2125,36 @@ export const TasksTab = ({
               <Bar
                 data={{
                   labels: pimpersByUserSeries.labels,
-                  datasets: [
-                    {
-                      label: t("tasks.historyChartPimpers"),
-                      data: pimpersByUserSeries.values,
-                      backgroundColor: "rgba(16, 185, 129, 0.65)",
-                      borderRadius: 6
-                    }
-                  ]
+                  datasets: pimpersByUserSeries.datasets
                 }}
                 options={{
                   responsive: true,
                   maintainAspectRatio: false,
-                  plugins: {
-                    legend: { display: false }
+                  interaction: {
+                    mode: "index",
+                    intersect: false
                   },
-                  scales: {
-                    y: { beginAtZero: true, ticks: { precision: 0 } }
-                  }
-                }}
-                height={170}
+                    plugins: {
+                      legend: { display: true, position: "bottom" },
+                      tooltip: {
+                        callbacks: {
+                          label: (context) => {
+                            const value = Number(context.parsed.y ?? 0);
+                            return `${context.dataset.label ?? t("tasks.fallbackTitle")}: ${value}`;
+                          },
+                          footer: (items) => {
+                            const total = items.reduce((sum, item) => sum + Number(item.parsed.y ?? 0), 0);
+                            return t("tasks.chartStackTotal", { value: total });
+                          }
+                        }
+                      }
+                    },
+                    scales: {
+                      x: { stacked: true },
+                      y: { stacked: true, beginAtZero: true, ticks: { precision: 0 } }
+                    }
+                  }}
+                height={280}
               />
             </div>
             </CardContent>
@@ -2187,8 +2228,30 @@ export const TasksTab = ({
                   options={{
                     responsive: true,
                     maintainAspectRatio: false,
+                    interaction: {
+                      mode: "index",
+                      intersect: false
+                    },
                     plugins: {
-                      legend: { display: true, position: "bottom" }
+                      legend: { display: true, position: "bottom" },
+                      tooltip: {
+                        callbacks: {
+                          title: (items) => {
+                            const first = items[0];
+                            if (!first) return "";
+                            const label = completionSeries.labels[first.dataIndex];
+                            return formatShortDay(label, language, label);
+                          },
+                          label: (context) => {
+                            const value = Number(context.parsed.y ?? 0);
+                            return `${context.dataset.label ?? t("tasks.fallbackTitle")}: ${value}`;
+                          },
+                          footer: (items) => {
+                            const total = items.reduce((sum, item) => sum + Number(item.parsed.y ?? 0), 0);
+                            return t("tasks.chartStackTotal", { value: total });
+                          }
+                        }
+                      }
                     },
                     scales: {
                       x: { stacked: true },
