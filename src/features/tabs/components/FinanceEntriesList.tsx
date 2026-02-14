@@ -15,6 +15,7 @@ interface FinanceEntriesListProps {
   entries: FinanceEntry[];
   formatMoney: (value: number) => string;
   paidByText: (entry: FinanceEntry) => string;
+  entryDateText?: (entry: FinanceEntry) => string | null;
   entryChipText?: (entry: FinanceEntry) => string | null;
   entryChipClassName?: (entry: FinanceEntry) => string | undefined;
   amountClassName?: string;
@@ -34,6 +35,7 @@ export const FinanceEntriesList = ({
   entries,
   formatMoney,
   paidByText,
+  entryDateText,
   entryChipText,
   entryChipClassName,
   amountClassName = "text-sm font-semibold text-brand-800 dark:text-brand-200",
@@ -103,7 +105,12 @@ export const FinanceEntriesList = ({
           ) : null}
         </div>
       </div>
-      <p className="text-xs text-slate-500 dark:text-slate-400">{paidByText(entry)}</p>
+      <div className="mt-1 flex items-end justify-between gap-2">
+        <p className="text-xs text-slate-500 dark:text-slate-400">{paidByText(entry)}</p>
+        {entryDateText ? (
+          <p className="shrink-0 text-xs text-slate-500 dark:text-slate-400">{entryDateText(entry)}</p>
+        ) : null}
+      </div>
     </li>
   );
 

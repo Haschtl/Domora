@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { createClient } from "@supabase/supabase-js";
 import {
   buildCompletionRows,
+  buildEventRows,
   buildFinanceRows,
   buildMemberRows,
   buildPimperRows,
@@ -68,6 +69,7 @@ const appTablesToClear = [
   { table: "cash_audit_requests", markerColumn: "id" },
   { table: "finance_subscriptions", markerColumn: "id" },
   { table: "finance_entries", markerColumn: "id" },
+  { table: "household_events", markerColumn: "id" },
   { table: "task_completions", markerColumn: "id" },
   { table: "task_rotation_members", markerColumn: "task_id" },
   { table: "tasks", markerColumn: "id" },
@@ -81,7 +83,7 @@ const appTablesToClear = [
 
 const clearApplicationData = async () => {
   console.warn("WARNING: This will clear existing Domora data before inserting new dummy data.");
-  console.warn("WARNING: Tables affected: cash_audit_requests, finance_subscriptions, finance_entries, tasks, shopping_items, households, user_profiles, ...");
+  console.warn("WARNING: Tables affected: cash_audit_requests, finance_subscriptions, finance_entries, household_events, tasks, shopping_items, households, user_profiles, ...");
   console.warn("WARNING: Continuing in 3 seconds. Press Ctrl+C to abort.");
   await new Promise((resolveTimeout) => setTimeout(resolveTimeout, 3000));
 
@@ -201,7 +203,10 @@ const run = async () => {
   const profileRows = users.map((user) => ({
     user_id: user.id,
     display_name: user.name,
-    avatar_url: null
+    avatar_url: null,
+    paypal_name: user.email.split("@")[0],
+    revolut_name: user.email.split("@")[0],
+    wero_name: user.name
   }));
   const { error: profileError } = await supabase.from("user_profiles").upsert(profileRows);
   if (profileError) {
@@ -230,7 +235,7 @@ const run = async () => {
   const { data: insertedTasks, error: taskError } = await supabase
     .from("tasks")
     .insert(taskRows)
-    .select("id, title, done, done_by, effort_pimpers, due_at");
+    .select("id, title, done, done_by, effort_pimpers, due_at, frequency_days, assignee_id");
 
   if (taskError) {
     throw new Error(`Failed to insert tasks: ${taskError.message}`);
@@ -303,6 +308,20 @@ const run = async () => {
     }
   }
 
+  const eventRows = buildEventRows({
+    householdId,
+    completionRows,
+    shoppingCompletionRows,
+    financeRows,
+    memberRows
+  });
+  if (eventRows.length > 0) {
+    const { error: eventError } = await supabase.from("household_events").insert(eventRows);
+    if (eventError) {
+      throw new Error(`Failed to insert household events: ${eventError.message}`);
+    }
+  }
+
   console.log("Seed done.");
   console.log(`Household: ${household.name} (${household.id})`);
   console.log(`Invite code: ${household.invite_code}`);
@@ -316,6 +335,7 @@ const run = async () => {
   console.log(`Cash audits created: ${cashAuditRows.length}`);
   console.log(`Shopping items created: ${insertedShoppingItems.length}`);
   console.log(`Shopping completions created: ${shoppingCompletionRows.length}`);
+  console.log(`Household events created: ${eventRows.length}`);
 };
 
 run().catch((error) => {

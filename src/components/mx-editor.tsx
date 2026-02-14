@@ -3,11 +3,13 @@ import {
   BlockTypeSelect,
   BoldItalicUnderlineToggles,
   CreateLink,
+  type JsxComponentDescriptor,
   ListsToggle,
   MDXEditor,
   type MDXEditorMethods,
   UndoRedo,
   headingsPlugin,
+  jsxPlugin,
   linkDialogPlugin,
   linkPlugin,
   listsPlugin,
@@ -26,6 +28,7 @@ interface MXEditorProps {
   insertOptions?: Array<{ label: string; value: string }>;
   insertPlaceholder?: string;
   insertButtonLabel?: string;
+  jsxComponentDescriptors?: JsxComponentDescriptor[];
 }
 
 export const MXEditor = ({
@@ -36,7 +39,8 @@ export const MXEditor = ({
   chrome = "card",
   insertOptions = [],
   insertPlaceholder = "Baustein",
-  insertButtonLabel = "Einfügen"
+  insertButtonLabel = "Einfügen",
+  jsxComponentDescriptors = []
 }: MXEditorProps) => {
   const editorRef = useRef<MDXEditorMethods>(null);
   const [selectedInsertValue, setSelectedInsertValue] = useState("");
@@ -78,6 +82,59 @@ export const MXEditor = ({
     chrome === "flat"
       ? "sticky top-0 z-10 border-b border-brand-200/80 bg-brand-50/50 p-2 dark:border-slate-700 dark:bg-slate-800/60"
       : "sticky top-0 z-10 border-b border-brand-200 bg-brand-50/60 p-2 dark:border-slate-700 dark:bg-slate-800/70";
+  const plugins = [
+    headingsPlugin(),
+    listsPlugin(),
+    quotePlugin(),
+    thematicBreakPlugin(),
+    linkPlugin(),
+    linkDialogPlugin(),
+    ...(jsxComponentDescriptors.length > 0 ? [jsxPlugin({ jsxComponentDescriptors })] : []),
+    markdownShortcutPlugin(),
+    toolbarPlugin({
+      toolbarClassName,
+      toolbarContents: () => (
+        <>
+          <UndoRedo />
+          <BoldItalicUnderlineToggles />
+          <BlockTypeSelect />
+          <ListsToggle />
+          <CreateLink />
+          {hasInsertOptions ? (
+            <span className="ml-2 inline-flex items-center gap-1">
+              <select
+                className="h-8 max-w-[220px] rounded-md border border-slate-300 bg-white px-2 text-xs text-slate-800 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+                value={resolvedInsertValue}
+                onChange={(event) => setSelectedInsertValue(event.target.value)}
+                aria-label={insertPlaceholder}
+                title={insertPlaceholder}
+              >
+                {insertOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                className="h-8 rounded-md border border-brand-300 bg-white px-2 text-xs font-medium text-brand-700 hover:bg-brand-50 dark:border-brand-700 dark:bg-slate-900 dark:text-brand-300 dark:hover:bg-slate-800"
+                onClick={() => {
+                  if (!resolvedInsertValue) {
+                    return;
+                  }
+                  editorRef.current?.focus(() => {
+                    editorRef.current?.insertMarkdown(`\n\n${resolvedInsertValue}\n\n`);
+                  }, { defaultSelection: "rootEnd" });
+                }}
+              >
+                {insertButtonLabel}
+              </button>
+            </span>
+          ) : null}
+        </>
+      )
+    })
+  ];
 
   return (
     <div className={containerClassName}>
@@ -88,58 +145,7 @@ export const MXEditor = ({
         placeholder={placeholder}
         className="text-sm text-slate-900 dark:text-slate-100"
         contentEditableClassName={editorTypographyClassName}
-        plugins={[
-          headingsPlugin(),
-          listsPlugin(),
-          quotePlugin(),
-          thematicBreakPlugin(),
-          linkPlugin(),
-          linkDialogPlugin(),
-          markdownShortcutPlugin(),
-          toolbarPlugin({
-            toolbarClassName,
-            toolbarContents: () => (
-              <>
-                <UndoRedo />
-                <BoldItalicUnderlineToggles />
-                <BlockTypeSelect />
-                <ListsToggle />
-                <CreateLink />
-                {hasInsertOptions ? (
-                  <span className="ml-2 inline-flex items-center gap-1">
-                    <select
-                      className="h-8 max-w-[220px] rounded-md border border-slate-300 bg-white px-2 text-xs text-slate-800 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
-                      value={resolvedInsertValue}
-                      onChange={(event) => setSelectedInsertValue(event.target.value)}
-                      aria-label={insertPlaceholder}
-                      title={insertPlaceholder}
-                    >
-                      {insertOptions.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </select>
-                    <button
-                      type="button"
-                      className="h-8 rounded-md border border-brand-300 bg-white px-2 text-xs font-medium text-brand-700 hover:bg-brand-50 dark:border-brand-700 dark:bg-slate-900 dark:text-brand-300 dark:hover:bg-slate-800"
-                      onClick={() => {
-                        if (!resolvedInsertValue) {
-                          return;
-                        }
-                        editorRef.current?.focus(() => {
-                          editorRef.current?.insertMarkdown(`\n\n${resolvedInsertValue}\n\n`);
-                        }, { defaultSelection: "rootEnd" });
-                      }}
-                    >
-                      {insertButtonLabel}
-                    </button>
-                  </span>
-                ) : null}
-              </>
-            )
-          })
-        ]}
+        plugins={plugins}
       />
     </div>
   );

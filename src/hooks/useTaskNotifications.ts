@@ -1,13 +1,14 @@
 import { useEffect, useState } from "react";
 import i18n from "../i18n";
-import type { TaskItem } from "../lib/types";
+import type { HouseholdEvent, TaskItem } from "../lib/types";
 
 const CHECK_INTERVAL_MS = 60_000;
 
 const buildNotificationKey = (userId: string, taskId: string, dayKey: string) =>
   `domora-task-notify:${userId}:${taskId}:${dayKey}`;
+const buildEventNotificationKey = (userId: string, eventId: string) => `domora-event-notify:${userId}:${eventId}`;
 
-export const useTaskNotifications = (tasks: TaskItem[], userId: string | undefined) => {
+export const useTaskNotifications = (tasks: TaskItem[], householdEvents: HouseholdEvent[], userId: string | undefined) => {
   const [permission, setPermission] = useState<NotificationPermission>(
     typeof window !== "undefined" && "Notification" in window ? Notification.permission : "denied"
   );
@@ -53,10 +54,43 @@ export const useTaskNotifications = (tasks: TaskItem[], userId: string | undefin
     };
 
     checkDueTasks();
+    const notifyHouseholdEvents = () => {
+      householdEvents.slice(0, 30).forEach((event) => {
+        if (event.actor_user_id && event.actor_user_id === userId) return;
+        const key = buildEventNotificationKey(userId, event.id);
+        if (window.localStorage.getItem(key) === "1") return;
+
+        const payload = event.payload ?? {};
+        let title = i18n.t("app.pushHouseholdTitle");
+        let body = "";
+
+        if (event.event_type === "task_completed") {
+          title = i18n.t("app.pushTaskCompletedTitle");
+          body = i18n.t("app.pushTaskCompletedBody", { task: String(payload.title ?? "") });
+        } else if (event.event_type === "finance_created") {
+          title = i18n.t("app.pushFinanceCreatedTitle");
+          body = i18n.t("app.pushFinanceCreatedBody", { name: String(payload.description ?? "") });
+        } else if (event.event_type === "cash_audit_requested") {
+          title = i18n.t("app.pushCashAuditTitle");
+          body = i18n.t("app.pushCashAuditBody");
+        } else {
+          return;
+        }
+
+        new Notification(title, {
+          body,
+          tag: `event-${event.id}`
+        });
+
+        window.localStorage.setItem(key, "1");
+      });
+    };
+
+    notifyHouseholdEvents();
     const timer = window.setInterval(checkDueTasks, CHECK_INTERVAL_MS);
 
     return () => window.clearInterval(timer);
-  }, [permission, tasks, userId]);
+  }, [householdEvents, permission, tasks, userId]);
 
   return {
     permission,

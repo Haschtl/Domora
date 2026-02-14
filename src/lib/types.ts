@@ -35,8 +35,12 @@ export interface HouseholdMember {
   role: "owner" | "member";
   display_name?: string | null;
   avatar_url?: string | null;
+  paypal_name?: string | null;
+  revolut_name?: string | null;
+  wero_name?: string | null;
   room_size_sqm: number | null;
   common_area_factor: number;
+  task_laziness_factor: number;
   created_at: string;
 }
 
@@ -81,6 +85,8 @@ export interface TaskItem {
   cron_pattern: string;
   frequency_days: number;
   effort_pimpers: number;
+  prioritize_low_pimpers: boolean;
+  assignee_fairness_mode: "actual" | "projection";
   is_active: boolean;
   done: boolean;
   done_at: string | null;
@@ -98,7 +104,28 @@ export interface TaskCompletion {
   task_title_snapshot: string;
   user_id: string;
   pimpers_earned: number;
+  due_at_snapshot: string | null;
+  delay_minutes: number;
   completed_at: string;
+}
+
+export type HouseholdEventType =
+  | "task_completed"
+  | "task_skipped"
+  | "shopping_completed"
+  | "finance_created"
+  | "role_changed"
+  | "cash_audit_requested"
+  | "admin_hint";
+
+export interface HouseholdEvent {
+  id: string;
+  household_id: string;
+  event_type: HouseholdEventType;
+  actor_user_id: string | null;
+  subject_user_id: string | null;
+  payload: Record<string, unknown>;
+  created_at: string;
 }
 
 export interface NewTaskInput {
@@ -107,6 +134,8 @@ export interface NewTaskInput {
   startDate: string;
   frequencyDays: number;
   effortPimpers: number;
+  prioritizeLowPimpers: boolean;
+  assigneeFairnessMode: "actual" | "projection";
   rotationUserIds: string[];
 }
 

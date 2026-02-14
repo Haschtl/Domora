@@ -32,9 +32,12 @@ import {
   takeoverTask,
   skipTask,
   updateMemberSettings,
+  resetHouseholdPimpers,
+  updateMemberTaskLaziness,
   updateShoppingItemStatus,
   updateUserAvatar,
-  updateUserDisplayName
+  updateUserDisplayName,
+  updateUserPaymentHandles
 } from "../lib/api";
 import { setActiveHouseholdId } from "../lib/app-store";
 import { queryKeys } from "../lib/query-keys";
@@ -61,20 +64,25 @@ export const useWorkspaceController = () => {
     session,
     userId,
     households,
+    householdsLoadError,
     activeHouseholdId,
     activeHousehold,
     workspace,
     userEmail,
     userAvatarUrl,
     userDisplayName,
+    userPaypalName,
+    userRevolutName,
+    userWeroName,
     currentMember,
-    completedTasks
+    completedTasks,
+    householdEvents
   } = useWorkspaceData();
 
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
-  const { permission, requestPermission } = useTaskNotifications(workspace.tasks, userId);
+  const { permission, requestPermission } = useTaskNotifications(workspace.tasks, workspace.householdEvents, userId);
 
   const actionMutation = useMutation({
     mutationFn: async (action: () => Promise<void>) => action()
@@ -430,6 +438,26 @@ export const useWorkspaceController = () => {
     [activeHousehold, runWithWorkspaceInvalidation, t, userId]
   );
 
+  const onUpdateMemberTaskLaziness = useCallback(
+    async (targetUserId: string, taskLazinessFactor: number) => {
+      if (!activeHousehold) return;
+
+      await runWithWorkspaceInvalidation(async () => {
+        await updateMemberTaskLaziness(activeHousehold.id, targetUserId, taskLazinessFactor);
+      });
+    },
+    [activeHousehold, runWithWorkspaceInvalidation]
+  );
+
+  const onResetHouseholdPimpers = useCallback(async () => {
+    if (!activeHousehold) return;
+
+    await runWithWorkspaceInvalidation(async () => {
+      await resetHouseholdPimpers(activeHousehold.id);
+      setMessage(t("tasks.resetPimpersSuccess"));
+    });
+  }, [activeHousehold, runWithWorkspaceInvalidation, t]);
+
   const onUpdateUserAvatar = useCallback(
     async (avatarUrl: string) => {
       await executeAction(async () => {
@@ -452,6 +480,17 @@ export const useWorkspaceController = () => {
       });
     },
     [executeAction, queryClient, t]
+  );
+
+  const onUpdateUserPaymentHandles = useCallback(
+    async (input: { paypalName: string; revolutName: string; weroName: string }) => {
+      await executeAction(async () => {
+        await updateUserPaymentHandles(input);
+        await invalidateWorkspace();
+        setMessage(t("settings.paymentSaved"));
+      });
+    },
+    [executeAction, invalidateWorkspace, t]
   );
 
   const onLeaveHousehold = useCallback(async () => {
@@ -509,6 +548,7 @@ export const useWorkspaceController = () => {
     error,
     message,
     households,
+    householdsLoadError,
     activeHousehold,
     shoppingItems: workspace.shoppingItems,
     shoppingCompletions: workspace.shoppingCompletions,
@@ -523,8 +563,12 @@ export const useWorkspaceController = () => {
     userEmail,
     userAvatarUrl,
     userDisplayName,
+    userPaypalName,
+    userRevolutName,
+    userWeroName,
     currentMember,
     completedTasks,
+    householdEvents,
     notificationPermission: permission,
     setActiveHousehold,
     onSignIn,
@@ -554,8 +598,11 @@ export const useWorkspaceController = () => {
     onUpdateHomeMarkdown,
     onUpdateHousehold,
     onUpdateMemberSettings,
+    onUpdateMemberTaskLaziness,
+    onResetHouseholdPimpers,
     onUpdateUserAvatar,
     onUpdateUserDisplayName,
+    onUpdateUserPaymentHandles,
     onLeaveHousehold,
     onDissolveHousehold,
     onSetMemberRole,

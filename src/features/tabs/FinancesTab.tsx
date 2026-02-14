@@ -2,12 +2,11 @@ import { type CSSProperties, useEffect, useId, useMemo, useState } from "react";
 import { useForm } from "@tanstack/react-form";
 import {
   ArcElement,
+  BarElement,
   CategoryScale,
   Chart as ChartJS,
   Legend,
-  LineElement,
   LinearScale,
-  PointElement,
   Tooltip
 } from "chart.js";
 import {
@@ -22,7 +21,7 @@ import {
   Sparkles,
   TrendingDown
 } from "lucide-react";
-import { Doughnut, Line } from "react-chartjs-2";
+import { Bar, Doughnut } from "react-chartjs-2";
 import { useTranslation } from "react-i18next";
 import { PersonSelect } from "../../components/person-select";
 import type {
@@ -66,7 +65,7 @@ import { createMemberLabelGetter, type MemberLabelCase } from "../../lib/member-
 import { FinanceHistoryCard } from "./components/FinanceHistoryCard";
 import { useFinancesDerivedData } from "./hooks/use-finances-derived-data";
 
-ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, ArcElement, Tooltip, Legend);
+ChartJS.register(CategoryScale, LinearScale, BarElement, ArcElement, Tooltip, Legend);
 
 interface FinancesTabProps {
   section?: "overview" | "stats" | "archive" | "subscriptions";
@@ -215,6 +214,8 @@ const financeRecurrenceToMonthlyFactor = (recurrence: FinanceSubscriptionRecurre
   return 1;
 };
 
+const encodePathSegment = (value: string) => encodeURIComponent(value.trim().replace(/^@+/, ""));
+
 export const FinancesTab = ({
   section = "overview",
   entries,
@@ -247,6 +248,10 @@ export const FinancesTab = ({
   const [subscriptionBeingEdited, setSubscriptionBeingEdited] = useState<FinanceSubscription | null>(null);
   const [rentFormError, setRentFormError] = useState<string | null>(null);
   const [memberRentFormError, setMemberRentFormError] = useState<string | null>(null);
+  const [previewDescription, setPreviewDescription] = useState("");
+  const [previewAmountInput, setPreviewAmountInput] = useState("");
+  const [previewPayerIds, setPreviewPayerIds] = useState<string[]>([userId]);
+  const [previewBeneficiaryIds, setPreviewBeneficiaryIds] = useState<string[]>([]);
   const language = i18n.resolvedLanguage ?? i18n.language;
   const locale = getDateLocale(i18n.resolvedLanguage ?? i18n.language);
   const showOverview = section === "overview";
@@ -297,6 +302,10 @@ export const FinancesTab = ({
         entryDate: value.entryDate || null
       });
       formApi.reset();
+      setPreviewDescription("");
+      setPreviewAmountInput("");
+      setPreviewPayerIds([userId]);
+      setPreviewBeneficiaryIds(members.map((member) => member.user_id));
     }
   });
   const archiveFilterForm = useForm({
@@ -530,11 +539,19 @@ export const FinancesTab = ({
 
   const addEntryPayers = addEntryForm.state.values.paidByUserIds;
   const addEntryBeneficiaries = addEntryForm.state.values.beneficiaryUserIds;
+  const memberIds = useMemo(() => members.map((member) => member.user_id), [members]);
+  const previewPayerIdsEffective =
+    previewPayerIds.length > 0 ? previewPayerIds : addEntryPayers.length > 0 ? addEntryPayers : [userId];
+  const previewBeneficiaryIdsEffective =
+    previewBeneficiaryIds.length > 0
+      ? previewBeneficiaryIds
+      : addEntryBeneficiaries.length > 0
+        ? addEntryBeneficiaries
+        : memberIds;
 
   useEffect(() => {
     const currentPayers = addEntryPayers;
     const currentBeneficiaries = addEntryBeneficiaries;
-    const memberIds = members.map((member) => member.user_id);
 
     if (currentPayers.length === 0) {
       addEntryForm.setFieldValue("paidByUserIds", [userId]);
@@ -542,7 +559,7 @@ export const FinancesTab = ({
     if (currentBeneficiaries.length === 0 && memberIds.length > 0) {
       addEntryForm.setFieldValue("beneficiaryUserIds", memberIds);
     }
-  }, [addEntryBeneficiaries, addEntryForm, addEntryPayers, members, userId]);
+  }, [addEntryBeneficiaries, addEntryForm, addEntryPayers, memberIds, userId]);
 
   useEffect(() => {
     const memberIds = members.map((member) => member.user_id);
@@ -594,9 +611,9 @@ export const FinancesTab = ({
     members,
     lastCashAuditAt,
     archiveFilters,
-    previewAmount: Number(addEntryForm.state.values.amount),
-    previewPayerIds: addEntryForm.state.values.paidByUserIds,
-    previewBeneficiaryIds: addEntryForm.state.values.beneficiaryUserIds
+    previewAmount: Number(previewAmountInput),
+    previewPayerIds: previewPayerIdsEffective,
+    previewBeneficiaryIds: previewBeneficiaryIdsEffective
   });
 
   const memberLabel = useMemo(
@@ -623,6 +640,35 @@ export const FinancesTab = ({
     return createDiceBearAvatarDataUri(seed);
   };
   const moneyLabel = (value: number) => formatMoney(value, locale);
+  const buildPaymentLinks = (toMemberId: string, amount: number) => {
+    const target = memberById.get(toMemberId);
+    if (!target) return [];
+    const normalizedAmount = Math.max(0, Number(amount.toFixed(2)));
+    const links: Array<{ id: string; label: string; href: string }> = [];
+
+    if (target.paypal_name?.trim()) {
+      links.push({
+        id: "paypal",
+        label: t("finances.payWithPaypal"),
+        href: `https://paypal.me/${encodePathSegment(target.paypal_name)}/${normalizedAmount.toFixed(2)}`
+      });
+    }
+    if (target.revolut_name?.trim()) {
+      links.push({
+        id: "revolut",
+        label: t("finances.payWithRevolut"),
+        href: `https://revolut.me/${encodePathSegment(target.revolut_name)}?amount=${normalizedAmount.toFixed(2)}`
+      });
+    }
+    if (target.wero_name?.trim()) {
+      links.push({
+        id: "wero",
+        label: t("finances.payWithWero"),
+        href: `wero://pay?receiver=${encodeURIComponent(target.wero_name)}&amount=${normalizedAmount.toFixed(2)}`
+      });
+    }
+    return links;
+  };
   const reimbursementPreviewSummary = useMemo(() => {
     const positiveEntries = reimbursementPreview.filter((entry) => entry.value > 0.004);
     if (positiveEntries.length === 0) return null;
@@ -647,6 +693,11 @@ export const FinancesTab = ({
       amount: amountLabel
     });
   }, [memberLabel, moneyLabel, reimbursementPreview, t, userId]);
+  const hasNewEntryDraftForPreview = useMemo(() => {
+    const description = previewDescription.trim();
+    const amount = Number(previewAmountInput);
+    return description.length > 0 && Number.isFinite(amount) && amount > 0;
+  }, [previewAmountInput, previewDescription]);
   const settlementTransfers = useMemo(() => calculateSettlementTransfers(balancesByMember), [balancesByMember]);
   const householdMemberIds = useMemo(() => [...new Set(members.map((member) => member.user_id))], [members]);
   const allMembersLabel = t("finances.allMembers");
@@ -671,6 +722,7 @@ export const FinancesTab = ({
     () => balancesByMember.find((entry) => entry.memberId === userId)?.balance ?? 0,
     [balancesByMember, userId]
   );
+  const isPersonalBalanceNegative = personalBalance < -0.004;
   const personalBalanceLabel = `${personalBalance > 0.004 ? "+" : ""}${moneyLabel(personalBalance)}`;
   const totalRoomAreaSqm = useMemo(
     () => members.reduce((sum, member) => sum + (member.room_size_sqm ?? 0), 0),
@@ -867,9 +919,9 @@ export const FinancesTab = ({
       forMembers: formatMemberGroupLabel(
         entry.beneficiary_user_ids.length > 0 ? entry.beneficiary_user_ids : householdMemberIds,
         "accusative"
-      ),
-      date: formatDateOnly(parseDateFallback(entry), language, parseDateFallback(entry))
+      )
     });
+  const entryDateText = (entry: FinanceEntry) => formatDateOnly(parseDateFallback(entry), language, parseDateFallback(entry));
   const recurrenceOptions: Array<{ value: FinanceSubscriptionRecurrence; label: string }> = [
     { value: "weekly", label: t("finances.subscriptionRecurrenceWeekly") },
     { value: "monthly", label: t("finances.subscriptionRecurrenceMonthly") },
@@ -928,9 +980,12 @@ export const FinancesTab = ({
     const entryDate = matchedEntry.entry_date ?? matchedEntry.created_at.slice(0, 10);
 
     addEntryForm.setFieldValue("amount", String(matchedEntry.amount));
+    setPreviewAmountInput(String(matchedEntry.amount));
     addEntryForm.setFieldValue("category", matchedEntry.category || "general");
     addEntryForm.setFieldValue("paidByUserIds", paidByUserIds);
     addEntryForm.setFieldValue("beneficiaryUserIds", beneficiaryUserIds);
+    setPreviewPayerIds(paidByUserIds);
+    setPreviewBeneficiaryIds(beneficiaryUserIds);
     addEntryForm.setFieldValue("entryDate", entryDate);
   };
   const subscriptionParticipantsText = (subscription: FinanceSubscription) =>
@@ -1046,40 +1101,50 @@ export const FinancesTab = ({
   const renderEntryMemberFields = (
     form: typeof addEntryForm | typeof editEntryForm,
     compactLabel: boolean
-  ) => (
-    <>
-      <form.Field
-        name="paidByUserIds"
-        children={(field: { state: { value: string[] }; handleChange: (value: string[]) => void }) => (
-          <MemberMultiSelectField
-            compactLabel={compactLabel}
-            label={t("finances.paidByLabel")}
-            members={members}
-            value={field.state.value}
-            onChange={field.handleChange}
-            currentUserId={userId}
-            youLabel={t("common.you")}
-            placeholder={t("finances.paidByLabel")}
-          />
-        )}
-      />
-      <form.Field
-        name="beneficiaryUserIds"
-        children={(field: { state: { value: string[] }; handleChange: (value: string[]) => void }) => (
-          <MemberMultiSelectField
-            compactLabel={compactLabel}
-            label={t("finances.forWhomLabel")}
-            members={members}
-            value={field.state.value}
-            onChange={field.handleChange}
-            currentUserId={userId}
-            youLabel={t("common.you")}
-            placeholder={t("finances.forWhomLabel")}
-          />
-        )}
-      />
-    </>
-  );
+  ) => {
+    const isAddEntryForm = form === addEntryForm;
+
+    return (
+      <>
+        <form.Field
+          name="paidByUserIds"
+          children={(field: { state: { value: string[] }; handleChange: (value: string[]) => void }) => (
+            <MemberMultiSelectField
+              compactLabel={compactLabel}
+              label={t("finances.paidByLabel")}
+              members={members}
+              value={field.state.value}
+              onChange={(value) => {
+                field.handleChange(value);
+                if (isAddEntryForm) setPreviewPayerIds(value);
+              }}
+              currentUserId={userId}
+              youLabel={t("common.you")}
+              placeholder={t("finances.paidByLabel")}
+            />
+          )}
+        />
+        <form.Field
+          name="beneficiaryUserIds"
+          children={(field: { state: { value: string[] }; handleChange: (value: string[]) => void }) => (
+            <MemberMultiSelectField
+              compactLabel={compactLabel}
+              label={t("finances.forWhomLabel")}
+              members={members}
+              value={field.state.value}
+              onChange={(value) => {
+                field.handleChange(value);
+                if (isAddEntryForm) setPreviewBeneficiaryIds(value);
+              }}
+              currentUserId={userId}
+              youLabel={t("common.you")}
+              placeholder={t("finances.forWhomLabel")}
+            />
+          )}
+        />
+      </>
+    );
+  };
   const onStartEditEntry = (entry: FinanceEntry) => {
     setEntryBeingEdited(entry);
     editEntryForm.setFieldValue("description", entry.description);
@@ -1226,6 +1291,7 @@ export const FinancesTab = ({
                             onChange={(event) => {
                               const nextValue = event.target.value;
                               field.handleChange(nextValue);
+                              setPreviewDescription(nextValue);
                               tryAutofillNewEntryFromDescription(nextValue);
                             }}
                             onBlur={(event) => {
@@ -1250,7 +1316,10 @@ export const FinancesTab = ({
                             step="0.01"
                             min="0"
                             value={field.state.value}
-                            onChange={(event) => field.handleChange(event.target.value)}
+                            onChange={(event) => {
+                              field.handleChange(event.target.value);
+                              setPreviewAmountInput(event.target.value);
+                            }}
                             placeholder={t("finances.amountPlaceholder")}
                             required
                             inputClassName="pr-7"
@@ -1291,6 +1360,7 @@ export const FinancesTab = ({
                               <p className="text-xs font-medium text-slate-600 dark:text-slate-300">{t("finances.entryDate")}</p>
                               <Input
                                 type="date"
+                                lang={locale}
                                 value={field.state.value}
                                 onChange={(event) => field.handleChange(event.target.value)}
                                 title={t("finances.entryDate")}
@@ -1307,7 +1377,7 @@ export const FinancesTab = ({
                   </div>
                 </form>
 
-                {reimbursementPreviewSummary ? (
+                {hasNewEntryDraftForPreview && reimbursementPreviewSummary ? (
                   <p className="mt-3 text-sm text-slate-600 dark:text-slate-300">
                     {reimbursementPreviewSummary}
                   </p>
@@ -1402,6 +1472,21 @@ export const FinancesTab = ({
                             to: memberLabel(transfer.toMemberId),
                             amount: moneyLabel(transfer.amount)
                           })}
+                          {buildPaymentLinks(transfer.toMemberId, transfer.amount).length > 0 ? (
+                            <span className="ml-2 inline-flex gap-2 text-xs">
+                              {buildPaymentLinks(transfer.toMemberId, transfer.amount).map((link) => (
+                                <a
+                                  key={`${transfer.fromMemberId}-${transfer.toMemberId}-${index}-${link.id}`}
+                                  href={link.href}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="text-brand-700 underline decoration-brand-300 underline-offset-2 hover:text-brand-600 dark:text-brand-300 dark:decoration-brand-700"
+                                >
+                                  {link.label}
+                                </a>
+                              ))}
+                            </span>
+                          ) : null}
                         </li>
                       ))}
                     </ul>
@@ -1434,18 +1519,17 @@ export const FinancesTab = ({
 
               {historySeries.labels.length > 0 ? (
                 <div className="mt-3 rounded-lg bg-white p-2 dark:bg-slate-900">
-                  <Line
+                  <Bar
                     data={{
                       labels: historySeries.labels.map((label) => formatShortDay(label, language, label)),
                       datasets: [
                         {
                           label: t("finances.chartDailyTotal"),
                           data: historySeries.values,
+                          backgroundColor: "rgba(124, 58, 237, 0.28)",
                           borderColor: "#7c3aed",
-                          backgroundColor: "rgba(124, 58, 237, 0.18)",
-                          borderWidth: 2,
-                          tension: 0.3,
-                          fill: true
+                          borderWidth: 1,
+                          borderRadius: 6
                         }
                       ]
                     }}
@@ -1548,6 +1632,7 @@ export const FinancesTab = ({
                           <Label>{t("finances.filterFrom")}</Label>
                           <Input
                             type="date"
+                            lang={locale}
                             value={field.state.value}
                             onChange={(event) => field.handleChange(event.target.value)}
                             title={t("finances.filterFrom")}
@@ -1562,6 +1647,7 @@ export const FinancesTab = ({
                           <Label>{t("finances.filterTo")}</Label>
                           <Input
                             type="date"
+                            lang={locale}
                             value={field.state.value}
                             onChange={(event) => field.handleChange(event.target.value)}
                             title={t("finances.filterTo")}
@@ -1658,6 +1744,21 @@ export const FinancesTab = ({
                               to: memberLabel(transfer.toMemberId),
                               amount: moneyLabel(transfer.amount)
                             })}
+                            {buildPaymentLinks(transfer.toMemberId, transfer.amount).length > 0 ? (
+                              <span className="ml-2 inline-flex gap-2 text-xs">
+                                {buildPaymentLinks(transfer.toMemberId, transfer.amount).map((link) => (
+                                  <a
+                                    key={`${group.id}-transfer-link-${index}-${link.id}`}
+                                    href={link.href}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="text-brand-700 underline decoration-brand-300 underline-offset-2 hover:text-brand-600 dark:text-brand-300 dark:decoration-brand-700"
+                                  >
+                                    {link.label}
+                                  </a>
+                                ))}
+                              </span>
+                            ) : null}
                           </div>
                         ))}
                       </div>
@@ -2063,7 +2164,7 @@ export const FinancesTab = ({
                         {costTableTotals.utilitiesForRoom === null ? "-" : moneyLabel(costTableTotals.utilitiesForRoom)}
                       </td>
                     </tr>
-                    <tr className="border-t border-brand-100 dark:border-slate-700 bg-brand-50/20 dark:bg-slate-800/30">
+                    <tr className="border-t-4 border-double border-brand-300 dark:border-slate-500 bg-brand-50/20 dark:bg-slate-800/30">
                       <td className="px-3 py-2 font-semibold text-slate-700 dark:text-slate-200">{t("finances.costBreakdownRoomSubtotal")}</td>
                       {members.map((member) => {
                         const value = costTableData.byMember.get(member.user_id)?.roomSubtotal ?? null;
@@ -2077,7 +2178,7 @@ export const FinancesTab = ({
                         {costTableTotals.roomSubtotal === null ? "-" : moneyLabel(costTableTotals.roomSubtotal)}
                       </td>
                     </tr>
-                    <tr className="border-t border-brand-100 dark:border-slate-700">
+                    <tr className="border-t-4 border-double border-brand-300 dark:border-slate-500">
                       <td className="px-3 py-2 font-medium text-slate-600 dark:text-slate-300">{t("finances.costBreakdownSharedAreaCosts")}</td>
                       {members.map((member) => (
                         <td key={`cost-breakdown-shared-area-empty-${member.user_id}`} className="px-3 py-2 text-right font-medium text-slate-500 dark:text-slate-300">
@@ -2184,13 +2285,20 @@ export const FinancesTab = ({
           title={t("finances.currentEntriesTitle")}
           description={t("finances.currentEntriesDescription")}
           headerRight={
-            <Badge className="text-xs">
+            <Badge
+              className={
+                isPersonalBalanceNegative
+                  ? "text-xs border-rose-200 bg-rose-100 text-rose-800 dark:border-rose-800/60 dark:bg-rose-900/40 dark:text-rose-200"
+                  : "text-xs border-emerald-200 bg-emerald-100 text-emerald-800 dark:border-emerald-800/60 dark:bg-emerald-900/40 dark:text-emerald-200"
+              }
+            >
               {t("finances.personalBalanceChip", { value: personalBalanceLabel })}
             </Badge>
           }
           entries={entriesSinceLastAudit}
           emptyText={t("finances.empty")}
           paidByText={paidByText}
+          entryDateText={entryDateText}
           formatMoney={moneyLabel}
           entryChipText={personalEntryDeltaLabel}
           entryChipClassName={personalEntryDeltaChipClassName}
@@ -2343,6 +2451,7 @@ export const FinancesTab = ({
                   <Label>{t("finances.entryDate")}</Label>
                   <Input
                     type="date"
+                    lang={locale}
                     value={field.state.value}
                     onChange={(event) => field.handleChange(event.target.value)}
                     title={t("finances.entryDate")}

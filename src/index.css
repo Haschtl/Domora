@@ -180,9 +180,14 @@ html:not(.dark) .text-brand-800 {
 [class*="_tableColumnEditorPopoverContent_"],
 [class*="_dialogContent_"],
 [class*="_largeDialogContent_"] {
-  z-index: 90 !important;
+  z-index: 1400 !important;
 }
 
 [class*="_dialogOverlay_"] {
-  z-index: 89 !important;
+  z-index: 1390 !important;
+}
+
+/* Radix popper wrappers used by MDX toolbar/dropdowns */
+[data-radix-popper-content-wrapper] {
+  z-index: 1400 !important;
 }

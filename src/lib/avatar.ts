@@ -11,8 +11,19 @@ export const createDiceBearAvatarDataUri = (seed: string | null | undefined) => 
   return createAvatar(adventurer, {
     seed: normalizedSeed,
     radius: 50,
-    // fontWeight: 600,
-    backgroundType: ["gradientLinear"],
-    backgroundColor: ["b6e3f4", "c0aede", "d1d4f9", "ffd5dc", "ffdfbf"]
+    // Keep stable but high-contrast default avatar backgrounds.
+    backgroundType: ["solid"],
+    backgroundColor: [
+      "ef4444",
+      "f97316",
+      "eab308",
+      "22c55e",
+      "14b8a6",
+      "06b6d4",
+      "3b82f6",
+      "6366f1",
+      "a855f7",
+      "ec4899"
+    ]
   }).toDataUri();
 };

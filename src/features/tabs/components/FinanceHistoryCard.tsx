@@ -13,6 +13,7 @@ interface FinanceHistoryCardProps {
   entries: FinanceEntry[];
   emptyText: string;
   paidByText: (entry: FinanceEntry) => string;
+  entryDateText?: (entry: FinanceEntry) => string | null;
   formatMoney: (value: number) => string;
   headerRight?: ReactNode;
   entryChipText?: (entry: FinanceEntry) => string | null;
@@ -41,6 +42,7 @@ export const FinanceHistoryCard = ({
   entries,
   emptyText,
   paidByText,
+  entryDateText,
   formatMoney,
   headerRight,
   entryChipText,
@@ -66,6 +68,7 @@ export const FinanceHistoryCard = ({
         entries={entries}
         formatMoney={formatMoney}
         paidByText={paidByText}
+        entryDateText={entryDateText}
         entryChipText={entryChipText}
         entryChipClassName={entryChipClassName}
         amountClassName={amountClassName}

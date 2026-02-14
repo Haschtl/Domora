@@ -12,6 +12,7 @@ const task = (partial: Partial<TaskItem>): TaskItem => ({
   cron_pattern: partial.cron_pattern ?? "0 9 */7 * *",
   frequency_days: partial.frequency_days ?? 7,
   effort_pimpers: partial.effort_pimpers ?? 1,
+  prioritize_low_pimpers: partial.prioritize_low_pimpers ?? true,
   is_active: partial.is_active ?? true,
   done: partial.done ?? false,
   done_at: partial.done_at ?? null,

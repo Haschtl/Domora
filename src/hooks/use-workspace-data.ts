@@ -8,6 +8,7 @@ import {
   getCurrentSession,
   getFinanceEntries,
   getFinanceSubscriptions,
+  getHouseholdEvents,
   getHouseholdMemberPimpers,
   getHouseholdMembers,
   getHouseholdsForUser,
@@ -22,6 +23,7 @@ import type {
   CashAuditRequest,
   FinanceEntry,
   FinanceSubscription,
+  HouseholdEvent,
   Household,
   HouseholdMember,
   HouseholdMemberPimpers,
@@ -41,6 +43,7 @@ interface WorkspaceData {
   financeSubscriptions: FinanceSubscription[];
   householdMembers: HouseholdMember[];
   memberPimpers: HouseholdMemberPimpers[];
+  householdEvents: HouseholdEvent[];
 }
 
 const emptyWorkspace: WorkspaceData = {
@@ -52,11 +55,12 @@ const emptyWorkspace: WorkspaceData = {
   cashAuditRequests: [],
   financeSubscriptions: [],
   householdMembers: [],
-  memberPimpers: []
+  memberPimpers: [],
+  householdEvents: []
 };
 
 const getWorkspaceData = async (householdId: string): Promise<WorkspaceData> => {
-  const [shoppingItems, shoppingCompletions, tasks, taskCompletions, finances, cashAuditRequests, financeSubscriptions, householdMembers, memberPimpers] =
+  const [shoppingItems, shoppingCompletions, tasks, taskCompletions, finances, cashAuditRequests, financeSubscriptions, householdMembers, memberPimpers, householdEvents] =
     await Promise.all([
       getShoppingItems(householdId),
       getShoppingCompletions(householdId),
@@ -66,7 +70,8 @@ const getWorkspaceData = async (householdId: string): Promise<WorkspaceData> => 
       getCashAuditRequests(householdId),
       getFinanceSubscriptions(householdId),
       getHouseholdMembers(householdId),
-      getHouseholdMemberPimpers(householdId)
+      getHouseholdMemberPimpers(householdId),
+      getHouseholdEvents(householdId)
     ]);
 
   return {
@@ -78,7 +83,8 @@ const getWorkspaceData = async (householdId: string): Promise<WorkspaceData> => 
     cashAuditRequests,
     financeSubscriptions,
     householdMembers,
-    memberPimpers
+    memberPimpers,
+    householdEvents
   };
 };
 
@@ -107,8 +113,37 @@ export const useWorkspaceData = () => {
     queryFn: () => getHouseholdsForUser(userId!),
     enabled: Boolean(userId)
   });
+  const householdsLoadError = useMemo(() => {
+    const queryError = householdsQuery.error;
+    if (!queryError) return null;
+    return queryError instanceof Error ? queryError.message : "Unknown error";
+  }, [householdsQuery.error]);
   const households = useMemo<Household[]>(() => householdsQuery.data ?? [], [householdsQuery.data]);
   const activeHouseholdId = useStore(appStore, (state: { activeHouseholdId: string | null }) => state.activeHouseholdId);
+
+  useEffect(() => {
+    if (!activeHouseholdId) return;
+
+    const channel = supabase
+      .channel(`household-events-${activeHouseholdId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "household_events",
+          filter: `household_id=eq.${activeHouseholdId}`
+        },
+        () => {
+          void queryClient.invalidateQueries({ queryKey: queryKeys.workspace(activeHouseholdId) });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [activeHouseholdId, queryClient]);
 
   useEffect(() => {
     if (households.length === 0) {
@@ -157,6 +192,9 @@ export const useWorkspaceData = () => {
       userId ? workspace.householdMembers.find((entry: HouseholdMember) => entry.user_id === userId) ?? null : null,
     [workspace.householdMembers, userId]
   );
+  const userPaypalName = currentMember?.paypal_name ?? null;
+  const userRevolutName = currentMember?.revolut_name ?? null;
+  const userWeroName = currentMember?.wero_name ?? null;
 
   const completedTasks = useMemo(
     () => workspace.tasks.filter((task: TaskItem) => task.done).length,
@@ -169,13 +207,18 @@ export const useWorkspaceData = () => {
     session,
     userId,
     households,
+    householdsLoadError,
     activeHouseholdId,
     activeHousehold,
     workspace,
     userEmail,
     userAvatarUrl,
     userDisplayName,
+    userPaypalName,
+    userRevolutName,
+    userWeroName,
     currentMember,
-    completedTasks
+    completedTasks,
+    householdEvents: workspace.householdEvents
   };
 };

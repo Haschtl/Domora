@@ -16,6 +16,7 @@ import type { LucideIcon } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { toast } from "react-toastify";
 import { isSupabaseConfigured } from "./lib/supabase";
+import { isDueNow } from "./lib/date";
 import type { AppTab } from "./lib/types";
 import { Card, CardDescription, CardHeader, CardTitle } from "./components/ui/card";
 import { useWorkspaceController } from "./hooks/useWorkspaceController";
@@ -138,6 +139,7 @@ const App = () => {
     error,
     message,
     households,
+    householdsLoadError,
     activeHousehold,
     shoppingItems,
     shoppingCompletions,
@@ -146,12 +148,16 @@ const App = () => {
     finances,
     financeSubscriptions,
     cashAuditRequests,
+    householdEvents,
     householdMembers,
     memberPimpers,
     userId,
     userEmail,
     userAvatarUrl,
     userDisplayName,
+    userPaypalName,
+    userRevolutName,
+    userWeroName,
     currentMember,
     notificationPermission,
     setActiveHousehold,
@@ -182,8 +188,11 @@ const App = () => {
     onUpdateHomeMarkdown,
     onUpdateHousehold,
     onUpdateMemberSettings,
+    onUpdateMemberTaskLaziness,
+    onResetHouseholdPimpers,
     onUpdateUserAvatar,
     onUpdateUserDisplayName,
+    onUpdateUserPaymentHandles,
     onLeaveHousehold,
     onDissolveHousehold,
     onSetMemberRole,
@@ -196,15 +205,20 @@ const App = () => {
   const taskSubTab = useMemo(() => resolveTaskSubTabFromPathname(location.pathname), [location.pathname]);
   const financeSubTab = useMemo(() => resolveFinanceSubTabFromPathname(location.pathname), [location.pathname]);
   const settingsSubTab = useMemo(() => resolveSettingsSubTabFromPathname(location.pathname), [location.pathname]);
-  const dueTasksCount = useMemo(
-    () => tasks.filter((task) => task.is_active && !task.done).length,
-    [tasks]
-  );
+  const dueTasksBadge = useMemo(() => {
+    const dueTasks = tasks.filter((task) => task.is_active && !task.done && isDueNow(task.due_at));
+    const allDue = dueTasks.length;
+    const myDue = userId ? dueTasks.filter((task) => task.assignee_id === userId).length : 0;
+    return {
+      myDue,
+      allDue,
+      label: `${myDue}/${allDue}`
+    };
+  }, [tasks, userId]);
   const initialInviteCode = useMemo(() => {
-    if (typeof window === "undefined") return "";
-    const params = new URLSearchParams(window.location.search);
+    const params = new URLSearchParams(location.search);
     return (params.get("invite") ?? "").trim().toUpperCase();
-  }, [location.pathname]);
+  }, [location.search]);
 
   const onTabChange = (value: string) => {
     const nextTab = value as AppTab;
@@ -351,6 +365,27 @@ const App = () => {
       ) : null}
 
       {!loadingSession && session && !activeHousehold ? (
+        householdsLoadError ? (
+          <Card className="mb-4 border border-rose-200 bg-rose-50/80 dark:border-rose-900 dark:bg-rose-950/60">
+            <CardHeader>
+              <CardTitle>{t("app.householdsLoadErrorTitle")}</CardTitle>
+              <CardDescription>
+                {t("app.householdsLoadErrorDescription")}
+                <br />
+                <span className="font-mono text-xs">{householdsLoadError}</span>
+              </CardDescription>
+              <div className="pt-2">
+                <button
+                  type="button"
+                  className="rounded-lg border border-rose-300 bg-white px-3 py-2 text-sm font-medium text-rose-700 hover:bg-rose-100 dark:border-rose-700 dark:bg-rose-950/40 dark:text-rose-200 dark:hover:bg-rose-900/60"
+                  onClick={() => void onSignOut()}
+                >
+                  {t("common.logout")}
+                </button>
+              </div>
+            </CardHeader>
+          </Card>
+        ) : (
         <Suspense fallback={viewLoadingFallback}>
           <HouseholdSetupView
             households={households}
@@ -362,6 +397,7 @@ const App = () => {
             onSignOut={onSignOut}
           />
         </Suspense>
+        )
       ) : null}
 
       {!loadingSession && session && activeHousehold ? (
@@ -387,9 +423,9 @@ const App = () => {
                         >
                           <Icon className="h-4 w-4" />
                           {t(`tab.${item.id}`)}
-                          {item.id === "tasks" && dueTasksCount > 0 ? (
-                            <span className="absolute right-2 top-1 inline-flex min-h-5 min-w-5 items-center justify-center rounded-full border border-brand-200 bg-brand-500 px-1.5 text-[10px] font-semibold leading-none text-white dark:border-brand-700 dark:bg-brand-600">
-                              {dueTasksCount}
+                          {item.id === "tasks" && dueTasksBadge.allDue > 0 ? (
+                            <span className="absolute right-2 top-1 inline-flex min-h-5 items-center justify-center rounded-md border border-brand-200 bg-brand-500 px-1.5 text-[10px] font-semibold leading-none text-white dark:border-brand-700 dark:bg-brand-600">
+                              {dueTasksBadge.label}
                             </span>
                           ) : null}
                         </button>
@@ -495,9 +531,9 @@ const App = () => {
                         busy={busy}
                         tasks={tasks}
                         taskCompletions={taskCompletions}
-                        shoppingCompletions={shoppingCompletions}
                         financeEntries={finances}
                         cashAuditRequests={cashAuditRequests}
+                        householdEvents={householdEvents}
                         onSelectHousehold={(householdId) => {
                           const next = households.find((entry: { id: string }) => entry.id === householdId);
                           if (next) setActiveHousehold(next);
@@ -538,6 +574,9 @@ const App = () => {
                         onToggleActive={onToggleTaskActive}
                         onUpdate={onUpdateTask}
                         onDelete={onDeleteTask}
+                        onUpdateMemberTaskLaziness={onUpdateMemberTaskLaziness}
+                        onResetHouseholdPimpers={onResetHouseholdPimpers}
+                        canManageTaskLaziness={currentMember?.role === "owner"}
                       />
                     ) : null}
 
@@ -574,10 +613,14 @@ const App = () => {
                         userEmail={userEmail}
                         userAvatarUrl={userAvatarUrl}
                         userDisplayName={userDisplayName}
+                        userPaypalName={userPaypalName}
+                        userRevolutName={userRevolutName}
+                        userWeroName={userWeroName}
                         busy={busy}
                         onUpdateHousehold={onUpdateHousehold}
                         onUpdateUserAvatar={onUpdateUserAvatar}
                         onUpdateUserDisplayName={onUpdateUserDisplayName}
+                        onUpdateUserPaymentHandles={onUpdateUserPaymentHandles}
                         onSetMemberRole={onSetMemberRole}
                         onRemoveMember={onRemoveMember}
                         onSignOut={onSignOut}
@@ -611,9 +654,9 @@ const App = () => {
                     >
                       <Icon className="h-4 w-4" />
                       <span className="mt-1 text-[10px] font-medium">{t(`tab.${item.id}`)}</span>
-                      {item.id === "tasks" && dueTasksCount > 0 ? (
-                        <span className="absolute right-1 top-1 inline-flex min-h-4 min-w-4 items-center justify-center rounded-full border border-brand-200 bg-brand-500 px-1 text-[9px] font-semibold leading-none text-white dark:border-brand-700 dark:bg-brand-600">
-                          {dueTasksCount}
+                      {item.id === "tasks" && dueTasksBadge.allDue > 0 ? (
+                        <span className="absolute right-1 top-1 inline-flex min-h-4 items-center justify-center rounded-md border border-brand-200 bg-brand-500 px-1 text-[9px] font-semibold leading-none text-white dark:border-brand-700 dark:bg-brand-600">
+                          {dueTasksBadge.label}
                         </span>
                       ) : null}
                     </button>

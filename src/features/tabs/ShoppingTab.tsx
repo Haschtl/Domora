@@ -10,7 +10,7 @@ import {
   PointElement,
   Tooltip
 } from "chart.js";
-import { Trash2 } from "lucide-react";
+import { MoreHorizontal, Trash2 } from "lucide-react";
 import { Line } from "react-chartjs-2";
 import { useTranslation } from "react-i18next";
 import { Checkbox } from "../../components/ui/checkbox";
@@ -18,9 +18,11 @@ import type { HouseholdMember, ShoppingItem, ShoppingItemCompletion, ShoppingRec
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../../components/ui/dialog";
 import { Input } from "../../components/ui/input";
 import { InputWithSuffix } from "../../components/ui/input-with-suffix";
 import { Label } from "../../components/ui/label";
+import { Popover, PopoverContent, PopoverTrigger } from "../../components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
 import { useSmartSuggestions } from "../../hooks/use-smart-suggestions";
 import { addRecurringIntervalToIso, formatDateTime, formatShortDay } from "../../lib/date";
@@ -75,6 +77,8 @@ export const ShoppingTab = ({
 }: ShoppingTabProps) => {
   const { t, i18n } = useTranslation();
   const [recurrenceUnit, setRecurrenceUnit] = useState<ShoppingRecurrenceUnit>("days");
+  const [showCompletedItems, setShowCompletedItems] = useState(false);
+  const [itemPendingDelete, setItemPendingDelete] = useState<ShoppingItem | null>(null);
   const form = useForm({
     defaultValues: {
       title: "",
@@ -200,6 +204,278 @@ export const ShoppingTab = ({
   }, [completions, language]);
   const showList = section === "list";
   const showHistory = section === "history";
+  const completedItemsCount = useMemo(() => items.filter((item) => item.done).length, [items]);
+  const visibleItems = useMemo(
+    () => (showCompletedItems ? items : items.filter((item) => !item.done)),
+    [items, showCompletedItems]
+  );
+
+  if (showList) {
+    return (
+      <div className="space-y-4">
+        <Card>
+          <CardHeader>
+            <CardTitle>{t("shopping.title")}</CardTitle>
+            <CardDescription>{t("shopping.description")}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form
+              className="space-y-2"
+              onSubmit={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                void form.handleSubmit();
+              }}
+            >
+              <div className="flex items-end">
+                <form.Field
+                  name="title"
+                  children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
+                    <div className="relative flex-1 space-y-1">
+                      <Label>{t("shopping.itemLabel")}</Label>
+                      <div className="flex h-10 items-stretch overflow-hidden rounded-xl border border-brand-200 bg-white dark:border-slate-700 dark:bg-slate-900 focus-within:border-brand-500 focus-within:ring-2 focus-within:ring-brand-200 dark:focus-within:border-slate-500 dark:focus-within:ring-slate-600/40">
+                        <Input
+                          value={field.state.value}
+                          onChange={(event) => field.handleChange(event.target.value)}
+                          onFocus={onTitleFocus}
+                          onBlur={onTitleBlur}
+                          onKeyDown={onTitleKeyDown}
+                          placeholder={t("shopping.placeholder")}
+                          autoComplete="off"
+                          className="h-full flex-1 rounded-none border-0 bg-transparent shadow-none focus-visible:ring-0"
+                        />
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="h-full w-10 shrink-0 rounded-none border-l border-brand-200 p-0 dark:border-slate-700"
+                              aria-label={t("shopping.moreOptions")}
+                            >
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent align="end" className="w-[320px] space-y-3">
+                            <form.Field
+                              name="tagsInput"
+                              children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
+                                <div className="space-y-1">
+                                  <Label>{t("shopping.tagsLabel")}</Label>
+                                  <Input
+                                    value={field.state.value}
+                                    onChange={(event) => field.handleChange(event.target.value)}
+                                    placeholder={t("shopping.tagsPlaceholder")}
+                                  />
+                                </div>
+                              )}
+                            />
+                            <div className="space-y-1">
+                              <form.Field
+                                name="recurrenceValue"
+                                children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
+                                  <div className="space-y-1">
+                                    <Label>{t("shopping.recurrenceValueLabel")}</Label>
+                                    <InputWithSuffix
+                                      suffix={
+                                        <Select
+                                          value={recurrenceUnit}
+                                          onValueChange={(value: string) => setRecurrenceUnit(value as ShoppingRecurrenceUnit)}
+                                        >
+                                          <SelectTrigger className="h-7 w-[110px] border-brand-200 bg-white/95 px-2 text-xs dark:border-slate-700 dark:bg-slate-900">
+                                            <SelectValue />
+                                          </SelectTrigger>
+                                          <SelectContent>
+                                            {unitOptions.map((option) => (
+                                              <SelectItem key={option.id} value={option.id}>
+                                                {option.label}
+                                              </SelectItem>
+                                            ))}
+                                          </SelectContent>
+                                        </Select>
+                                      }
+                                      type="number"
+                                      min="1"
+                                      inputMode="numeric"
+                                      value={field.state.value}
+                                      onChange={(event) => field.handleChange(event.target.value)}
+                                      placeholder={t("shopping.recurrenceValuePlaceholder")}
+                                      interactiveSuffix
+                                      suffixContainerClassName="right-1"
+                                      inputClassName="pr-[7.75rem]"
+                                    />
+                                  </div>
+                                )}
+                              />
+                            </div>
+                          </PopoverContent>
+                        </Popover>
+                        <Button type="submit" disabled={busy} className="h-full shrink-0 rounded-none border-l border-brand-200 px-3 dark:border-slate-700">
+                          {t("common.add")}
+                        </Button>
+                      </div>
+                      {titleFocused && suggestions.length > 0 ? (
+                        <div className="absolute left-0 right-0 top-[calc(100%+0.4rem)] z-20 rounded-xl border border-brand-100 bg-white p-1 shadow-lg dark:border-slate-700 dark:bg-slate-900">
+                          <p className="px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                            {t("shopping.suggestionsTitle")}
+                          </p>
+                          <ul className="max-h-56 overflow-y-auto">
+                            {suggestions.map((suggestion: ShoppingSuggestion, index: number) => (
+                              <li key={suggestion.key}>
+                                <button
+                                  type="button"
+                                  className={`flex w-full items-center justify-between gap-2 rounded-lg px-2 py-2 text-left hover:bg-brand-50 dark:hover:bg-slate-800 ${
+                                    index === activeSuggestionIndex ? "bg-brand-50 dark:bg-slate-800" : ""
+                                  }`}
+                                  onMouseDown={(event) => event.preventDefault()}
+                                  onClick={() => {
+                                    onSelectSuggestion(suggestion);
+                                  }}
+                                >
+                                  <div className="min-w-0">
+                                    <p className="truncate text-sm font-medium text-slate-900 dark:text-slate-100">
+                                      {suggestion.title}
+                                    </p>
+                                    {suggestion.tags.length > 0 ? (
+                                      <p className="truncate text-[11px] text-slate-500 dark:text-slate-400">
+                                        #{suggestion.tags.join(" #")}
+                                      </p>
+                                    ) : null}
+                                  </div>
+                                  {suggestion.source === "history" ? (
+                                    <Badge className="text-[10px]">
+                                      {t("shopping.suggestionBoughtCount", { count: suggestion.count })}
+                                    </Badge>
+                                  ) : (
+                                    <Badge className="text-[10px]">{t("shopping.suggestionLibraryBadge")}</Badge>
+                                  )}
+                                </button>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      ) : null}
+                    </div>
+                  )}
+                />
+              </div>
+            </form>
+          </CardContent>
+        </Card>
+
+        <div>
+          {completedItemsCount > 0 ? (
+            <div className="mb-2 flex justify-end">
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                onClick={() => setShowCompletedItems((prev) => !prev)}
+              >
+                {showCompletedItems
+                  ? t("shopping.hideCompleted")
+                  : t("shopping.showCompleted", { count: completedItemsCount })}
+              </Button>
+            </div>
+          ) : null}
+          <ul className="space-y-2">
+            {visibleItems.map((item) => {
+              const nextOpenAt =
+                item.done && item.done_at && item.recurrence_interval_value && item.recurrence_interval_unit
+                  ? addRecurringIntervalToIso(item.done_at, item.recurrence_interval_value, item.recurrence_interval_unit)
+                  : null;
+
+              return (
+                <li
+                  key={item.id}
+                  className="rounded-xl border border-brand-100 bg-brand-50/40 p-3 dark:border-slate-700 dark:bg-slate-800/70"
+                >
+                  <div className="flex items-center gap-2">
+                    <Checkbox checked={item.done} onCheckedChange={() => onToggle(item)} />
+                    <span
+                      className={
+                        item.done ? "flex-1 text-slate-400 line-through" : "flex-1 text-slate-800 dark:text-slate-100"
+                      }
+                    >
+                      {item.title}
+                    </span>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setItemPendingDelete(item)}
+                      aria-label={t("shopping.deleteItem")}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {item.tags.map((tag) => (
+                      <Badge key={`${item.id}-${tag}`} className="text-[10px]">
+                        #{tag}
+                      </Badge>
+                    ))}
+
+                    {item.recurrence_interval_value && item.recurrence_interval_unit ? (
+                      <Badge className="bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-100">
+                        {t("shopping.recursAfter", {
+                          value: formatRecurrence(item.recurrence_interval_value, item.recurrence_interval_unit, t)
+                        })}
+                      </Badge>
+                    ) : null}
+                  </div>
+
+                  {item.done_at ? (
+                    <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                      {t("shopping.doneAt", {
+                        value: formatDateTime(item.done_at, language)
+                      })}
+                    </p>
+                  ) : null}
+
+                  {nextOpenAt ? (
+                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                      {t("shopping.reopensAt", {
+                        value: formatDateTime(nextOpenAt, language)
+                      })}
+                    </p>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
+          {visibleItems.length === 0 ? <p className="text-sm text-slate-500 dark:text-slate-400">{t("shopping.empty")}</p> : null}
+        </div>
+        <Dialog open={itemPendingDelete !== null} onOpenChange={(open) => !open && setItemPendingDelete(null)}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>{t("shopping.deleteConfirmTitle")}</DialogTitle>
+              <DialogDescription>
+                {t("shopping.deleteConfirmDescription", { title: itemPendingDelete?.title ?? "" })}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="mt-4 flex justify-end gap-2">
+              <DialogClose asChild>
+                <Button variant="ghost">{t("common.cancel")}</Button>
+              </DialogClose>
+              <DialogClose asChild>
+                <Button
+                  variant="danger"
+                  onClick={() => {
+                    if (!itemPendingDelete) return;
+                    void onDelete(itemPendingDelete);
+                    setItemPendingDelete(null);
+                  }}
+                >
+                  {t("shopping.deleteConfirmAction")}
+                </Button>
+              </DialogClose>
+            </div>
+          </DialogContent>
+        </Dialog>
+      </div>
+    );
+  }
 
   return (
     <Card>

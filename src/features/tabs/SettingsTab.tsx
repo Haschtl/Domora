@@ -33,10 +33,14 @@ interface SettingsTabProps {
   userEmail: string | undefined;
   userAvatarUrl: string | null;
   userDisplayName: string | null;
+  userPaypalName: string | null;
+  userRevolutName: string | null;
+  userWeroName: string | null;
   busy: boolean;
   onUpdateHousehold: (input: UpdateHouseholdInput) => Promise<void>;
   onUpdateUserAvatar: (avatarUrl: string) => Promise<void>;
   onUpdateUserDisplayName: (displayName: string) => Promise<void>;
+  onUpdateUserPaymentHandles: (input: { paypalName: string; revolutName: string; weroName: string }) => Promise<void>;
   onSetMemberRole: (targetUserId: string, role: "owner" | "member") => Promise<void>;
   onRemoveMember: (targetUserId: string) => Promise<void>;
   onSignOut: () => Promise<void>;
@@ -99,10 +103,14 @@ export const SettingsTab = ({
   userEmail,
   userAvatarUrl,
   userDisplayName,
+  userPaypalName,
+  userRevolutName,
+  userWeroName,
   busy,
   onUpdateHousehold,
   onUpdateUserAvatar,
   onUpdateUserDisplayName,
+  onUpdateUserPaymentHandles,
   onSetMemberRole,
   onRemoveMember,
   onSignOut,
@@ -133,6 +141,16 @@ export const SettingsTab = ({
     },
     onSubmit: async ({ value }: { value: { displayName: string } }) => {
       await onUpdateUserDisplayName(value.displayName);
+    }
+  });
+  const profilePaymentsForm = useForm({
+    defaultValues: {
+      paypalName: userPaypalName ?? "",
+      revolutName: userRevolutName ?? "",
+      weroName: userWeroName ?? ""
+    },
+    onSubmit: async ({ value }: { value: { paypalName: string; revolutName: string; weroName: string } }) => {
+      await onUpdateUserPaymentHandles(value);
     }
   });
 
@@ -203,6 +221,11 @@ export const SettingsTab = ({
   useEffect(() => {
     profileNameForm.setFieldValue("displayName", userDisplayName ?? "");
   }, [profileNameForm, userDisplayName]);
+  useEffect(() => {
+    profilePaymentsForm.setFieldValue("paypalName", userPaypalName ?? "");
+    profilePaymentsForm.setFieldValue("revolutName", userRevolutName ?? "");
+    profilePaymentsForm.setFieldValue("weroName", userWeroName ?? "");
+  }, [profilePaymentsForm, userPaypalName, userRevolutName, userWeroName]);
 
   const onProfileFileChange = async (file: File) => {
     try {
@@ -294,6 +317,7 @@ export const SettingsTab = ({
         avatar_url: currentMember?.avatar_url ?? null,
         room_size_sqm: currentMember?.room_size_sqm ?? null,
         common_area_factor: currentMember?.common_area_factor ?? 1,
+        task_laziness_factor: currentMember?.task_laziness_factor ?? 1,
         created_at: currentMember?.created_at ?? new Date(0).toISOString()
       });
     }
@@ -464,6 +488,62 @@ export const SettingsTab = ({
               </p>
             ) : null}
 
+            </form>
+            <form
+              className="mt-4 space-y-3 border-t border-brand-100 pt-4 dark:border-slate-700"
+              onSubmit={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                void profilePaymentsForm.handleSubmit();
+              }}
+            >
+              <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{t("settings.paymentHandlesTitle")}</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400">{t("settings.paymentHandlesDescription")}</p>
+              <profilePaymentsForm.Field
+                name="paypalName"
+                children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
+                  <div className="space-y-1">
+                    <Label htmlFor="paypal-name">{t("settings.paypalNameLabel")}</Label>
+                    <Input
+                      id="paypal-name"
+                      value={field.state.value}
+                      onChange={(event) => field.handleChange(event.target.value)}
+                      placeholder={t("settings.paypalNamePlaceholder")}
+                    />
+                  </div>
+                )}
+              />
+              <profilePaymentsForm.Field
+                name="revolutName"
+                children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
+                  <div className="space-y-1">
+                    <Label htmlFor="revolut-name">{t("settings.revolutNameLabel")}</Label>
+                    <Input
+                      id="revolut-name"
+                      value={field.state.value}
+                      onChange={(event) => field.handleChange(event.target.value)}
+                      placeholder={t("settings.revolutNamePlaceholder")}
+                    />
+                  </div>
+                )}
+              />
+              <profilePaymentsForm.Field
+                name="weroName"
+                children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
+                  <div className="space-y-1">
+                    <Label htmlFor="wero-name">{t("settings.weroNameLabel")}</Label>
+                    <Input
+                      id="wero-name"
+                      value={field.state.value}
+                      onChange={(event) => field.handleChange(event.target.value)}
+                      placeholder={t("settings.weroNamePlaceholder")}
+                    />
+                  </div>
+                )}
+              />
+              <Button type="submit" disabled={busy}>
+                {t("settings.paymentSave")}
+              </Button>
             </form>
           </CardContent>
         </Card>
@@ -651,32 +731,51 @@ export const SettingsTab = ({
                 const isMemberOwner = member.role === "owner";
                 const canDemoteLastOwner = isMemberOwner && ownerCount <= 1;
                 const nextRole = isMemberOwner ? "member" : "owner";
+                const displayLabel = memberLabel(member.user_id);
+                const avatarUrl =
+                  member.avatar_url?.trim() || createDiceBearAvatarDataUri(member.display_name?.trim() || displayLabel);
 
                 return (
                   <li
                     key={member.user_id}
                     className="flex items-center justify-between gap-3 rounded-lg border border-brand-100 p-3 dark:border-slate-700"
                   >
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium text-slate-900 dark:text-slate-100">
-                        {memberLabel(member.user_id)}
-                      </p>
-                      <p className="text-xs text-slate-500 dark:text-slate-400">
-                        {isMemberOwner ? t("settings.tenantsRoleOwner") : t("settings.tenantsRoleMember")}
-                      </p>
+                    <div className="flex min-w-0 items-center gap-3">
+                      <img
+                        src={avatarUrl}
+                        alt={displayLabel}
+                        className="h-9 w-9 shrink-0 rounded-full border border-brand-100 object-cover dark:border-slate-700"
+                      />
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium text-slate-900 dark:text-slate-100">
+                          {displayLabel}
+                        </p>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">
+                          {isMemberOwner ? t("settings.tenantsRoleOwner") : t("settings.tenantsRoleMember")}
+                        </p>
+                      </div>
                     </div>
                     <div className="flex items-center gap-2">
                       <Button
                         type="button"
                         size="sm"
                         variant="outline"
+                        className={
+                          isMemberOwner
+                            ? "border-amber-300 bg-amber-100 text-amber-900 hover:bg-amber-200 dark:border-amber-700 dark:bg-amber-900/40 dark:text-amber-200 dark:hover:bg-amber-900/60"
+                            : undefined
+                        }
                         disabled={busy || !isOwner || canDemoteLastOwner}
                         onClick={() => {
                           void onSetMemberRole(member.user_id, nextRole);
                         }}
+                        aria-label={isMemberOwner ? t("settings.tenantsDemoteOwner") : t("settings.tenantsMakeOwner")}
+                        title={isMemberOwner ? t("settings.tenantsDemoteOwner") : t("settings.tenantsMakeOwner")}
                       >
-                        <Crown className="mr-1 h-3.5 w-3.5" />
-                        {isMemberOwner ? t("settings.tenantsDemoteOwner") : t("settings.tenantsMakeOwner")}
+                        <Crown className="h-3.5 w-3.5 sm:mr-1" />
+                        <span className="hidden sm:inline">
+                          {isMemberOwner ? t("settings.tenantsDemoteOwner") : t("settings.tenantsMakeOwner")}
+                        </span>
                       </Button>
                       <Button
                         type="button"
@@ -686,9 +785,11 @@ export const SettingsTab = ({
                         onClick={() => {
                           void onRemoveMember(member.user_id);
                         }}
+                        aria-label={t("settings.tenantsKick")}
+                        title={t("settings.tenantsKick")}
                       >
-                        <UserMinus className="mr-1 h-3.5 w-3.5" />
-                        {t("settings.tenantsKick")}
+                        <UserMinus className="h-3.5 w-3.5 sm:mr-1" />
+                        <span className="hidden sm:inline">{t("settings.tenantsKick")}</span>
                       </Button>
                     </div>
                   </li>

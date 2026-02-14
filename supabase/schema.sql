@@ -24,6 +24,7 @@ create table if not exists household_members (
   role text not null default 'member' check (role in ('owner', 'member')),
   room_size_sqm numeric(8, 2) check (room_size_sqm is null or room_size_sqm > 0),
   common_area_factor numeric(8, 3) not null default 1 check (common_area_factor >= 0 and common_area_factor <= 2),
+  task_laziness_factor numeric(8, 3) not null default 1 check (task_laziness_factor >= 0 and task_laziness_factor <= 2),
   created_at timestamptz not null default now(),
   primary key (household_id, user_id)
 );
@@ -32,6 +33,9 @@ create table if not exists user_profiles (
   user_id uuid primary key references auth.users(id) on delete cascade,
   display_name text,
   avatar_url text,
+  paypal_name text,
+  revolut_name text,
+  wero_name text,
   updated_at timestamptz not null default now()
 );
 
@@ -73,6 +77,7 @@ create table if not exists tasks (
   cron_pattern text not null default '0 9 */7 * *',
   frequency_days integer not null default 7,
   effort_pimpers integer not null default 1,
+  prioritize_low_pimpers boolean not null default true,
   is_active boolean not null default true,
   done boolean not null default false,
   done_at timestamptz,
@@ -109,8 +114,21 @@ create table if not exists task_completions (
   task_title_snapshot text not null default '',
   user_id uuid not null references auth.users(id) on delete cascade,
   pimpers_earned integer not null,
+  due_at_snapshot timestamptz,
+  delay_minutes integer not null default 0,
   completed_at timestamptz not null default now(),
-  check (pimpers_earned > 0)
+  check (pimpers_earned > 0),
+  check (delay_minutes >= 0)
+);
+
+create table if not exists household_events (
+  id uuid primary key default gen_random_uuid(),
+  household_id uuid not null references households(id) on delete cascade,
+  event_type text not null check (event_type in ('task_completed', 'task_skipped', 'shopping_completed', 'finance_created', 'role_changed', 'cash_audit_requested', 'admin_hint')),
+  actor_user_id uuid references auth.users(id) on delete set null,
+  subject_user_id uuid references auth.users(id) on delete set null,
+  payload jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
 );
 
 create table if not exists finance_entries (
@@ -238,10 +256,15 @@ $$;
 
 alter table household_members add column if not exists room_size_sqm numeric(8, 2);
 alter table household_members add column if not exists common_area_factor numeric(8, 3) not null default 1;
+alter table household_members add column if not exists task_laziness_factor numeric(8, 3) not null default 1;
 
 update household_members
 set common_area_factor = 1
 where common_area_factor is null;
+
+update household_members
+set task_laziness_factor = 1
+where task_laziness_factor is null;
 
 do $$
 begin
@@ -282,6 +305,16 @@ begin
       add constraint household_members_common_area_factor_range_check
       check (common_area_factor >= 0 and common_area_factor <= 2);
   end if;
+
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'household_members_task_laziness_factor_range_check'
+  ) then
+    alter table household_members
+      add constraint household_members_task_laziness_factor_range_check
+      check (task_laziness_factor >= 0 and task_laziness_factor <= 2);
+  end if;
 end;
 $$;
 
@@ -308,6 +341,8 @@ alter table shopping_items add column if not exists recurrence_interval_unit tex
 alter table shopping_items add column if not exists done_at timestamptz;
 alter table shopping_items add column if not exists done_by uuid references auth.users(id) on delete set null;
 alter table task_completions add column if not exists task_title_snapshot text not null default '';
+alter table task_completions add column if not exists due_at_snapshot timestamptz;
+alter table task_completions add column if not exists delay_minutes integer not null default 0;
 alter table finance_entries add column if not exists category text not null default 'general';
 alter table finance_entries add column if not exists paid_by_user_ids uuid[] not null default '{}';
 alter table finance_entries add column if not exists beneficiary_user_ids uuid[] not null default '{}';
@@ -318,6 +353,9 @@ alter table finance_subscriptions add column if not exists paid_by_user_ids uuid
 alter table finance_subscriptions add column if not exists beneficiary_user_ids uuid[] not null default '{}';
 alter table finance_subscriptions add column if not exists cron_pattern text not null default '0 9 1 * *';
 alter table finance_subscriptions add column if not exists updated_at timestamptz not null default now();
+alter table user_profiles add column if not exists paypal_name text;
+alter table user_profiles add column if not exists revolut_name text;
+alter table user_profiles add column if not exists wero_name text;
 
 update finance_entries
 set paid_by_user_ids = array[paid_by]
@@ -346,6 +384,14 @@ where created_by is null;
 
 alter table finance_entries
 alter column created_by set not null;
+
+update task_completions
+set
+  due_at_snapshot = completed_at,
+  delay_minutes = 0
+where due_at_snapshot is null
+   or delay_minutes is null
+   or delay_minutes < 0;
 
 update shopping_items
 set recurrence_interval_unit = lower(recurrence_interval_unit)
@@ -462,6 +508,45 @@ $$;
 
 do $$
 begin
+  if exists (
+    select 1
+    from pg_constraint
+    where conname = 'household_events_event_type_check'
+  ) then
+    alter table household_events
+      drop constraint household_events_event_type_check;
+  end if;
+
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'household_events_event_type_allowed_check'
+  ) then
+    alter table household_events
+      add constraint household_events_event_type_allowed_check
+      check (
+        event_type in (
+          'task_completed',
+          'task_skipped',
+          'shopping_completed',
+          'finance_created',
+          'role_changed',
+          'cash_audit_requested',
+          'admin_hint'
+        )
+      );
+  end if;
+
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'task_completions_delay_minutes_non_negative_check'
+  ) then
+    alter table task_completions
+      add constraint task_completions_delay_minutes_non_negative_check
+      check (delay_minutes >= 0);
+  end if;
+
   if not exists (
     select 1
     from pg_constraint
@@ -502,6 +587,7 @@ alter table tasks add column if not exists start_date date not null default curr
 alter table tasks add column if not exists cron_pattern text not null default '0 9 */7 * *';
 alter table tasks add column if not exists frequency_days integer not null default 7;
 alter table tasks add column if not exists effort_pimpers integer not null default 1;
+alter table tasks add column if not exists prioritize_low_pimpers boolean not null default true;
 alter table tasks add column if not exists is_active boolean not null default true;
 alter table tasks add column if not exists done_at timestamptz;
 alter table tasks add column if not exists done_by uuid references auth.users(id) on delete set null;
@@ -534,6 +620,7 @@ create index if not exists idx_shopping_items_household_created_at on shopping_i
 create index if not exists idx_shopping_item_completions_household_completed_at on shopping_item_completions (household_id, completed_at desc);
 create index if not exists idx_tasks_household_due_at on tasks (household_id, due_at asc);
 create index if not exists idx_task_completions_household_completed_at on task_completions (household_id, completed_at desc);
+create index if not exists idx_household_events_household_created_at on household_events (household_id, created_at desc);
 create index if not exists idx_finance_entries_household_entry_date on finance_entries (household_id, entry_date desc);
 create index if not exists idx_finance_subscriptions_household_created_at on finance_subscriptions (household_id, created_at desc);
 
@@ -615,7 +702,10 @@ begin
 end;
 $$;
 
-create or replace function choose_next_task_assignee(p_task_id uuid)
+create or replace function choose_next_task_assignee(
+  p_task_id uuid,
+  p_prioritize_low_pimpers boolean default true
+)
 returns uuid
 language sql
 stable
@@ -630,17 +720,27 @@ as $$
     select
       trm.user_id,
       trm.position,
-      coalesce(hmp.total_pimpers, 0) as total_pimpers
+      coalesce(hmp.total_pimpers, 0) as total_pimpers,
+      coalesce(hm.task_laziness_factor, 1) as task_laziness_factor
     from task_rotation_members trm
     join task_info ti on true
     left join household_member_pimpers hmp
       on hmp.household_id = ti.household_id
      and hmp.user_id = trm.user_id
+    left join household_members hm
+      on hm.household_id = ti.household_id
+     and hm.user_id = trm.user_id
     where trm.task_id = p_task_id
   )
   select user_id
   from candidates
-  order by total_pimpers asc, position asc
+  order by
+    case
+      when p_prioritize_low_pimpers and task_laziness_factor <= 0 then 999999999::numeric
+      when p_prioritize_low_pimpers then total_pimpers / greatest(task_laziness_factor, 0.0001)
+      else 0
+    end asc,
+    position asc
   limit 1;
 $$;
 
@@ -698,6 +798,8 @@ begin
     task_title_snapshot,
     user_id,
     pimpers_earned,
+    due_at_snapshot,
+    delay_minutes,
     completed_at
   )
   values (
@@ -706,6 +808,8 @@ begin
     v_task.title,
     p_user_id,
     greatest(v_task.effort_pimpers, 1),
+    v_task.due_at,
+    greatest(0, floor(extract(epoch from (now() - v_task.due_at)) / 60)::integer),
     now()
   );
 
@@ -727,7 +831,7 @@ begin
     total_pimpers = household_member_pimpers.total_pimpers + excluded.total_pimpers,
     updated_at = now();
 
-  v_next_assignee := choose_next_task_assignee(v_task.id);
+  v_next_assignee := choose_next_task_assignee(v_task.id, v_task.prioritize_low_pimpers);
 
   update tasks
   set
@@ -807,7 +911,7 @@ begin
 
   v_interval_days := task_cron_interval_days(v_task.cron_pattern, v_task.frequency_days);
   v_next_due := greatest(v_task.due_at, now()) + make_interval(days => greatest(v_interval_days, 1));
-  v_next_assignee := choose_next_task_assignee(v_task.id);
+  v_next_assignee := choose_next_task_assignee(v_task.id, v_task.prioritize_low_pimpers);
 
   update tasks
   set
@@ -820,6 +924,231 @@ begin
 end;
 $$;
 
+create or replace function reset_household_pimpers(p_household_id uuid)
+returns integer
+language plpgsql
+security invoker
+set search_path = public
+as $$
+declare
+  affected integer;
+begin
+  if not is_household_owner(p_household_id) then
+    raise exception 'Only household owners can reset pimpers';
+  end if;
+
+  update household_member_pimpers
+  set
+    total_pimpers = 0,
+    updated_at = now()
+  where household_id = p_household_id;
+
+  get diagnostics affected = row_count;
+  return affected;
+end;
+$$;
+
+create or replace function run_household_data_maintenance(
+  p_household_id uuid,
+  p_emit_admin_hint boolean default true,
+  p_enforce_owner boolean default true
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  removed_orphan_rotation integer := 0;
+  reset_invalid_assignee integer := 0;
+  assigned_missing_assignee integer := 0;
+  healed_done_missing_done_at integer := 0;
+  healed_done_missing_done_by integer := 0;
+  healed_open_with_done_fields integer := 0;
+  total_fixes integer := 0;
+  summary_message text;
+begin
+  if p_enforce_owner and not is_household_owner(p_household_id) then
+    raise exception 'Only household owners can run maintenance';
+  end if;
+
+  delete from task_rotation_members trm
+  using tasks t
+  where trm.task_id = t.id
+    and t.household_id = p_household_id
+    and not exists (
+      select 1
+      from household_members hm
+      where hm.household_id = p_household_id
+        and hm.user_id = trm.user_id
+    );
+  get diagnostics removed_orphan_rotation = row_count;
+
+  update tasks t
+  set assignee_id = null
+  where t.household_id = p_household_id
+    and t.assignee_id is not null
+    and not exists (
+      select 1
+      from task_rotation_members trm
+      where trm.task_id = t.id
+        and trm.user_id = t.assignee_id
+    );
+  get diagnostics reset_invalid_assignee = row_count;
+
+  update tasks t
+  set assignee_id = next_rotation.user_id
+  from (
+    select distinct on (trm.task_id)
+      trm.task_id,
+      trm.user_id
+    from task_rotation_members trm
+    join tasks task_row on task_row.id = trm.task_id
+    where task_row.household_id = p_household_id
+    order by trm.task_id, trm.position asc
+  ) as next_rotation
+  where t.id = next_rotation.task_id
+    and t.household_id = p_household_id
+    and t.assignee_id is null;
+  get diagnostics assigned_missing_assignee = row_count;
+
+  update tasks
+  set done_at = now()
+  where household_id = p_household_id
+    and done = true
+    and done_at is null;
+  get diagnostics healed_done_missing_done_at = row_count;
+
+  update tasks
+  set done_by = coalesce(assignee_id, created_by)
+  where household_id = p_household_id
+    and done = true
+    and done_by is null;
+  get diagnostics healed_done_missing_done_by = row_count;
+
+  update tasks
+  set
+    done_at = null,
+    done_by = null
+  where household_id = p_household_id
+    and done = false
+    and (done_at is not null or done_by is not null);
+  get diagnostics healed_open_with_done_fields = row_count;
+
+  total_fixes :=
+    removed_orphan_rotation
+    + reset_invalid_assignee
+    + assigned_missing_assignee
+    + healed_done_missing_done_at
+    + healed_done_missing_done_by
+    + healed_open_with_done_fields;
+
+  if p_emit_admin_hint and total_fixes > 0 then
+    summary_message := format(
+      'Auto-heal fixed %s issue(s): rotation=%s, assignee_reset=%s, assignee_assigned=%s, done_at=%s, done_by=%s, open_cleanup=%s',
+      total_fixes,
+      removed_orphan_rotation,
+      reset_invalid_assignee,
+      assigned_missing_assignee,
+      healed_done_missing_done_at,
+      healed_done_missing_done_by,
+      healed_open_with_done_fields
+    );
+
+    insert into household_events (
+      household_id,
+      event_type,
+      actor_user_id,
+      subject_user_id,
+      payload,
+      created_at
+    )
+    values (
+      p_household_id,
+      'admin_hint',
+      null,
+      null,
+      jsonb_build_object(
+        'message', summary_message,
+        'total_fixes', total_fixes,
+        'removed_orphan_rotation', removed_orphan_rotation,
+        'reset_invalid_assignee', reset_invalid_assignee,
+        'assigned_missing_assignee', assigned_missing_assignee,
+        'healed_done_missing_done_at', healed_done_missing_done_at,
+        'healed_done_missing_done_by', healed_done_missing_done_by,
+        'healed_open_with_done_fields', healed_open_with_done_fields
+      ),
+      now()
+    );
+  end if;
+
+  return jsonb_build_object(
+    'household_id', p_household_id,
+    'total_fixes', total_fixes,
+    'removed_orphan_rotation', removed_orphan_rotation,
+    'reset_invalid_assignee', reset_invalid_assignee,
+    'assigned_missing_assignee', assigned_missing_assignee,
+    'healed_done_missing_done_at', healed_done_missing_done_at,
+    'healed_done_missing_done_by', healed_done_missing_done_by,
+    'healed_open_with_done_fields', healed_open_with_done_fields
+  );
+end;
+$$;
+
+create or replace function run_all_households_data_maintenance(p_emit_admin_hint boolean default true)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  hid uuid;
+  report jsonb;
+  reports jsonb[] := '{}';
+  total_households integer := 0;
+begin
+  for hid in
+    select id
+    from households
+  loop
+    report := run_household_data_maintenance(hid, p_emit_admin_hint, false);
+    reports := array_append(reports, report);
+    total_households := total_households + 1;
+  end loop;
+
+  return jsonb_build_object(
+    'households_checked', total_households,
+    'reports', reports
+  );
+end;
+$$;
+
+do $$
+begin
+  if exists (
+    select 1
+    from pg_extension
+    where extname = 'pg_cron'
+  ) then
+    if not exists (
+      select 1
+      from cron.job
+      where jobname = 'domora_household_data_maintenance_hourly'
+    ) then
+      perform cron.schedule(
+        'domora_household_data_maintenance_hourly',
+        '7 * * * *',
+        'select public.run_all_households_data_maintenance(true);'
+      );
+    end if;
+  end if;
+exception
+  when others then
+    -- ignore scheduler setup errors; function can still be invoked manually.
+    null;
+end;
+$$;
+
 alter table households enable row level security;
 alter table household_members enable row level security;
 alter table user_profiles enable row level security;
@@ -829,6 +1158,7 @@ alter table tasks enable row level security;
 alter table task_rotation_members enable row level security;
 alter table household_member_pimpers enable row level security;
 alter table task_completions enable row level security;
+alter table household_events enable row level security;
 alter table finance_entries enable row level security;
 alter table cash_audit_requests enable row level security;
 alter table finance_subscriptions enable row level security;
@@ -968,6 +1298,21 @@ create policy task_completions_insert on task_completions
 for insert
 to authenticated
 with check (is_household_member(household_id) and auth.uid() = user_id);
+
+drop policy if exists household_events_select on household_events;
+create policy household_events_select on household_events
+for select
+to authenticated
+using (is_household_member(household_id));
+
+drop policy if exists household_events_insert on household_events;
+create policy household_events_insert on household_events
+for insert
+to authenticated
+with check (
+  is_household_member(household_id)
+  and (actor_user_id is null or auth.uid() = actor_user_id)
+);
 
 drop policy if exists finance_entries_all on finance_entries;
 drop policy if exists finance_entries_select on finance_entries;

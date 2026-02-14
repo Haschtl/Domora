@@ -3,6 +3,7 @@ import { supabase } from "../supabase";
 import type {
   CashAuditRequest,
   FinanceEntry,
+  HouseholdEvent,
   Household,
   HouseholdMember,
   ShoppingItem,
@@ -61,13 +62,17 @@ const householdMemberSchema = z.object({
   avatar_url: z.string().nullable().optional().transform((value) => value ?? null),
   room_size_sqm: positiveOptionalNumberSchema,
   common_area_factor: z.coerce.number().finite().min(0).max(2),
+  task_laziness_factor: z.coerce.number().finite().min(0).max(2).default(1),
   created_at: z.string().min(1)
 });
 
 export const userProfileSchema = z.object({
   user_id: z.string().uuid(),
   display_name: z.string().nullable().optional().transform((value) => value ?? null),
-  avatar_url: z.string().nullable().optional().transform((value) => value ?? null)
+  avatar_url: z.string().nullable().optional().transform((value) => value ?? null),
+  paypal_name: z.string().nullable().optional().transform((value) => value ?? null),
+  revolut_name: z.string().nullable().optional().transform((value) => value ?? null),
+  wero_name: z.string().nullable().optional().transform((value) => value ?? null)
 });
 
 const shoppingItemSchema = z.object({
@@ -94,6 +99,8 @@ const taskSchema = z.object({
   cron_pattern: z.string().min(1).default("0 9 */7 * *"),
   frequency_days: z.coerce.number().int().positive(),
   effort_pimpers: z.coerce.number().int().positive(),
+  prioritize_low_pimpers: z.coerce.boolean().default(true),
+  assignee_fairness_mode: z.enum(["actual", "projection"]).default("actual"),
   is_active: z.coerce.boolean().default(true),
   done: z.coerce.boolean(),
   done_at: z.string().nullable().optional().transform((value) => value ?? null),
@@ -120,7 +127,27 @@ const taskCompletionSchema = z.object({
   task_title_snapshot: z.string().default(""),
   user_id: z.string().uuid(),
   pimpers_earned: z.coerce.number().int().positive(),
+  due_at_snapshot: z.string().nullable().optional().transform((value) => value ?? null),
+  delay_minutes: z.coerce.number().int().nonnegative().default(0),
   completed_at: z.string().min(1)
+});
+
+const householdEventSchema = z.object({
+  id: z.string().uuid(),
+  household_id: z.string().uuid(),
+  event_type: z.enum([
+    "task_completed",
+    "task_skipped",
+    "shopping_completed",
+    "finance_created",
+    "role_changed",
+    "cash_audit_requested",
+    "admin_hint"
+  ]),
+  actor_user_id: z.string().uuid().nullable().optional().transform((value) => value ?? null),
+  subject_user_id: z.string().uuid().nullable().optional().transform((value) => value ?? null),
+  payload: z.record(z.string(), z.unknown()).default({}),
+  created_at: z.string().min(1)
 });
 
 const financeEntrySchema = z.object({
@@ -180,6 +207,10 @@ export const normalizeShoppingCompletion = (row: Record<string, unknown>): Shopp
 
 export const normalizeTaskCompletion = (row: Record<string, unknown>): TaskCompletion => ({
   ...taskCompletionSchema.parse(row)
+});
+
+export const normalizeHouseholdEvent = (row: Record<string, unknown>): HouseholdEvent => ({
+  ...householdEventSchema.parse(row)
 });
 
 export const normalizeFinanceEntry = (row: Record<string, unknown>): FinanceEntry => ({

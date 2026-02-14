@@ -6,7 +6,7 @@ export const memberProfiles = [
   { displayName: "Sofia Neumann" },
   { displayName: "Noah Fischer" },
   { displayName: "Mia Schuster" },
-  { displayName: "Paul Krueger" },
+  { displayName: "Paul Krüger" },
   { displayName: "Clara Weiss" },
   { displayName: "Lukas Braun" }
 ];
@@ -14,12 +14,12 @@ export const memberProfiles = [
 export const financeCategories = ["groceries", "utilities", "internet", "cleaning", "household", "repairs"];
 
 export const taskTitles = [
-  "Kueche putzen",
+  "Küche putzen",
   "Bad putzen",
-  "Muell rausbringen",
+  "Müll rausbringen",
   "Flur saugen",
   "Einkauf planen",
-  "Papiermuell entsorgen",
+  "Papiermüll entsorgen",
   "Vorrat checken",
   "Fenster putzen",
   "Pflanzen giessen",
@@ -32,43 +32,43 @@ export const financeDescriptions = [
   "Strom Nachzahlung",
   "Internet Monatsbeitrag",
   "Toilettenpapier und Basics",
-  "Kuechenutensilien",
+  "Küchenutensilien",
   "Reparatur Kleinmaterial",
-  "Spuelmittel + Schwamm"
+  "Spülmittel + Schwamm"
 ];
 
 export const shoppingTitles = [
   "Milch",
   "Haferflocken",
   "Toilettenpapier",
-  "Spuelmaschinentabs",
-  "Muellbeutel",
+  "Spülmaschinentabs",
+  "Müllbeutel",
   "Zahnpasta",
-  "Spuelmittel",
-  "Kuechenrolle",
+  "Spülmittel",
+  "Küchenrolle",
   "Waschmittel",
   "Brot",
   "Eier",
   "Kaffee",
-  "Muessli",
+  "Müsli",
   "Seife",
   "Allzweckreiniger"
 ];
 
 export const shoppingTags = [
   ["lebensmittel"],
-  ["fruehstueck"],
+  ["frühstück"],
   ["haushalt", "hygiene"],
-  ["haushalt", "kueche"],
+  ["haushalt", "küche"],
   ["haushalt"],
   ["hygiene"],
-  ["kueche"],
-  ["haushalt", "kueche"],
-  ["waesche"],
-  ["baeckerei"],
+  ["küche"],
+  ["haushalt", "küche"],
+  ["wäsche"],
+  ["bäckerei"],
   ["lebensmittel", "protein"],
-  ["getraenke"],
-  ["fruehstueck"],
+  ["getränke"],
+  ["frühstück"],
   ["hygiene"],
   ["putzen"]
 ];
@@ -139,17 +139,111 @@ export const buildRotationRows = ({ insertedTasks, users }) => {
   return rows;
 };
 
-export const buildCompletionRows = ({ insertedTasks, householdId }) =>
-  insertedTasks
-    .filter((task) => task.done && task.done_by)
-    .map((task) => ({
-      task_id: task.id,
+export const buildCompletionRows = ({ insertedTasks, householdId }) => {
+  const rows = [];
+
+  insertedTasks.forEach((task, index) => {
+    const dueAt = new Date(task.due_at);
+    if (Number.isNaN(dueAt.getTime())) return;
+
+    const intervalDays = Math.max(1, Number(task.frequency_days ?? 7));
+    const userId = task.done_by ?? task.assignee_id;
+    if (!userId) return;
+
+    // Build a realistic history: completed tasks get richer history,
+    // active/open tasks still get some older completions.
+    const completionCount = task.done ? 4 + (index % 4) : 2 + (index % 2);
+    const latestCompletedAt = task.done
+      ? new Date(dueAt.getTime() + 2 * 60 * 60 * 1000)
+      : new Date(dueAt.getTime() - intervalDays * 24 * 60 * 60 * 1000 + 2 * 60 * 60 * 1000);
+
+    for (let offset = completionCount - 1; offset >= 0; offset -= 1) {
+      const completedAt = new Date(latestCompletedAt.getTime() - offset * intervalDays * 24 * 60 * 60 * 1000);
+      const delayMinutes = Math.max(0, Math.floor((completedAt.getTime() - dueAt.getTime()) / (60 * 1000)));
+      rows.push({
+        task_id: task.id,
+        household_id: householdId,
+        task_title_snapshot: task.title,
+        user_id: userId,
+        pimpers_earned: task.effort_pimpers,
+        due_at_snapshot: dueAt.toISOString(),
+        delay_minutes: delayMinutes,
+        completed_at: completedAt.toISOString()
+      });
+    }
+  });
+
+  return rows;
+};
+
+export const buildEventRows = ({
+  householdId,
+  completionRows,
+  shoppingCompletionRows,
+  financeRows,
+  memberRows
+}) => {
+  const rows = [];
+
+  completionRows.forEach((entry) => {
+    rows.push({
       household_id: householdId,
-      task_title_snapshot: task.title,
-      user_id: task.done_by,
-      pimpers_earned: task.effort_pimpers,
-      completed_at: new Date(new Date(task.due_at).getTime() + 2 * 60 * 60 * 1000).toISOString()
-    }));
+      event_type: "task_completed",
+      actor_user_id: entry.user_id,
+      subject_user_id: null,
+      payload: {
+        taskId: entry.task_id,
+        title: entry.task_title_snapshot
+      },
+      created_at: entry.completed_at
+    });
+  });
+
+  shoppingCompletionRows.forEach((entry) => {
+    rows.push({
+      household_id: householdId,
+      event_type: "shopping_completed",
+      actor_user_id: entry.completed_by,
+      subject_user_id: null,
+      payload: {
+        shoppingItemId: entry.shopping_item_id,
+        title: entry.title_snapshot
+      },
+      created_at: entry.completed_at
+    });
+  });
+
+  financeRows.forEach((entry) => {
+    rows.push({
+      household_id: householdId,
+      event_type: "finance_created",
+      actor_user_id: entry.created_by,
+      subject_user_id: null,
+      payload: {
+        description: entry.description,
+        amount: entry.amount
+      },
+      created_at: entry.created_at
+    });
+  });
+
+  memberRows.forEach((entry, index) => {
+    if (entry.role !== "owner") return;
+    rows.push({
+      household_id: householdId,
+      event_type: "role_changed",
+      actor_user_id: memberRows[0]?.user_id ?? entry.user_id,
+      subject_user_id: entry.user_id,
+      payload: {
+        previousRole: "member",
+        nextRole: "owner"
+      },
+      created_at: new Date(Date.now() - (index + 1) * 12 * 60 * 60 * 1000).toISOString()
+    });
+  });
+
+  return rows.sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
+};
 
 export const buildPimperRows = ({ users, householdId, completionRows }) => {
   const pimperTotals = new Map();

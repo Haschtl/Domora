@@ -2,6 +2,10 @@ export const getSavedLandingMarkdown = (markdown: string | null | undefined) => 
 
 export const LANDING_WIDGET_KEYS = [
   "tasks-overview",
+  "tasks-for-you",
+  "your-balance",
+  "household-balance",
+  "recent-activity",
   "fairness-score",
   "expenses-by-month",
   "fairness-by-member"

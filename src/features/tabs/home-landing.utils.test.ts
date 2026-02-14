@@ -30,14 +30,19 @@ describe("home landing utils", () => {
     const keys = getLandingWidgetKeysInMarkdown(`
       Intro
       {{widget:tasks-overview}}
+      {{widget:tasks-for-you}}
       {{ widget:fairness-score }}
       {{widget:unknown-widget}}
     `);
-    expect([...keys]).toEqual(["tasks-overview", "fairness-score"]);
+    expect([...keys]).toEqual(["tasks-overview", "tasks-for-you", "fairness-score"]);
   });
 
   it("returns missing widget keys", () => {
     expect(getMissingLandingWidgetKeys("{{widget:tasks-overview}}")).toEqual([
+      "tasks-for-you",
+      "your-balance",
+      "household-balance",
+      "recent-activity",
       "fairness-score",
       "expenses-by-month",
       "fairness-by-member"

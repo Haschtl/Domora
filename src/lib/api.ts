@@ -14,6 +14,7 @@ import type {
   FinanceEntry,
   FinanceSubscription,
   FinanceSubscriptionRecurrence,
+  HouseholdEvent,
   Household,
   HouseholdMember,
   HouseholdMemberPimpers,
@@ -75,12 +76,16 @@ const householdMemberSchema = z.object({
   avatar_url: z.string().nullable().optional().transform((value) => value ?? null),
   room_size_sqm: positiveOptionalNumberSchema,
   common_area_factor: z.coerce.number().finite().min(0).max(2),
+  task_laziness_factor: z.coerce.number().finite().min(0).max(2).default(1),
   created_at: z.string().min(1)
 });
 const userProfileSchema = z.object({
   user_id: z.string().uuid(),
   display_name: z.string().nullable().optional().transform((value) => value ?? null),
-  avatar_url: z.string().nullable().optional().transform((value) => value ?? null)
+  avatar_url: z.string().nullable().optional().transform((value) => value ?? null),
+  paypal_name: z.string().nullable().optional().transform((value) => value ?? null),
+  revolut_name: z.string().nullable().optional().transform((value) => value ?? null),
+  wero_name: z.string().nullable().optional().transform((value) => value ?? null)
 });
 
 const shoppingItemSchema = z.object({
@@ -107,6 +112,7 @@ const taskSchema = z.object({
   cron_pattern: z.string().min(1).default("0 9 */7 * *"),
   frequency_days: z.coerce.number().int().positive(),
   effort_pimpers: z.coerce.number().int().positive(),
+  prioritize_low_pimpers: z.coerce.boolean().default(true),
   is_active: z.coerce.boolean().default(true),
   done: z.coerce.boolean(),
   done_at: z.string().nullable().optional().transform((value) => value ?? null),
@@ -133,7 +139,27 @@ const taskCompletionSchema = z.object({
   task_title_snapshot: z.string().default(""),
   user_id: z.string().uuid(),
   pimpers_earned: z.coerce.number().int().positive(),
+  due_at_snapshot: z.string().nullable().optional().transform((value) => value ?? null),
+  delay_minutes: z.coerce.number().int().nonnegative().default(0),
   completed_at: z.string().min(1)
+});
+
+const householdEventSchema = z.object({
+  id: z.string().uuid(),
+  household_id: z.string().uuid(),
+  event_type: z.enum([
+    "task_completed",
+    "task_skipped",
+    "shopping_completed",
+    "finance_created",
+    "role_changed",
+    "cash_audit_requested",
+    "admin_hint"
+  ]),
+  actor_user_id: z.string().uuid().nullable().optional().transform((value) => value ?? null),
+  subject_user_id: z.string().uuid().nullable().optional().transform((value) => value ?? null),
+  payload: z.record(z.string(), z.unknown()).default({}),
+  created_at: z.string().min(1)
 });
 
 const financeEntrySchema = z.object({
@@ -207,6 +233,10 @@ const normalizeShoppingCompletion = (row: Record<string, unknown>): ShoppingItem
 
 const normalizeTaskCompletion = (row: Record<string, unknown>): TaskCompletion => ({
   ...taskCompletionSchema.parse(row)
+});
+
+const normalizeHouseholdEvent = (row: Record<string, unknown>): HouseholdEvent => ({
+  ...householdEventSchema.parse(row)
 });
 
 const normalizeFinanceEntry = (row: Record<string, unknown>): FinanceEntry => ({
@@ -298,6 +328,53 @@ const requireAuthenticatedUserId = async () => {
   return z.string().uuid().parse(userId);
 };
 
+const insertHouseholdEvent = async (input: {
+  householdId: string;
+  eventType: HouseholdEvent["event_type"];
+  actorUserId?: string | null;
+  subjectUserId?: string | null;
+  payload?: Record<string, unknown>;
+  createdAt?: string;
+}) => {
+  const parsed = z
+    .object({
+      householdId: z.string().uuid(),
+      eventType: z.enum([
+        "task_completed",
+        "task_skipped",
+        "shopping_completed",
+        "finance_created",
+        "role_changed",
+        "cash_audit_requested",
+        "admin_hint"
+      ]),
+      actorUserId: z.string().uuid().nullable().optional(),
+      subjectUserId: z.string().uuid().nullable().optional(),
+      payload: z.record(z.string(), z.unknown()).optional(),
+      createdAt: z.string().optional()
+    })
+    .parse({
+      householdId: input.householdId,
+      eventType: input.eventType,
+      actorUserId: input.actorUserId ?? null,
+      subjectUserId: input.subjectUserId ?? null,
+      payload: input.payload ?? {},
+      createdAt: input.createdAt
+    });
+
+  const { error } = await supabase.from("household_events").insert({
+    id: uuid(),
+    household_id: parsed.householdId,
+    event_type: parsed.eventType,
+    actor_user_id: parsed.actorUserId,
+    subject_user_id: parsed.subjectUserId,
+    payload: parsed.payload ?? {},
+    created_at: parsed.createdAt ?? new Date().toISOString()
+  });
+
+  if (error) throw error;
+};
+
 export const updateUserAvatar = async (avatarUrl: string) => {
   const normalizedAvatar = z.string().trim().parse(avatarUrl);
 
@@ -352,6 +429,35 @@ export const updateUserDisplayName = async (displayName: string) => {
   if (profileError) throw profileError;
 };
 
+export const updateUserPaymentHandles = async (input: {
+  paypalName: string;
+  revolutName: string;
+  weroName: string;
+}) => {
+  const parsedInput = z
+    .object({
+      paypalName: z.string().trim().max(120),
+      revolutName: z.string().trim().max(120),
+      weroName: z.string().trim().max(120)
+    })
+    .parse(input);
+
+  const userId = await requireAuthenticatedUserId();
+
+  const { error: profileError } = await supabase.from("user_profiles").upsert(
+    {
+      user_id: userId,
+      paypal_name: parsedInput.paypalName || null,
+      revolut_name: parsedInput.revolutName || null,
+      wero_name: parsedInput.weroName || null,
+      updated_at: new Date().toISOString()
+    },
+    { onConflict: "user_id" }
+  );
+
+  if (profileError) throw profileError;
+};
+
 export const getHouseholdsForUser = async (userId: string): Promise<Household[]> => {
   const { data, error } = await supabase
     .from("household_members")
@@ -385,7 +491,7 @@ export const getHouseholdMembers = async (householdId: string): Promise<Househol
   const memberUserIds = [...new Set(members.map((entry) => entry.user_id))];
   const { data: profileRows, error: profileError } = await supabase
     .from("user_profiles")
-    .select("user_id,display_name,avatar_url")
+    .select("user_id,display_name,avatar_url,paypal_name,revolut_name,wero_name")
     .in("user_id", memberUserIds);
 
   if (profileError) throw profileError;
@@ -401,7 +507,10 @@ export const getHouseholdMembers = async (householdId: string): Promise<Househol
     return {
       ...entry,
       display_name: profile?.display_name ?? null,
-      avatar_url: profile?.avatar_url ?? null
+      avatar_url: profile?.avatar_url ?? null,
+      paypal_name: profile?.paypal_name ?? null,
+      revolut_name: profile?.revolut_name ?? null,
+      wero_name: profile?.wero_name ?? null
     };
   });
 };
@@ -562,6 +671,41 @@ export const updateMemberSettings = async (
   return normalizeHouseholdMember(data as Record<string, unknown>);
 };
 
+export const updateMemberTaskLaziness = async (
+  householdId: string,
+  userId: string,
+  taskLazinessFactor: number
+): Promise<HouseholdMember> => {
+  const validatedHouseholdId = z.string().uuid().parse(householdId);
+  const validatedUserId = z.string().uuid().parse(userId);
+  const parsedTaskLazinessFactor = z.coerce.number().finite().min(0).max(2).parse(taskLazinessFactor);
+
+  const { data, error } = await supabase
+    .from("household_members")
+    .update({
+      task_laziness_factor: parsedTaskLazinessFactor
+    })
+    .eq("household_id", validatedHouseholdId)
+    .eq("user_id", validatedUserId)
+    .select("*")
+    .single();
+
+  if (error) throw error;
+  return normalizeHouseholdMember(data as Record<string, unknown>);
+};
+
+export const resetHouseholdPimpers = async (householdId: string): Promise<number> => {
+  const validatedHouseholdId = z.string().uuid().parse(householdId);
+
+  const { data, error } = await supabase.rpc("reset_household_pimpers", {
+    p_household_id: validatedHouseholdId
+  });
+
+  if (error) throw error;
+  const affected = Number(data ?? 0);
+  return Number.isFinite(affected) ? affected : 0;
+};
+
 export const leaveHousehold = async (householdId: string, userId: string) => {
   const validatedHouseholdId = z.string().uuid().parse(householdId);
   const validatedUserId = z.string().uuid().parse(userId);
@@ -682,19 +826,20 @@ export const setHouseholdMemberRole = async (
   const validatedHouseholdId = z.string().uuid().parse(householdId);
   const validatedTargetUserId = z.string().uuid().parse(targetUserId);
   const nextRole = z.enum(["owner", "member"]).parse(role);
+  const actorUserId = await requireAuthenticatedUserId();
+
+  const { data: targetMember, error: targetMemberError } = await supabase
+    .from("household_members")
+    .select("role")
+    .eq("household_id", validatedHouseholdId)
+    .eq("user_id", validatedTargetUserId)
+    .single();
+
+  if (targetMemberError) throw targetMemberError;
+  const previousRole = String(targetMember.role ?? "member");
 
   if (nextRole === "member") {
-    const { data: targetMember, error: targetMemberError } = await supabase
-      .from("household_members")
-      .select("role")
-      .eq("household_id", validatedHouseholdId)
-      .eq("user_id", validatedTargetUserId)
-      .single();
-
-    if (targetMemberError) throw targetMemberError;
-
-    const currentRole = String(targetMember.role ?? "member");
-    if (currentRole === "owner") {
+    if (previousRole === "owner") {
       const { count, error: ownerCountError } = await supabase
         .from("household_members")
         .select("user_id", { count: "exact", head: true })
@@ -713,6 +858,19 @@ export const setHouseholdMemberRole = async (
     .eq("user_id", validatedTargetUserId);
 
   if (error) throw error;
+
+  if (previousRole !== nextRole) {
+    await insertHouseholdEvent({
+      householdId: validatedHouseholdId,
+      eventType: "role_changed",
+      actorUserId,
+      subjectUserId: validatedTargetUserId,
+      payload: {
+        previousRole,
+        nextRole
+      }
+    });
+  }
 };
 
 export const removeHouseholdMember = async (householdId: string, targetUserId: string) => {
@@ -815,6 +973,7 @@ export const addShoppingItem = async (
 export const updateShoppingItemStatus = async (id: string, done: boolean, userId: string) => {
   const validatedId = z.string().uuid().parse(id);
   const validatedUserId = z.string().uuid().parse(userId);
+  let sourceItemForEvent: { household_id: string; title: string } | null = null;
 
   if (done) {
     const { data: sourceItem, error: sourceItemError } = await supabase
@@ -837,6 +996,11 @@ export const updateShoppingItemStatus = async (id: string, done: boolean, userId
 
       if (completionError) throw completionError;
     }
+
+    sourceItemForEvent = {
+      household_id: sourceItem.household_id,
+      title: sourceItem.title
+    };
   }
 
   const payload = done
@@ -853,6 +1017,19 @@ export const updateShoppingItemStatus = async (id: string, done: boolean, userId
 
   const { error } = await supabase.from("shopping_items").update(payload).eq("id", validatedId);
   if (error) throw error;
+
+  if (done && sourceItemForEvent) {
+    await insertHouseholdEvent({
+      householdId: sourceItemForEvent.household_id,
+      eventType: "shopping_completed",
+      actorUserId: validatedUserId,
+      payload: {
+        title: sourceItemForEvent.title,
+        shoppingItemId: validatedId
+      },
+      createdAt: payload.done_at ?? new Date().toISOString()
+    });
+  }
 };
 
 export const getShoppingCompletions = async (householdId: string): Promise<ShoppingItemCompletion[]> => {
@@ -926,6 +1103,7 @@ export const addTask = async (
     startDate: z.string().min(1),
     frequencyDays: z.coerce.number().int().positive(),
     effortPimpers: z.coerce.number().int().positive(),
+    prioritizeLowPimpers: z.coerce.boolean(),
     rotationUserIds: z.array(z.string().uuid()).min(1)
   }).parse({
     householdId,
@@ -935,6 +1113,7 @@ export const addTask = async (
     startDate: input.startDate,
     frequencyDays: input.frequencyDays,
     effortPimpers: input.effortPimpers,
+    prioritizeLowPimpers: input.prioritizeLowPimpers,
     rotationUserIds: input.rotationUserIds.filter((entry, index, all) => all.indexOf(entry) === index)
   });
 
@@ -956,6 +1135,7 @@ export const addTask = async (
       cron_pattern: cronPattern,
       frequency_days: parsedInput.frequencyDays,
       effort_pimpers: parsedInput.effortPimpers,
+      prioritize_low_pimpers: parsedInput.prioritizeLowPimpers,
       assignee_id: rotationUserIds[0],
       done: false,
       created_by: parsedInput.userId
@@ -988,6 +1168,7 @@ export const updateTask = async (taskId: string, input: NewTaskInput): Promise<v
     startDate: z.string().min(1),
     frequencyDays: z.coerce.number().int().positive(),
     effortPimpers: z.coerce.number().int().positive(),
+    prioritizeLowPimpers: z.coerce.boolean(),
     rotationUserIds: z.array(z.string().uuid()).min(1)
   }).parse({
     taskId,
@@ -996,6 +1177,7 @@ export const updateTask = async (taskId: string, input: NewTaskInput): Promise<v
     startDate: input.startDate,
     frequencyDays: input.frequencyDays,
     effortPimpers: input.effortPimpers,
+    prioritizeLowPimpers: input.prioritizeLowPimpers,
     rotationUserIds: input.rotationUserIds.filter((entry, index, all) => all.indexOf(entry) === index)
   });
 
@@ -1013,6 +1195,7 @@ export const updateTask = async (taskId: string, input: NewTaskInput): Promise<v
       cron_pattern: cronPattern,
       frequency_days: parsedInput.frequencyDays,
       effort_pimpers: parsedInput.effortPimpers,
+      prioritize_low_pimpers: parsedInput.prioritizeLowPimpers,
       assignee_id: assigneeId
     })
     .eq("id", parsedInput.taskId);
@@ -1043,6 +1226,13 @@ export const deleteTask = async (taskId: string): Promise<void> => {
 export const completeTask = async (taskId: string, userId: string) => {
   const validatedTaskId = z.string().uuid().parse(taskId);
   const validatedUserId = z.string().uuid().parse(userId);
+  const { data: taskRow, error: taskError } = await supabase
+    .from("tasks")
+    .select("household_id,title")
+    .eq("id", validatedTaskId)
+    .single();
+
+  if (taskError) throw taskError;
 
   const { error } = await supabase.rpc("complete_task", {
     p_task_id: validatedTaskId,
@@ -1050,11 +1240,28 @@ export const completeTask = async (taskId: string, userId: string) => {
   });
 
   if (error) throw error;
+
+  await insertHouseholdEvent({
+    householdId: String(taskRow.household_id),
+    eventType: "task_completed",
+    actorUserId: validatedUserId,
+    payload: {
+      title: String(taskRow.title ?? ""),
+      taskId: validatedTaskId
+    }
+  });
 };
 
 export const skipTask = async (taskId: string, userId: string) => {
   const validatedTaskId = z.string().uuid().parse(taskId);
   const validatedUserId = z.string().uuid().parse(userId);
+  const { data: taskRow, error: taskError } = await supabase
+    .from("tasks")
+    .select("household_id,title")
+    .eq("id", validatedTaskId)
+    .single();
+
+  if (taskError) throw taskError;
 
   const { error } = await supabase.rpc("skip_task", {
     p_task_id: validatedTaskId,
@@ -1062,6 +1269,16 @@ export const skipTask = async (taskId: string, userId: string) => {
   });
 
   if (error) throw error;
+
+  await insertHouseholdEvent({
+    householdId: String(taskRow.household_id),
+    eventType: "task_skipped",
+    actorUserId: validatedUserId,
+    payload: {
+      title: String(taskRow.title ?? ""),
+      taskId: validatedTaskId
+    }
+  });
 };
 
 export const takeoverTask = async (taskId: string, userId: string): Promise<void> => {
@@ -1092,12 +1309,28 @@ export const takeoverTask = async (taskId: string, userId: string): Promise<void
 export const updateTaskActiveState = async (taskId: string, isActive: boolean): Promise<void> => {
   const validatedTaskId = z.string().uuid().parse(taskId);
   const parsedIsActive = z.coerce.boolean().parse(isActive);
+  const nowIso = new Date().toISOString();
+
+  const updatePayload: {
+    is_active: boolean;
+    due_at?: string;
+    done?: boolean;
+    done_at?: null;
+    done_by?: null;
+  } = {
+    is_active: parsedIsActive
+  };
+
+  if (parsedIsActive) {
+    updatePayload.due_at = nowIso;
+    updatePayload.done = false;
+    updatePayload.done_at = null;
+    updatePayload.done_by = null;
+  }
 
   const { error } = await supabase
     .from("tasks")
-    .update({
-      is_active: parsedIsActive
-    })
+    .update(updatePayload)
     .eq("id", validatedTaskId);
   if (error) throw error;
 };
@@ -1136,6 +1369,18 @@ export const getCashAuditRequests = async (householdId: string): Promise<CashAud
   if (error) throw error;
 
   return (data ?? []).map((entry) => normalizeCashAuditRequest(entry as Record<string, unknown>));
+};
+
+export const getHouseholdEvents = async (householdId: string): Promise<HouseholdEvent[]> => {
+  const { data, error } = await supabase
+    .from("household_events")
+    .select("*")
+    .eq("household_id", householdId)
+    .order("created_at", { ascending: false })
+    .limit(300);
+
+  if (error) throw error;
+  return (data ?? []).map((entry) => normalizeHouseholdEvent(entry as Record<string, unknown>));
 };
 
 export const getFinanceSubscriptions = async (householdId: string): Promise<FinanceSubscription[]> => {
@@ -1201,6 +1446,17 @@ export const addFinanceEntry = async (
     .single();
 
   if (error) throw error;
+  await insertHouseholdEvent({
+    householdId: parsedInput.householdId,
+    eventType: "finance_created",
+    actorUserId: creatorId,
+    payload: {
+      description: parsedInput.description,
+      amount: parsedInput.amount,
+      financeEntryId: String((data as { id?: string }).id ?? "")
+    },
+    createdAt: (data as { created_at?: string }).created_at
+  });
   return normalizeFinanceEntry(data as Record<string, unknown>);
 };
 
@@ -1274,15 +1530,24 @@ export const deleteFinanceEntry = async (id: string): Promise<void> => {
 export const requestCashAudit = async (householdId: string, userId: string) => {
   const validatedHouseholdId = z.string().uuid().parse(householdId);
   const validatedUserId = z.string().uuid().parse(userId);
+  const createdAt = new Date().toISOString();
 
   const { error } = await supabase.from("cash_audit_requests").insert({
     id: uuid(),
     household_id: validatedHouseholdId,
     requested_by: validatedUserId,
-    status: "queued"
+    status: "queued",
+    created_at: createdAt
   });
 
   if (error) throw error;
+  await insertHouseholdEvent({
+    householdId: validatedHouseholdId,
+    eventType: "cash_audit_requested",
+    actorUserId: validatedUserId,
+    payload: {},
+    createdAt
+  });
 };
 
 export const addFinanceSubscription = async (
