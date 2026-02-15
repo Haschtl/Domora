@@ -818,7 +818,7 @@ export const FinancesTab = ({
     const avatarUrl = member?.avatar_url?.trim() ?? "";
     if (avatarUrl) return avatarUrl;
     const seed = member?.display_name?.trim() || memberLabel(memberId);
-    return createDiceBearAvatarDataUri(seed);
+    return createDiceBearAvatarDataUri(seed, member?.user_color);
   };
   const moneyLabel = useCallback((value: number) => formatMoney(value, locale), [locale]);
   const buildPaymentLinks = (toMemberId: string, amount: number, settlementDateIsoDay?: string) => {

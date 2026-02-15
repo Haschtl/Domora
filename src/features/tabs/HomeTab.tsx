@@ -563,6 +563,18 @@ export const HomeTab = ({
           };
         }
 
+        if (entry.event_type === "pimpers_reset") {
+          return {
+            id: `event-${entry.id}`,
+            at: entry.created_at,
+            icon: "audit",
+            text: t("home.activityPimpersReset", {
+              user: labelForUserId(entry.actor_user_id),
+              total: Number(payload.total_reset ?? 0)
+            })
+          };
+        }
+
         return {
           id: `event-${entry.id}`,
           at: entry.created_at,

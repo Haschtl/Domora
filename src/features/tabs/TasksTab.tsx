@@ -1088,11 +1088,17 @@ export const TasksTab = ({
         : 0;
 
     const byUser = new Map<string, { totalDelay: number; count: number }>();
+    const byTask = new Map<string, { totalDelay: number; count: number }>();
     completionRows.forEach((entry) => {
       const current = byUser.get(entry.user_id) ?? { totalDelay: 0, count: 0 };
       byUser.set(entry.user_id, {
         totalDelay: current.totalDelay + Math.max(0, entry.delay_minutes),
         count: current.count + 1
+      });
+      const taskStats = byTask.get(entry.task_id) ?? { totalDelay: 0, count: 0 };
+      byTask.set(entry.task_id, {
+        totalDelay: taskStats.totalDelay + Math.max(0, entry.delay_minutes),
+        count: taskStats.count + 1
       });
     });
 
@@ -1108,13 +1114,32 @@ export const TasksTab = ({
       .filter((entry) => entry.count > 0)
       .sort((a, b) => b.averageDelayMinutes - a.averageDelayMinutes);
 
+    const taskLabelById = new Map<string, string>();
+    statsFilteredTasks.forEach((task) => {
+      taskLabelById.set(task.id, task.title?.trim() || t("tasks.fallbackTitle"));
+    });
+    statsFilteredCompletions.forEach((entry) => {
+      if (taskLabelById.has(entry.task_id)) return;
+      taskLabelById.set(entry.task_id, entry.task_title_snapshot?.trim() || t("tasks.fallbackTitle"));
+    });
+    const taskRows = [...byTask.entries()]
+      .map(([taskId, stats]) => ({
+        taskId,
+        title: taskLabelById.get(taskId) ?? t("tasks.fallbackTitle"),
+        count: stats.count,
+        averageDelayMinutes: stats.count > 0 ? stats.totalDelay / stats.count : 0
+      }))
+      .filter((entry) => entry.count > 0)
+      .sort((a, b) => b.averageDelayMinutes - a.averageDelayMinutes);
+
     return {
       dueTasksCount: dueTasks.length,
       overdueTasksCount: overdueTasks.length,
       overallDelayMinutes,
-      memberRows
+      memberRows,
+      taskRows
     };
-  }, [members, statsFilteredCompletions, statsFilteredTasks]);
+  }, [members, statsFilteredCompletions, statsFilteredTasks, t]);
   const formatDelayLabel = (minutes: number) => {
     if (minutes < 60) return t("tasks.delayMinutesValue", { count: Math.round(minutes) });
     if (minutes < 24 * 60) return t("tasks.delayHoursValue", { count: Number((minutes / 60).toFixed(1)) });
@@ -1338,6 +1363,7 @@ export const TasksTab = ({
           avatarUrl ||
           createDiceBearAvatarDataUri(
             member?.display_name?.trim() || displayName || memberId,
+            member?.user_color
           );
         return (
           <MemberAvatar
@@ -1576,7 +1602,12 @@ export const TasksTab = ({
                             const member = memberById.get(span.userId);
                             const displayName = userLabel(span.userId);
                             const avatarUrl = member?.avatar_url?.trim() ?? "";
-                            const avatarSrc = avatarUrl || createDiceBearAvatarDataUri(member?.display_name?.trim() || displayName || span.userId);
+                            const avatarSrc =
+                              avatarUrl ||
+                              createDiceBearAvatarDataUri(
+                                member?.display_name?.trim() || displayName || span.userId,
+                                member?.user_color
+                              );
                             const segmentClassName =
                               span.kind === "single"
                                 ? "mx-0 rounded-full"
@@ -1615,7 +1646,11 @@ export const TasksTab = ({
                             const avatarSrc =
                               memberId === "__unassigned__"
                                 ? null
-                                : avatarUrl || createDiceBearAvatarDataUri(member?.display_name?.trim() || displayName || memberId);
+                                : avatarUrl ||
+                                  createDiceBearAvatarDataUri(
+                                    member?.display_name?.trim() || displayName || memberId,
+                                    member?.user_color
+                                  );
 
                             return (
                               <MemberAvatar
@@ -2078,6 +2113,7 @@ export const TasksTab = ({
                                                 member?.display_name?.trim() ||
                                                   displayName ||
                                                   rotationUserId,
+                                                member?.user_color
                                               );
                                             return (
                                               <SortableRotationItem
@@ -2165,6 +2201,7 @@ export const TasksTab = ({
                         assigneeMember?.display_name?.trim() ||
                           assigneeText ||
                           task.assignee_id,
+                        assigneeMember?.user_color
                       )
                     : null;
 
@@ -2465,6 +2502,7 @@ export const TasksTab = ({
                               member.avatar_url?.trim() ||
                               createDiceBearAvatarDataUri(
                                 userLabel(member.user_id),
+                                member.user_color
                               )
                             }
                             alt={userLabel(member.user_id)}
@@ -2566,6 +2604,28 @@ export const TasksTab = ({
                       >
                         <span className="text-slate-700 dark:text-slate-300">
                           {userLabel(row.userId)}
+                        </span>
+                        <span className="font-medium text-slate-900 dark:text-slate-100">
+                          {formatDelayLabel(row.averageDelayMinutes)}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+              {backlogAndDelayStats.taskRows.length > 0 ? (
+                <div>
+                  <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                    {t("tasks.averageDelayByTask")}
+                  </p>
+                  <ul className="space-y-1">
+                    {backlogAndDelayStats.taskRows.map((row) => (
+                      <li
+                        key={`delay-task-${row.taskId}`}
+                        className="flex items-center justify-between text-sm"
+                      >
+                        <span className="text-slate-700 dark:text-slate-300">
+                          {row.title}
                         </span>
                         <span className="font-medium text-slate-900 dark:text-slate-100">
                           {formatDelayLabel(row.averageDelayMinutes)}
@@ -3491,6 +3551,7 @@ export const TasksTab = ({
                                       member?.display_name?.trim() ||
                                         displayName ||
                                         rotationUserId,
+                                      member?.user_color
                                     );
                                   return (
                                     <SortableRotationItem

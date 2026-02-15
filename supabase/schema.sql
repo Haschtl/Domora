@@ -161,7 +161,7 @@ create table if not exists task_completion_ratings (
 create table if not exists household_events (
   id uuid primary key default gen_random_uuid(),
   household_id uuid not null references households(id) on delete cascade,
-  event_type text not null check (event_type in ('task_completed', 'task_skipped', 'shopping_completed', 'finance_created', 'role_changed', 'cash_audit_requested', 'admin_hint')),
+  event_type text not null check (event_type in ('task_completed', 'task_skipped', 'shopping_completed', 'finance_created', 'role_changed', 'cash_audit_requested', 'admin_hint', 'pimpers_reset')),
   actor_user_id uuid references auth.users(id) on delete set null,
   subject_user_id uuid references auth.users(id) on delete set null,
   payload jsonb not null default '{}'::jsonb,
@@ -911,7 +911,8 @@ begin
           'finance_created',
           'role_changed',
           'cash_audit_requested',
-          'admin_hint'
+          'admin_hint',
+          'pimpers_reset'
         )
       );
   end if;
@@ -1613,7 +1614,7 @@ $$;
 create or replace function reset_household_pimpers(p_household_id uuid)
 returns integer
 language plpgsql
-security invoker
+security definer
 set search_path = public
 as $$
 declare
@@ -1630,6 +1631,26 @@ begin
   where household_id = p_household_id;
 
   get diagnostics affected = row_count;
+
+  if affected > 0 then
+    insert into household_events (
+      household_id,
+      event_type,
+      actor_user_id,
+      subject_user_id,
+      payload,
+      created_at
+    )
+    values (
+      p_household_id,
+      'pimpers_reset',
+      auth.uid(),
+      null,
+      jsonb_build_object('total_reset', affected),
+      now()
+    );
+  end if;
+
   return affected;
 end;
 $$;
@@ -1982,7 +2003,7 @@ drop policy if exists households_select on households;
 create policy households_select on households
 for select
 to authenticated
-using (is_household_member(id) or created_by = auth.uid());
+using (is_household_member(id));
 
 drop policy if exists households_insert on households;
 create policy households_insert on households
@@ -1994,14 +2015,14 @@ drop policy if exists households_update on households;
 create policy households_update on households
 for update
 to authenticated
-using (is_household_owner(id) or auth.uid() = created_by)
-with check (is_household_owner(id) or auth.uid() = created_by);
+using (is_household_owner(id))
+with check (is_household_owner(id));
 
 drop policy if exists households_delete on households;
 create policy households_delete on households
 for delete
 to authenticated
-using (is_household_owner(id) or auth.uid() = created_by);
+using (is_household_owner(id));
 
 drop policy if exists household_members_select on household_members;
 create policy household_members_select on household_members
@@ -2015,12 +2036,7 @@ for insert
 to authenticated
 with check (
   auth.uid() = user_id
-  and exists (
-    select 1
-    from households h
-    where h.id = household_members.household_id
-      and (h.created_by = auth.uid() or is_household_owner(h.id))
-  )
+  and is_household_owner(household_members.household_id)
 );
 
 drop policy if exists household_members_delete on household_members;
@@ -2150,11 +2166,24 @@ with check (
 );
 
 drop policy if exists household_member_pimpers_all on household_member_pimpers;
-create policy household_member_pimpers_all on household_member_pimpers
-for all
+drop policy if exists household_member_pimpers_select on household_member_pimpers;
+create policy household_member_pimpers_select on household_member_pimpers
+for select
 to authenticated
-using (is_household_member(household_id))
-with check (is_household_member(household_id));
+using (is_household_member(household_id));
+
+drop policy if exists household_member_pimpers_insert_own on household_member_pimpers;
+create policy household_member_pimpers_insert_own on household_member_pimpers
+for insert
+to authenticated
+with check (is_household_member(household_id) and auth.uid() = user_id);
+
+drop policy if exists household_member_pimpers_update_own on household_member_pimpers;
+create policy household_member_pimpers_update_own on household_member_pimpers
+for update
+to authenticated
+using (is_household_member(household_id) and auth.uid() = user_id)
+with check (is_household_member(household_id) and auth.uid() = user_id);
 
 drop policy if exists task_completions_select on task_completions;
 create policy task_completions_select on task_completions

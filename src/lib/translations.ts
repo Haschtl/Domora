@@ -164,6 +164,7 @@ export const resources = {
         activityFinanceCreated: "Finanzeintrag „{{name}}“ mit {{amount}} €",
         activityCashAudit: "{{user}} hat einen Kassensturz gestartet",
         activityRoleChanged: "{{user}} hat jetzt die Rolle {{role}}",
+        activityPimpersReset: "{{user}} hat die Pimpers zurückgesetzt ({{total}} Personen)",
         activityAdminHintFallback:
           "Automatische Datenpflege hat Inkonsistenzen behoben.",
         landingTitle: "WG Landing Page",
@@ -462,6 +463,7 @@ export const resources = {
         backlogOpen: "Offene aktive Aufgaben",
         averageDelayOverall: "Ø Verzögerung gesamt",
         averageDelayByMember: "Ø Verzögerung pro Person",
+        averageDelayByTask: "Ø Verzögerung pro Aufgabe",
         forecastTitle: "Prognose bis nächster Turn",
         forecastDescription:
           "Erwartete Pimpers pro Mitglied bis es in der ausgewählten Aufgabe wieder dran ist.",

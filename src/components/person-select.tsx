@@ -69,7 +69,7 @@ export const PersonSelect = (props: PersonSelectProps) => {
     [members, props.currentUserId, props.youLabels, t, youLabel]
   );
   const getMemberAvatar = (member: HouseholdMember) =>
-    member.avatar_url?.trim() || createDiceBearAvatarDataUri(member.display_name?.trim() || member.user_id);
+    member.avatar_url?.trim() || createDiceBearAvatarDataUri(member.display_name?.trim() || member.user_id, member.user_color);
   const firstNameFromLabel = (label: string) => {
     const normalized = label.trim();
     if (!normalized) return normalized;

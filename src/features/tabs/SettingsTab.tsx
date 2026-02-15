@@ -371,7 +371,10 @@ export const SettingsTab = ({
     if (userEmail) return userEmail;
     return userId;
   }, [profileNameForm.state.values.displayName, userEmail, userId]);
-  const generatedProfileAvatarUrl = useMemo(() => createDiceBearAvatarDataUri(profileSeed), [profileSeed]);
+  const generatedProfileAvatarUrl = useMemo(
+    () => createDiceBearAvatarDataUri(profileSeed, profileColorForm.state.values.userColor),
+    [profileColorForm.state.values.userColor, profileSeed]
+  );
   const profilePreviewImageUrl = profileImageUrl || generatedProfileAvatarUrl;
   const householdImageUrl = householdForm.state.values.imageUrl.trim();
   const generatedHouseholdBannerUrl = useMemo(
@@ -1367,6 +1370,7 @@ export const SettingsTab = ({
                     member.avatar_url?.trim() ||
                     createDiceBearAvatarDataUri(
                       member.display_name?.trim() || displayLabel,
+                      member.user_color
                     );
 
                   return (
