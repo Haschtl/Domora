@@ -363,7 +363,18 @@ export const signInWithGoogle = async () => {
 
 export const signOut = async () => {
   const { error } = await supabase.auth.signOut();
-  if (error) throw error;
+  if (!error) return;
+
+  const isOffline = typeof navigator !== "undefined" && !navigator.onLine;
+  const message = typeof error.message === "string" ? error.message : "";
+  const shouldFallback = isOffline || /fetch|network/i.test(message);
+
+  if (shouldFallback) {
+    const { error: localError } = await supabase.auth.signOut({ scope: "local" });
+    if (!localError) return;
+  }
+
+  throw error;
 };
 
 export const getCurrentSession = async () => {
