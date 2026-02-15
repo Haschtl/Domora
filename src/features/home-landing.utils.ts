@@ -8,8 +8,10 @@ export const LANDING_WIDGET_KEYS = [
   "recent-activity",
   "bucket-short-list",
   "fairness-score",
+  "reliability-score",
   "expenses-by-month",
-  "fairness-by-member"
+  "fairness-by-member",
+  "reliability-by-member"
 ] as const;
 
 export type LandingWidgetKey = (typeof LANDING_WIDGET_KEYS)[number];

@@ -14,7 +14,6 @@ export const TasksPageContainer = ({ section }: TasksPageContainerProps) => {
   const {
     activeHousehold,
     householdMembers,
-    currentMember,
     userId,
     busy,
     onAddTask,
@@ -25,8 +24,8 @@ export const TasksPageContainer = ({ section }: TasksPageContainerProps) => {
     onUpdateTask,
     onDeleteTask,
     onRateTaskCompletion,
-    onUpdateMemberTaskLaziness,
-    onResetHouseholdPimpers
+    onResetHouseholdPimpers,
+    onUpdateMemberTaskLaziness
   } = useWorkspace();
 
   const tasksQuery = useHouseholdTasks(activeHousehold?.id ?? null);
@@ -38,6 +37,7 @@ export const TasksPageContainer = ({ section }: TasksPageContainerProps) => {
   return (
     <TasksPage
       section={section}
+      household={activeHousehold}
       tasks={tasksQuery.data ?? []}
       completions={completionsQuery.data ?? []}
       members={householdMembers}
@@ -52,9 +52,8 @@ export const TasksPageContainer = ({ section }: TasksPageContainerProps) => {
       onUpdate={onUpdateTask}
       onDelete={onDeleteTask}
       onRateTaskCompletion={onRateTaskCompletion}
-      onUpdateMemberTaskLaziness={onUpdateMemberTaskLaziness}
       onResetHouseholdPimpers={onResetHouseholdPimpers}
-      canManageTaskLaziness={currentMember?.role === "owner"}
+      onUpdateMemberTaskLaziness={onUpdateMemberTaskLaziness}
     />
   );
 };

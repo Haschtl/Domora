@@ -81,8 +81,10 @@ const LANDING_WIDGET_COMPONENTS: Array<{ key: LandingWidgetKey; tag: string }> =
   { key: "recent-activity", tag: "LandingWidgetRecentActivity" },
   { key: "bucket-short-list", tag: "LandingWidgetBucketShortList" },
   { key: "fairness-score", tag: "LandingWidgetFairnessScore" },
+  { key: "reliability-score", tag: "LandingWidgetReliabilityScore" },
   { key: "expenses-by-month", tag: "LandingWidgetExpensesByMonth" },
-  { key: "fairness-by-member", tag: "LandingWidgetFairnessByMember" }
+  { key: "fairness-by-member", tag: "LandingWidgetFairnessByMember" },
+  { key: "reliability-by-member", tag: "LandingWidgetReliabilityByMember" }
 ];
 const widgetTokenFromKey = (key: LandingWidgetKey) => `{{widget:${key}}}`;
 
@@ -321,8 +323,10 @@ export const HomePage = ({
       { label: t("home.widgetRecentActivity"), value: widgetTokenFromKey("recent-activity") },
       { label: t("home.widgetBucketShortList"), value: widgetTokenFromKey("bucket-short-list") },
       { label: t("home.widgetFairness"), value: widgetTokenFromKey("fairness-score") },
+      { label: t("home.widgetReliability"), value: widgetTokenFromKey("reliability-score") },
       { label: t("home.widgetExpensesByMonth"), value: widgetTokenFromKey("expenses-by-month") },
-      { label: t("home.widgetFairnessByMember"), value: widgetTokenFromKey("fairness-by-member") }
+      { label: t("home.widgetFairnessByMember"), value: widgetTokenFromKey("fairness-by-member") },
+      { label: t("home.widgetReliabilityByMember"), value: widgetTokenFromKey("reliability-by-member") }
     ],
     [t]
   );
@@ -500,6 +504,47 @@ export const HomePage = ({
 
     const overallScore = rows.length > 0 ? Math.round(rows.reduce((sum, row) => sum + row.score, 0) / rows.length) : 100;
     return { overallScore, rows: rows.sort((a, b) => b.score - a.score) };
+  }, [members, taskCompletions]);
+  const taskReliability = useMemo(() => {
+    const memberIds = [...new Set(members.map((entry) => entry.user_id))];
+    if (memberIds.length === 0) {
+      return {
+        overallScore: 100,
+        rows: [] as Array<{ memberId: string; score: number; averageDelayMinutes: number }>
+      };
+    }
+
+    const delaysByUser = new Map<string, { total: number; count: number }>();
+    taskCompletions.forEach((entry) => {
+      const current = delaysByUser.get(entry.user_id) ?? { total: 0, count: 0 };
+      delaysByUser.set(entry.user_id, {
+        total: current.total + Math.max(0, entry.delay_minutes ?? 0),
+        count: current.count + 1
+      });
+    });
+
+    const rows = memberIds.map((memberId) => {
+      const stats = delaysByUser.get(memberId) ?? { total: 0, count: 0 };
+      const averageDelayMinutes = stats.count > 0 ? stats.total / stats.count : 0;
+      return { memberId, averageDelayMinutes, score: 100 };
+    });
+
+    const maxAverageDelay = Math.max(0, ...rows.map((row) => row.averageDelayMinutes));
+    rows.forEach((row) => {
+      if (maxAverageDelay <= 0) {
+        row.score = 100;
+      } else {
+        const ratio = row.averageDelayMinutes / maxAverageDelay;
+        row.score = Math.max(0, Math.round((1 - Math.min(1, ratio)) * 100));
+      }
+    });
+
+    const overallScore =
+      rows.length > 0 ? Math.round(rows.reduce((sum, row) => sum + row.score, 0) / rows.length) : 100;
+    return {
+      overallScore,
+      rows: rows.sort((a, b) => b.score - a.score)
+    };
   }, [members, taskCompletions]);
   const recentActivity = useMemo(() => {
     type ActivityItem = { id: string; at: string; icon: "task" | "shopping" | "finance" | "audit"; text: string };
@@ -852,6 +897,18 @@ export const HomePage = ({
       );
     }
 
+    if (key === "reliability-score") {
+      return (
+        <div className="rounded-xl border border-brand-100 bg-emerald-50/60 p-3 dark:border-slate-700 dark:bg-slate-800/60">
+          <p className="text-xs text-slate-500 dark:text-slate-400">{t("home.widgetReliability")}</p>
+          <p className="mt-1 text-lg font-semibold text-slate-900 dark:text-slate-100">
+            {taskReliability.overallScore} / 100
+          </p>
+          <p className="text-xs text-slate-500 dark:text-slate-400">{t("home.widgetReliabilityHint")}</p>
+        </div>
+      );
+    }
+
     if (key === "expenses-by-month") {
       return monthlyExpenseRows.length > 0 ? (
         <div className="rounded-xl border border-brand-100 bg-white/80 p-3 dark:border-slate-700 dark:bg-slate-900/70">
@@ -896,6 +953,31 @@ export const HomePage = ({
       ) : null;
     }
 
+    if (key === "reliability-by-member") {
+      return taskReliability.rows.length > 0 ? (
+        <div className="rounded-xl border border-brand-100 bg-white/80 p-3 dark:border-slate-700 dark:bg-slate-900/70">
+          <p className="mb-2 text-xs font-semibold text-slate-600 dark:text-slate-300">
+            {t("home.widgetReliabilityByMember")}
+          </p>
+          <ul className="space-y-2">
+            {taskReliability.rows.map((row) => (
+              <li key={row.memberId} className="space-y-1">
+                <div className="flex items-center justify-between gap-2 text-xs">
+                  <span className="text-slate-700 dark:text-slate-300">{memberLabel(row.memberId)}</span>
+                  <span className="text-slate-500 dark:text-slate-400">
+                    {row.score} / 100 · {Math.round(row.averageDelayMinutes)}m
+                  </span>
+                </div>
+                <div className="h-1.5 rounded-full bg-slate-200 dark:bg-slate-700">
+                  <div className="h-1.5 rounded-full bg-emerald-500" style={{ width: `${row.score}%` }} />
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null;
+    }
+
     return null;
   }, [
     dueTasksCount,
@@ -909,6 +991,7 @@ export const HomePage = ({
     bucketShortList,
     openBucketItemsCount,
     taskFairness,
+    taskReliability,
     memberLabel,
     navigate,
     onCompleteTask,

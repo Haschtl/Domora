@@ -118,9 +118,14 @@ export const resources = {
         widgetBucketShortListHint: "Offene Ideen und Vorschläge",
         widgetTasksOpen: "{{count}} aktive Aufgaben offen",
         widgetFairness: "Task-Fairness-Score",
-        widgetFairnessHint: "100 = gleichmäßig verteilt",
+        widgetFairnessHint:
+          "Basierend auf erledigten Aufgaben (ohne Faulheit). 100 = gleichmäßig verteilt.",
+        widgetReliability: "Task-Zuverlässigkeit",
+        widgetReliabilityHint:
+          "Basierend auf der durchschnittlichen Verzögerung. Weniger = besser.",
         widgetExpensesByMonth: "Ausgaben pro Monat und Kategorie",
         widgetFairnessByMember: "Fairness pro Person",
+        widgetReliabilityByMember: "Zuverlässigkeit pro Person",
         bucketTitle: "Bucket List",
         bucketDescription: "Gemeinsame Ideen, Ziele und Wünsche.",
         bucketPlaceholder: "Neuer Eintrag...",
@@ -297,6 +302,10 @@ export const resources = {
         targetStateImagePreviewAlt: "Soll-Zustand Bild",
         stateImageUploadError: "Bild konnte nicht verarbeitet werden.",
         startDate: "Startdatum",
+        gracePeriodLabel: "Kulanzzeit",
+        gracePeriodHint: "So viele Tage nach Fälligkeit zählt es noch nicht als verspätet.",
+        gracePeriodUnit: "Tage",
+        gracePeriodPlaceholder: "1",
         frequencyDays: "Frequenz in Tagen",
         effortPimpers: "Aufwand in Pimpers",
         prioritizeLowPimpers: "Fairness nach Pimpers nutzen",
@@ -304,9 +313,10 @@ export const resources = {
           "Wenn aktiv, kommen Personen mit weniger Pimpers eher wieder dran.",
         assigneeFairnessModeLabel: "Fairness-Modus",
         assigneeFairnessModeHint:
-          "Ist-Wert nutzt nur aktuelle Pimpers. Prognose berücksichtigt erwartete Pimpers bis zum nächsten Turn.",
+          "Ist-Wert nutzt nur aktuelle Pimpers. Theoretische Prognose ignoriert Verzögerungen. Erwartete Prognose berücksichtigt durchschnittliche Verspätung.",
         assigneeFairnessModeActual: "Ist-Wert",
-        assigneeFairnessModeProjection: "Prognose bis Turn",
+        assigneeFairnessModeProjection: "Theoretische Prognose bis Turnus",
+        assigneeFairnessModeExpected: "Erwartete Prognose bis Turnus",
         rotationTitle: "Personen in Reihenfolge",
         rotationSelectionTitle: "Zuständig",
         rotationHint:
@@ -314,7 +324,8 @@ export const resources = {
         rotationOrderPreviewTitle: "Reihenfolge-Varianten",
         rotationOrderPreviewTheoretical: "Theoretisch",
         rotationOrderPreviewFairness: "Mit Fairness",
-        rotationOrderPreviewFairnessProjection: "Mit Fairness + Prognose",
+        rotationOrderPreviewFairnessProjection: "Mit Fairness + Theoretische Prognose",
+        rotationOrderPreviewFairnessExpected: "Mit Fairness + Erwartete Prognose",
         noMembers: "Keine Mitglieder verfügbar.",
         inRotation: "In Rotation",
         addToRotation: "Zur Rotation",
@@ -468,6 +479,9 @@ export const resources = {
         forecastTitle: "Prognose bis nächster Turn",
         forecastDescription:
           "Erwartete Pimpers pro Mitglied bis es in der ausgewählten Aufgabe wieder dran ist.",
+        forecastTooltipTitle: "Wie wird das berechnet?",
+        forecastTooltipBody:
+          "Wir schätzen, wie viele Pimpers jedes Mitglied bis zum nächsten Turn sammelt: (1) Turns bis zur ausgewählten Aufgabe zählen. (2) Daraus ergibt sich ein Zeithorizont in Tagen. (3) Für alle anderen aktiven Aufgaben schätzen wir, wie oft sie in diesem Zeitraum fällig sind. (4) Häufigkeit × Aufwand × Rotationsanteil. Falls Faulheit aktiviert ist, wird der Gesamtwert skaliert.",
         forecastSelectLabel: "Aufgabe für Prognose",
         forecastCurrentPimpers: "Aktuell: {{value}}",
         forecastProjectedUntilTurn: "Erwartet bis Turn: {{value}}",
@@ -721,6 +735,9 @@ export const resources = {
         householdDescription:
           "WG-Banner, Adresse und Währung zentral verwalten.",
         householdOwnerOnlyHint: "Nur Hauptmieter können WG-Daten bearbeiten.",
+        householdLazinessTitle: "Faulheit berücksichtigen",
+        householdLazinessDescription:
+          "Erlaubt, pro Mitglied einen Faulheitsfaktor zu setzen, der die Aufgabenverteilung skaliert.",
         householdImageLabel: "WG-Banner URL",
         householdImagePlaceholder: "https://...",
         householdNameLabel: "WG-Name",
@@ -950,9 +967,14 @@ export const resources = {
         widgetBucketShortListHint: "Open ideas and suggestions",
         widgetTasksOpen: "{{count}} active tasks open",
         widgetFairness: "Task fairness score",
-        widgetFairnessHint: "100 = evenly distributed",
+        widgetFairnessHint:
+          "Based on completed tasks (no laziness). 100 = evenly distributed.",
+        widgetReliability: "Task reliability",
+        widgetReliabilityHint:
+          "Based on average delay. Lower delay = better.",
         widgetExpensesByMonth: "Expenses per month and category",
         widgetFairnessByMember: "Fairness by member",
+        widgetReliabilityByMember: "Reliability by member",
         bucketTitle: "Bucket list",
         bucketDescription:
           "Shared ideas, goals, and wishes as a simple checklist.",
@@ -1125,6 +1147,10 @@ export const resources = {
         targetStateImagePreviewAlt: "Target state image",
         stateImageUploadError: "Image could not be processed.",
         startDate: "Start date",
+        gracePeriodLabel: "Grace period",
+        gracePeriodHint: "How many days after due date it’s still not late.",
+        gracePeriodUnit: "days",
+        gracePeriodPlaceholder: "1",
         frequencyDays: "Frequency in days",
         effortPimpers: "Effort in pimpers",
         prioritizeLowPimpers: "Use pimpers-based fairness",
@@ -1132,9 +1158,10 @@ export const resources = {
           "When enabled, members with fewer pimpers are picked earlier.",
         assigneeFairnessModeLabel: "Fairness mode",
         assigneeFairnessModeHint:
-          "Actual uses current pimpers only. Projection includes expected pimpers until the next turn.",
+          "Actual uses current pimpers only. Theoretical projection ignores delays. Expected projection includes average lateness.",
         assigneeFairnessModeActual: "Actual only",
-        assigneeFairnessModeProjection: "Projection to turn",
+        assigneeFairnessModeProjection: "Theoretical projection to turn",
+        assigneeFairnessModeExpected: "Expected projection to turn",
         rotationTitle: "People in order",
         rotationSelectionTitle: "People assignees",
         rotationHint:
@@ -1142,7 +1169,8 @@ export const resources = {
         rotationOrderPreviewTitle: "Order variants",
         rotationOrderPreviewTheoretical: "Theoretical",
         rotationOrderPreviewFairness: "With fairness",
-        rotationOrderPreviewFairnessProjection: "With fairness + projection",
+        rotationOrderPreviewFairnessProjection: "With fairness + theoretical projection",
+        rotationOrderPreviewFairnessExpected: "With fairness + expected projection",
         noMembers: "No members available.",
         inRotation: "In rotation",
         addToRotation: "Add to rotation",
@@ -1291,6 +1319,9 @@ export const resources = {
         forecastTitle: "Projection until next turn",
         forecastDescription:
           "Expected pimpers per member until their next turn in the selected task.",
+        forecastTooltipTitle: "How is this calculated?",
+        forecastTooltipBody:
+          "We estimate how many pimpers each member earns until their next turn: (1) count turns until they're up in the selected task. (2) translate that into a day horizon. (3) for all other active tasks, estimate how often they occur in that period. (4) frequency × effort × rotation share. If laziness is enabled, the total is scaled.",
         forecastSelectLabel: "Task for projection",
         forecastCurrentPimpers: "Current: {{value}}",
         forecastProjectedUntilTurn: "Expected to turn: {{value}}",
@@ -1539,6 +1570,9 @@ export const resources = {
         householdDescription: "Manage household image, address and currency.",
         householdOwnerOnlyHint:
           "Only household owners can edit household data.",
+        householdLazinessTitle: "Enable laziness factor",
+        householdLazinessDescription:
+          "Allow setting a laziness factor per member to scale task fairness.",
         householdImageLabel: "Household image URL",
         householdImagePlaceholder: "https://...",
         householdNameLabel: "Household name",

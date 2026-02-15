@@ -45,8 +45,10 @@ describe("home landing utils", () => {
       "recent-activity",
       "bucket-short-list",
       "fairness-score",
+      "reliability-score",
       "expenses-by-month",
-      "fairness-by-member"
+      "fairness-by-member",
+      "reliability-by-member"
     ]);
   });
 

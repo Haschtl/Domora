@@ -669,7 +669,8 @@ export const FinancesPage = ({
         apartmentSizeSqm: parsedHouseholdSize,
         coldRentMonthly: parsedColdRent,
         utilitiesMonthly: parsedUtilities,
-        utilitiesOnRoomSqmPercent: parsedUtilitiesOnRoomSqmPercent
+        utilitiesOnRoomSqmPercent: parsedUtilitiesOnRoomSqmPercent,
+        taskLazinessEnabled: household.task_laziness_enabled ?? false
       });
     }
   });

@@ -140,8 +140,9 @@ const taskSchema = z.object({
   cron_pattern: z.string().min(1).default("0 9 */7 * *"),
   frequency_days: z.coerce.number().int().positive(),
   effort_pimpers: z.coerce.number().int().positive(),
+  grace_minutes: z.coerce.number().int().nonnegative().default(1440),
   prioritize_low_pimpers: z.coerce.boolean().default(true),
-  assignee_fairness_mode: z.enum(["actual", "projection"]).default("actual"),
+  assignee_fairness_mode: z.enum(["actual", "projection", "expected"]).default("expected"),
   is_active: z.coerce.boolean().default(true),
   done: z.coerce.boolean(),
   done_at: z.string().nullable().optional().transform((value) => value ?? null),
@@ -685,7 +686,8 @@ export const updateHouseholdSettings = async (
     apartmentSizeSqm: positiveOptionalNumberSchema,
     coldRentMonthly: nonNegativeOptionalNumberSchema,
     utilitiesMonthly: nonNegativeOptionalNumberSchema,
-    utilitiesOnRoomSqmPercent: percentageNumberSchema
+    utilitiesOnRoomSqmPercent: percentageNumberSchema,
+    taskLazinessEnabled: z.coerce.boolean()
   }).parse(input);
 
   const { data, error } = await supabase
@@ -698,7 +700,8 @@ export const updateHouseholdSettings = async (
       apartment_size_sqm: parsedInput.apartmentSizeSqm,
       cold_rent_monthly: parsedInput.coldRentMonthly,
       utilities_monthly: parsedInput.utilitiesMonthly,
-      utilities_on_room_sqm_percent: parsedInput.utilitiesOnRoomSqmPercent
+      utilities_on_room_sqm_percent: parsedInput.utilitiesOnRoomSqmPercent,
+      task_laziness_enabled: parsedInput.taskLazinessEnabled
     })
     .eq("id", validatedHouseholdId)
     .select("*")
@@ -1433,8 +1436,9 @@ export const addTask = async (
     startDate: z.string().min(1),
     frequencyDays: z.coerce.number().int().positive(),
     effortPimpers: z.coerce.number().int().positive(),
+    graceMinutes: z.coerce.number().int().nonnegative().default(1440),
     prioritizeLowPimpers: z.coerce.boolean(),
-    assigneeFairnessMode: z.enum(["actual", "projection"]).default("actual"),
+    assigneeFairnessMode: z.enum(["actual", "projection", "expected"]).default("expected"),
     rotationUserIds: z.array(z.string().uuid()).min(1)
   }).parse({
     householdId,
@@ -1446,6 +1450,7 @@ export const addTask = async (
     startDate: input.startDate,
     frequencyDays: input.frequencyDays,
     effortPimpers: input.effortPimpers,
+    graceMinutes: input.graceMinutes,
     prioritizeLowPimpers: input.prioritizeLowPimpers,
     assigneeFairnessMode: input.assigneeFairnessMode,
     rotationUserIds: input.rotationUserIds.filter((entry, index, all) => all.indexOf(entry) === index)
@@ -1471,6 +1476,7 @@ export const addTask = async (
       cron_pattern: cronPattern,
       frequency_days: parsedInput.frequencyDays,
       effort_pimpers: parsedInput.effortPimpers,
+      grace_minutes: parsedInput.graceMinutes,
       prioritize_low_pimpers: parsedInput.prioritizeLowPimpers,
       assignee_fairness_mode: parsedInput.assigneeFairnessMode,
       assignee_id: rotationUserIds[0],
@@ -1507,8 +1513,9 @@ export const updateTask = async (taskId: string, input: NewTaskInput): Promise<v
     startDate: z.string().min(1),
     frequencyDays: z.coerce.number().int().positive(),
     effortPimpers: z.coerce.number().int().positive(),
+    graceMinutes: z.coerce.number().int().nonnegative().default(1440),
     prioritizeLowPimpers: z.coerce.boolean(),
-    assigneeFairnessMode: z.enum(["actual", "projection"]).default("actual"),
+    assigneeFairnessMode: z.enum(["actual", "projection", "expected"]).default("expected"),
     rotationUserIds: z.array(z.string().uuid()).min(1)
   }).parse({
     taskId,
@@ -1519,6 +1526,7 @@ export const updateTask = async (taskId: string, input: NewTaskInput): Promise<v
     startDate: input.startDate,
     frequencyDays: input.frequencyDays,
     effortPimpers: input.effortPimpers,
+    graceMinutes: input.graceMinutes,
     prioritizeLowPimpers: input.prioritizeLowPimpers,
     assigneeFairnessMode: input.assigneeFairnessMode,
     rotationUserIds: input.rotationUserIds.filter((entry, index, all) => all.indexOf(entry) === index)
@@ -1540,6 +1548,7 @@ export const updateTask = async (taskId: string, input: NewTaskInput): Promise<v
       cron_pattern: cronPattern,
       frequency_days: parsedInput.frequencyDays,
       effort_pimpers: parsedInput.effortPimpers,
+      grace_minutes: parsedInput.graceMinutes,
       prioritize_low_pimpers: parsedInput.prioritizeLowPimpers,
       assignee_fairness_mode: parsedInput.assigneeFairnessMode,
       assignee_id: assigneeId

@@ -12,6 +12,7 @@ create table if not exists households (
   utilities_monthly numeric(12, 2) check (utilities_monthly is null or utilities_monthly >= 0),
   utilities_on_room_sqm_percent numeric(5, 2) not null default 0
     check (utilities_on_room_sqm_percent >= 0 and utilities_on_room_sqm_percent <= 100),
+  task_laziness_enabled boolean not null default false,
   landing_page_markdown text not null default '',
   invite_code text not null unique,
   created_by uuid not null references auth.users(id) on delete cascade,
@@ -103,8 +104,9 @@ create table if not exists tasks (
   cron_pattern text not null default '0 9 */7 * *',
   frequency_days integer not null default 7,
   effort_pimpers integer not null default 1,
+  grace_minutes integer not null default 1440,
   prioritize_low_pimpers boolean not null default true,
-  assignee_fairness_mode text not null default 'actual' check (assignee_fairness_mode in ('actual', 'projection')),
+  assignee_fairness_mode text not null default 'expected' check (assignee_fairness_mode in ('actual', 'projection', 'expected')),
   is_active boolean not null default true,
   done boolean not null default false,
   done_at timestamptz,
@@ -113,7 +115,8 @@ create table if not exists tasks (
   created_by uuid not null references auth.users(id) on delete cascade,
   created_at timestamptz not null default now(),
   check (frequency_days > 0),
-  check (effort_pimpers > 0)
+  check (effort_pimpers > 0),
+  check (grace_minutes >= 0)
 );
 
 create table if not exists task_rotation_members (
@@ -272,6 +275,7 @@ alter table households add column if not exists apartment_size_sqm numeric(8, 2)
 alter table households add column if not exists cold_rent_monthly numeric(12, 2);
 alter table households add column if not exists utilities_monthly numeric(12, 2);
 alter table households add column if not exists utilities_on_room_sqm_percent numeric(5, 2) not null default 0;
+alter table households add column if not exists task_laziness_enabled boolean not null default false;
 alter table households add column if not exists landing_page_markdown text not null default '';
 
 update households
@@ -282,8 +286,15 @@ update households
 set utilities_on_room_sqm_percent = 0
 where utilities_on_room_sqm_percent is null;
 
+update households
+set task_laziness_enabled = false
+where task_laziness_enabled is null;
+
 alter table households
 alter column utilities_on_room_sqm_percent set not null;
+
+alter table households
+alter column task_laziness_enabled set not null;
 
 alter table tasks add column if not exists last_due_notification_at timestamptz;
 
@@ -989,19 +1000,28 @@ alter table tasks add column if not exists start_date date not null default curr
 alter table tasks add column if not exists cron_pattern text not null default '0 9 */7 * *';
 alter table tasks add column if not exists frequency_days integer not null default 7;
 alter table tasks add column if not exists effort_pimpers integer not null default 1;
+alter table tasks add column if not exists grace_minutes integer not null default 1440;
 alter table tasks add column if not exists prioritize_low_pimpers boolean not null default true;
-alter table tasks add column if not exists assignee_fairness_mode text not null default 'actual';
+alter table tasks add column if not exists assignee_fairness_mode text not null default 'expected';
 alter table tasks add column if not exists is_active boolean not null default true;
 alter table tasks add column if not exists done_at timestamptz;
 alter table tasks add column if not exists done_by uuid references auth.users(id) on delete set null;
 
 update tasks
-set assignee_fairness_mode = 'actual'
+set assignee_fairness_mode = 'expected'
 where assignee_fairness_mode is null
-   or assignee_fairness_mode not in ('actual', 'projection');
+   or assignee_fairness_mode not in ('actual', 'projection', 'expected');
+
+update tasks
+set grace_minutes = 1440
+where grace_minutes is null
+   or grace_minutes < 0;
 
 alter table tasks
 alter column assignee_fairness_mode set not null;
+
+alter table tasks
+alter column assignee_fairness_mode set default 'expected';
 
 do $$
 begin
@@ -1012,7 +1032,17 @@ begin
   ) then
     alter table tasks
       add constraint tasks_assignee_fairness_mode_allowed_check
-      check (assignee_fairness_mode in ('actual', 'projection'));
+      check (assignee_fairness_mode in ('actual', 'projection', 'expected'));
+  end if;
+
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'tasks_grace_minutes_non_negative_check'
+  ) then
+    alter table tasks
+      add constraint tasks_grace_minutes_non_negative_check
+      check (grace_minutes >= 0);
   end if;
 end;
 $$;
@@ -1281,7 +1311,7 @@ $$;
 create or replace function choose_next_task_assignee(
   p_task_id uuid,
   p_prioritize_low_pimpers boolean default true,
-  p_assignee_fairness_mode text default 'actual'
+  p_assignee_fairness_mode text default 'expected'
 )
 returns uuid
 language sql
@@ -1293,8 +1323,10 @@ as $$
       t.id as task_id,
       t.household_id,
       t.assignee_id,
+      h.task_laziness_enabled as task_laziness_enabled,
       greatest(task_cron_interval_days(t.cron_pattern, t.frequency_days), 1)::integer as interval_days
     from tasks t
+    join households h on h.id = t.household_id
     where t.id = p_task_id
   ),
   rotation as (
@@ -1326,8 +1358,12 @@ as $$
       r.position,
       r.rotation_index,
       coalesce(hmp.total_pimpers, 0)::numeric as total_pimpers,
-      coalesce(hm.task_laziness_factor, 1)::numeric as task_laziness_factor,
+      case
+        when ti.task_laziness_enabled then coalesce(hm.task_laziness_factor, 1)::numeric
+        else 1::numeric
+      end as task_laziness_factor,
       coalesce(hm.vacation_mode, false) as vacation_mode,
+      coalesce(td.avg_delay_minutes, 0)::numeric as avg_delay_minutes,
       rm.rotation_count,
       case
         when rm.rotation_count <= 0 then 0
@@ -1340,6 +1376,14 @@ as $$
     left join household_member_pimpers hmp
       on hmp.household_id = ti.household_id
      and hmp.user_id = r.user_id
+    left join (
+      select
+        tc.user_id,
+        avg(tc.delay_minutes)::numeric as avg_delay_minutes
+      from task_completions tc
+      join task_info ti_inner on ti_inner.household_id = tc.household_id
+      group by tc.user_id
+    ) td on td.user_id = r.user_id
     left join household_members hm
       on hm.household_id = ti.household_id
      and hm.user_id = r.user_id
@@ -1377,7 +1421,17 @@ as $$
           select sum(
             greatest(
               floor(
-                (c.turns_until_turn * ti.interval_days)::numeric / at.interval_days
+                (
+                  case
+                    when lower(coalesce(p_assignee_fairness_mode, 'actual')) = 'expected' then
+                      greatest(
+                        (c.turns_until_turn * ti.interval_days)
+                        - (c.avg_delay_minutes / 1440.0),
+                        0
+                      )
+                    else (c.turns_until_turn * ti.interval_days)
+                  end
+                )::numeric / at.interval_days
               ),
               0
             )
@@ -1413,7 +1467,7 @@ as $$
     case when p.vacation_mode then 1 else 0 end asc,
     case
       when p_prioritize_low_pimpers and p.task_laziness_factor <= 0 then 999999999::numeric
-      when p_prioritize_low_pimpers and lower(coalesce(p_assignee_fairness_mode, 'actual')) = 'projection' then
+      when p_prioritize_low_pimpers and lower(coalesce(p_assignee_fairness_mode, 'actual')) in ('projection', 'expected') then
         (p.total_pimpers + p.projected_pimpers_until_turn) / greatest(p.task_laziness_factor, 0.0001)
       when p_prioritize_low_pimpers then p.total_pimpers / greatest(p.task_laziness_factor, 0.0001)
       else 0
@@ -1434,6 +1488,7 @@ declare
   v_next_due timestamptz;
   v_next_assignee uuid;
   v_interval_days integer;
+  v_grace_minutes integer;
 begin
   if auth.uid() is distinct from p_user_id then
     raise exception 'Authenticated user does not match p_user_id';
@@ -1469,6 +1524,7 @@ begin
   end if;
 
   v_interval_days := task_cron_interval_days(v_task.cron_pattern, v_task.frequency_days);
+  v_grace_minutes := greatest(coalesce(v_task.grace_minutes, 0), 0);
   v_next_due := greatest(v_task.due_at, now()) + make_interval(days => greatest(v_interval_days, 1));
 
   insert into task_completions (
@@ -1488,7 +1544,16 @@ begin
     p_user_id,
     greatest(v_task.effort_pimpers, 1),
     v_task.due_at,
-    greatest(0, floor(extract(epoch from (now() - v_task.due_at)) / 60)::integer),
+    greatest(
+      0,
+      floor(
+        extract(
+          epoch from (
+            now() - (v_task.due_at + make_interval(mins => v_grace_minutes))
+          )
+        ) / 60
+      )::integer
+    ),
     now()
   );
 

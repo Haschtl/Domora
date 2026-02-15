@@ -35,8 +35,8 @@ import {
   takeoverTask,
   skipTask,
   updateMemberSettings,
-  resetHouseholdPimpers,
   updateMemberTaskLaziness,
+  resetHouseholdPimpers,
   updateMemberVacationMode,
   updateShoppingItem,
   updateShoppingItemStatus,
@@ -561,6 +561,18 @@ export const useWorkspaceController = () => {
     [activeHousehold, runWithWorkspaceInvalidation, t, userId]
   );
 
+  const onUpdateMemberTaskLaziness = useCallback(
+    async (targetUserId: string, taskLazinessFactor: number) => {
+      if (!activeHousehold) return;
+
+      await runWithWorkspaceInvalidation(async () => {
+        await updateMemberTaskLaziness(activeHousehold.id, targetUserId, taskLazinessFactor);
+        setMessage(t("settings.memberSaved"));
+      });
+    },
+    [activeHousehold, runWithWorkspaceInvalidation, t]
+  );
+
   const onUpdateMemberSettingsForUser = useCallback(
     async (targetUserId: string, input: { roomSizeSqm: number | null; commonAreaFactor: number }) => {
       if (!activeHousehold) return;
@@ -571,17 +583,6 @@ export const useWorkspaceController = () => {
       });
     },
     [activeHousehold, runWithWorkspaceInvalidation, t]
-  );
-
-  const onUpdateMemberTaskLaziness = useCallback(
-    async (targetUserId: string, taskLazinessFactor: number) => {
-      if (!activeHousehold) return;
-
-      await runWithWorkspaceInvalidation(async () => {
-        await updateMemberTaskLaziness(activeHousehold.id, targetUserId, taskLazinessFactor);
-      });
-    },
-    [activeHousehold, runWithWorkspaceInvalidation]
   );
 
   const onUpdateVacationMode = useCallback(
@@ -753,8 +754,8 @@ export const useWorkspaceController = () => {
     onUpdateHomeMarkdown,
     onUpdateHousehold,
     onUpdateMemberSettings,
-    onUpdateMemberSettingsForUser,
     onUpdateMemberTaskLaziness,
+    onUpdateMemberSettingsForUser,
     onUpdateVacationMode,
     onResetHouseholdPimpers,
     onUpdateUserAvatar,

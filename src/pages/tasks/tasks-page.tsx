@@ -1,4 +1,4 @@
-import { type CSSProperties, type RefObject, useCallback, useRef, useState, useEffect, useMemo } from "react";
+import { type RefObject, useCallback, useRef, useState, useEffect, useMemo } from "react";
 import { useForm } from "@tanstack/react-form";
 import imageCompression from "browser-image-compression";
 import {
@@ -25,14 +25,11 @@ import {
   ChevronLeft,
   ChevronRight,
   CircleUserRound,
-  Coffee,
-  Flame,
+  Info,
   Frown,
-  MoonStar,
   Medal,
   MoreHorizontal,
   Plus,
-  Sparkles as SparklesIcon,
   X
 } from "lucide-react";
 import SparklesEffect from "react-sparkle";
@@ -41,6 +38,7 @@ import { useTranslation } from "react-i18next";
 import { toast } from "react-toastify";
 import type { CaptchaType } from "recaptz";
 import type {
+  Household,
   HouseholdMember,
   HouseholdMemberPimpers,
   NewTaskInput,
@@ -74,10 +72,9 @@ import { formatDateTime, formatShortDay, isDueNow } from "../../lib/date";
 import { createDiceBearAvatarDataUri } from "../../lib/avatar";
 import { createMemberLabelGetter } from "../../lib/member-label";
 import { supabase } from "../../lib/supabase";
-import { SortableRotationItem } from "./components/SortableRotationItem";
-import { useTaskSuggestions, type TaskSuggestion } from "./hooks/use-task-suggestions";
-import { buildCalendarEntriesByDay, buildCompletionSpansByDay, buildMonthGrid, dayKey, startOfMonth } from "./tasks-calendar";
-
+import { buildCalendarEntriesByDay, buildCompletionSpansByDay, buildMonthGrid, dayKey, startOfMonth } from "../../features/tasks-calendar";
+import { TaskSuggestion, useTaskSuggestions } from "../../features/hooks/use-task-suggestions";
+import { SortableRotationItem } from "../../features/components/SortableRotationItem";
 ChartJS.register(
   CategoryScale,
   LinearScale,
@@ -88,6 +85,7 @@ ChartJS.register(
 
 interface TasksPageProps {
   section?: "overview" | "stats" | "history" | "settings";
+  household: Household;
   tasks: TaskItem[];
   completions: TaskCompletion[];
   members: HouseholdMember[];
@@ -102,9 +100,8 @@ interface TasksPageProps {
   onUpdate: (task: TaskItem, input: NewTaskInput) => Promise<void>;
   onDelete: (task: TaskItem) => Promise<void>;
   onRateTaskCompletion: (taskCompletionId: string, rating: number) => Promise<void>;
-  onUpdateMemberTaskLaziness: (targetUserId: string, taskLazinessFactor: number) => Promise<void>;
   onResetHouseholdPimpers: () => Promise<void>;
-  canManageTaskLaziness: boolean;
+  onUpdateMemberTaskLaziness: (targetUserId: string, taskLazinessFactor: number) => Promise<void>;
 }
 
 type PendingTaskAction = {
@@ -120,8 +117,9 @@ type TaskFormValues = {
   startDate: string;
   frequencyDays: string;
   effortPimpers: string;
+  graceDays: string;
   prioritizeLowPimpers: boolean;
-  assigneeFairnessMode: "actual" | "projection";
+  assigneeFairnessMode: "actual" | "projection" | "expected";
 };
 
 type SkipMathChallenge = {
@@ -144,8 +142,9 @@ const createDefaultTaskFormValues = (): TaskFormValues => ({
   startDate: toDateInputValue(new Date()),
   frequencyDays: "7",
   effortPimpers: "1",
+  graceDays: "1",
   prioritizeLowPimpers: true,
-  assigneeFairnessMode: "actual"
+  assigneeFairnessMode: "expected"
 });
 
 const MAX_TASK_IMAGE_DIMENSION = 1600;
@@ -317,6 +316,7 @@ const buildSkipMathChallenge = (seedSource: string): SkipMathChallenge => {
 
 export const TasksPage = ({
   section = "overview",
+  household,
   tasks,
   completions,
   members,
@@ -331,9 +331,8 @@ export const TasksPage = ({
   onUpdate,
   onDelete,
   onRateTaskCompletion,
-  onUpdateMemberTaskLaziness,
   onResetHouseholdPimpers,
-  canManageTaskLaziness
+  onUpdateMemberTaskLaziness
 }: TasksPageProps) => {
   const { t, i18n } = useTranslation();
   const language = i18n.resolvedLanguage ?? i18n.language;
@@ -352,7 +351,6 @@ export const TasksPage = ({
   const [taskImageUploadError, setTaskImageUploadError] = useState<string | null>(null);
   const [editTaskImageUploadError, setEditTaskImageUploadError] = useState<string | null>(null);
   const [isResetPimpersDialogOpen, setIsResetPimpersDialogOpen] = useState(false);
-  const [lazinessDraftByUserId, setLazinessDraftByUserId] = useState<Record<string, number>>({});
   const [statsForecastTaskId, setStatsForecastTaskId] = useState<string>("");
   const [statsTaskFilterId, setStatsTaskFilterId] = useState<string>("all");
   const [calendarMonthDate, setCalendarMonthDate] = useState(() => startOfMonth(new Date()));
@@ -365,6 +363,7 @@ export const TasksPage = ({
   const [skipCaptchaAutoConfirm, setSkipCaptchaAutoConfirm] = useState(false);
   const [skipCaptchaUiState, setSkipCaptchaUiState] = useState<"ready" | "loading" | "error">("ready");
   const [skipCaptchaError, setSkipCaptchaError] = useState<string | null>(null);
+  const [lazinessInputs, setLazinessInputs] = useState<Record<string, string>>({});
   const [skipCaptchaKey, setSkipCaptchaKey] = useState(0);
   const [isSkipFinalDialogOpen, setIsSkipFinalDialogOpen] = useState(false);
   const [skipFinalConfirmPresses, setSkipFinalConfirmPresses] = useState(0);
@@ -410,6 +409,10 @@ export const TasksPage = ({
 
       const parsedFrequencyDays = Number(value.frequencyDays);
       const parsedEffort = Number(value.effortPimpers);
+      const parsedGraceDays = Number(value.graceDays);
+      const graceMinutes = Number.isFinite(parsedGraceDays)
+        ? Math.max(0, Math.round(parsedGraceDays * 24 * 60))
+        : 1440;
 
       const input: NewTaskInput = {
         title: trimmedTitle,
@@ -419,6 +422,7 @@ export const TasksPage = ({
         startDate: value.startDate,
         frequencyDays: Number.isFinite(parsedFrequencyDays) ? Math.max(1, Math.floor(parsedFrequencyDays)) : 7,
         effortPimpers: Number.isFinite(parsedEffort) ? Math.max(1, Math.floor(parsedEffort)) : 1,
+        graceMinutes,
         prioritizeLowPimpers: value.prioritizeLowPimpers,
         assigneeFairnessMode: value.assigneeFairnessMode,
         rotationUserIds
@@ -456,6 +460,10 @@ export const TasksPage = ({
 
       const parsedFrequencyDays = Number(value.frequencyDays);
       const parsedEffort = Number(value.effortPimpers);
+      const parsedGraceDays = Number(value.graceDays);
+      const graceMinutes = Number.isFinite(parsedGraceDays)
+        ? Math.max(0, Math.round(parsedGraceDays * 24 * 60))
+        : 1440;
 
       const input: NewTaskInput = {
         title: trimmedTitle,
@@ -465,6 +473,7 @@ export const TasksPage = ({
         startDate: value.startDate,
         frequencyDays: Number.isFinite(parsedFrequencyDays) ? Math.max(1, Math.floor(parsedFrequencyDays)) : 7,
         effortPimpers: Number.isFinite(parsedEffort) ? Math.max(1, Math.floor(parsedEffort)) : 1,
+        graceMinutes,
         prioritizeLowPimpers: value.prioritizeLowPimpers,
         assigneeFairnessMode: value.assigneeFairnessMode,
         rotationUserIds: editRotationUserIds
@@ -507,26 +516,26 @@ export const TasksPage = ({
     });
   }, [members, taskBeingEdited, userId]);
 
-  useEffect(() => {
-    setLazinessDraftByUserId((current) => {
-      const next: Record<string, number> = {};
-      members.forEach((member) => {
-        next[member.user_id] =
-          typeof current[member.user_id] === "number"
-            ? current[member.user_id]
-            : Number.isFinite(member.task_laziness_factor)
-              ? member.task_laziness_factor
-              : 1;
-      });
-      return next;
-    });
-  }, [members]);
-
   const pimperByUserId = useMemo(() => {
     const map = new Map<string, number>();
     memberPimpers.forEach((entry) => map.set(entry.user_id, Number(entry.total_pimpers)));
     return map;
   }, [memberPimpers]);
+  const averageDelayByUserId = useMemo(() => {
+    const totals = new Map<string, { total: number; count: number }>();
+    completions.forEach((entry) => {
+      const current = totals.get(entry.user_id) ?? { total: 0, count: 0 };
+      totals.set(entry.user_id, {
+        total: current.total + Math.max(0, entry.delay_minutes ?? 0),
+        count: current.count + 1
+      });
+    });
+    const map = new Map<string, number>();
+    totals.forEach((stats, memberId) => {
+      map.set(memberId, stats.count > 0 ? stats.total / stats.count : 0);
+    });
+    return map;
+  }, [completions]);
   const memberById = useMemo(() => {
     const map = new Map<string, HouseholdMember>();
     members.forEach((member) => map.set(member.user_id, member));
@@ -699,25 +708,30 @@ export const TasksPage = ({
     [completions, statsFilteredTaskIds]
   );
 
-  const taskLazinessMeta = useMemo(
-    () => [
-      { max: 0.1, icon: MoonStar, label: t("tasks.lazinessLevel1"), className: "text-slate-500 dark:text-slate-300" },
-      { max: 0.35, icon: MoonStar, label: t("tasks.lazinessLevel2"), className: "text-slate-500 dark:text-slate-300" },
-      { max: 0.6, icon: Coffee, label: t("tasks.lazinessLevel3"), className: "text-amber-600 dark:text-amber-300" },
-      { max: 0.85, icon: Coffee, label: t("tasks.lazinessLevel4"), className: "text-amber-600 dark:text-amber-300" },
-      { max: 1.1, icon: SparklesIcon, label: t("tasks.lazinessLevel5"), className: "text-emerald-600 dark:text-emerald-300" },
-      { max: 1.35, icon: SparklesIcon, label: t("tasks.lazinessLevel6"), className: "text-emerald-600 dark:text-emerald-300" },
-      { max: 1.6, icon: SparklesIcon, label: t("tasks.lazinessLevel7"), className: "text-cyan-600 dark:text-cyan-300" },
-      { max: 1.85, icon: Flame, label: t("tasks.lazinessLevel8"), className: "text-cyan-600 dark:text-cyan-300" },
-      { max: 2.01, icon: Flame, label: t("tasks.lazinessLevel9"), className: "text-indigo-600 dark:text-indigo-300" }
-    ],
-    [t]
+  const isLazinessEnabled = household.task_laziness_enabled ?? false;
+  const isOwner = useMemo(
+    () => members.some((member) => member.user_id === userId && member.role === "owner"),
+    [members, userId]
   );
-
-  const getLazinessFactor = (member: HouseholdMember) =>
-    Math.min(2, Math.max(0, Number.isFinite(member.task_laziness_factor) ? member.task_laziness_factor : 1));
-  const getScaledPimpers = (rawPimpers: number, lazinessFactor: number) =>
-    lazinessFactor <= 0 ? null : rawPimpers / lazinessFactor;
+  const getLazinessFactor = (member: HouseholdMember) => {
+    if (!isLazinessEnabled) return 1;
+    const value = member.task_laziness_factor ?? 1;
+    if (!Number.isFinite(value)) return 1;
+    return Math.min(2, Math.max(0, value));
+  };
+  const getScaledPimpers = (rawPimpers: number, lazinessFactor: number) => {
+    if (!isLazinessEnabled) return rawPimpers;
+    const safeFactor = lazinessFactor <= 0 ? 0.0001 : lazinessFactor;
+    return rawPimpers / safeFactor;
+  };
+  useEffect(() => {
+    if (!isLazinessEnabled) return;
+    const next: Record<string, string> = {};
+    members.forEach((member) => {
+      next[member.user_id] = String(getLazinessFactor(member));
+    });
+    setLazinessInputs(next);
+  }, [isLazinessEnabled, members]);
   const activeForecastTasks = useMemo(
     () => statsFilteredTasks.filter((task) => task.is_active && task.rotation_user_ids.length > 0),
     [statsFilteredTasks]
@@ -787,8 +801,7 @@ export const TasksPage = ({
 
         const currentPimpers = pimperByUserId.get(rotationUserId) ?? 0;
         const lazinessFactor = lazinessByUserId.get(rotationUserId) ?? 1;
-        const projectedTotalScaled =
-          lazinessFactor <= 0 ? null : (currentPimpers + projectedUntilTurn) / Math.max(lazinessFactor, 0.0001);
+        const projectedTotalScaled = getScaledPimpers(currentPimpers + projectedUntilTurn, lazinessFactor);
 
         return {
           user_id: rotationUserId,
@@ -802,7 +815,7 @@ export const TasksPage = ({
     });
 
     return projectedByTask;
-  }, [activeForecastTasks, members, pimperByUserId, statsFilteredTasks]);
+  }, [activeForecastTasks, isLazinessEnabled, members, pimperByUserId, statsFilteredTasks]);
   const selectedForecastTask = useMemo(
     () => activeForecastTasks.find((task) => task.id === statsForecastTaskId) ?? null,
     [activeForecastTasks, statsForecastTaskId]
@@ -832,7 +845,7 @@ export const TasksPage = ({
         };
       })
       .filter((entry) => entry.scaled_pimpers !== null);
-  }, [members, statsFilteredCompletions]);
+  }, [isLazinessEnabled, members, statsFilteredCompletions]);
   const sortedMemberRows = useMemo(
     () =>
       [...statsMemberRows].sort(
@@ -840,35 +853,35 @@ export const TasksPage = ({
       ),
     [statsMemberRows]
   );
-  const resolveLazinessMeta = (value: number) =>
-    taskLazinessMeta.find((entry) => value <= entry.max) ?? taskLazinessMeta[taskLazinessMeta.length - 1];
-  const onCommitTaskLaziness = async (targetUserId: string, value: number) => {
-    const clamped = Math.min(2, Math.max(0, value));
-    await onUpdateMemberTaskLaziness(targetUserId, Number(clamped.toFixed(1)));
-  };
   const onConfirmResetHouseholdPimpers = async () => {
     await onResetHouseholdPimpers();
     setIsResetPimpersDialogOpen(false);
   };
   const formatScaledPimpers = (value: number | null | undefined) =>
     value === null || value === undefined ? "-" : Number(value.toFixed(2)).toString();
-  const renderSparkleIcon = (Icon: (props: { className?: string }) => React.ReactNode) => {
-    const icon = <Icon className="h-3.5 w-3.5" />;
-    if (Icon !== SparklesIcon) return icon;
-    return (
-      <span className="relative inline-flex h-4 w-4 items-center justify-center">
-        {icon}
-          <SparklesEffect
-            color="white"
-            count={6}
-            minSize={2}
-            maxSize={4}
-            overflowPx={4}
-            fadeOutSpeed={8}
-            flicker={false}
-          />
-      </span>
-    );
+  const getLazinessLevelLabel = (value: number) => {
+    const normalized = Math.min(2, Math.max(0, value));
+    const levelIndex = Math.round((normalized / 2) * 8) + 1;
+    return t(`tasks.lazinessLevel${levelIndex}`);
+  };
+  const commitLazinessInput = async (member: HouseholdMember, rawValue: string) => {
+    if (!isLazinessEnabled || !isOwner) return;
+    const parsed = Number(rawValue);
+    if (!Number.isFinite(parsed)) {
+      setLazinessInputs((prev) => ({
+        ...prev,
+        [member.user_id]: String(getLazinessFactor(member))
+      }));
+      return;
+    }
+    const clamped = Math.min(2, Math.max(0, parsed));
+    setLazinessInputs((prev) => ({
+      ...prev,
+      [member.user_id]: String(clamped)
+    }));
+    if (clamped !== getLazinessFactor(member)) {
+      await onUpdateMemberTaskLaziness(member.user_id, clamped);
+    }
   };
   const podiumRows = useMemo(
     () =>
@@ -1194,96 +1207,91 @@ export const TasksPage = ({
     return [...active, ...inactive];
   }, [tasks]);
 
-  const lazinessCard = showSettings ? (
+  const settingsActionsCard = showSettings ? (
     <Card className="mb-4">
       <CardHeader className="gap-3">
         <div className="flex items-start justify-between gap-2">
           <div>
-            <CardTitle>{t("tasks.lazinessTitle")}</CardTitle>
-            <CardDescription>{t("tasks.lazinessDescription")}</CardDescription>
+            <CardTitle>{t("tasks.resetPimpers")}</CardTitle>
+            <CardDescription>{t("tasks.resetPimpersConfirmDescription")}</CardDescription>
           </div>
-          {canManageTaskLaziness ? (
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              disabled={busy}
-              onClick={() => setIsResetPimpersDialogOpen(true)}
-            >
-              {t("tasks.resetPimpers")}
-            </Button>
-          ) : null}
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={busy}
+            onClick={() => setIsResetPimpersDialogOpen(true)}
+          >
+            {t("tasks.resetPimpers")}
+          </Button>
         </div>
       </CardHeader>
-      <CardContent>
-        <ul className="space-y-3">
-          {members.map((member) => {
-            const draftValue = lazinessDraftByUserId[member.user_id];
-            const sliderValue = Number.isFinite(draftValue) ? Math.min(2, Math.max(0, draftValue)) : getLazinessFactor(member);
-            const rawPimpers = pimperByUserId.get(member.user_id) ?? 0;
-            const scaledPimpers = getScaledPimpers(rawPimpers, sliderValue);
-            const level = resolveLazinessMeta(sliderValue);
-            const LevelIcon = level.icon;
-            const hue = Math.round((sliderValue / 2) * 230);
-            const sliderStyle = {
-              "--slider-gradient": "linear-gradient(90deg, #64748b 0%, #f59e0b 28%, #22c55e 50%, #06b6d4 75%, #4f46e5 100%)",
-              "--slider-thumb": `hsl(${hue} 78% 44%)`
-            } as CSSProperties;
-            const canEdit = canManageTaskLaziness || member.user_id === userId;
+    </Card>
+  ) : null;
+  const lazinessSettingsCard = showSettings && isLazinessEnabled ? (
+    <Card className="mb-4">
+      <CardHeader className="gap-2">
+        <CardTitle>{t("tasks.lazinessTitle")}</CardTitle>
+        <CardDescription>{t("tasks.lazinessDescription")}</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        {members
+          .slice()
+          .sort((a, b) => userLabel(a.user_id).localeCompare(userLabel(b.user_id), language))
+          .map((member) => {
+            const inputValue = lazinessInputs[member.user_id] ?? String(getLazinessFactor(member));
+            const labelValue = Number.isFinite(Number(inputValue)) ? Number(inputValue) : getLazinessFactor(member);
 
             return (
-              <li
+              <div
                 key={`laziness-${member.user_id}`}
-                className="rounded-xl border border-brand-100 bg-brand-50/40 p-3 dark:border-slate-700 dark:bg-slate-800/60"
+                className="flex items-center justify-between gap-3 rounded-lg border border-brand-100 bg-white/90 p-2 dark:border-slate-700 dark:bg-slate-900"
               >
-                <div className="mb-2 flex items-center justify-between gap-2">
-                  <span className="text-sm font-semibold text-slate-900 dark:text-slate-100">{userLabel(member.user_id)}</span>
-                  <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">
-                    {`${Math.round(sliderValue * 100)}%`}
-                  </span>
+                <div className="flex items-center gap-2">
+                  <MemberAvatar
+                    src={
+                      member.avatar_url?.trim() ||
+                      createDiceBearAvatarDataUri(userLabel(member.user_id), member.user_color)
+                    }
+                    alt={userLabel(member.user_id)}
+                    isVacation={member.vacation_mode ?? false}
+                    className="h-8 w-8 rounded-full border border-brand-200 dark:border-slate-700"
+                  />
+                  <div>
+                    <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
+                      {userLabel(member.user_id)}
+                    </p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      {getLazinessLevelLabel(labelValue)}
+                    </p>
+                  </div>
                 </div>
-                <input
-                  type="range"
+                <Input
+                  type="number"
                   min={0}
                   max={2}
-                  step={0.01}
-                  value={sliderValue}
-                  disabled={!canEdit || busy}
+                  step={0.1}
+                  inputMode="decimal"
+                  className="w-20 text-right"
+                  value={inputValue}
+                  disabled={busy || !isOwner}
                   onChange={(event) => {
-                    const raw = Number(event.target.value);
-                    const snapped = raw >= 0.95 && raw <= 1.05 ? 1 : Math.round(raw * 100) / 100;
-                    setLazinessDraftByUserId((current) => ({ ...current, [member.user_id]: snapped }));
+                    const nextValue = event.target.value;
+                    setLazinessInputs((prev) => ({ ...prev, [member.user_id]: nextValue }));
                   }}
-                  onMouseUp={() => {
-                    void onCommitTaskLaziness(member.user_id, sliderValue);
+                  onBlur={(event) => {
+                    void commitLazinessInput(member, event.target.value);
                   }}
-                  onTouchEnd={() => {
-                    void onCommitTaskLaziness(member.user_id, sliderValue);
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.currentTarget.blur();
+                    }
                   }}
-                  className="common-factor-slider w-full"
-                  style={sliderStyle}
                   aria-label={t("tasks.lazinessTitle")}
                 />
-                <div className="mt-1 grid grid-cols-3 items-center text-[11px] font-semibold">
-                  <span className="text-left text-slate-500 dark:text-slate-300">0%</span>
-                  <span className="text-center text-emerald-700 dark:text-emerald-400">100%</span>
-                  <span className="text-right text-indigo-600 dark:text-indigo-300">200%</span>
-                </div>
-                <div className="mt-2 flex items-center justify-between gap-2">
-                  <span className={`inline-flex items-center gap-1 text-xs font-semibold ${level.className}`}>
-                    {renderSparkleIcon(LevelIcon)}
-                    {level.label}
-                  </span>
-                  <span className="text-xs text-slate-600 dark:text-slate-300">
-                    {scaledPimpers === null
-                      ? t("tasks.lazinessScaledPimpersHidden")
-                      : t("tasks.lazinessScaledPimpersValue", { value: scaledPimpers.toFixed(2) })}
-                  </span>
-                </div>
-              </li>
+              </div>
             );
           })}
-        </ul>
       </CardContent>
     </Card>
   ) : null;
@@ -1334,7 +1342,6 @@ export const TasksPage = ({
 
     const theoretical = [...editRotationUserIds];
     const orderIndex = new Map(theoretical.map((memberId, index) => [memberId, index]));
-    const lazinessByUserId = new Map(members.map((member) => [member.user_id, getLazinessFactor(member)]));
     const editedTaskId = taskBeingEdited?.id ?? "";
     const parsedFrequency = Number(editTaskForm.state.values.frequencyDays);
     const intervalDays = Number.isFinite(parsedFrequency) ? Math.max(1, Math.floor(parsedFrequency)) : Math.max(1, taskBeingEdited?.frequency_days ?? 7);
@@ -1342,9 +1349,12 @@ export const TasksPage = ({
     const currentIndex = assigneeIndex >= 0 ? assigneeIndex : 0;
 
     const projectedUntilTurnByUserId = new Map<string, number>();
+    const expectedProjectedUntilTurnByUserId = new Map<string, number>();
     theoretical.forEach((rotationUserId, index) => {
       const turnsUntilTurn = index >= currentIndex ? index - currentIndex : theoretical.length - currentIndex + index;
       const horizonDays = turnsUntilTurn * intervalDays;
+      const avgDelayMinutes = averageDelayByUserId.get(rotationUserId) ?? 0;
+      const expectedHorizonDays = Math.max(0, horizonDays - avgDelayMinutes / (60 * 24));
       const projectedUntilTurn = tasks.reduce((sum, otherTask) => {
         if (!otherTask.is_active || otherTask.id === editedTaskId) return sum;
         if (!otherTask.rotation_user_ids.includes(rotationUserId) || otherTask.rotation_user_ids.length === 0) return sum;
@@ -1354,17 +1364,25 @@ export const TasksPage = ({
         const share = 1 / otherTask.rotation_user_ids.length;
         return sum + expectedOccurrences * Math.max(1, otherTask.effort_pimpers) * share;
       }, 0);
+      const expectedProjectedUntilTurn = tasks.reduce((sum, otherTask) => {
+        if (!otherTask.is_active || otherTask.id === editedTaskId) return sum;
+        if (!otherTask.rotation_user_ids.includes(rotationUserId) || otherTask.rotation_user_ids.length === 0) return sum;
+
+        const otherIntervalDays = Math.max(1, otherTask.frequency_days);
+        const expectedOccurrences = Math.max(0, Math.floor(expectedHorizonDays / otherIntervalDays));
+        const share = 1 / otherTask.rotation_user_ids.length;
+        return sum + expectedOccurrences * Math.max(1, otherTask.effort_pimpers) * share;
+      }, 0);
 
       projectedUntilTurnByUserId.set(rotationUserId, projectedUntilTurn);
+      expectedProjectedUntilTurnByUserId.set(rotationUserId, expectedProjectedUntilTurn);
     });
 
     const fairnessActual = [...theoretical].sort((left, right) => {
       const leftPimpers = pimperByUserId.get(left) ?? 0;
       const rightPimpers = pimperByUserId.get(right) ?? 0;
-      const leftFactor = Math.max(lazinessByUserId.get(left) ?? 1, 0.0001);
-      const rightFactor = Math.max(lazinessByUserId.get(right) ?? 1, 0.0001);
-      const leftScore = leftPimpers / leftFactor;
-      const rightScore = rightPimpers / rightFactor;
+      const leftScore = leftPimpers;
+      const rightScore = rightPimpers;
       if (leftScore !== rightScore) return leftScore - rightScore;
       return (orderIndex.get(left) ?? 0) - (orderIndex.get(right) ?? 0);
     });
@@ -1374,10 +1392,18 @@ export const TasksPage = ({
       const rightPimpers = pimperByUserId.get(right) ?? 0;
       const leftProjected = projectedUntilTurnByUserId.get(left) ?? 0;
       const rightProjected = projectedUntilTurnByUserId.get(right) ?? 0;
-      const leftFactor = Math.max(lazinessByUserId.get(left) ?? 1, 0.0001);
-      const rightFactor = Math.max(lazinessByUserId.get(right) ?? 1, 0.0001);
-      const leftScore = (leftPimpers + leftProjected) / leftFactor;
-      const rightScore = (rightPimpers + rightProjected) / rightFactor;
+      const leftScore = leftPimpers + leftProjected;
+      const rightScore = rightPimpers + rightProjected;
+      if (leftScore !== rightScore) return leftScore - rightScore;
+      return (orderIndex.get(left) ?? 0) - (orderIndex.get(right) ?? 0);
+    });
+    const fairnessExpected = [...theoretical].sort((left, right) => {
+      const leftPimpers = pimperByUserId.get(left) ?? 0;
+      const rightPimpers = pimperByUserId.get(right) ?? 0;
+      const leftProjected = expectedProjectedUntilTurnByUserId.get(left) ?? 0;
+      const rightProjected = expectedProjectedUntilTurnByUserId.get(right) ?? 0;
+      const leftScore = leftPimpers + leftProjected;
+      const rightScore = rightPimpers + rightProjected;
       if (leftScore !== rightScore) return leftScore - rightScore;
       return (orderIndex.get(left) ?? 0) - (orderIndex.get(right) ?? 0);
     });
@@ -1385,9 +1411,10 @@ export const TasksPage = ({
     return {
       theoretical,
       fairnessActual,
-      fairnessProjection
+      fairnessProjection,
+      fairnessExpected
     };
-  }, [editRotationUserIds, editTaskForm.state.values.frequencyDays, members, pimperByUserId, taskBeingEdited, tasks]);
+  }, [averageDelayByUserId, editRotationUserIds, editTaskForm.state.values.frequencyDays, pimperByUserId, taskBeingEdited, tasks]);
 
   const renderRotationAvatarStack = (memberIds: string[], maxCount = 8) => (
     <div className="flex items-center">
@@ -1467,6 +1494,10 @@ export const TasksPage = ({
     editTaskForm.setFieldValue("startDate", task.start_date);
     editTaskForm.setFieldValue("frequencyDays", String(task.frequency_days));
     editTaskForm.setFieldValue("effortPimpers", String(task.effort_pimpers));
+    editTaskForm.setFieldValue(
+      "graceDays",
+      String(Number(((task.grace_minutes ?? 1440) / 1440).toFixed(2)))
+    );
     editTaskForm.setFieldValue("prioritizeLowPimpers", task.prioritize_low_pimpers);
     editTaskForm.setFieldValue("assigneeFairnessMode", task.assignee_fairness_mode);
 
@@ -2052,6 +2083,33 @@ export const TasksPage = ({
                               />
 
                               <taskForm.Field
+                                name="graceDays"
+                                children={(field: {
+                                  state: { value: string };
+                                  handleChange: (value: string) => void;
+                                }) => (
+                                  <div className="space-y-1">
+                                    <Label>{t("tasks.gracePeriodLabel")}</Label>
+                                    <InputWithSuffix
+                                      suffix={t("tasks.gracePeriodUnit")}
+                                      type="number"
+                                      min="0"
+                                      step="0.1"
+                                      inputMode="decimal"
+                                      value={field.state.value}
+                                      onChange={(event) =>
+                                        field.handleChange(event.target.value)
+                                      }
+                                      placeholder={t("tasks.gracePeriodPlaceholder")}
+                                    />
+                                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                                      {t("tasks.gracePeriodHint")}
+                                    </p>
+                                  </div>
+                                )}
+                              />
+
+                              <taskForm.Field
                                 name="prioritizeLowPimpers"
                                 children={(field: {
                                   state: { value: boolean };
@@ -2077,9 +2135,9 @@ export const TasksPage = ({
                               <taskForm.Field
                                 name="assigneeFairnessMode"
                                 children={(field: {
-                                  state: { value: "actual" | "projection" };
+                                  state: { value: "actual" | "projection" | "expected" };
                                   handleChange: (
-                                    value: "actual" | "projection",
+                                    value: "actual" | "projection" | "expected",
                                   ) => void;
                                 }) => (
                                   <div className="space-y-1">
@@ -2093,7 +2151,8 @@ export const TasksPage = ({
                                         field.handleChange(
                                           event.target.value as
                                             | "actual"
-                                            | "projection",
+                                            | "projection"
+                                            | "expected",
                                         )
                                       }
                                       disabled={
@@ -2108,6 +2167,9 @@ export const TasksPage = ({
                                         {t(
                                           "tasks.assigneeFairnessModeProjection",
                                         )}
+                                      </option>
+                                      <option value="expected">
+                                        {t("tasks.assigneeFairnessModeExpected")}
                                       </option>
                                     </select>
                                     <p className="text-xs text-slate-500 dark:text-slate-400">
@@ -2688,7 +2750,9 @@ export const TasksPage = ({
           </Card>
         ) : null}
 
-        {lazinessCard}
+
+        {lazinessSettingsCard}
+        {settingsActionsCard}
 
         {showStats &&
         pimpersByUserSeries.labels.length > 0 &&
@@ -2748,10 +2812,33 @@ export const TasksPage = ({
         {showStats && selectedForecastTask ? (
           <Card className="rounded-xl border border-slate-300 bg-white/88 p-3 text-slate-800 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-100 mb-4">
             <CardHeader>
-              <CardTitle>{t("tasks.forecastTitle")}</CardTitle>
-              <CardDescription>
-                {t("tasks.forecastDescription")}
-              </CardDescription>
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <CardTitle>{t("tasks.forecastTitle")}</CardTitle>
+                  <CardDescription>
+                    {t("tasks.forecastDescription")}
+                  </CardDescription>
+                </div>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        className="mt-0.5 inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 text-slate-500 transition hover:text-slate-700 hover:border-slate-300 focus:outline-none focus:ring-2 focus:ring-brand-200 dark:border-slate-700 dark:text-slate-300 dark:hover:border-slate-600"
+                        aria-label={t("tasks.forecastTooltipTitle")}
+                      >
+                        <Info className="h-4 w-4" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-[320px] border border-slate-200 bg-white text-slate-900 shadow-lg dark:border-slate-700 dark:bg-slate-900 dark:text-slate-50">
+                      <div className="space-y-2 text-xs leading-relaxed">
+                        <p className="font-semibold">{t("tasks.forecastTooltipTitle")}</p>
+                        <p>{t("tasks.forecastTooltipBody")}</p>
+                      </div>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </div>
             </CardHeader>
             <CardContent className="space-y-3">
               <div className="space-y-1">
@@ -2779,7 +2866,11 @@ export const TasksPage = ({
                     <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
                       {userLabel(row.user_id)}
                     </p>
-                    <div className="mt-1 grid gap-1 text-xs text-slate-600 dark:text-slate-300 sm:grid-cols-3">
+                    <div
+                      className={`mt-1 grid gap-1 text-xs text-slate-600 dark:text-slate-300 ${
+                        isLazinessEnabled ? "sm:grid-cols-3" : "sm:grid-cols-2"
+                      }`}
+                    >
                       <span>
                         {t("tasks.forecastCurrentPimpers", {
                           value: row.current_pimpers,
@@ -2790,14 +2881,16 @@ export const TasksPage = ({
                           value: Number(row.projected_until_turn.toFixed(2)),
                         })}
                       </span>
-                      <span>
-                        {t("tasks.forecastProjectedScore", {
-                          value:
-                            row.projected_total_scaled === null
-                              ? "-"
-                              : Number(row.projected_total_scaled.toFixed(2)),
-                        })}
-                      </span>
+                      {isLazinessEnabled ? (
+                        <span>
+                          {t("tasks.forecastProjectedScore", {
+                            value:
+                              row.projected_total_scaled === null
+                                ? "-"
+                                : Number(row.projected_total_scaled.toFixed(2)),
+                          })}
+                        </span>
+                      ) : null}
                     </div>
                   </li>
                 ))}
@@ -3513,6 +3606,33 @@ export const TasksPage = ({
                       />
 
                       <editTaskForm.Field
+                        name="graceDays"
+                        children={(field: {
+                          state: { value: string };
+                          handleChange: (value: string) => void;
+                        }) => (
+                          <div className="space-y-1">
+                            <Label>{t("tasks.gracePeriodLabel")}</Label>
+                            <InputWithSuffix
+                              suffix={t("tasks.gracePeriodUnit")}
+                              type="number"
+                              min="0"
+                              step="0.1"
+                              inputMode="decimal"
+                              value={field.state.value}
+                              onChange={(event) =>
+                                field.handleChange(event.target.value)
+                              }
+                              placeholder={t("tasks.gracePeriodPlaceholder")}
+                            />
+                            <p className="text-xs text-slate-500 dark:text-slate-400">
+                              {t("tasks.gracePeriodHint")}
+                            </p>
+                          </div>
+                        )}
+                      />
+
+                      <editTaskForm.Field
                         name="prioritizeLowPimpers"
                         children={(field: {
                           state: { value: boolean };
@@ -3535,14 +3655,14 @@ export const TasksPage = ({
                         )}
                       />
 
-                      <editTaskForm.Field
-                        name="assigneeFairnessMode"
-                        children={(field: {
-                          state: { value: "actual" | "projection" };
-                          handleChange: (
-                            value: "actual" | "projection",
-                          ) => void;
-                        }) => (
+                        <editTaskForm.Field
+                          name="assigneeFairnessMode"
+                          children={(field: {
+                            state: { value: "actual" | "projection" | "expected" };
+                            handleChange: (
+                              value: "actual" | "projection" | "expected",
+                            ) => void;
+                          }) => (
                           <div className="space-y-1">
                             <Label>
                               {t("tasks.assigneeFairnessModeLabel")}
@@ -3564,6 +3684,9 @@ export const TasksPage = ({
                               </option>
                               <option value="projection">
                                 {t("tasks.assigneeFairnessModeProjection")}
+                              </option>
+                              <option value="expected">
+                                {t("tasks.assigneeFairnessModeExpected")}
                               </option>
                             </select>
                             <p className="text-xs text-slate-500 dark:text-slate-400">
@@ -3666,6 +3789,17 @@ export const TasksPage = ({
                               {renderRotationAvatarStack(
                                 adjustPreviewOrder(
                                   editRotationVariants.fairnessProjection,
+                                ),
+                              )}
+                            </div>
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="font-semibold">
+                                {t("tasks.rotationOrderPreviewFairnessExpected")}
+                                :
+                              </span>
+                              {renderRotationAvatarStack(
+                                adjustPreviewOrder(
+                                  editRotationVariants.fairnessExpected,
                                 ),
                               )}
                             </div>

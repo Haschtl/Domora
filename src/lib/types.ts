@@ -12,6 +12,7 @@ export interface Household {
   cold_rent_monthly: number | null;
   utilities_monthly: number | null;
   utilities_on_room_sqm_percent: number;
+  task_laziness_enabled: boolean;
   landing_page_markdown: string;
   invite_code: string;
   created_by: string;
@@ -27,6 +28,7 @@ export interface UpdateHouseholdInput {
   coldRentMonthly: number | null;
   utilitiesMonthly: number | null;
   utilitiesOnRoomSqmPercent: number;
+  taskLazinessEnabled: boolean;
 }
 
 export interface HouseholdMember {
@@ -117,7 +119,8 @@ export interface TaskItem {
   frequency_days: number;
   effort_pimpers: number;
   prioritize_low_pimpers: boolean;
-  assignee_fairness_mode: "actual" | "projection";
+  assignee_fairness_mode: "actual" | "projection" | "expected";
+  grace_minutes: number;
   is_active: boolean;
   done: boolean;
   done_at: string | null;
@@ -171,7 +174,8 @@ export interface NewTaskInput {
   frequencyDays: number;
   effortPimpers: number;
   prioritizeLowPimpers: boolean;
-  assigneeFairnessMode: "actual" | "projection";
+  assigneeFairnessMode: "actual" | "projection" | "expected";
+  graceMinutes: number;
   rotationUserIds: string[];
 }
 

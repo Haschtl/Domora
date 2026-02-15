@@ -210,7 +210,8 @@ export const SettingsPage = ({
       name: household.name ?? "",
       imageUrl: household.image_url ?? "",
       address: household.address ?? "",
-      currency: household.currency ?? "EUR"
+      currency: household.currency ?? "EUR",
+      taskLazinessEnabled: household.task_laziness_enabled ?? false
     },
     onSubmit: async ({ value }: {
       value: {
@@ -218,6 +219,7 @@ export const SettingsPage = ({
         imageUrl: string;
         address: string;
         currency: string;
+        taskLazinessEnabled: boolean;
       };
     }) => {
       if (!isOwner) {
@@ -246,7 +248,8 @@ export const SettingsPage = ({
         apartmentSizeSqm: household.apartment_size_sqm,
         coldRentMonthly: household.cold_rent_monthly,
         utilitiesMonthly: household.utilities_monthly,
-        utilitiesOnRoomSqmPercent: household.utilities_on_room_sqm_percent
+        utilitiesOnRoomSqmPercent: household.utilities_on_room_sqm_percent,
+        taskLazinessEnabled: value.taskLazinessEnabled
       });
     }
   });
@@ -257,12 +260,14 @@ export const SettingsPage = ({
     householdForm.setFieldValue("imageUrl", household.image_url ?? "");
     householdForm.setFieldValue("address", household.address ?? "");
     householdForm.setFieldValue("currency", household.currency ?? "EUR");
+    householdForm.setFieldValue("taskLazinessEnabled", household.task_laziness_enabled ?? false);
   }, [
     household.address,
     household.currency,
     household.id,
     household.image_url,
     household.name,
+    household.task_laziness_enabled,
     householdForm
   ]);
 
@@ -337,7 +342,8 @@ export const SettingsPage = ({
         apartmentSizeSqm: household.apartment_size_sqm,
         coldRentMonthly: household.cold_rent_monthly,
         utilitiesMonthly: household.utilities_monthly,
-        utilitiesOnRoomSqmPercent: household.utilities_on_room_sqm_percent
+        utilitiesOnRoomSqmPercent: household.utilities_on_room_sqm_percent,
+        taskLazinessEnabled: householdForm.state.values.taskLazinessEnabled
       });
       setHouseholdUploadError(null);
     } catch {
@@ -357,7 +363,8 @@ export const SettingsPage = ({
         apartmentSizeSqm: household.apartment_size_sqm,
         coldRentMonthly: household.cold_rent_monthly,
         utilitiesMonthly: household.utilities_monthly,
-        utilitiesOnRoomSqmPercent: household.utilities_on_room_sqm_percent
+        utilitiesOnRoomSqmPercent: household.utilities_on_room_sqm_percent,
+        taskLazinessEnabled: householdForm.state.values.taskLazinessEnabled
       });
       setHouseholdUploadError(null);
     } catch {
@@ -398,7 +405,6 @@ export const SettingsPage = ({
         vacation_mode: currentMember?.vacation_mode ?? false,
         room_size_sqm: currentMember?.room_size_sqm ?? null,
         common_area_factor: currentMember?.common_area_factor ?? 1,
-        task_laziness_factor: currentMember?.task_laziness_factor ?? 1,
         created_at: currentMember?.created_at ?? new Date(0).toISOString()
       });
     }
@@ -1352,6 +1358,31 @@ export const SettingsPage = ({
                 />
               </div>
 
+              <div className="flex items-center justify-between rounded-xl border border-brand-200 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900">
+                <div>
+                  <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
+                    {t("settings.householdLazinessTitle")}
+                  </p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    {t("settings.householdLazinessDescription")}
+                  </p>
+                </div>
+                <householdForm.Field
+                  name="taskLazinessEnabled"
+                  children={(field: {
+                    state: { value: boolean };
+                    handleChange: (value: boolean) => void;
+                  }) => (
+                    <Switch
+                      checked={field.state.value}
+                      disabled={busy || !isOwner}
+                      onCheckedChange={field.handleChange}
+                      aria-label={t("settings.householdLazinessTitle")}
+                    />
+                  )}
+                />
+              </div>
+
               {householdUploadError ? (
                 <p className="rounded-lg border border-rose-300 bg-rose-50 px-3 py-2 text-xs text-rose-700 dark:border-rose-900 dark:bg-rose-950/60 dark:text-rose-200">
                   {householdUploadError}
@@ -1400,8 +1431,6 @@ export const SettingsPage = ({
                   const displayLabel = memberLabel(member.user_id);
                   const commonAreaLabel =
                     member.common_area_factor != null ? `${Math.round(member.common_area_factor * 100)}%` : "—";
-                  const lazinessLabel =
-                    member.task_laziness_factor != null ? `${Math.round(member.task_laziness_factor * 100)}%` : "—";
                   const avatarUrl =
                     member.avatar_url?.trim() ||
                     createDiceBearAvatarDataUri(
@@ -1431,8 +1460,7 @@ export const SettingsPage = ({
                               : t("settings.tenantsRoleMember")}
                           </p>
                           <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
-                            {commonAreaLabel} {t("settings.tenantsCommonShort")},{" "}
-                            {lazinessLabel} {t("settings.tenantsLazinessShort")}
+                            {commonAreaLabel} {t("settings.tenantsCommonShort")}
                           </p>
                         </div>
                       </div>
