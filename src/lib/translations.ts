@@ -90,9 +90,11 @@ export const resources = {
         pushPromptLater: "Später (vielleicht)",
         pushPromptEnable: "Okay, push mich",
         paymentRedirectSuccessTitle: "Zahlung abgeschlossen",
-        paymentRedirectSuccessDescription: "Danke. Du kannst jetzt zurück zur Finanzübersicht.",
+        paymentRedirectSuccessDescription:
+          "Danke. Du kannst jetzt zurück zur Finanzübersicht.",
         paymentRedirectCancelTitle: "Zahlung abgebrochen",
-        paymentRedirectCancelDescription: "Die Zahlung wurde nicht abgeschlossen.",
+        paymentRedirectCancelDescription:
+          "Die Zahlung wurde nicht abgeschlossen.",
         paymentRedirectBackToFinances: "Zur Finanzübersicht",
       },
       home: {
@@ -146,7 +148,8 @@ export const resources = {
         bucketItemActions: "Bucket-Eintrag Aktionen",
         bucketEdit: "Bearbeiten",
         bucketEditTitle: "Bucket-Eintrag bearbeiten",
-        bucketEditDescription: "Passe Titel, Beschreibung und Terminvorschläge an.",
+        bucketEditDescription:
+          "Passe Titel, Beschreibung und Terminvorschläge an.",
         bucketEditSave: "Änderungen speichern",
         bucketDelete: "Eintrag löschen",
         bucketDeleteConfirmTitle: "Eintrag entfernen?",
@@ -161,7 +164,8 @@ export const resources = {
         activityFinanceCreated: "Finanzeintrag „{{name}}“ mit {{amount}} €",
         activityCashAudit: "{{user}} hat einen Kassensturz gestartet",
         activityRoleChanged: "{{user}} hat jetzt die Rolle {{role}}",
-        activityAdminHintFallback: "Automatische Datenpflege hat Inkonsistenzen behoben.",
+        activityAdminHintFallback:
+          "Automatische Datenpflege hat Inkonsistenzen behoben.",
         landingTitle: "WG Landing Page",
         landingDescription:
           "Gemeinsame Infos, Regeln und Updates als Markdown.",
@@ -206,8 +210,7 @@ export const resources = {
         namePlaceholder: "Sonnenallee 4",
         createAction: "WG anlegen",
         joinTitle: "WG beitreten",
-        joinDescription:
-          "Code eintippen, rein in die WG. Keine Umwege.",
+        joinDescription: "Code eintippen, rein in die WG. Keine Umwege.",
         inviteLabel: "Einladungscode",
         invitePlaceholder: "AB12CD",
         joinAction: "Beitreten",
@@ -260,7 +263,7 @@ export const resources = {
         saveItem: "Speichern",
         deleteItem: "Eintrag löschen",
         deleteConfirmTitle: "Wirklich löschen?",
-        deleteConfirmDescription: '„{{title}}“ fliegt aus der Liste.',
+        deleteConfirmDescription: "„{{title}}“ fliegt aus der Liste.",
         deleteConfirmAction: "Weg damit",
       },
       tasks: {
@@ -304,6 +307,7 @@ export const resources = {
         assigneeFairnessModeActual: "Ist-Wert",
         assigneeFairnessModeProjection: "Prognose bis Turn",
         rotationTitle: "Personen in Reihenfolge",
+        rotationSelectionTitle: "Zuständig",
         rotationHint:
           "Auswählen und per Drag-and-drop (auch Touch) umsortieren.",
         rotationOrderPreviewTitle: "Reihenfolge-Varianten",
@@ -326,8 +330,7 @@ export const resources = {
         editTask: "Bearbeiten",
         deleteTask: "Loeschen",
         deleteTaskConfirmTitle: "Aufgabe wirklich löschen?",
-        deleteTaskConfirmDescription:
-          '„{{title}}“ wird endgültig entsorgt.',
+        deleteTaskConfirmDescription: "„{{title}}“ wird endgültig entsorgt.",
         editTaskTitle: "Aufgabe bearbeiten",
         editTaskDescription: "Passe Aufgabe, Rhythmus und Rotation an.",
         discardChanges: "Verwerfen",
@@ -359,17 +362,19 @@ export const resources = {
         skip: "Skippen",
         takeOver: "Übernehmen",
         confirmSkipTitle: "Skippen wir das?",
-        confirmSkipDescription: '„{{title}}“ wirklich skippen?',
+        confirmSkipDescription: "„{{title}}“ wirklich skippen?",
         confirmSkipWarning: "Letzte Chance zum Umdenken.",
         skipChallengeTitle: "Verifizierung",
-        skipChallengePrompt: "Löse diese Aufgabe, um zu skippen: {{expression}} = ?",
+        skipChallengePrompt:
+          "Löse diese Aufgabe, um zu skippen: {{expression}} = ?",
         skipChallengePlaceholder: "Ergebnis eingeben",
         skipChallengeIncorrect: "Nicht korrekt. Bitte erneut versuchen.",
         skipCaptchaPopupTitle: "Skip-Verifikation",
         skipCaptchaPopupHint: "Sicherheitsprüfung läuft… bleib dran.",
         skipCaptchaPopupLoading: "Prüfe Verbindung…",
         skipCaptchaPopupError: "Captcha war leider falsch. Noch mal.",
-        skipCaptchaPopupConnectionError: "Verbindung instabil. Versuch’s erneut.",
+        skipCaptchaPopupConnectionError:
+          "Verbindung instabil. Versuch’s erneut.",
         skipCaptchaPopupRetry: "Erneut versuchen",
         skipCaptchaPopupReload: "Neu laden",
         skipCaptchaPopupNext: "Weiter",
@@ -383,23 +388,23 @@ export const resources = {
           "„{{title}}“ ruft",
           "Aufgabe fällig: {{title}}",
           "Erinnerung: {{title}}",
-          "Zeit für „{{title}}“"
+          "Zeit für „{{title}}“",
         ],
         reminderBodies: [
           "Du bist {{late}}. „{{title}}“ macht sich nicht von selbst.",
           "„{{title}}“ wartet schon {{late}}. Beweg dich.",
           "{{late}} drüber. Zeit für „{{title}}“.",
-          "„{{title}}“ ist {{late}}. Keine Ausreden."
+          "„{{title}}“ ist {{late}}. Keine Ausreden.",
         ],
         confirmSkipAction: "Ja, skippen",
         confirmTakeOverTitle: "Übernehmen?",
-        confirmTakeOverDescription: '„{{title}}“ geht auf dich?',
+        confirmTakeOverDescription: "„{{title}}“ geht auf dich?",
         confirmTakeOverAction: "Okay, ich mach’s",
         confirmCompleteTitle: "Erledigen wir das?",
-        confirmCompleteDescription: '„{{title}}“ als erledigt markieren?',
+        confirmCompleteDescription: "„{{title}}“ als erledigt markieren?",
         confirmCompleteAction: "Abhaken",
         confirmDeactivateTitle: "Deaktivieren?",
-        confirmDeactivateDescription: '„{{title}}“ wirklich deaktivieren?',
+        confirmDeactivateDescription: "„{{title}}“ wirklich deaktivieren?",
         confirmDeactivateAction: "Ja, deaktivieren",
         activate: "Aktivieren",
         deactivate: "Deaktivieren",
@@ -498,7 +503,8 @@ export const resources = {
         receiptUploadError: "Beleg konnte nicht verarbeitet werden.",
         ocrCameraButton: "Kamera",
         ocrDialogTitle: "Beleg per Kamera scannen",
-        ocrDialogDescription: "Foto aufnehmen, dann werden Produktname und Preis automatisch erkannt.",
+        ocrDialogDescription:
+          "Foto aufnehmen, dann werden Produktname und Preis automatisch erkannt.",
         ocrCaptureButton: "Foto aufnehmen",
         ocrReadingButton: "Erkenne...",
         ocrConfirmTitle: "OCR-Erkennung übernehmen?",
@@ -506,7 +512,8 @@ export const resources = {
         ocrApplyButton: "Passt, übernehmen",
         ocrRawTextToggle: "Erkannten Text anzeigen",
         ocrUnsupported: "OCR wird auf diesem Gerät/Browser nicht unterstützt.",
-        ocrCameraNotSupported: "Kamera wird auf diesem Gerät/Browser nicht unterstützt.",
+        ocrCameraNotSupported:
+          "Kamera wird auf diesem Gerät/Browser nicht unterstützt.",
         ocrCameraAccessError: "Kein Kamerazugriff möglich.",
         ocrCaptureError: "Foto konnte nicht aufgenommen werden.",
         ocrReadError: "OCR-Erkennung fehlgeschlagen.",
@@ -666,7 +673,8 @@ export const resources = {
         vacationModeConfirmDisable:
           "Urlaubsmodus beenden? Deine Pimpers werden neutral aufgefüllt, damit dir nicht alles aufgedrückt wird.",
         pushTitle: "Push-Benachrichtigungen",
-        pushDescription: "Aktiviere Benachrichtigungen für Aufgaben und WG-Action.",
+        pushDescription:
+          "Aktiviere Benachrichtigungen für Aufgaben und WG-Action.",
         pushStatusLabel: "Status: {{status}}",
         pushStatus: {
           default: "nicht gesetzt",
@@ -681,7 +689,8 @@ export const resources = {
         pushUsedForTaskSkipped: "Info, wenn jemand eine Aufgabe überspringt",
         pushUsedForTaskTakenOver: "Info, wenn jemand eine Aufgabe übernimmt",
         pushUsedForFinanceCreated: "Info bei neuem Finanzeintrag",
-        pushUsedForShoppingAdded: "Info bei neuem Eintrag auf der Einkaufsliste",
+        pushUsedForShoppingAdded:
+          "Info bei neuem Eintrag auf der Einkaufsliste",
         pushUsedForShoppingCompleted: "Info, wenn ein Einkauf abgehakt wurde",
         pushUsedForBucketAdded: "Info bei neuem Bucketlist-Eintrag",
         pushUsedForCashAudit: "Info, wenn ein Kassensturz gestartet wird",
@@ -706,7 +715,8 @@ export const resources = {
         weroNamePlaceholder: "z. B. Alex Mustermann",
         paymentSave: "Bezahlmethoden speichern",
         householdTitle: "WG Verwaltung",
-        householdDescription: "WG-Banner, Adresse und Währung zentral verwalten.",
+        householdDescription:
+          "WG-Banner, Adresse und Währung zentral verwalten.",
         householdOwnerOnlyHint: "Nur Hauptmieter können WG-Daten bearbeiten.",
         householdImageLabel: "WG-Banner URL",
         householdImagePlaceholder: "https://...",
@@ -911,7 +921,8 @@ export const resources = {
         pushPromptLater: "Later (maybe)",
         pushPromptEnable: "Okay, push me",
         paymentRedirectSuccessTitle: "Payment completed",
-        paymentRedirectSuccessDescription: "Thanks. You can return to the finance overview now.",
+        paymentRedirectSuccessDescription:
+          "Thanks. You can return to the finance overview now.",
         paymentRedirectCancelTitle: "Payment canceled",
         paymentRedirectCancelDescription: "The payment was not completed.",
         paymentRedirectBackToFinances: "Back to finances",
@@ -940,7 +951,8 @@ export const resources = {
         widgetExpensesByMonth: "Expenses per month and category",
         widgetFairnessByMember: "Fairness by member",
         bucketTitle: "Bucket list",
-        bucketDescription: "Shared ideas, goals, and wishes as a simple checklist.",
+        bucketDescription:
+          "Shared ideas, goals, and wishes as a simple checklist.",
         bucketPlaceholder: "New entry...",
         bucketMoreOptions: "More options",
         bucketDescriptionPlaceholder: "Description (optional)",
@@ -970,7 +982,8 @@ export const resources = {
         bucketEditSave: "Save changes",
         bucketDelete: "Delete entry",
         bucketDeleteConfirmTitle: "Remove entry?",
-        bucketDeleteConfirmDescription: '"{{title}}" will be permanently deleted.',
+        bucketDeleteConfirmDescription:
+          '"{{title}}" will be permanently deleted.',
         bucketDeleteConfirmAction: "Remove",
         activityTitle: "Activity feed",
         activityDescription: "Latest household activity.",
@@ -981,7 +994,8 @@ export const resources = {
         activityFinanceCreated: 'Finance entry "{{name}}" with {{amount}} €',
         activityCashAudit: "{{user}} started a cash audit",
         activityRoleChanged: "{{user}} now has role {{role}}",
-        activityAdminHintFallback: "Automatic data maintenance fixed inconsistencies.",
+        activityAdminHintFallback:
+          "Automatic data maintenance fixed inconsistencies.",
         landingTitle: "Household landing page",
         landingDescription: "Shared notes, rules, and updates as Markdown.",
         landingEmpty: "No content yet. Add a markdown text.",
@@ -1018,8 +1032,7 @@ export const resources = {
       },
       household: {
         createTitle: "Create new shared flat",
-        createDescription:
-          "Pick a name. You’re the household boss by default.",
+        createDescription: "Pick a name. You’re the household boss by default.",
         nameLabel: "Shared flat name",
         namePlaceholder: "Sunset Street 4",
         createAction: "Create shared flat",
@@ -1120,6 +1133,7 @@ export const resources = {
         assigneeFairnessModeActual: "Actual only",
         assigneeFairnessModeProjection: "Projection to turn",
         rotationTitle: "People in order",
+        rotationSelectionTitle: "People assignees",
         rotationHint:
           "Select people and reorder with drag and drop (touch-friendly).",
         rotationOrderPreviewTitle: "Order variants",
@@ -1141,8 +1155,7 @@ export const resources = {
         editTask: "Edit",
         deleteTask: "Delete",
         deleteTaskConfirmTitle: "Delete this task?",
-        deleteTaskConfirmDescription:
-          '"{{title}}" will be gone for good.',
+        deleteTaskConfirmDescription: '"{{title}}" will be gone for good.',
         editTaskTitle: "Edit task",
         editTaskDescription: "Adjust task, schedule and rotation.",
         discardChanges: "Discard",
@@ -1198,13 +1211,13 @@ export const resources = {
           "“{{title}}” is waiting",
           "Task due: {{title}}",
           "Reminder: {{title}}",
-          "Time for “{{title}}”"
+          "Time for “{{title}}”",
         ],
         reminderBodies: [
           "You are {{late}}. “{{title}}” won’t do itself.",
           "“{{title}}” has been waiting {{late}}. Move it.",
           "{{late}} overdue. Time for “{{title}}”.",
-          "“{{title}}” is {{late}}. No excuses."
+          "“{{title}}” is {{late}}. No excuses.",
         ],
         confirmSkipAction: "Yes, skip",
         confirmTakeOverTitle: "Take it over?",
@@ -1313,7 +1326,8 @@ export const resources = {
         receiptUploadError: "Receipt could not be processed.",
         ocrCameraButton: "Camera",
         ocrDialogTitle: "Scan receipt with camera",
-        ocrDialogDescription: "Take a photo and detect product name and price automatically.",
+        ocrDialogDescription:
+          "Take a photo and detect product name and price automatically.",
         ocrCaptureButton: "Take photo",
         ocrReadingButton: "Reading...",
         ocrConfirmTitle: "Use OCR result?",
@@ -1321,7 +1335,8 @@ export const resources = {
         ocrApplyButton: "Looks good, apply",
         ocrRawTextToggle: "Show recognized text",
         ocrUnsupported: "OCR is not supported on this device/browser.",
-        ocrCameraNotSupported: "Camera is not supported on this device/browser.",
+        ocrCameraNotSupported:
+          "Camera is not supported on this device/browser.",
         ocrCameraAccessError: "Could not access camera.",
         ocrCaptureError: "Could not capture photo.",
         ocrReadError: "OCR detection failed.",
@@ -1493,7 +1508,8 @@ export const resources = {
         pushUsedForTaskTakenOver: "Info when someone takes over a task",
         pushUsedForFinanceCreated: "Info for new finance entries",
         pushUsedForShoppingAdded: "Info for new shopping list items",
-        pushUsedForShoppingCompleted: "Info when a shopping item was checked off",
+        pushUsedForShoppingCompleted:
+          "Info when a shopping item was checked off",
         pushUsedForBucketAdded: "Info for new bucket list items",
         pushUsedForCashAudit: "Info when a cash audit is started",
         pushPreferencesTitle: "Push filters",

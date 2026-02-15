@@ -1892,6 +1892,35 @@ export const TasksTab = ({
                         />
                       </div>
 
+                      <Label>{t("tasks.rotationSelectionTitle")}</Label>
+                      <PersonSelect
+                        mode="multiple"
+                        members={members}
+                        value={rotationUserIds}
+                        onChange={(nextSelection) => {
+                          const nextSet = new Set(nextSelection);
+                          const mergedOrder = [
+                            ...rotationUserIds.filter((memberId) =>
+                              nextSet.has(memberId),
+                            ),
+                            ...nextSelection.filter(
+                              (memberId) => !rotationUserIds.includes(memberId),
+                            ),
+                          ];
+                          setRotationUserIds(mergedOrder);
+                        }}
+                        currentUserId={userId}
+                        youLabel={t("common.you")}
+                        placeholder={t("tasks.rotationTitle")}
+                      />
+
+                      {members.length === 0 ? (
+                        <p className="text-sm text-slate-500 dark:text-slate-400">
+                          {t("tasks.noMembers")}
+                        </p>
+                      ) : null}
+
+
                       <Accordion
                         type="single"
                         collapsible
@@ -1907,7 +1936,9 @@ export const TasksTab = ({
                                 {renderTaskStateImageField(taskForm, {
                                   fieldName: "currentStateImageUrl",
                                   label: t("tasks.currentStateImageLabel"),
-                                  previewAlt: t("tasks.currentStateImagePreviewAlt"),
+                                  previewAlt: t(
+                                    "tasks.currentStateImagePreviewAlt",
+                                  ),
                                   uploadInputRef: addCurrentStateUploadInputRef,
                                   cameraInputRef: addCurrentStateCameraInputRef,
                                   setError: setTaskImageUploadError,
@@ -1915,7 +1946,9 @@ export const TasksTab = ({
                                 {renderTaskStateImageField(taskForm, {
                                   fieldName: "targetStateImageUrl",
                                   label: t("tasks.targetStateImageLabel"),
-                                  previewAlt: t("tasks.targetStateImagePreviewAlt"),
+                                  previewAlt: t(
+                                    "tasks.targetStateImagePreviewAlt",
+                                  ),
                                   uploadInputRef: addTargetStateUploadInputRef,
                                   cameraInputRef: addTargetStateCameraInputRef,
                                   setError: setTaskImageUploadError,
@@ -1971,27 +2004,36 @@ export const TasksTab = ({
                                 name="assigneeFairnessMode"
                                 children={(field: {
                                   state: { value: "actual" | "projection" };
-                                  handleChange: (value: "actual" | "projection") => void;
+                                  handleChange: (
+                                    value: "actual" | "projection",
+                                  ) => void;
                                 }) => (
                                   <div className="space-y-1">
-                                    <Label>{t("tasks.assigneeFairnessModeLabel")}</Label>
+                                    <Label>
+                                      {t("tasks.assigneeFairnessModeLabel")}
+                                    </Label>
                                     <select
                                       className="h-10 w-full rounded-xl border border-brand-200 bg-white px-3 text-sm text-slate-900 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                                       value={field.state.value}
                                       onChange={(event) =>
                                         field.handleChange(
-                                          event.target.value as "actual" | "projection",
+                                          event.target.value as
+                                            | "actual"
+                                            | "projection",
                                         )
                                       }
                                       disabled={
-                                        !taskForm.state.values.prioritizeLowPimpers
+                                        !taskForm.state.values
+                                          .prioritizeLowPimpers
                                       }
                                     >
                                       <option value="actual">
                                         {t("tasks.assigneeFairnessModeActual")}
                                       </option>
                                       <option value="projection">
-                                        {t("tasks.assigneeFairnessModeProjection")}
+                                        {t(
+                                          "tasks.assigneeFairnessModeProjection",
+                                        )}
                                       </option>
                                     </select>
                                     <p className="text-xs text-slate-500 dark:text-slate-400">
@@ -2000,88 +2042,72 @@ export const TasksTab = ({
                                   </div>
                                 )}
                               />
+
+                              {rotationUserIds.length > 0 ? (
+                                <div className="rounded-xl border border-brand-100 bg-brand-50/40 p-3 dark:border-slate-700 dark:bg-slate-800/40">
+                                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                                    {t("tasks.rotationTitle")}
+                                  </p>
+                                  <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">
+                                    {t("tasks.rotationHint")}
+                                  </p>
+                                  <div className="mt-3 space-y-2">
+                                    <DndContext
+                                      sensors={sensors}
+                                      collisionDetection={closestCenter}
+                                      onDragEnd={onRotationDragEnd}
+                                    >
+                                      <SortableContext
+                                        items={rotationUserIds}
+                                        strategy={verticalListSortingStrategy}
+                                      >
+                                        {rotationUserIds.map(
+                                          (rotationUserId) => {
+                                            const score =
+                                              pimperByUserId.get(
+                                                rotationUserId,
+                                              ) ?? 0;
+                                            const member =
+                                              memberById.get(rotationUserId);
+                                            const displayName =
+                                              userLabel(rotationUserId);
+                                            const avatarUrl =
+                                              member?.avatar_url?.trim() ?? "";
+                                            const avatarSrc =
+                                              avatarUrl ||
+                                              createDiceBearAvatarDataUri(
+                                                member?.display_name?.trim() ||
+                                                  displayName ||
+                                                  rotationUserId,
+                                              );
+                                            return (
+                                              <SortableRotationItem
+                                                key={rotationUserId}
+                                                id={rotationUserId}
+                                                label={userLabel(
+                                                  rotationUserId,
+                                                )}
+                                                avatarSrc={avatarSrc}
+                                                isVacation={
+                                                  member?.vacation_mode ?? false
+                                                }
+                                                pimperCount={score}
+                                                dragHandleLabel={t(
+                                                  "tasks.dragHandle",
+                                                )}
+                                              />
+                                            );
+                                          },
+                                        )}
+                                      </SortableContext>
+                                    </DndContext>
+                                  </div>
+                                </div>
+                              ) : null}
                             </div>
                           </AccordionContent>
                         </AccordionItem>
                       </Accordion>
-
-                      <SectionPanel className="bg-brand-50/40">
-                        <p className="mb-2 text-sm font-semibold text-slate-900 dark:text-slate-100">
-                          {t("tasks.rotationTitle")}
-                        </p>
-                        <p className="mb-3 text-xs text-slate-600 dark:text-slate-300">
-                          {t("tasks.rotationHint")}
-                        </p>
-
-                        {members.length === 0 ? (
-                          <p className="text-sm text-slate-500 dark:text-slate-400">
-                            {t("tasks.noMembers")}
-                          </p>
-                        ) : null}
-
-                        <PersonSelect
-                          mode="multiple"
-                          members={members}
-                          value={rotationUserIds}
-                          onChange={(nextSelection) => {
-                            const nextSet = new Set(nextSelection);
-                            const mergedOrder = [
-                              ...rotationUserIds.filter((memberId) =>
-                                nextSet.has(memberId),
-                              ),
-                              ...nextSelection.filter(
-                                (memberId) =>
-                                  !rotationUserIds.includes(memberId),
-                              ),
-                            ];
-                            setRotationUserIds(mergedOrder);
-                          }}
-                          currentUserId={userId}
-                          youLabel={t("common.you")}
-                          placeholder={t("tasks.rotationTitle")}
-                        />
-
-                        {rotationUserIds.length > 0 ? (
-                          <div className="mt-3 space-y-2">
-                            <DndContext
-                              sensors={sensors}
-                              collisionDetection={closestCenter}
-                              onDragEnd={onRotationDragEnd}
-                            >
-                              <SortableContext
-                                items={rotationUserIds}
-                                strategy={verticalListSortingStrategy}
-                              >
-                              {rotationUserIds.map((rotationUserId) => {
-                                const score =
-                                  pimperByUserId.get(rotationUserId) ?? 0;
-                                const member = memberById.get(rotationUserId);
-                                const displayName = userLabel(rotationUserId);
-                                const avatarUrl = member?.avatar_url?.trim() ?? "";
-                                const avatarSrc =
-                                  avatarUrl ||
-                                  createDiceBearAvatarDataUri(
-                                    member?.display_name?.trim() ||
-                                      displayName ||
-                                      rotationUserId,
-                                  );
-                                return (
-                                  <SortableRotationItem
-                                    key={rotationUserId}
-                                    id={rotationUserId}
-                                    label={userLabel(rotationUserId)}
-                                    avatarSrc={avatarSrc}
-                                    isVacation={member?.vacation_mode ?? false}
-                                    pimperCount={score}
-                                    dragHandleLabel={t("tasks.dragHandle")}
-                                  />
-                                );
-                              })}
-                              </SortableContext>
-                            </DndContext>
-                          </div>
-                        ) : null}
-                      </SectionPanel>
 
                       {formError ? (
                         <p className="rounded-lg border border-rose-300 bg-rose-50 px-3 py-2 text-xs text-rose-700 dark:border-rose-900 dark:bg-rose-950/60 dark:text-rose-200">
@@ -2179,7 +2205,9 @@ export const TasksTab = ({
                             <MemberAvatar
                               src={assigneeAvatarSrc}
                               alt={assigneeText}
-                              isVacation={assigneeMember?.vacation_mode ?? false}
+                              isVacation={
+                                assigneeMember?.vacation_mode ?? false
+                              }
                               className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-brand-200 bg-brand-50 dark:border-slate-700 dark:bg-slate-800"
                               fallback={
                                 <div className="flex h-full w-full items-center justify-center text-slate-500 dark:text-slate-300">
@@ -2391,7 +2419,6 @@ export const TasksTab = ({
               {podiumRows.length > 0 ? (
                 <div className="mb-4 rounded-xl border border-brand-100 bg-white/90 p-3 dark:border-slate-700 dark:bg-slate-900">
                   <div className="grid grid-cols-3 items-end gap-2">
-
                     {[1, 0, 2].map((index) => {
                       const member = podiumRows[index];
                       if (!member) return <div key={`podium-empty-${index}`} />;
@@ -2427,7 +2454,7 @@ export const TasksTab = ({
                         >
                           <SparklesEffect
                             color="currentColor"
-                            count={(3-rank)*6}
+                            count={(3 - rank) * 6}
                             minSize={2}
                             maxSize={4}
                             overflowPx={4}
@@ -2798,11 +2825,16 @@ export const TasksTab = ({
                                         busy ||
                                         !(
                                           entry.user_id !== userId &&
-                                          latestCompletionIdByTask.get(entry.task_id) === entry.id
+                                          latestCompletionIdByTask.get(
+                                            entry.task_id,
+                                          ) === entry.id
                                         )
                                       }
                                       onChange={(rating) =>
-                                        void onRateTaskCompletion(entry.id, rating)
+                                        void onRateTaskCompletion(
+                                          entry.id,
+                                          rating,
+                                        )
                                       }
                                       getLabel={(rating) =>
                                         t("tasks.rateAction", { rating })
@@ -2812,16 +2844,20 @@ export const TasksTab = ({
                                 </TooltipTrigger>
                                 <TooltipContent>
                                   <p className="text-xs">
-                                    {t("tasks.ratingTooltipCount", { count: entry.rating_count })}
+                                    {t("tasks.ratingTooltipCount", {
+                                      count: entry.rating_count,
+                                    })}
                                   </p>
                                   <p className="text-xs">
                                     {t("tasks.ratingTooltipAverage", {
-                                      average: Number((entry.rating_average ?? 0).toFixed(1))
+                                      average: Number(
+                                        (entry.rating_average ?? 0).toFixed(1),
+                                      ),
                                     })}
                                   </p>
                                   <p className="text-xs">
                                     {t("tasks.ratingTooltipMine", {
-                                      rating: entry.my_rating ?? "-"
+                                      rating: entry.my_rating ?? "-",
                                     })}
                                   </p>
                                 </TooltipContent>
@@ -3014,7 +3050,9 @@ export const TasksTab = ({
           <DialogContent className="sm:max-w-md">
             <DialogHeader>
               <DialogTitle>{t("tasks.skipCaptchaPopupTitle")}</DialogTitle>
-              <DialogDescription>{t("tasks.skipCaptchaPopupHint")}</DialogDescription>
+              <DialogDescription>
+                {t("tasks.skipCaptchaPopupHint")}
+              </DialogDescription>
             </DialogHeader>
             <div className="space-y-3">
               <div className="relative min-h-[220px] overflow-hidden rounded-xl">
@@ -3045,7 +3083,8 @@ export const TasksTab = ({
                     <p className="font-semibold">
                       {skipCaptchaUiState === "loading"
                         ? t("tasks.skipCaptchaPopupLoading")
-                        : skipCaptchaError ?? t("tasks.skipCaptchaPopupError")}
+                        : (skipCaptchaError ??
+                          t("tasks.skipCaptchaPopupError"))}
                     </p>
                     {skipCaptchaUiState === "error" ? (
                       <Button
@@ -3073,13 +3112,21 @@ export const TasksTab = ({
                   {t("common.cancel")}
                 </Button>
                 {skipCaptchaUiState === "error" ? (
-                  <Button type="button" variant="outline" onClick={retrySkipCaptcha}>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={retrySkipCaptcha}
+                  >
                     {t("tasks.skipCaptchaPopupRetry")}
                   </Button>
                 ) : null}
                 <Button
                   type="button"
-                  disabled={!skipCaptchaValid || skipCaptchaUiState === "loading" || skipCaptchaUiState === "error"}
+                  disabled={
+                    !skipCaptchaValid ||
+                    skipCaptchaUiState === "loading" ||
+                    skipCaptchaUiState === "error"
+                  }
                   onClick={() => {
                     setSkipCaptchaUiState("loading");
                     setSkipCaptchaError(null);
@@ -3133,7 +3180,9 @@ export const TasksTab = ({
           <DialogContent className="sm:max-w-sm overflow-hidden border border-rose-900/60 bg-slate-950/95 p-6 text-rose-100 shadow-[0_18px_40px_rgba(0,0,0,0.45)]">
             <div className="relative flex min-h-[240px] flex-col items-center justify-center text-center">
               <DialogHeader>
-                <DialogTitle className="text-2xl font-semibold text-rose-200">Skippen?</DialogTitle>
+                <DialogTitle className="text-2xl font-semibold text-rose-200">
+                  Skippen?
+                </DialogTitle>
                 <DialogDescription className="text-rose-300/80">
                   Wirklich sicher? Dann druck zehnmal.
                 </DialogDescription>
@@ -3144,7 +3193,7 @@ export const TasksTab = ({
                   size="sm"
                   className="h-6 w-10 rounded-full bg-rose-600 text-[10px] font-semibold uppercase tracking-wide text-white shadow-[0_0_18px_rgba(244,63,94,0.55)] transition-transform"
                   style={{
-                    transform: `scale(${1 + skipFinalConfirmPresses * 0.45})`
+                    transform: `scale(${1 + skipFinalConfirmPresses * 0.45})`,
                   }}
                   onClick={() => {
                     setSkipFinalConfirmPresses((current) => {
@@ -3277,6 +3326,27 @@ export const TasksTab = ({
                   )}
                 />
               </div>
+              <Label>{t("tasks.rotationSelectionTitle")}</Label>
+              <PersonSelect
+                mode="multiple"
+                members={members}
+                value={editRotationUserIds}
+                onChange={(nextSelection) => {
+                  const nextSet = new Set(nextSelection);
+                  const mergedOrder = [
+                    ...editRotationUserIds.filter((memberId) =>
+                      nextSet.has(memberId),
+                    ),
+                    ...nextSelection.filter(
+                      (memberId) => !editRotationUserIds.includes(memberId),
+                    ),
+                  ];
+                  setEditRotationUserIds(mergedOrder);
+                }}
+                currentUserId={userId}
+                youLabel={t("common.you")}
+                placeholder={t("tasks.rotationSelectionTitle")}
+              />
 
               <Accordion
                 type="single"
@@ -3357,10 +3427,14 @@ export const TasksTab = ({
                         name="assigneeFairnessMode"
                         children={(field: {
                           state: { value: "actual" | "projection" };
-                          handleChange: (value: "actual" | "projection") => void;
+                          handleChange: (
+                            value: "actual" | "projection",
+                          ) => void;
                         }) => (
                           <div className="space-y-1">
-                            <Label>{t("tasks.assigneeFairnessModeLabel")}</Label>
+                            <Label>
+                              {t("tasks.assigneeFairnessModeLabel")}
+                            </Label>
                             <select
                               className="h-10 w-full rounded-xl border border-brand-200 bg-white px-3 text-sm text-slate-900 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                               value={field.state.value}
@@ -3386,85 +3460,109 @@ export const TasksTab = ({
                           </div>
                         )}
                       />
+
+                      {editRotationUserIds.length > 0 ? (
+                        <div className="rounded-xl border border-brand-100 bg-brand-50/40 p-3 dark:border-slate-700 dark:bg-slate-800/40">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                            {t("tasks.rotationTitle")}
+                          </p>
+                          <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">
+                            {t("tasks.rotationHint")}
+                          </p>
+                          <div className="mt-3 space-y-2">
+                            <DndContext
+                              sensors={sensors}
+                              collisionDetection={closestCenter}
+                              onDragEnd={onEditRotationDragEnd}
+                            >
+                              <SortableContext
+                                items={editRotationUserIds}
+                                strategy={verticalListSortingStrategy}
+                              >
+                                {editRotationUserIds.map((rotationUserId) => {
+                                  const score =
+                                    pimperByUserId.get(rotationUserId) ?? 0;
+                                  const member = memberById.get(rotationUserId);
+                                  const displayName = userLabel(rotationUserId);
+                                  const avatarUrl =
+                                    member?.avatar_url?.trim() ?? "";
+                                  const avatarSrc =
+                                    avatarUrl ||
+                                    createDiceBearAvatarDataUri(
+                                      member?.display_name?.trim() ||
+                                        displayName ||
+                                        rotationUserId,
+                                    );
+                                  return (
+                                    <SortableRotationItem
+                                      key={`edit-row-${rotationUserId}`}
+                                      id={rotationUserId}
+                                      label={userLabel(rotationUserId)}
+                                      avatarSrc={avatarSrc}
+                                      pimperCount={score}
+                                      dragHandleLabel={t("tasks.dragHandle")}
+                                    />
+                                  );
+                                })}
+                              </SortableContext>
+                            </DndContext>
+                          </div>
+                        </div>
+                      ) : null}
+                      {/* {editRotationUserIds.length > 0 ? (
+                        <div className="rounded-xl border border-brand-100 bg-brand-50/40 p-2 dark:border-slate-700 dark:bg-slate-800/40">
+                          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                            {t("tasks.rotationTitle")}
+                          </p>
+                          {renderRotationAvatarStack(editRotationUserIds)}
+                        </div>
+                      ) : null} */}
+                      {editRotationVariants ? (
+                        <div className="rounded-xl border border-brand-100 bg-white/80 p-2 dark:border-slate-700 dark:bg-slate-900/70">
+                          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                            {t("tasks.rotationOrderPreviewTitle")}
+                          </p>
+                          <div className="space-y-2 text-xs text-slate-700 dark:text-slate-300">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="font-semibold">
+                                {t("tasks.rotationOrderPreviewTheoretical")}:
+                              </span>
+                              {renderRotationAvatarStack(
+                                adjustPreviewOrder(
+                                  editRotationVariants.theoretical,
+                                ),
+                              )}
+                            </div>
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="font-semibold">
+                                {t("tasks.rotationOrderPreviewFairness")}:
+                              </span>
+                              {renderRotationAvatarStack(
+                                adjustPreviewOrder(
+                                  editRotationVariants.fairnessActual,
+                                ),
+                              )}
+                            </div>
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="font-semibold">
+                                {t(
+                                  "tasks.rotationOrderPreviewFairnessProjection",
+                                )}
+                                :
+                              </span>
+                              {renderRotationAvatarStack(
+                                adjustPreviewOrder(
+                                  editRotationVariants.fairnessProjection,
+                                ),
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      ) : null}
                     </div>
                   </AccordionContent>
                 </AccordionItem>
               </Accordion>
-
-              <SectionPanel className="bg-brand-50/40">
-                <p className="mb-2 text-sm font-semibold text-slate-900 dark:text-slate-100">
-                  {t("tasks.rotationTitle")}
-                </p>
-                <p className="mb-3 text-xs text-slate-600 dark:text-slate-300">
-                  {t("tasks.rotationHint")}
-                </p>
-
-                {members.length === 0 ? (
-                  <p className="text-sm text-slate-500 dark:text-slate-400">
-                    {t("tasks.noMembers")}
-                  </p>
-                ) : null}
-
-                <PersonSelect
-                  mode="multiple"
-                  members={members}
-                  value={editRotationUserIds}
-                  onChange={(nextSelection) => {
-                    const nextSet = new Set(nextSelection);
-                    const mergedOrder = [
-                      ...editRotationUserIds.filter((memberId) =>
-                        nextSet.has(memberId),
-                      ),
-                      ...nextSelection.filter(
-                        (memberId) => !editRotationUserIds.includes(memberId),
-                      ),
-                    ];
-                    setEditRotationUserIds(mergedOrder);
-                  }}
-                  currentUserId={userId}
-                  youLabel={t("common.you")}
-                  placeholder={t("tasks.rotationTitle")}
-                />
-
-                {editRotationUserIds.length > 0 ? (
-                  <div className="mt-3 space-y-2">
-                    <DndContext
-                      sensors={sensors}
-                      collisionDetection={closestCenter}
-                      onDragEnd={onEditRotationDragEnd}
-                    >
-                      <SortableContext
-                        items={editRotationUserIds}
-                        strategy={verticalListSortingStrategy}
-                      >
-                        {editRotationUserIds.map((rotationUserId) => {
-                          const score = pimperByUserId.get(rotationUserId) ?? 0;
-                          const member = memberById.get(rotationUserId);
-                          const displayName = userLabel(rotationUserId);
-                          const avatarUrl = member?.avatar_url?.trim() ?? "";
-                          const avatarSrc =
-                            avatarUrl ||
-                            createDiceBearAvatarDataUri(
-                              member?.display_name?.trim() ||
-                                displayName ||
-                                rotationUserId,
-                            );
-                          return (
-                            <SortableRotationItem
-                              key={`edit-row-${rotationUserId}`}
-                              id={rotationUserId}
-                              label={userLabel(rotationUserId)}
-                              avatarSrc={avatarSrc}
-                              pimperCount={score}
-                              dragHandleLabel={t("tasks.dragHandle")}
-                            />
-                          );
-                        })}
-                      </SortableContext>
-                    </DndContext>
-                  </div>
-                ) : null}
-              </SectionPanel>
 
               {editFormError ? (
                 <p className="rounded-lg border border-rose-300 bg-rose-50 px-3 py-2 text-xs text-rose-700 dark:border-rose-900 dark:bg-rose-950/60 dark:text-rose-200">
@@ -3494,41 +3592,6 @@ export const TasksTab = ({
                   {t("tasks.saveTask")}
                 </Button>
               </div>
-              {editRotationUserIds.length > 0 ? (
-                <div className="rounded-xl border border-brand-100 bg-brand-50/40 p-2 dark:border-slate-700 dark:bg-slate-800/40">
-                  <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                    {t("tasks.rotationTitle")}
-                  </p>
-                  {renderRotationAvatarStack(editRotationUserIds)}
-                </div>
-              ) : null}
-              {editRotationVariants ? (
-                <div className="rounded-xl border border-brand-100 bg-white/80 p-2 dark:border-slate-700 dark:bg-slate-900/70">
-                  <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                    {t("tasks.rotationOrderPreviewTitle")}
-                  </p>
-                  <div className="space-y-2 text-xs text-slate-700 dark:text-slate-300">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="font-semibold">
-                        {t("tasks.rotationOrderPreviewTheoretical")}:
-                      </span>
-                      {renderRotationAvatarStack(adjustPreviewOrder(editRotationVariants.theoretical))}
-                    </div>
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="font-semibold">
-                        {t("tasks.rotationOrderPreviewFairness")}:
-                      </span>
-                      {renderRotationAvatarStack(adjustPreviewOrder(editRotationVariants.fairnessActual))}
-                    </div>
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="font-semibold">
-                        {t("tasks.rotationOrderPreviewFairnessProjection")}:
-                      </span>
-                      {renderRotationAvatarStack(adjustPreviewOrder(editRotationVariants.fairnessProjection))}
-                    </div>
-                  </div>
-                </div>
-              ) : null}
             </form>
           </DialogContent>
         </Dialog>

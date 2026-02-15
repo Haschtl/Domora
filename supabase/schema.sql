@@ -317,10 +317,12 @@ alter table push_preferences enable row level security;
 alter table push_jobs enable row level security;
 alter table push_log enable row level security;
 
+drop policy if exists "push_tokens_select_own" on push_tokens;
 create policy "push_tokens_select_own"
   on push_tokens for select
   using (auth.uid() = user_id);
 
+drop policy if exists "push_tokens_insert_own" on push_tokens;
 create policy "push_tokens_insert_own"
   on push_tokens for insert
   with check (
@@ -332,15 +334,18 @@ create policy "push_tokens_insert_own"
     )
   );
 
+drop policy if exists "push_tokens_update_own" on push_tokens;
 create policy "push_tokens_update_own"
   on push_tokens for update
   using (auth.uid() = user_id)
   with check (auth.uid() = user_id);
 
+drop policy if exists "push_preferences_select_own" on push_preferences;
 create policy "push_preferences_select_own"
   on push_preferences for select
   using (auth.uid() = user_id);
 
+drop policy if exists "push_preferences_upsert_own" on push_preferences;
 create policy "push_preferences_upsert_own"
   on push_preferences for insert
   with check (
@@ -352,6 +357,7 @@ create policy "push_preferences_upsert_own"
     )
   );
 
+drop policy if exists "push_preferences_update_own" on push_preferences;
 create policy "push_preferences_update_own"
   on push_preferences for update
   using (auth.uid() = user_id)
@@ -1988,8 +1994,8 @@ drop policy if exists households_update on households;
 create policy households_update on households
 for update
 to authenticated
-using (is_household_owner(id))
-with check (is_household_owner(id));
+using (is_household_owner(id) or auth.uid() = created_by)
+with check (is_household_owner(id) or auth.uid() = created_by);
 
 drop policy if exists households_delete on households;
 create policy households_delete on households
@@ -2013,7 +2019,7 @@ with check (
     select 1
     from households h
     where h.id = household_members.household_id
-      and h.created_by = auth.uid()
+      and (h.created_by = auth.uid() or is_household_owner(h.id))
   )
 );
 

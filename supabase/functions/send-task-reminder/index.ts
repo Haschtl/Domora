@@ -7,15 +7,24 @@ type ReminderPayload = {
   body?: string;
 };
 
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS"
+};
+
 serve(async (req) => {
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { status: 200, headers: corsHeaders });
+  }
   if (req.method !== "POST") {
-    return new Response("Method not allowed", { status: 405 });
+    return new Response("Method not allowed", { status: 405, headers: corsHeaders });
   }
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   if (!supabaseUrl || !supabaseServiceKey) {
-    return new Response("Missing env", { status: 500 });
+    return new Response("Missing env", { status: 500, headers: corsHeaders });
   }
 
   const supabase = createClient(supabaseUrl, supabaseServiceKey, {
@@ -25,19 +34,19 @@ serve(async (req) => {
   const { data: authData } = await supabase.auth.getUser();
   const user = authData?.user;
   if (!user) {
-    return new Response("Unauthorized", { status: 401 });
+    return new Response("Unauthorized", { status: 401, headers: corsHeaders });
   }
 
   let payload: ReminderPayload;
   try {
     payload = (await req.json()) as ReminderPayload;
   } catch {
-    return new Response("Invalid payload", { status: 400 });
+    return new Response("Invalid payload", { status: 400, headers: corsHeaders });
   }
 
   const taskId = String(payload.taskId ?? "").trim();
   if (!taskId) {
-    return new Response("Missing taskId", { status: 400 });
+    return new Response("Missing taskId", { status: 400, headers: corsHeaders });
   }
 
   const { data: task, error: taskError } = await supabase
@@ -46,7 +55,7 @@ serve(async (req) => {
     .eq("id", taskId)
     .maybeSingle();
   if (taskError || !task) {
-    return new Response("Task not found", { status: 404 });
+    return new Response("Task not found", { status: 404, headers: corsHeaders });
   }
 
   const { data: membership } = await supabase
@@ -56,17 +65,17 @@ serve(async (req) => {
     .eq("user_id", user.id)
     .maybeSingle();
   if (!membership) {
-    return new Response("Forbidden", { status: 403 });
+    return new Response("Forbidden", { status: 403, headers: corsHeaders });
   }
 
   if (!task.is_active || task.done || !task.assignee_id) {
-    return new Response("Task not eligible", { status: 400 });
+    return new Response("Task not eligible", { status: 400, headers: corsHeaders });
   }
 
   const now = new Date();
   const dueAt = new Date(task.due_at);
   if (Number.isNaN(dueAt.getTime()) || dueAt.getTime() > now.getTime()) {
-    return new Response("Task not due", { status: 400 });
+    return new Response("Task not due", { status: 400, headers: corsHeaders });
   }
 
   const title = String(payload.title ?? "").trim() || "Aufgabe fällig";
@@ -93,11 +102,11 @@ serve(async (req) => {
   });
 
   if (insertError) {
-    return new Response(insertError.message, { status: 500 });
+    return new Response(insertError.message, { status: 500, headers: corsHeaders });
   }
 
   return new Response(JSON.stringify({ ok: true }), {
     status: 200,
-    headers: { "content-type": "application/json" }
+    headers: { "content-type": "application/json", ...corsHeaders }
   });
 });
