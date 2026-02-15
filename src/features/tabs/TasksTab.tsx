@@ -64,7 +64,6 @@ import { Label } from "../../components/ui/label";
 import { MobileSubpageDialog } from "../../components/ui/mobile-subpage-dialog";
 import { PimpersIcon } from "../../components/pimpers-icon";
 import { PersonSelect } from "../../components/person-select";
-import { SectionPanel } from "../../components/ui/section-panel";
 import { StarRating } from "../../components/ui/star-rating";
 import { Switch } from "../../components/ui/switch";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../../components/ui/tooltip";
