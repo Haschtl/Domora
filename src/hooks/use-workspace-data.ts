@@ -59,11 +59,131 @@ export const useWorkspaceData = () => {
     if (!activeHouseholdId) return;
 
     const channel = supabase
-      .channel(`household-events-${activeHouseholdId}`)
+      .channel(`household-realtime-${activeHouseholdId}`)
       .on(
         "postgres_changes",
         {
-          event: "INSERT",
+          event: "*",
+          schema: "public",
+          table: "bucket_items",
+          filter: `household_id=eq.${activeHouseholdId}`
+        },
+        () => {
+          void queryClient.invalidateQueries({ queryKey: queryKeys.householdBucketItems(activeHouseholdId) });
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "shopping_items",
+          filter: `household_id=eq.${activeHouseholdId}`
+        },
+        () => {
+          void queryClient.invalidateQueries({ queryKey: queryKeys.householdShoppingItems(activeHouseholdId) });
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "shopping_item_completions",
+          filter: `household_id=eq.${activeHouseholdId}`
+        },
+        () => {
+          void queryClient.invalidateQueries({ queryKey: queryKeys.householdShoppingCompletions(activeHouseholdId) });
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "tasks",
+          filter: `household_id=eq.${activeHouseholdId}`
+        },
+        () => {
+          void queryClient.invalidateQueries({ queryKey: queryKeys.householdTasks(activeHouseholdId) });
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "task_completions",
+          filter: `household_id=eq.${activeHouseholdId}`
+        },
+        () => {
+          void queryClient.invalidateQueries({ queryKey: queryKeys.householdTaskCompletions(activeHouseholdId) });
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "finance_entries",
+          filter: `household_id=eq.${activeHouseholdId}`
+        },
+        () => {
+          void queryClient.invalidateQueries({ queryKey: queryKeys.householdFinances(activeHouseholdId) });
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "cash_audit_requests",
+          filter: `household_id=eq.${activeHouseholdId}`
+        },
+        () => {
+          void queryClient.invalidateQueries({ queryKey: queryKeys.householdCashAuditRequests(activeHouseholdId) });
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "finance_subscriptions",
+          filter: `household_id=eq.${activeHouseholdId}`
+        },
+        () => {
+          void queryClient.invalidateQueries({ queryKey: queryKeys.householdFinanceSubscriptions(activeHouseholdId) });
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "household_members",
+          filter: `household_id=eq.${activeHouseholdId}`
+        },
+        () => {
+          void queryClient.invalidateQueries({ queryKey: queryKeys.householdMembers(activeHouseholdId) });
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "household_member_pimpers",
+          filter: `household_id=eq.${activeHouseholdId}`
+        },
+        () => {
+          void queryClient.invalidateQueries({ queryKey: queryKeys.householdMemberPimpers(activeHouseholdId) });
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
           schema: "public",
           table: "household_events",
           filter: `household_id=eq.${activeHouseholdId}`
@@ -72,12 +192,26 @@ export const useWorkspaceData = () => {
           void queryClient.invalidateQueries({ queryKey: queryKeys.householdEvents(activeHouseholdId) });
         }
       )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "households",
+          filter: `id=eq.${activeHouseholdId}`
+        },
+        () => {
+          if (userId) {
+            void queryClient.invalidateQueries({ queryKey: queryKeys.households(userId) });
+          }
+        }
+      )
       .subscribe();
 
     return () => {
       void supabase.removeChannel(channel);
     };
-  }, [activeHouseholdId, queryClient]);
+  }, [activeHouseholdId, queryClient, userId]);
 
   const activeHousehold = useMemo(
     () => households.find((entry) => entry.id === activeHouseholdId) ?? null,
