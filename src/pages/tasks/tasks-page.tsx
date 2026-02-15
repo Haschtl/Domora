@@ -1207,18 +1207,23 @@ export const TasksPage = ({
     return [...active, ...inactive];
   }, [tasks]);
 
-  const settingsActionsCard = showSettings ? (
-    <Card className="mb-4">
+  const resetPimpersStatsCard = showStats && isOwner ? (
+    <Card className="mt-6 border-rose-200 bg-rose-50/60 dark:border-rose-900/50 dark:bg-rose-950/30">
       <CardHeader className="gap-3">
         <div className="flex items-start justify-between gap-2">
           <div>
-            <CardTitle>{t("tasks.resetPimpers")}</CardTitle>
-            <CardDescription>{t("tasks.resetPimpersConfirmDescription")}</CardDescription>
+            <CardTitle className="text-rose-800 dark:text-rose-100">
+              {t("tasks.resetPimpers")}
+            </CardTitle>
+            <CardDescription className="text-rose-700/90 dark:text-rose-200/80">
+              {t("tasks.resetPimpersConfirmDescription")}
+            </CardDescription>
           </div>
           <Button
             type="button"
             size="sm"
             variant="outline"
+            className="border-rose-300 text-rose-700 hover:bg-rose-100 dark:border-rose-800 dark:text-rose-200 dark:hover:bg-rose-900/40"
             disabled={busy}
             onClick={() => setIsResetPimpersDialogOpen(true)}
           >
@@ -2752,7 +2757,6 @@ export const TasksPage = ({
 
 
         {lazinessSettingsCard}
-        {settingsActionsCard}
 
         {showStats &&
         pimpersByUserSeries.labels.length > 0 &&
@@ -2898,6 +2902,8 @@ export const TasksPage = ({
             </CardContent>
           </Card>
         ) : null}
+
+        {resetPimpersStatsCard}
 
         {showHistory ? (
           <>

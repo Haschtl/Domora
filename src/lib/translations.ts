@@ -449,7 +449,7 @@ export const resources = {
         resetPimpers: "Pimpers zurücksetzen",
         resetPimpersConfirmTitle: "Alle Pimpers zurücksetzen?",
         resetPimpersConfirmDescription:
-          "Alle Pimpers in dieser WG werden auf 0 gesetzt.",
+          "Alle Pimpers in dieser WG werden auf 0 gesetzt. Die Historie bleibt erhalten, aber die aktuelle Punkteliste startet neu.",
         resetPimpersConfirmAction: "Jetzt zurücksetzen",
         resetPimpersSuccess: "Pimpers wurden zurückgesetzt.",
         lazinessScaledPimpersValue: "Skalierte Pimpers: {{value}}",
@@ -1303,7 +1303,7 @@ export const resources = {
         resetPimpers: "Reset pimpers",
         resetPimpersConfirmTitle: "Reset all pimpers?",
         resetPimpersConfirmDescription:
-          "All pimpers in this household will be set to 0.",
+          "All pimpers in this household will be set to 0. History stays intact, but the current scoreboard restarts.",
         resetPimpersConfirmAction: "Reset now",
         resetPimpersSuccess: "Pimpers were reset.",
         lazinessScaledPimpersValue: "Scaled pimpers: {{value}}",

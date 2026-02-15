@@ -226,6 +226,7 @@ const AppLayout = () => {
   const taskSubTab = useMemo(() => resolveTaskSubTabFromPathname(location.pathname), [location.pathname]);
   const financeSubTab = useMemo(() => resolveFinanceSubTabFromPathname(location.pathname), [location.pathname]);
   const settingsSubTab = useMemo(() => resolveSettingsSubTabFromPathname(location.pathname), [location.pathname]);
+  const isTaskSettingsEnabled = activeHousehold?.task_laziness_enabled ?? false;
   const [isMobileKeyboardOpen, setIsMobileKeyboardOpen] = useState(false);
   const [isMobileViewport, setIsMobileViewport] = useState(() =>
     typeof window !== "undefined" ? window.matchMedia("(max-width: 639px)").matches : false
@@ -382,7 +383,9 @@ const AppLayout = () => {
           { id: "overview", icon: LayoutList, labelKey: "subnav.tasks.overview", path: taskSubPathMap.overview },
           { id: "stats", icon: BarChart3, labelKey: "subnav.tasks.stats", path: taskSubPathMap.stats },
           { id: "history", icon: Archive, labelKey: "subnav.tasks.history", path: taskSubPathMap.history },
-          { id: "settings", icon: Settings, labelKey: "subnav.tasks.settings", path: taskSubPathMap.settings }
+          ...(isTaskSettingsEnabled
+            ? [{ id: "settings", icon: Settings, labelKey: "subnav.tasks.settings", path: taskSubPathMap.settings }]
+            : [])
         ]
       : tab === "finances"
         ? [
@@ -459,6 +462,12 @@ const AppLayout = () => {
   useEffect(() => {
     if (message) toast.success(message);
   }, [message]);
+
+  useEffect(() => {
+    if (!isTaskSettingsEnabled && location.pathname.startsWith("/tasks/settings")) {
+      void navigate({ to: "/tasks/overview", replace: true });
+    }
+  }, [isTaskSettingsEnabled, location.pathname, navigate]);
 
   useEffect(() => {
     const brand = t("app.brand");
