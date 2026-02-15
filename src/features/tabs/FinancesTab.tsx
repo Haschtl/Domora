@@ -58,6 +58,7 @@ import { Label } from "../../components/ui/label";
 import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "../../components/ui/popover";
 import { SectionPanel } from "../../components/ui/section-panel";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
+import { Tooltip as RadixTooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../../components/ui/tooltip";
 import { useSmartSuggestions } from "../../hooks/use-smart-suggestions";
 import {
   DropdownMenu,
@@ -1905,13 +1906,19 @@ export const FinancesTab = ({
                       children={(dateField: { state: { value: string }; handleChange: (value: string) => void }) => (
                         <div className="space-y-1">
                           <p className="text-xs font-medium text-slate-600 dark:text-slate-300">{t("finances.entryDate")}</p>
-                          <Input
-                            type="date"
-                            lang={locale}
-                            value={dateField.state.value}
-                            onChange={(event) => dateField.handleChange(event.target.value)}
-                            title={t("finances.entryDate")}
-                          />
+                          <TooltipProvider>
+                            <RadixTooltip>
+                              <TooltipTrigger asChild>
+                                <Input
+                                  type="date"
+                                  lang={locale}
+                                  value={dateField.state.value}
+                                  onChange={(event) => dateField.handleChange(event.target.value)}
+                                />
+                              </TooltipTrigger>
+                              <TooltipContent>{t("finances.entryDate")}</TooltipContent>
+                            </RadixTooltip>
+                          </TooltipProvider>
                         </div>
                       )}
                     />
@@ -2352,15 +2359,21 @@ export const FinancesTab = ({
                     }) => (
                       <div className="space-y-1">
                         <Label>{t("finances.filterFrom")}</Label>
-                        <Input
-                          type="date"
-                          lang={locale}
-                          value={field.state.value}
-                          onChange={(event) =>
-                            field.handleChange(event.target.value)
-                          }
-                          title={t("finances.filterFrom")}
-                        />
+                        <TooltipProvider>
+                          <RadixTooltip>
+                            <TooltipTrigger asChild>
+                              <Input
+                                type="date"
+                                lang={locale}
+                                value={field.state.value}
+                                onChange={(event) =>
+                                  field.handleChange(event.target.value)
+                                }
+                              />
+                            </TooltipTrigger>
+                            <TooltipContent>{t("finances.filterFrom")}</TooltipContent>
+                          </RadixTooltip>
+                        </TooltipProvider>
                       </div>
                     )}
                   />
@@ -2372,15 +2385,21 @@ export const FinancesTab = ({
                     }) => (
                       <div className="space-y-1">
                         <Label>{t("finances.filterTo")}</Label>
-                        <Input
-                          type="date"
-                          lang={locale}
-                          value={field.state.value}
-                          onChange={(event) =>
-                            field.handleChange(event.target.value)
-                          }
-                          title={t("finances.filterTo")}
-                        />
+                        <TooltipProvider>
+                          <RadixTooltip>
+                            <TooltipTrigger asChild>
+                              <Input
+                                type="date"
+                                lang={locale}
+                                value={field.state.value}
+                                onChange={(event) =>
+                                  field.handleChange(event.target.value)
+                                }
+                              />
+                            </TooltipTrigger>
+                            <TooltipContent>{t("finances.filterTo")}</TooltipContent>
+                          </RadixTooltip>
+                        </TooltipProvider>
                       </div>
                     )}
                   />
@@ -2547,6 +2566,7 @@ export const FinancesTab = ({
               formatMoney={moneyLabel}
               virtualized
               virtualHeight={420}
+              virtualLayout="inline"
               onEdit={group.isEditable ? onStartEditEntry : undefined}
               onDelete={
                 group.isEditable
@@ -3798,13 +3818,19 @@ export const FinancesTab = ({
               }) => (
                 <div className="space-y-1">
                   <Label>{t("finances.entryDate")}</Label>
-                  <Input
-                    type="date"
-                    lang={locale}
-                    value={field.state.value}
-                    onChange={(event) => field.handleChange(event.target.value)}
-                    title={t("finances.entryDate")}
-                  />
+                  <TooltipProvider>
+                    <RadixTooltip>
+                      <TooltipTrigger asChild>
+                        <Input
+                          type="date"
+                          lang={locale}
+                          value={field.state.value}
+                          onChange={(event) => field.handleChange(event.target.value)}
+                        />
+                      </TooltipTrigger>
+                      <TooltipContent>{t("finances.entryDate")}</TooltipContent>
+                    </RadixTooltip>
+                  </TooltipProvider>
                 </div>
               )}
             />

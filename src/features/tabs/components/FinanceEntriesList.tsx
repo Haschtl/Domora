@@ -34,6 +34,7 @@ interface FinanceEntriesListProps {
   busy?: boolean;
   virtualized?: boolean;
   virtualHeight?: number | string;
+  virtualLayout?: "absolute" | "inline";
 }
 
 export const FinanceEntriesList = ({
@@ -57,9 +58,11 @@ export const FinanceEntriesList = ({
   deleteLabel = "Delete",
   busy = false,
   virtualized = false,
-  virtualHeight = 420
+  virtualHeight = 420,
+  virtualLayout = "absolute"
 }: FinanceEntriesListProps) => {
   const parentRef = useRef<HTMLDivElement>(null);
+  const virtualItemGap = 12;
   const virtualCount = header ? entries.length + 1 : entries.length;
   const rowVirtualizer = useVirtualizer({
     count: virtualCount,
@@ -69,7 +72,7 @@ export const FinanceEntriesList = ({
       const entry = entries[header ? index - 1 : index];
       return entry?.id ?? index;
     },
-    estimateSize: () => 118,
+    estimateSize: () => 118 + virtualItemGap,
     measureElement: (element) => element.getBoundingClientRect().height,
     overscan: 8
   });
@@ -155,10 +158,15 @@ export const FinanceEntriesList = ({
     );
   }
 
+  const virtualContainerClassName =
+    virtualLayout === "inline"
+      ? "relative w-full overflow-auto rounded-xl border border-brand-100 bg-white/90 p-3 dark:border-slate-700 dark:bg-slate-900"
+      : "w-[100vw] left-0 p-4 pt-8 pb-20 absolute sm:relative sm:h-full sm:w-full overflow-auto -translate-y-8 sm:translate-y-0";
+
   return (
     <div
       ref={parentRef}
-      className="w-[100vw] left-0 p-4 pt-8 pb-20 absolute sm:relative sm:h-full sm:w-full overflow-auto -translate-y-8 sm:translate-y-0"
+      className={virtualContainerClassName}
       style={{ height: typeof virtualHeight === "number" ? `${virtualHeight}px` : virtualHeight }}
     >
       <div
@@ -178,7 +186,7 @@ export const FinanceEntriesList = ({
                 data-index={virtualItem.index}
                 style={{
                   transform: `translateY(${virtualItem.start}px)`,
-                  paddingBottom: "0.75rem",
+                  paddingBottom: `${virtualItemGap}px`,
                 }}
               >
                 {header}
@@ -195,7 +203,7 @@ export const FinanceEntriesList = ({
               data-index={virtualItem.index}
               style={{
                 transform: `translateY(${virtualItem.start}px)`,
-                paddingBottom: "0.5rem"
+                paddingBottom: `${virtualItemGap}px`
               }}
             >
               {renderEntry(entry)}

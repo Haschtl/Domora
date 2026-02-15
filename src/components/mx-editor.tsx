@@ -18,6 +18,7 @@ import {
   thematicBreakPlugin,
   toolbarPlugin
 } from "@mdxeditor/editor";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
 
 interface MXEditorProps {
   value: string;
@@ -102,19 +103,25 @@ export const MXEditor = ({
           <CreateLink />
           {hasInsertOptions ? (
             <span className="ml-2 inline-flex items-center gap-1">
-              <select
-                className="h-8 max-w-[220px] rounded-md border border-slate-300 bg-white px-2 text-xs text-slate-800 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
-                value={resolvedInsertValue}
-                onChange={(event) => setSelectedInsertValue(event.target.value)}
-                aria-label={insertPlaceholder}
-                title={insertPlaceholder}
-              >
-                {insertOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <select
+                      className="h-8 max-w-[220px] rounded-md border border-slate-300 bg-white px-2 text-xs text-slate-800 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+                      value={resolvedInsertValue}
+                      onChange={(event) => setSelectedInsertValue(event.target.value)}
+                      aria-label={insertPlaceholder}
+                    >
+                      {insertOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </TooltipTrigger>
+                  <TooltipContent>{insertPlaceholder}</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
               <button
                 type="button"
                 className="h-8 rounded-md border border-brand-300 bg-white px-2 text-xs font-medium text-brand-700 hover:bg-brand-50 dark:border-brand-700 dark:bg-slate-900 dark:text-brand-300 dark:hover:bg-slate-800"

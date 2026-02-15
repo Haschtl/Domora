@@ -464,6 +464,7 @@ export const resources = {
         averageDelayOverall: "Ø Verzögerung gesamt",
         averageDelayByMember: "Ø Verzögerung pro Person",
         averageDelayByTask: "Ø Verzögerung pro Aufgabe",
+        frequencyActualValue: "Tatsächlich sind's {{count}} Tage",
         forecastTitle: "Prognose bis nächster Turn",
         forecastDescription:
           "Erwartete Pimpers pro Mitglied bis es in der ausgewählten Aufgabe wieder dran ist.",

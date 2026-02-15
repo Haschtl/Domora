@@ -11,6 +11,7 @@ import { MXEditor } from "../../components/mx-editor";
 import { formatDateTime } from "../../lib/date";
 import { createMemberLabelGetter } from "../../lib/member-label";
 import { calculateBalancesByMember } from "../../lib/finance-math";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../../components/ui/tooltip";
 import type {
   BucketItem,
   CashAuditRequest,
@@ -237,38 +238,48 @@ const LandingWidgetEditorShell = ({
         onMove(sourceWidgetIndex, targetWidgetIndex);
       }}
     >
-      <button
-        type="button"
-        className="absolute left-2 top-2 z-20 inline-flex h-7 w-7 cursor-grab touch-none items-center justify-center rounded-full border border-slate-300 bg-white/95 text-slate-600 shadow-sm hover:bg-slate-100 active:cursor-grabbing dark:border-slate-600 dark:bg-slate-900/95 dark:text-slate-300 dark:hover:bg-slate-800"
-        onMouseDown={(event) => {
-          event.stopPropagation();
-        }}
-        onClick={(event) => {
-          event.preventDefault();
-          event.stopPropagation();
-        }}
-        aria-label={dragHandleLabel}
-        title={dragHandleLabel}
-      >
-        <GripVertical className="h-4 w-4" />
-      </button>
-      <button
-        type="button"
-        className="absolute right-2 top-2 z-20 inline-flex h-7 w-7 items-center justify-center rounded-full border border-slate-300 bg-white/95 text-slate-600 shadow-sm hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-900/95 dark:text-slate-300 dark:hover:bg-slate-800"
-        onMouseDown={(event) => {
-          event.preventDefault();
-          event.stopPropagation();
-        }}
-        onClick={(event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          onRemove();
-        }}
-        aria-label="Widget entfernen"
-        title="Widget entfernen"
-      >
-        <X className="h-4 w-4" />
-      </button>
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              className="absolute left-2 top-2 z-20 inline-flex h-7 w-7 cursor-grab touch-none items-center justify-center rounded-full border border-slate-300 bg-white/95 text-slate-600 shadow-sm hover:bg-slate-100 active:cursor-grabbing dark:border-slate-600 dark:bg-slate-900/95 dark:text-slate-300 dark:hover:bg-slate-800"
+              onMouseDown={(event) => {
+                event.stopPropagation();
+              }}
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+              }}
+              aria-label={dragHandleLabel}
+            >
+              <GripVertical className="h-4 w-4" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent>{dragHandleLabel}</TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              className="absolute right-2 top-2 z-20 inline-flex h-7 w-7 items-center justify-center rounded-full border border-slate-300 bg-white/95 text-slate-600 shadow-sm hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-900/95 dark:text-slate-300 dark:hover:bg-slate-800"
+              onMouseDown={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+              }}
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                onRemove();
+              }}
+              aria-label="Widget entfernen"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent>Widget entfernen</TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
       <div className="pointer-events-none select-none">{children}</div>
     </div>
   </div>
@@ -1081,18 +1092,24 @@ export const HomeTab = ({
               </div>
             ) : null}
             {!isEditingLanding ? (
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                className="absolute right-2 top-2 z-10 h-9 w-9 rounded-full border-brand-200 bg-white/95 px-0 shadow-sm hover:bg-brand-50 dark:border-slate-700 dark:bg-slate-900/95 dark:hover:bg-slate-800"
-                onClick={() => setIsEditingLanding(true)}
-                disabled={!canEdit}
-                aria-label={t("home.editLanding")}
-                title={t("home.editLanding")}
-              >
-                <Pencil className="h-4 w-4" />
-              </Button>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="absolute right-2 top-2 z-10 h-9 w-9 rounded-full border-brand-200 bg-white/95 px-0 shadow-sm hover:bg-brand-50 dark:border-slate-700 dark:bg-slate-900/95 dark:hover:bg-slate-800"
+                      onClick={() => setIsEditingLanding(true)}
+                      disabled={!canEdit}
+                      aria-label={t("home.editLanding")}
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>{t("home.editLanding")}</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
             ) : null}
             {!canEdit ? (
               <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">

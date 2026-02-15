@@ -13,6 +13,7 @@ import { PaymentBrandIcon } from "../../components/payment-brand-icon";
 import { Button } from "../../components/ui/button";
 import { Checkbox } from "../../components/ui/checkbox";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../../components/ui/tooltip";
 import {
   Dialog,
   DialogClose,
@@ -554,17 +555,23 @@ export const SettingsTab = ({
                         }
                         placeholder={t("settings.profileNamePlaceholder")}
                       />
-                      <Button
-                        type="submit"
-                        size="sm"
-                        variant="outline"
-                        className="absolute right-1 top-1/2 h-8 w-8 -translate-y-1/2 rounded-md p-0"
-                        disabled={busy}
-                        aria-label={t("settings.profileNameSave")}
-                        title={t("settings.profileNameSave")}
-                      >
-                        <Check className="h-4 w-4" />
-                      </Button>
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              type="submit"
+                              size="sm"
+                              variant="outline"
+                              className="absolute right-1 top-1/2 h-8 w-8 -translate-y-1/2 rounded-md p-0"
+                              disabled={busy}
+                              aria-label={t("settings.profileNameSave")}
+                            >
+                              <Check className="h-4 w-4" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>{t("settings.profileNameSave")}</TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
                     </div>
                   )}
                 />
@@ -613,20 +620,26 @@ export const SettingsTab = ({
                         </>
                       )}
                     />
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      className="absolute right-1 top-1/2 h-8 w-8 -translate-y-1/2 rounded-md p-0"
-                      disabled={busy}
-                      aria-label={t("settings.profileColorSave")}
-                      title={t("settings.profileColorSave")}
-                      onClick={() => {
-                        void profileColorForm.handleSubmit();
-                      }}
-                    >
-                      <Check className="h-4 w-4" />
-                    </Button>
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="absolute right-1 top-1/2 h-8 w-8 -translate-y-1/2 rounded-md p-0"
+                            disabled={busy}
+                            aria-label={t("settings.profileColorSave")}
+                            onClick={() => {
+                              void profileColorForm.handleSubmit();
+                            }}
+                          >
+                            <Check className="h-4 w-4" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>{t("settings.profileColorSave")}</TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
                   </div>
                 </div>
 
@@ -659,42 +672,52 @@ export const SettingsTab = ({
                     }}
                   />
                   <div className="relative inline-block w-fit">
-                    <div
-                      role="button"
-                      tabIndex={0}
-                      className="relative inline-flex h-20 w-20 items-center justify-center overflow-hidden rounded-full border border-brand-200 bg-brand-50 text-slate-600 transition hover:border-brand-300 hover:bg-brand-100 focus:outline-none focus:ring-2 focus:ring-brand-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:bg-slate-800"
-                      onClick={() => {
-                        if (!busy) profileUploadInputRef.current?.click();
-                      }}
-                      onKeyDown={(event) => {
-                        if (busy) return;
-                        if (event.key === "Enter" || event.key === " ") {
-                          event.preventDefault();
-                          profileUploadInputRef.current?.click();
-                        }
-                      }}
-                      aria-label={t("settings.profileImageUploadLabel")}
-                      title={t("settings.profileImageUploadLabel")}
-                    >
-                      <img
-                        src={profilePreviewImageUrl}
-                        alt={t("settings.profileImagePreviewAlt")}
-                        className="h-full w-full object-cover"
-                      />
-                      <button
-                        type="button"
-                        className="absolute bottom-1 right-1 inline-flex h-6 w-6 items-center justify-center rounded-full bg-white/90 text-slate-700 dark:bg-slate-900/90 dark:text-slate-200"
-                        onClick={(event) => {
-                          event.preventDefault();
-                          event.stopPropagation();
-                          profileCameraInputRef.current?.click();
-                        }}
-                        aria-label={t("tasks.stateImageCameraButton")}
-                        title={t("tasks.stateImageCameraButton")}
-                      >
-                        <Camera className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <div
+                            role="button"
+                            tabIndex={0}
+                            className="relative inline-flex h-20 w-20 items-center justify-center overflow-hidden rounded-full border border-brand-200 bg-brand-50 text-slate-600 transition hover:border-brand-300 hover:bg-brand-100 focus:outline-none focus:ring-2 focus:ring-brand-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:bg-slate-800"
+                            onClick={() => {
+                              if (!busy) profileUploadInputRef.current?.click();
+                            }}
+                            onKeyDown={(event) => {
+                              if (busy) return;
+                              if (event.key === "Enter" || event.key === " ") {
+                                event.preventDefault();
+                                profileUploadInputRef.current?.click();
+                              }
+                            }}
+                            aria-label={t("settings.profileImageUploadLabel")}
+                          >
+                            <img
+                              src={profilePreviewImageUrl}
+                              alt={t("settings.profileImagePreviewAlt")}
+                              className="h-full w-full object-cover"
+                            />
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <button
+                                  type="button"
+                                  className="absolute bottom-1 right-1 inline-flex h-6 w-6 items-center justify-center rounded-full bg-white/90 text-slate-700 dark:bg-slate-900/90 dark:text-slate-200"
+                                  onClick={(event) => {
+                                    event.preventDefault();
+                                    event.stopPropagation();
+                                    profileCameraInputRef.current?.click();
+                                  }}
+                                  aria-label={t("tasks.stateImageCameraButton")}
+                                >
+                                  <Camera className="h-3.5 w-3.5" />
+                                </button>
+                              </TooltipTrigger>
+                              <TooltipContent>{t("tasks.stateImageCameraButton")}</TooltipContent>
+                            </Tooltip>
+                          </div>
+                        </TooltipTrigger>
+                        <TooltipContent>{t("settings.profileImageUploadLabel")}</TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
                     {profileImageUrl ? (
                       <Button
                         type="button"
@@ -1170,46 +1193,56 @@ export const SettingsTab = ({
                   }}
                 />
                 <div className="relative">
-                  <div
-                    role="button"
-                    tabIndex={0}
-                    className="relative inline-flex h-28 w-full items-center justify-center overflow-hidden rounded-xl border border-brand-200 bg-brand-50 text-slate-600 transition hover:border-brand-300 hover:bg-brand-100 focus:outline-none focus:ring-2 focus:ring-brand-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:bg-slate-800"
-                    onClick={() => {
-                      if (busy || !isOwner) return;
-                      householdUploadInputRef.current?.click();
-                    }}
-                    onKeyDown={(event) => {
-                      if (busy || !isOwner) return;
-                      if (event.key === "Enter" || event.key === " ") {
-                        event.preventDefault();
-                        householdUploadInputRef.current?.click();
-                      }
-                    }}
-                    aria-label={t("settings.householdImageUploadLabel")}
-                    title={t("settings.householdImageUploadLabel")}
-                  >
-                    <span
-                      aria-label={t("settings.householdImagePreviewAlt")}
-                      className="absolute inset-0 bg-cover bg-center"
-                      style={{
-                        backgroundImage: householdPreviewBackgroundImage,
-                      }}
-                    />
-                    <span className="absolute inset-0 bg-gradient-to-r from-slate-900/30 via-slate-900/10 to-slate-900/35" />
-                    <button
-                      type="button"
-                      className="absolute bottom-2 right-2 inline-flex h-7 w-7 items-center justify-center rounded-full bg-white/90 text-slate-700 dark:bg-slate-900/90 dark:text-slate-200"
-                      onClick={(event) => {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        householdCameraInputRef.current?.click();
-                      }}
-                      aria-label={t("tasks.stateImageCameraButton")}
-                      title={t("tasks.stateImageCameraButton")}
-                    >
-                      <Camera className="h-4 w-4" />
-                    </button>
-                  </div>
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <div
+                          role="button"
+                          tabIndex={0}
+                          className="relative inline-flex h-28 w-full items-center justify-center overflow-hidden rounded-xl border border-brand-200 bg-brand-50 text-slate-600 transition hover:border-brand-300 hover:bg-brand-100 focus:outline-none focus:ring-2 focus:ring-brand-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:bg-slate-800"
+                          onClick={() => {
+                            if (busy || !isOwner) return;
+                            householdUploadInputRef.current?.click();
+                          }}
+                          onKeyDown={(event) => {
+                            if (busy || !isOwner) return;
+                            if (event.key === "Enter" || event.key === " ") {
+                              event.preventDefault();
+                              householdUploadInputRef.current?.click();
+                            }
+                          }}
+                          aria-label={t("settings.householdImageUploadLabel")}
+                        >
+                          <span
+                            aria-label={t("settings.householdImagePreviewAlt")}
+                            className="absolute inset-0 bg-cover bg-center"
+                            style={{
+                              backgroundImage: householdPreviewBackgroundImage,
+                            }}
+                          />
+                          <span className="absolute inset-0 bg-gradient-to-r from-slate-900/30 via-slate-900/10 to-slate-900/35" />
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <button
+                                type="button"
+                                className="absolute bottom-2 right-2 inline-flex h-7 w-7 items-center justify-center rounded-full bg-white/90 text-slate-700 dark:bg-slate-900/90 dark:text-slate-200"
+                                onClick={(event) => {
+                                  event.preventDefault();
+                                  event.stopPropagation();
+                                  householdCameraInputRef.current?.click();
+                                }}
+                                aria-label={t("tasks.stateImageCameraButton")}
+                              >
+                                <Camera className="h-4 w-4" />
+                              </button>
+                            </TooltipTrigger>
+                            <TooltipContent>{t("tasks.stateImageCameraButton")}</TooltipContent>
+                          </Tooltip>
+                        </div>
+                      </TooltipTrigger>
+                      <TooltipContent>{t("settings.householdImageUploadLabel")}</TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
                   {householdImageUrl ? (
                     <Button
                       type="button"
@@ -1361,6 +1394,9 @@ export const SettingsTab = ({
                   const isMemberOwner = member.role === "owner";
                   const canDemoteLastOwner = isMemberOwner && ownerCount <= 1;
                   const nextRole = isMemberOwner ? "member" : "owner";
+                  const roleLabel = isMemberOwner
+                    ? t("settings.tenantsDemoteOwner")
+                    : t("settings.tenantsMakeOwner");
                   const displayLabel = memberLabel(member.user_id);
                   const commonAreaLabel =
                     member.common_area_factor != null ? `${Math.round(member.common_area_factor * 100)}%` : "—";
@@ -1401,53 +1437,55 @@ export const SettingsTab = ({
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          className={
-                            isMemberOwner
-                              ? "border-amber-300 bg-amber-100 text-amber-900 hover:bg-amber-200 dark:border-amber-700 dark:bg-amber-900/40 dark:text-amber-200 dark:hover:bg-amber-900/60"
-                              : undefined
-                          }
-                          disabled={busy || !isOwner || canDemoteLastOwner}
-                          onClick={() => {
-                            void onSetMemberRole(member.user_id, nextRole);
-                          }}
-                          aria-label={
-                            isMemberOwner
-                              ? t("settings.tenantsDemoteOwner")
-                              : t("settings.tenantsMakeOwner")
-                          }
-                          title={
-                            isMemberOwner
-                              ? t("settings.tenantsDemoteOwner")
-                              : t("settings.tenantsMakeOwner")
-                          }
-                        >
-                          <Crown className="h-3.5 w-3.5 sm:mr-1" />
-                          <span className="hidden sm:inline">
-                            {isMemberOwner
-                              ? t("settings.tenantsDemoteOwner")
-                              : t("settings.tenantsMakeOwner")}
-                          </span>
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="danger"
-                          disabled={busy || !isOwner || isSelf}
-                          onClick={() => {
-                            void onRemoveMember(member.user_id);
-                          }}
-                          aria-label={t("settings.tenantsKick")}
-                          title={t("settings.tenantsKick")}
-                        >
-                          <UserMinus className="h-3.5 w-3.5 sm:mr-1" />
-                          <span className="hidden sm:inline">
-                            {t("settings.tenantsKick")}
-                          </span>
-                        </Button>
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                className={
+                                  isMemberOwner
+                                    ? "border-amber-300 bg-amber-100 text-amber-900 hover:bg-amber-200 dark:border-amber-700 dark:bg-amber-900/40 dark:text-amber-200 dark:hover:bg-amber-900/60"
+                                    : undefined
+                                }
+                                disabled={busy || !isOwner || canDemoteLastOwner}
+                                onClick={() => {
+                                  void onSetMemberRole(member.user_id, nextRole);
+                                }}
+                                aria-label={roleLabel}
+                              >
+                                <Crown className="h-3.5 w-3.5 sm:mr-1" />
+                                <span className="hidden sm:inline">
+                                  {roleLabel}
+                                </span>
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>{roleLabel}</TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="danger"
+                                disabled={busy || !isOwner || isSelf}
+                                onClick={() => {
+                                  void onRemoveMember(member.user_id);
+                                }}
+                                aria-label={t("settings.tenantsKick")}
+                              >
+                                <UserMinus className="h-3.5 w-3.5 sm:mr-1" />
+                                <span className="hidden sm:inline">
+                                  {t("settings.tenantsKick")}
+                                </span>
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>{t("settings.tenantsKick")}</TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
                       </div>
                     </li>
                   );
@@ -1475,17 +1513,26 @@ export const SettingsTab = ({
                   </DialogHeader>
 
                   <div className="space-y-3">
-                    <div className="mx-auto w-fit rounded-xl border border-brand-100 bg-white p-2 dark:border-slate-700 dark:bg-slate-900">
-                      <QRCode
-                        value={inviteUrl}
-                        size={192}
-                        title={t("settings.inviteQrAlt")}
-                        aria-label={t("settings.inviteQrAlt")}
-                        bgColor="#ffffff"
-                        fgColor="#111827"
-                        className="h-48 w-48 rounded-md"
-                      />
-                    </div>
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <div
+                            className="mx-auto w-fit rounded-xl border border-brand-100 bg-white p-2 dark:border-slate-700 dark:bg-slate-900"
+                            aria-label={t("settings.inviteQrAlt")}
+                          >
+                            <QRCode
+                              value={inviteUrl}
+                              size={192}
+                              aria-label={t("settings.inviteQrAlt")}
+                              bgColor="#ffffff"
+                              fgColor="#111827"
+                              className="h-48 w-48 rounded-md"
+                            />
+                          </div>
+                        </TooltipTrigger>
+                        <TooltipContent>{t("settings.inviteQrAlt")}</TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
 
                     <div className="space-y-1">
                       <Label>{t("settings.inviteCodeLabel")}</Label>

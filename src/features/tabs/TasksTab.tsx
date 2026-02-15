@@ -970,7 +970,9 @@ export const TasksTab = ({
             }}
           />
           <div className="relative">
-            <div
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div
               role="button"
               tabIndex={0}
               className="relative inline-flex h-28 w-full items-center justify-center overflow-hidden rounded-xl border border-brand-200 bg-brand-50 text-slate-600 transition hover:border-brand-300 hover:bg-brand-100 focus:outline-none focus:ring-2 focus:ring-brand-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:bg-slate-800"
@@ -982,7 +984,6 @@ export const TasksTab = ({
                 }
               }}
               aria-label={options.label}
-              title={options.label}
             >
               {field.state.value.trim().length > 0 ? (
                 <span
@@ -992,20 +993,27 @@ export const TasksTab = ({
                 />
               ) : null}
               <span className="absolute inset-0 bg-gradient-to-r from-slate-900/25 via-slate-900/5 to-slate-900/30" />
-              <button
-                type="button"
-                className="absolute bottom-2 right-2 inline-flex h-7 w-7 items-center justify-center rounded-full bg-white/90 text-slate-700 dark:bg-slate-900/90 dark:text-slate-200"
-                onClick={(event) => {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  options.cameraInputRef.current?.click();
-                }}
-                aria-label={t("tasks.stateImageCameraButton")}
-                title={t("tasks.stateImageCameraButton")}
-              >
-                <Camera className="h-4 w-4" />
-              </button>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    className="absolute bottom-2 right-2 inline-flex h-7 w-7 items-center justify-center rounded-full bg-white/90 text-slate-700 dark:bg-slate-900/90 dark:text-slate-200"
+                    onClick={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      options.cameraInputRef.current?.click();
+                    }}
+                    aria-label={t("tasks.stateImageCameraButton")}
+                  >
+                    <Camera className="h-4 w-4" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent>{t("tasks.stateImageCameraButton")}</TooltipContent>
+              </Tooltip>
             </div>
+              </TooltipTrigger>
+              <TooltipContent>{options.label}</TooltipContent>
+            </Tooltip>
             {field.state.value.trim().length > 0 ? (
               <Button
                 type="button"
@@ -1074,6 +1082,34 @@ export const TasksTab = ({
       datasets
     };
   }, [completions, language, resolveMemberColor, userLabel]);
+  const actualFrequencyDaysByTaskId = useMemo(() => {
+    const byTask = new Map<string, number[]>();
+    completions.forEach((entry) => {
+      const completedAt = new Date(entry.completed_at).getTime();
+      if (Number.isNaN(completedAt)) return;
+      const list = byTask.get(entry.task_id) ?? [];
+      list.push(completedAt);
+      byTask.set(entry.task_id, list);
+    });
+
+    const averages = new Map<string, number | null>();
+    byTask.forEach((timestamps, taskId) => {
+      if (timestamps.length < 2) {
+        averages.set(taskId, null);
+        return;
+      }
+      timestamps.sort((a, b) => a - b);
+      let totalDiffMs = 0;
+      for (let i = 1; i < timestamps.length; i += 1) {
+        totalDiffMs += timestamps[i] - timestamps[i - 1];
+      }
+      const avgMs = totalDiffMs / (timestamps.length - 1);
+      const avgDays = avgMs / (24 * 60 * 60 * 1000);
+      averages.set(taskId, avgDays);
+    });
+
+    return averages;
+  }, [completions]);
   const backlogAndDelayStats = useMemo(() => {
     const nowMs = Date.now();
     const dueTasks = statsFilteredTasks.filter(
@@ -1997,16 +2033,20 @@ export const TasksTab = ({
                                 }) => (
                                   <div className="space-y-1">
                                     <Label>{t("tasks.startDate")}</Label>
-                                    <Input
-                                      type="date"
-                                      lang={language}
-                                      value={field.state.value}
-                                      onChange={(event) =>
-                                        field.handleChange(event.target.value)
-                                      }
-                                      title={t("tasks.startDate")}
-                                      required
-                                    />
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <Input
+                                          type="date"
+                                          lang={language}
+                                          value={field.state.value}
+                                          onChange={(event) =>
+                                            field.handleChange(event.target.value)
+                                          }
+                                          required
+                                        />
+                                      </TooltipTrigger>
+                                      <TooltipContent>{t("tasks.startDate")}</TooltipContent>
+                                    </Tooltip>
                                   </div>
                                 )}
                               />
@@ -2291,6 +2331,15 @@ export const TasksTab = ({
                               <p>
                                 {t("tasks.frequencyValue", {
                                   count: task.frequency_days,
+                                })}
+                              </p>
+                              <p>
+                                {t("tasks.frequencyActualValue", {
+                                  count: (() => {
+                                    const actual = actualFrequencyDaysByTaskId.get(task.id);
+                                    if (actual == null) return "-";
+                                    return Number(actual.toFixed(1));
+                                  })(),
                                 })}
                               </p>
                             </TooltipContent>
@@ -3445,16 +3494,20 @@ export const TasksTab = ({
                         }) => (
                           <div className="space-y-1">
                             <Label>{t("tasks.startDate")}</Label>
-                            <Input
-                              type="date"
-                              lang={language}
-                              value={field.state.value}
-                              onChange={(event) =>
-                                field.handleChange(event.target.value)
-                              }
-                              title={t("tasks.startDate")}
-                              required
-                            />
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Input
+                                  type="date"
+                                  lang={language}
+                                  value={field.state.value}
+                                  onChange={(event) =>
+                                    field.handleChange(event.target.value)
+                                  }
+                                  required
+                                />
+                              </TooltipTrigger>
+                              <TooltipContent>{t("tasks.startDate")}</TooltipContent>
+                            </Tooltip>
                           </div>
                         )}
                       />

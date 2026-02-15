@@ -31,6 +31,7 @@ interface FinanceHistoryCardProps {
   busy?: boolean;
   virtualized?: boolean;
   virtualHeight?: number;
+  virtualLayout?: "absolute" | "inline";
   collapsible?: boolean;
   defaultOpen?: boolean;
   className?: string;
@@ -62,6 +63,7 @@ export const FinanceHistoryCard = ({
   busy = false,
   virtualized = false,
   virtualHeight = 420,
+  virtualLayout = "absolute",
   collapsible = false,
   defaultOpen = true,
   className
@@ -88,6 +90,7 @@ export const FinanceHistoryCard = ({
         busy={busy}
         virtualized={virtualized}
         virtualHeight={virtualHeight}
+        virtualLayout={virtualLayout}
       />
       {entries.length === 0 ? <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">{emptyText}</p> : null}
     </>

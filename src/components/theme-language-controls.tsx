@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { persistLanguagePreference } from "../i18n";
 import { Button } from "./ui/button";
 import { cn } from "../lib/utils";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
 import { useTheme, type ThemePreference } from "../lib/use-theme";
 import type { SupportedLanguage } from "../lib/translations";
 
@@ -44,55 +45,61 @@ export const ThemeLanguageControls = ({ surface = "brand" }: ThemeLanguageContro
   const inactiveButtonClass = useBrandSurface ? "opacity-80" : "opacity-90";
 
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      <div className={`flex items-center gap-1 ${panelClass}`}>
-        <span className={labelClass}>{t("theme.label")}</span>
-        {themeItems.map((item) => {
-          const Icon = item.icon;
-          const active = theme === item.id;
+    <TooltipProvider>
+      <div className="flex flex-wrap items-center gap-2">
+        <div className={`flex items-center gap-1 ${panelClass}`}>
+          <span className={labelClass}>{t("theme.label")}</span>
+          {themeItems.map((item) => {
+            const Icon = item.icon;
+            const active = theme === item.id;
+            const label = t(`theme.${item.id}`);
 
-          return (
+            return (
+              <Tooltip key={item.id}>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    className={cn(
+                      buttonBaseClass,
+                      active ? activeButtonClass : inactiveButtonClass
+                    )}
+                    onClick={() => setTheme(item.id)}
+                    aria-label={label}
+                  >
+                    <Icon className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>{label}</TooltipContent>
+              </Tooltip>
+            );
+          })}
+        </div>
+
+        <div className={`flex items-center gap-1 ${panelClass}`}>
+          <span className={labelClass}>{t("language.label")}</span>
+          {languages.map((language) => (
             <Button
-              key={item.id}
+              key={language}
               type="button"
               size="sm"
               variant="ghost"
               className={cn(
                 buttonBaseClass,
-                active ? activeButtonClass : inactiveButtonClass
+                currentLanguage === language ? activeButtonClass : inactiveButtonClass
               )}
-              onClick={() => setTheme(item.id)}
-              title={t(`theme.${item.id}`)}
-              aria-label={t(`theme.${item.id}`)}
+              onClick={() => {
+                persistLanguagePreference(language);
+                void i18n.changeLanguage(language);
+              }}
+              aria-label={t(`language.${language}`)}
             >
-              <Icon className="h-4 w-4" />
+              {t(`language.${language}`)}
             </Button>
-          );
-        })}
+          ))}
+        </div>
       </div>
-
-      <div className={`flex items-center gap-1 ${panelClass}`}>
-        <span className={labelClass}>{t("language.label")}</span>
-        {languages.map((language) => (
-          <Button
-            key={language}
-            type="button"
-            size="sm"
-            variant="ghost"
-            className={cn(
-              buttonBaseClass,
-              currentLanguage === language ? activeButtonClass : inactiveButtonClass
-            )}
-            onClick={() => {
-              persistLanguagePreference(language);
-              void i18n.changeLanguage(language);
-            }}
-            aria-label={t(`language.${language}`)}
-          >
-            {t(`language.${language}`)}
-          </Button>
-        ))}
-      </div>
-    </div>
+    </TooltipProvider>
   );
 };
