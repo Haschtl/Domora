@@ -327,6 +327,10 @@ export const TasksTab = ({
   const addTargetStateUploadInputRef = useRef<HTMLInputElement | null>(null);
   const editCurrentStateUploadInputRef = useRef<HTMLInputElement | null>(null);
   const editTargetStateUploadInputRef = useRef<HTMLInputElement | null>(null);
+  const addCurrentStateCameraInputRef = useRef<HTMLInputElement | null>(null);
+  const addTargetStateCameraInputRef = useRef<HTMLInputElement | null>(null);
+  const editCurrentStateCameraInputRef = useRef<HTMLInputElement | null>(null);
+  const editTargetStateCameraInputRef = useRef<HTMLInputElement | null>(null);
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: { distance: 6 }
@@ -752,6 +756,7 @@ export const TasksTab = ({
       label: string;
       previewAlt: string;
       uploadInputRef: RefObject<HTMLInputElement | null>;
+      cameraInputRef: RefObject<HTMLInputElement | null>;
       setError: (message: string | null) => void;
     }
   ) => (
@@ -774,11 +779,33 @@ export const TasksTab = ({
               event.currentTarget.value = "";
             }}
           />
+          <input
+            ref={options.cameraInputRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            className="sr-only"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              if (!file) return;
+              void handleTaskImageFileSelect(file, options.setError).then((dataUrl) => {
+                if (dataUrl) field.handleChange(dataUrl);
+              });
+              event.currentTarget.value = "";
+            }}
+          />
           <div className="relative">
-            <button
-              type="button"
-              className="relative inline-flex h-28 w-full items-center justify-center overflow-hidden rounded-xl border border-brand-200 bg-brand-50 text-slate-600 transition hover:border-brand-300 hover:bg-brand-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:bg-slate-800"
+            <div
+              role="button"
+              tabIndex={0}
+              className="relative inline-flex h-28 w-full items-center justify-center overflow-hidden rounded-xl border border-brand-200 bg-brand-50 text-slate-600 transition hover:border-brand-300 hover:bg-brand-100 focus:outline-none focus:ring-2 focus:ring-brand-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:bg-slate-800"
               onClick={() => options.uploadInputRef.current?.click()}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  options.uploadInputRef.current?.click();
+                }
+              }}
               aria-label={options.label}
               title={options.label}
             >
@@ -790,10 +817,20 @@ export const TasksTab = ({
                 />
               ) : null}
               <span className="absolute inset-0 bg-gradient-to-r from-slate-900/25 via-slate-900/5 to-slate-900/30" />
-              <span className="absolute bottom-2 right-2 inline-flex h-7 w-7 items-center justify-center rounded-full bg-white/90 text-slate-700 dark:bg-slate-900/90 dark:text-slate-200">
+              <button
+                type="button"
+                className="absolute bottom-2 right-2 inline-flex h-7 w-7 items-center justify-center rounded-full bg-white/90 text-slate-700 dark:bg-slate-900/90 dark:text-slate-200"
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  options.cameraInputRef.current?.click();
+                }}
+                aria-label={t("tasks.stateImageCameraButton")}
+                title={t("tasks.stateImageCameraButton")}
+              >
                 <Camera className="h-4 w-4" />
-              </span>
-            </button>
+              </button>
+            </div>
             {field.state.value.trim().length > 0 ? (
               <Button
                 type="button"
@@ -1135,7 +1172,7 @@ export const TasksTab = ({
             isVacation={member?.vacation_mode ?? false}
             className={`h-7 w-7 rounded-full border-2 border-white bg-brand-100 text-[11px] font-semibold text-brand-800 dark:border-slate-900 dark:bg-brand-900 dark:text-brand-100 ${
               index > 0 ? "-ml-2" : ""
-            }`}
+            } ${member?.vacation_mode ? "opacity-50" : ""}`}
           />
         );
       })}
@@ -1698,6 +1735,7 @@ export const TasksTab = ({
                                   label: t("tasks.currentStateImageLabel"),
                                   previewAlt: t("tasks.currentStateImagePreviewAlt"),
                                   uploadInputRef: addCurrentStateUploadInputRef,
+                                  cameraInputRef: addCurrentStateCameraInputRef,
                                   setError: setTaskImageUploadError,
                                 })}
                                 {renderTaskStateImageField(taskForm, {
@@ -1705,6 +1743,7 @@ export const TasksTab = ({
                                   label: t("tasks.targetStateImageLabel"),
                                   previewAlt: t("tasks.targetStateImagePreviewAlt"),
                                   uploadInputRef: addTargetStateUploadInputRef,
+                                  cameraInputRef: addTargetStateCameraInputRef,
                                   setError: setTaskImageUploadError,
                                 })}
                               </div>
@@ -2830,44 +2869,6 @@ export const TasksTab = ({
               />
 
               <div className="grid gap-2 sm:grid-cols-2">
-                {renderTaskStateImageField(editTaskForm, {
-                  fieldName: "currentStateImageUrl",
-                  label: t("tasks.currentStateImageLabel"),
-                  previewAlt: t("tasks.currentStateImagePreviewAlt"),
-                  uploadInputRef: editCurrentStateUploadInputRef,
-                  setError: setEditTaskImageUploadError,
-                })}
-                {renderTaskStateImageField(editTaskForm, {
-                  fieldName: "targetStateImageUrl",
-                  label: t("tasks.targetStateImageLabel"),
-                  previewAlt: t("tasks.targetStateImagePreviewAlt"),
-                  uploadInputRef: editTargetStateUploadInputRef,
-                  setError: setEditTaskImageUploadError,
-                })}
-              </div>
-
-              <div className="grid gap-2 sm:grid-cols-3">
-                <editTaskForm.Field
-                  name="startDate"
-                  children={(field: {
-                    state: { value: string };
-                    handleChange: (value: string) => void;
-                  }) => (
-                    <div className="space-y-1">
-                      <Label>{t("tasks.startDate")}</Label>
-                      <Input
-                        type="date"
-                        lang={language}
-                        value={field.state.value}
-                        onChange={(event) =>
-                          field.handleChange(event.target.value)
-                        }
-                        title={t("tasks.startDate")}
-                        required
-                      />
-                    </div>
-                  )}
-                />
                 <editTaskForm.Field
                   name="frequencyDays"
                   children={(field: {
@@ -2913,59 +2914,119 @@ export const TasksTab = ({
                   )}
                 />
               </div>
-              <editTaskForm.Field
-                name="prioritizeLowPimpers"
-                children={(field: {
-                  state: { value: boolean };
-                  handleChange: (value: boolean) => void;
-                }) => (
-                  <div className="flex items-center justify-between rounded-xl border border-brand-200 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900">
-                    <div>
-                      <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
-                        {t("tasks.prioritizeLowPimpers")}
-                      </p>
-                      <p className="text-xs text-slate-500 dark:text-slate-400">
-                        {t("tasks.prioritizeLowPimpersHint")}
-                      </p>
+
+              <Accordion
+                type="single"
+                collapsible
+                className="rounded-xl border border-brand-200 bg-white px-3 dark:border-slate-700 dark:bg-slate-900"
+              >
+                <AccordionItem value="more" className="border-none">
+                  <AccordionTrigger className="py-2">
+                    {t("tasks.moreOptions")}
+                  </AccordionTrigger>
+                  <AccordionContent className="pb-3">
+                    <div className="space-y-3">
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        {renderTaskStateImageField(editTaskForm, {
+                          fieldName: "currentStateImageUrl",
+                          label: t("tasks.currentStateImageLabel"),
+                          previewAlt: t("tasks.currentStateImagePreviewAlt"),
+                          uploadInputRef: editCurrentStateUploadInputRef,
+                          cameraInputRef: editCurrentStateCameraInputRef,
+                          setError: setEditTaskImageUploadError,
+                        })}
+                        {renderTaskStateImageField(editTaskForm, {
+                          fieldName: "targetStateImageUrl",
+                          label: t("tasks.targetStateImageLabel"),
+                          previewAlt: t("tasks.targetStateImagePreviewAlt"),
+                          uploadInputRef: editTargetStateUploadInputRef,
+                          cameraInputRef: editTargetStateCameraInputRef,
+                          setError: setEditTaskImageUploadError,
+                        })}
+                      </div>
+
+                      <editTaskForm.Field
+                        name="startDate"
+                        children={(field: {
+                          state: { value: string };
+                          handleChange: (value: string) => void;
+                        }) => (
+                          <div className="space-y-1">
+                            <Label>{t("tasks.startDate")}</Label>
+                            <Input
+                              type="date"
+                              lang={language}
+                              value={field.state.value}
+                              onChange={(event) =>
+                                field.handleChange(event.target.value)
+                              }
+                              title={t("tasks.startDate")}
+                              required
+                            />
+                          </div>
+                        )}
+                      />
+
+                      <editTaskForm.Field
+                        name="prioritizeLowPimpers"
+                        children={(field: {
+                          state: { value: boolean };
+                          handleChange: (value: boolean) => void;
+                        }) => (
+                          <div className="flex items-center justify-between rounded-xl border border-brand-200 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900">
+                            <div>
+                              <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
+                                {t("tasks.prioritizeLowPimpers")}
+                              </p>
+                              <p className="text-xs text-slate-500 dark:text-slate-400">
+                                {t("tasks.prioritizeLowPimpersHint")}
+                              </p>
+                            </div>
+                            <Switch
+                              checked={field.state.value}
+                              onCheckedChange={field.handleChange}
+                            />
+                          </div>
+                        )}
+                      />
+
+                      <editTaskForm.Field
+                        name="assigneeFairnessMode"
+                        children={(field: {
+                          state: { value: "actual" | "projection" };
+                          handleChange: (value: "actual" | "projection") => void;
+                        }) => (
+                          <div className="space-y-1">
+                            <Label>{t("tasks.assigneeFairnessModeLabel")}</Label>
+                            <select
+                              className="h-10 w-full rounded-xl border border-brand-200 bg-white px-3 text-sm text-slate-900 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                              value={field.state.value}
+                              onChange={(event) =>
+                                field.handleChange(
+                                  event.target.value as "actual" | "projection",
+                                )
+                              }
+                              disabled={
+                                !editTaskForm.state.values.prioritizeLowPimpers
+                              }
+                            >
+                              <option value="actual">
+                                {t("tasks.assigneeFairnessModeActual")}
+                              </option>
+                              <option value="projection">
+                                {t("tasks.assigneeFairnessModeProjection")}
+                              </option>
+                            </select>
+                            <p className="text-xs text-slate-500 dark:text-slate-400">
+                              {t("tasks.assigneeFairnessModeHint")}
+                            </p>
+                          </div>
+                        )}
+                      />
                     </div>
-                    <Switch
-                      checked={field.state.value}
-                      onCheckedChange={field.handleChange}
-                    />
-                  </div>
-                )}
-              />
-              <editTaskForm.Field
-                name="assigneeFairnessMode"
-                children={(field: {
-                  state: { value: "actual" | "projection" };
-                  handleChange: (value: "actual" | "projection") => void;
-                }) => (
-                  <div className="space-y-1">
-                    <Label>{t("tasks.assigneeFairnessModeLabel")}</Label>
-                    <select
-                      className="h-10 w-full rounded-xl border border-brand-200 bg-white px-3 text-sm text-slate-900 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                      value={field.state.value}
-                      onChange={(event) =>
-                        field.handleChange(
-                          event.target.value as "actual" | "projection",
-                        )
-                      }
-                      disabled={!editTaskForm.state.values.prioritizeLowPimpers}
-                    >
-                      <option value="actual">
-                        {t("tasks.assigneeFairnessModeActual")}
-                      </option>
-                      <option value="projection">
-                        {t("tasks.assigneeFairnessModeProjection")}
-                      </option>
-                    </select>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">
-                      {t("tasks.assigneeFairnessModeHint")}
-                    </p>
-                  </div>
-                )}
-              />
+                  </AccordionContent>
+                </AccordionItem>
+              </Accordion>
 
               <SectionPanel className="bg-brand-50/40">
                 <p className="mb-2 text-sm font-semibold text-slate-900 dark:text-slate-100">

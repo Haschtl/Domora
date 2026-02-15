@@ -163,7 +163,9 @@ export const SettingsTab = ({
   const [pushPreferencesBusy, setPushPreferencesBusy] = useState(false);
   const [pushPreferencesError, setPushPreferencesError] = useState<string | null>(null);
   const profileUploadInputRef = useRef<HTMLInputElement | null>(null);
+  const profileCameraInputRef = useRef<HTMLInputElement | null>(null);
   const householdUploadInputRef = useRef<HTMLInputElement | null>(null);
+  const householdCameraInputRef = useRef<HTMLInputElement | null>(null);
 
   const profileForm = useForm({
     defaultValues: {
@@ -636,13 +638,34 @@ export const SettingsTab = ({
                       event.currentTarget.value = "";
                     }}
                   />
+                  <input
+                    ref={profileCameraInputRef}
+                    id="profile-image-camera"
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    className="sr-only"
+                    onChange={(event) => {
+                      const file = event.target.files?.[0];
+                      if (!file) return;
+                      void onProfileFileChange(file);
+                      event.currentTarget.value = "";
+                    }}
+                  />
                   <div className="relative inline-block w-fit">
-                    <button
-                      type="button"
-                      className="relative inline-flex h-20 w-20 items-center justify-center overflow-hidden rounded-full border border-brand-200 bg-brand-50 text-slate-600 transition hover:border-brand-300 hover:bg-brand-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:bg-slate-800"
-                      disabled={busy}
+                    <div
+                      role="button"
+                      tabIndex={0}
+                      className="relative inline-flex h-20 w-20 items-center justify-center overflow-hidden rounded-full border border-brand-200 bg-brand-50 text-slate-600 transition hover:border-brand-300 hover:bg-brand-100 focus:outline-none focus:ring-2 focus:ring-brand-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:bg-slate-800"
                       onClick={() => {
-                        profileUploadInputRef.current?.click();
+                        if (!busy) profileUploadInputRef.current?.click();
+                      }}
+                      onKeyDown={(event) => {
+                        if (busy) return;
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          profileUploadInputRef.current?.click();
+                        }
                       }}
                       aria-label={t("settings.profileImageUploadLabel")}
                       title={t("settings.profileImageUploadLabel")}
@@ -652,10 +675,20 @@ export const SettingsTab = ({
                         alt={t("settings.profileImagePreviewAlt")}
                         className="h-full w-full object-cover"
                       />
-                      <span className="absolute bottom-1 right-1 inline-flex h-6 w-6 items-center justify-center rounded-full bg-white/90 text-slate-700 dark:bg-slate-900/90 dark:text-slate-200">
+                      <button
+                        type="button"
+                        className="absolute bottom-1 right-1 inline-flex h-6 w-6 items-center justify-center rounded-full bg-white/90 text-slate-700 dark:bg-slate-900/90 dark:text-slate-200"
+                        onClick={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          profileCameraInputRef.current?.click();
+                        }}
+                        aria-label={t("tasks.stateImageCameraButton")}
+                        title={t("tasks.stateImageCameraButton")}
+                      >
                         <Camera className="h-3.5 w-3.5" />
-                      </span>
-                    </button>
+                      </button>
+                    </div>
                     {profileImageUrl ? (
                       <Button
                         type="button"
@@ -1078,13 +1111,35 @@ export const SettingsTab = ({
                     event.currentTarget.value = "";
                   }}
                 />
+                <input
+                  ref={householdCameraInputRef}
+                  id="household-image-camera"
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  className="sr-only"
+                  onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    if (!file) return;
+                    void onHouseholdFileChange(file);
+                    event.currentTarget.value = "";
+                  }}
+                />
                 <div className="relative">
-                  <button
-                    type="button"
-                    className="relative inline-flex h-28 w-full items-center justify-center overflow-hidden rounded-xl border border-brand-200 bg-brand-50 text-slate-600 transition hover:border-brand-300 hover:bg-brand-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:bg-slate-800"
-                    disabled={busy || !isOwner}
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    className="relative inline-flex h-28 w-full items-center justify-center overflow-hidden rounded-xl border border-brand-200 bg-brand-50 text-slate-600 transition hover:border-brand-300 hover:bg-brand-100 focus:outline-none focus:ring-2 focus:ring-brand-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:bg-slate-800"
                     onClick={() => {
+                      if (busy || !isOwner) return;
                       householdUploadInputRef.current?.click();
+                    }}
+                    onKeyDown={(event) => {
+                      if (busy || !isOwner) return;
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        householdUploadInputRef.current?.click();
+                      }
                     }}
                     aria-label={t("settings.householdImageUploadLabel")}
                     title={t("settings.householdImageUploadLabel")}
@@ -1097,10 +1152,20 @@ export const SettingsTab = ({
                       }}
                     />
                     <span className="absolute inset-0 bg-gradient-to-r from-slate-900/30 via-slate-900/10 to-slate-900/35" />
-                    <span className="absolute bottom-2 right-2 inline-flex h-7 w-7 items-center justify-center rounded-full bg-white/90 text-slate-700 dark:bg-slate-900/90 dark:text-slate-200">
+                    <button
+                      type="button"
+                      className="absolute bottom-2 right-2 inline-flex h-7 w-7 items-center justify-center rounded-full bg-white/90 text-slate-700 dark:bg-slate-900/90 dark:text-slate-200"
+                      onClick={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        householdCameraInputRef.current?.click();
+                      }}
+                      aria-label={t("tasks.stateImageCameraButton")}
+                      title={t("tasks.stateImageCameraButton")}
+                    >
                       <Camera className="h-4 w-4" />
-                    </span>
-                  </button>
+                    </button>
+                  </div>
                   {householdImageUrl ? (
                     <Button
                       type="button"
