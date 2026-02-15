@@ -1,5 +1,6 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "@tanstack/react-router";
+import { useQueryClient } from "@tanstack/react-query";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Archive,
@@ -25,22 +26,42 @@ import type { AppTab } from "./lib/types";
 import { Button } from "./components/ui/button";
 import { Card, CardDescription, CardHeader, CardTitle } from "./components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "./components/ui/dialog";
+import { WorkspaceProvider } from "./context/workspace-context";
+import { useHouseholdEvents, useHouseholdTasks } from "./hooks/use-household-data";
+import { useTaskNotifications } from "./hooks/useTaskNotifications";
 import { useWorkspaceController } from "./hooks/useWorkspaceController";
+import { ensureHouseholdQueries } from "./lib/household-queries";
 
 const AuthView = lazy(() => import("./features/AuthView").then((module) => ({ default: module.AuthView })));
 const HouseholdSetupView = lazy(() =>
   import("./features/HouseholdSetupView").then((module) => ({ default: module.HouseholdSetupView }))
 );
-const HomeTab = lazy(() => import("./features/tabs/HomeTab").then((module) => ({ default: module.HomeTab })));
-const ShoppingTab = lazy(() =>
-  import("./features/tabs/ShoppingTab").then((module) => ({ default: module.ShoppingTab }))
+const HomeSummaryPage = lazy(() => import("./pages/home/summary").then((module) => ({ default: module.HomeSummaryPage })));
+const HomeBucketPage = lazy(() => import("./pages/home/bucket").then((module) => ({ default: module.HomeBucketPage })));
+const HomeFeedPage = lazy(() => import("./pages/home/feed").then((module) => ({ default: module.HomeFeedPage })));
+const ShoppingListPage = lazy(() =>
+  import("./pages/shopping/list").then((module) => ({ default: module.ShoppingListPage }))
 );
-const TasksTab = lazy(() => import("./features/tabs/TasksTab").then((module) => ({ default: module.TasksTab })));
-const FinancesTab = lazy(() =>
-  import("./features/tabs/FinancesTab").then((module) => ({ default: module.FinancesTab }))
+const ShoppingHistoryPage = lazy(() =>
+  import("./pages/shopping/history").then((module) => ({ default: module.ShoppingHistoryPage }))
 );
-const SettingsTab = lazy(() =>
-  import("./features/tabs/SettingsTab").then((module) => ({ default: module.SettingsTab }))
+const TasksOverviewPage = lazy(() => import("./pages/tasks/overview").then((module) => ({ default: module.TasksOverviewPage })));
+const TasksStatsPage = lazy(() => import("./pages/tasks/stats").then((module) => ({ default: module.TasksStatsPage })));
+const TasksHistoryPage = lazy(() => import("./pages/tasks/history").then((module) => ({ default: module.TasksHistoryPage })));
+const TasksSettingsPage = lazy(() => import("./pages/tasks/settings").then((module) => ({ default: module.TasksSettingsPage })));
+const FinancesOverviewPage = lazy(() =>
+  import("./pages/finances/overview").then((module) => ({ default: module.FinancesOverviewPage }))
+);
+const FinancesStatsPage = lazy(() => import("./pages/finances/stats").then((module) => ({ default: module.FinancesStatsPage })));
+const FinancesArchivePage = lazy(() =>
+  import("./pages/finances/archive").then((module) => ({ default: module.FinancesArchivePage }))
+);
+const FinancesSubscriptionsPage = lazy(() =>
+  import("./pages/finances/subscriptions").then((module) => ({ default: module.FinancesSubscriptionsPage }))
+);
+const SettingsMePage = lazy(() => import("./pages/settings/me").then((module) => ({ default: module.SettingsMePage })));
+const SettingsHouseholdPage = lazy(() =>
+  import("./pages/settings/household").then((module) => ({ default: module.SettingsHouseholdPage }))
 );
 const AppParticlesBackground = lazy(() =>
   import("./components/app-particles-background").then((module) => ({ default: module.AppParticlesBackground }))
@@ -153,10 +174,12 @@ type PushPromptState = {
   enabledAt?: number;
 };
 
-const App = () => {
+const AppLayout = () => {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
+  const queryClient = useQueryClient();
+  const workspace = useWorkspaceController();
   const {
     session,
     loadingSession,
@@ -166,24 +189,7 @@ const App = () => {
     households,
     householdsLoadError,
     activeHousehold,
-    shoppingItems,
-    bucketItems,
-    shoppingCompletions,
-    tasks,
-    taskCompletions,
-    finances,
-    financeSubscriptions,
-    cashAuditRequests,
-    householdEvents,
-    householdMembers,
-    memberPimpers,
     userId,
-    userEmail,
-    userAvatarUrl,
-    userDisplayName,
-    userPaypalName,
-    userRevolutName,
-    userWeroName,
     currentMember,
     notificationPermission,
     setActiveHousehold,
@@ -193,47 +199,8 @@ const App = () => {
     onSignOut,
     onCreateHousehold,
     onJoinHousehold,
-    onAddShoppingItem,
-    onAddBucketItem,
-    onToggleBucketItem,
-    onUpdateBucketItem,
-    onDeleteBucketItem,
-    onToggleBucketDateVote,
-    onToggleShoppingItem,
-    onUpdateShoppingItem,
-    onDeleteShoppingItem,
-    onAddTask,
-    onCompleteTask,
-    onSkipTask,
-    onTakeoverTask,
-    onToggleTaskActive,
-    onUpdateTask,
-    onDeleteTask,
-    onRateTaskCompletion,
-    onAddFinanceEntry,
-    onUpdateFinanceEntry,
-    onDeleteFinanceEntry,
-    onAddFinanceSubscription,
-    onUpdateFinanceSubscription,
-    onDeleteFinanceSubscription,
-    onRequestCashAudit,
-    onEnableNotifications,
-    onUpdateHomeMarkdown,
-    onUpdateHousehold,
-    onUpdateMemberSettings,
-    onUpdateMemberSettingsForUser,
-    onUpdateMemberTaskLaziness,
-    onUpdateVacationMode,
-    onResetHouseholdPimpers,
-    onUpdateUserAvatar,
-    onUpdateUserDisplayName,
-    onUpdateUserColor,
-    onUpdateUserPaymentHandles,
-    onLeaveHousehold,
-    onDissolveHousehold,
-    onSetMemberRole,
-    onRemoveMember
-  } = useWorkspaceController();
+    onEnableNotifications
+  } = workspace;
 
   const handleForegroundPush = useCallback(
     (data: Record<string, string>) => {
@@ -265,8 +232,62 @@ const App = () => {
   const [showLoadingOverlay, setShowLoadingOverlay] = useState(loadingSession);
   const [loadingOverlayOpaque, setLoadingOverlayOpaque] = useState(loadingSession);
   const [isPushPromptOpen, setIsPushPromptOpen] = useState(false);
+  const [hasPrefetchedTasks, setHasPrefetchedTasks] = useState(false);
   const loadingOverlayDelayTimerRef = useRef<number | null>(null);
   const loadingOverlayHideTimerRef = useRef<number | null>(null);
+  const delayedPrefetchTimerRef = useRef<number | null>(null);
+  const shouldLoadTaskData =
+    tab === "tasks" || tab === "home" || hasPrefetchedTasks || notificationPermission === "granted";
+  const tasksQuery = useHouseholdTasks(activeHousehold?.id ?? null, shouldLoadTaskData);
+  const tasks = tasksQuery.data ?? [];
+  const eventsQuery = useHouseholdEvents(
+    activeHousehold?.id ?? null,
+    tab === "home" || notificationPermission === "granted"
+  );
+  const householdEvents = eventsQuery.data ?? [];
+  useTaskNotifications(tasks, householdEvents, userId, notificationPermission);
+
+  useEffect(() => {
+    if (!session || !activeHousehold) return;
+
+    const householdId = activeHousehold.id;
+    const runPrefetch = () => {
+      setHasPrefetchedTasks(true);
+      void ensureHouseholdQueries(queryClient, householdId, [
+        "bucketItems",
+        "shoppingItems",
+        "shoppingCompletions",
+        "tasks",
+        "taskCompletions",
+        "finances",
+        "cashAuditRequests",
+        "financeSubscriptions",
+        "memberPimpers",
+        "householdEvents"
+      ]);
+    };
+
+    const scheduleIdle = () => {
+      if (typeof window === "undefined") return;
+      if ("requestIdleCallback" in window) {
+        const handle = window.requestIdleCallback(runPrefetch, { timeout: 1200 });
+        return () => window.cancelIdleCallback(handle);
+      }
+      delayedPrefetchTimerRef.current = window.setTimeout(runPrefetch, 700);
+      return () => {
+        if (delayedPrefetchTimerRef.current) {
+          window.clearTimeout(delayedPrefetchTimerRef.current);
+          delayedPrefetchTimerRef.current = null;
+        }
+      };
+    };
+
+    const cleanup = scheduleIdle();
+    return () => {
+      cleanup?.();
+    };
+  }, [activeHousehold, queryClient, session]);
+
   const dueTasksBadge = useMemo(() => {
     const dueTasks = tasks.filter((task) => task.is_active && !task.done && isDueNow(task.due_at));
     const allDue = dueTasks.length;
@@ -282,6 +303,14 @@ const App = () => {
     return (params.get("invite") ?? "").trim().toUpperCase();
   }, [location.search]);
 
+  const workspaceContextValue = useMemo(
+    () => ({
+      ...workspace,
+      mobileTabBarVisible: !isMobileKeyboardOpen
+    }),
+    [workspace, isMobileKeyboardOpen]
+  );
+
   const onTabChange = (value: string) => {
     const nextTab = value as AppTab;
     const nextPath = tabPathMap[nextTab] ?? "/home";
@@ -290,19 +319,50 @@ const App = () => {
     void navigate({ to: nextPath });
   };
 
-  const onLeaveHouseholdWithRedirect = async () => {
-    await onLeaveHousehold();
-    if (location.pathname.startsWith("/settings")) {
-      void navigate({ to: "/home" });
-    }
-  };
+  const prefetchRouteData = useCallback(
+    (path: string) => {
+      const householdId = activeHousehold?.id;
+      if (!householdId) return;
 
-  const onDissolveHouseholdWithRedirect = async () => {
-    await onDissolveHousehold();
-    if (location.pathname.startsWith("/settings")) {
-      void navigate({ to: "/home" });
-    }
-  };
+      if (path.startsWith("/home")) {
+        setHasPrefetchedTasks(true);
+        void ensureHouseholdQueries(queryClient, householdId, [
+          "bucketItems",
+          "tasks",
+          "taskCompletions",
+          "finances",
+          "cashAuditRequests",
+          "householdEvents"
+        ]);
+        return;
+      }
+
+      if (path.startsWith("/shopping")) {
+        void ensureHouseholdQueries(queryClient, householdId, ["shoppingItems", "shoppingCompletions"]);
+        return;
+      }
+
+      if (path.startsWith("/tasks")) {
+        setHasPrefetchedTasks(true);
+        void ensureHouseholdQueries(queryClient, householdId, ["tasks", "taskCompletions", "memberPimpers"]);
+        return;
+      }
+
+      if (path.startsWith("/finances")) {
+        void ensureHouseholdQueries(queryClient, householdId, [
+          "finances",
+          "financeSubscriptions",
+          "cashAuditRequests"
+        ]);
+        return;
+      }
+
+      if (path.startsWith("/settings")) {
+        void ensureHouseholdQueries(queryClient, householdId, ["householdMembers"]);
+      }
+    },
+    [activeHousehold?.id, queryClient]
+  );
 
   const subItems: Array<{ id: string; icon: LucideIcon; labelKey: string; path: string }> =
     tab === "home"
@@ -603,6 +663,7 @@ const App = () => {
   }
 
   return (
+    <WorkspaceProvider value={workspaceContextValue}>
     <div className="relative min-h-screen">
       <Suspense fallback={null}>
         <AppParticlesBackground />
@@ -684,6 +745,8 @@ const App = () => {
                               : "relative flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-slate-600 hover:bg-brand-50 dark:text-slate-300 dark:hover:bg-slate-800"
                           }
                           onClick={() => onTabChange(item.id)}
+                          onMouseEnter={() => prefetchRouteData(tabPathMap[item.id])}
+                          onFocus={() => prefetchRouteData(tabPathMap[item.id])}
                         >
                           <Icon className="h-4 w-4" />
                           {t(`tab.${item.id}`)}
@@ -712,6 +775,8 @@ const App = () => {
                             <button
                               type="button"
                               onClick={() => void navigate({ to: item.path })}
+                              onMouseEnter={() => prefetchRouteData(item.path)}
+                              onFocus={() => prefetchRouteData(item.path)}
                               className={
                                 active
                                   ? "flex w-full items-center gap-2 rounded-lg bg-brand-100 px-3 py-2 text-left text-sm font-medium text-brand-900 dark:bg-brand-900 dark:text-brand-100"
@@ -757,6 +822,8 @@ const App = () => {
                             <button
                               type="button"
                               onClick={() => void navigate({ to: item.path })}
+                              onMouseEnter={() => prefetchRouteData(item.path)}
+                              onFocus={() => prefetchRouteData(item.path)}
                               className={
                                 active
                                   ? "flex w-full items-center justify-center gap-1 rounded-lg bg-brand-100 px-2 py-2 text-xs font-medium text-brand-900 dark:bg-brand-900 dark:text-brand-100"
@@ -784,128 +851,53 @@ const App = () => {
                 >
                   <Suspense fallback={viewLoadingFallback}>
                     {tab === "home" ? (
-                      <HomeTab
-                        section={homeSubTab}
-                        household={activeHousehold}
-                        households={households}
-                        currentMember={currentMember}
-                        userId={userId!}
-                        members={householdMembers}
-                        userLabel={userDisplayName ?? userEmail}
-                        busy={busy}
-                        mobileTabBarVisible={!isMobileKeyboardOpen}
-                        bucketItems={bucketItems}
-                        tasks={tasks}
-                        taskCompletions={taskCompletions}
-                        financeEntries={finances}
-                        cashAuditRequests={cashAuditRequests}
-                        householdEvents={householdEvents}
-                        onSelectHousehold={(householdId) => {
-                          const next = households.find((entry: { id: string }) => entry.id === householdId);
-                          if (next) setActiveHousehold(next);
-                        }}
-                        onSaveLandingMarkdown={onUpdateHomeMarkdown}
-                        onAddBucketItem={onAddBucketItem}
-                        onToggleBucketItem={onToggleBucketItem}
-                        onUpdateBucketItem={onUpdateBucketItem}
-                        onDeleteBucketItem={onDeleteBucketItem}
-                        onToggleBucketDateVote={onToggleBucketDateVote}
-                        onCompleteTask={onCompleteTask}
-                      />
+                      homeSubTab === "bucket" ? (
+                        <HomeBucketPage />
+                      ) : homeSubTab === "feed" ? (
+                        <HomeFeedPage />
+                      ) : (
+                        <HomeSummaryPage />
+                      )
                     ) : null}
 
                     {tab === "shopping" ? (
-                      <ShoppingTab
-                        section={shoppingSubTab}
-                        items={shoppingItems}
-                        completions={shoppingCompletions}
-                        members={householdMembers}
-                        userId={userId!}
-                        busy={busy}
-                        mobileTabBarVisible={!isMobileKeyboardOpen}
-                        onAdd={onAddShoppingItem}
-                        onToggle={onToggleShoppingItem}
-                        onUpdate={onUpdateShoppingItem}
-                        onDelete={onDeleteShoppingItem}
-                      />
+                      shoppingSubTab === "history" ? (
+                        <ShoppingHistoryPage />
+                      ) : (
+                        <ShoppingListPage />
+                      )
                     ) : null}
 
                     {tab === "tasks" ? (
-                      <TasksTab
-                        section={taskSubTab}
-                        tasks={tasks}
-                        completions={taskCompletions}
-                        members={householdMembers}
-                        memberPimpers={memberPimpers}
-                        userId={userId!}
-                        busy={busy}
-                        onAdd={onAddTask}
-                        onComplete={onCompleteTask}
-                        onSkip={onSkipTask}
-                        onTakeover={onTakeoverTask}
-                        onToggleActive={onToggleTaskActive}
-                        onUpdate={onUpdateTask}
-                        onDelete={onDeleteTask}
-                        onRateTaskCompletion={onRateTaskCompletion}
-                        onUpdateMemberTaskLaziness={onUpdateMemberTaskLaziness}
-                        onResetHouseholdPimpers={onResetHouseholdPimpers}
-                        canManageTaskLaziness={currentMember?.role === "owner"}
-                      />
+                      taskSubTab === "stats" ? (
+                        <TasksStatsPage />
+                      ) : taskSubTab === "history" ? (
+                        <TasksHistoryPage />
+                      ) : taskSubTab === "settings" ? (
+                        <TasksSettingsPage />
+                      ) : (
+                        <TasksOverviewPage />
+                      )
                     ) : null}
 
                     {tab === "finances" ? (
-                      <FinancesTab
-                        section={financeSubTab}
-                        entries={finances}
-                        subscriptions={financeSubscriptions}
-                        cashAuditRequests={cashAuditRequests}
-                        household={activeHousehold}
-                        currentMember={currentMember}
-                        members={householdMembers}
-                        busy={busy}
-                        userId={userId!}
-                        mobileTabBarVisible={!isMobileKeyboardOpen}
-                        onAdd={onAddFinanceEntry}
-                        onUpdateEntry={onUpdateFinanceEntry}
-                        onDeleteEntry={onDeleteFinanceEntry}
-                        onAddSubscription={onAddFinanceSubscription}
-                        onUpdateSubscription={onUpdateFinanceSubscription}
-                        onDeleteSubscription={onDeleteFinanceSubscription}
-                        onUpdateHousehold={onUpdateHousehold}
-                        onUpdateMemberSettings={onUpdateMemberSettings}
-                        onUpdateMemberSettingsForUser={onUpdateMemberSettingsForUser}
-                        onRequestCashAudit={onRequestCashAudit}
-                      />
+                      financeSubTab === "stats" ? (
+                        <FinancesStatsPage />
+                      ) : financeSubTab === "archive" ? (
+                        <FinancesArchivePage />
+                      ) : financeSubTab === "subscriptions" ? (
+                        <FinancesSubscriptionsPage />
+                      ) : (
+                        <FinancesOverviewPage />
+                      )
                     ) : null}
 
                     {tab === "settings" ? (
-                      <SettingsTab
-                        section={settingsSubTab}
-                        household={activeHousehold}
-                        members={householdMembers}
-                        currentMember={currentMember}
-                        userId={userId!}
-                        userEmail={userEmail}
-                        userAvatarUrl={userAvatarUrl}
-                        userDisplayName={userDisplayName}
-                        userPaypalName={userPaypalName}
-                        userRevolutName={userRevolutName}
-                        userWeroName={userWeroName}
-                        busy={busy}
-                        notificationPermission={notificationPermission}
-                        onEnableNotifications={onEnableNotifications}
-                        onUpdateHousehold={onUpdateHousehold}
-                        onUpdateUserAvatar={onUpdateUserAvatar}
-                        onUpdateUserDisplayName={onUpdateUserDisplayName}
-                        onUpdateUserColor={onUpdateUserColor}
-                        onUpdateUserPaymentHandles={onUpdateUserPaymentHandles}
-                        onUpdateVacationMode={onUpdateVacationMode}
-                        onSetMemberRole={onSetMemberRole}
-                        onRemoveMember={onRemoveMember}
-                        onSignOut={onSignOut}
-                        onLeaveHousehold={onLeaveHouseholdWithRedirect}
-                        onDissolveHousehold={onDissolveHouseholdWithRedirect}
-                      />
+                      settingsSubTab === "household" ? (
+                        <SettingsHouseholdPage />
+                      ) : (
+                        <SettingsMePage />
+                      )
                     ) : null}
                   </Suspense>
                 </motion.div>
@@ -930,6 +922,8 @@ const App = () => {
                             : "relative flex w-full flex-col items-center rounded-lg px-1 py-2 text-slate-500 dark:text-slate-400"
                         }
                         onClick={() => onTabChange(item.id)}
+                        onMouseEnter={() => prefetchRouteData(tabPathMap[item.id])}
+                        onFocus={() => prefetchRouteData(tabPathMap[item.id])}
                         aria-label={t(`tab.${item.id}`)}
                       >
                         <Icon className="h-4 w-4" />
@@ -982,7 +976,10 @@ const App = () => {
         </DialogContent>
       </Dialog>
     </div>
+    </WorkspaceProvider>
   );
 };
+
+const App = () => <AppLayout />;
 
 export default App;

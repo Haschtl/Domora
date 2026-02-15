@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import i18n from "../i18n";
 import type { HouseholdEvent, TaskItem } from "../lib/types";
 
@@ -32,21 +32,12 @@ const tryNotify = (title: string, options: NotificationOptions) => {
   }
 };
 
-export const useTaskNotifications = (tasks: TaskItem[], householdEvents: HouseholdEvent[], userId: string | undefined) => {
-  const [permission, setPermission] = useState<NotificationPermission>(
-    isNotificationSupported() ? Notification.permission : "denied"
-  );
-
-  const requestPermission = async () => {
-    if (!isNotificationSupported()) {
-      return "denied" as NotificationPermission;
-    }
-
-    const result = await Notification.requestPermission();
-    setPermission(result);
-    return result;
-  };
-
+export const useTaskNotifications = (
+  tasks: TaskItem[],
+  householdEvents: HouseholdEvent[],
+  userId: string | undefined,
+  permission: NotificationPermission
+) => {
   useEffect(() => {
     if (!isNotificationSupported() || permission !== "granted" || !userId) {
       return;
@@ -118,8 +109,5 @@ export const useTaskNotifications = (tasks: TaskItem[], householdEvents: Househo
     return () => window.clearInterval(timer);
   }, [householdEvents, permission, tasks, userId]);
 
-  return {
-    permission,
-    requestPermission
-  };
+  return null;
 };

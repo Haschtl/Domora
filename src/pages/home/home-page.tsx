@@ -45,7 +45,7 @@ import {
   getSavedLandingMarkdown
 } from "./home-landing.utils";
 
-interface HomeTabProps {
+interface HomePageProps {
   section?: "summary" | "bucket" | "feed";
   household: Household;
   households: Household[];
@@ -285,7 +285,7 @@ const LandingWidgetEditorShell = ({
   </div>
 );
 
-export const HomeTab = ({
+export const HomePage = ({
   section = "summary",
   household,
   households,
@@ -309,7 +309,7 @@ export const HomeTab = ({
   onDeleteBucketItem,
   onToggleBucketDateVote,
   onCompleteTask
-}: HomeTabProps) => {
+}: HomePageProps) => {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const landingInsertOptions = useMemo(

@@ -5,8 +5,9 @@ describe("queryKeys", () => {
     expect(queryKeys.session).toEqual(["auth", "session"]);
   });
 
-  it("builds household and workspace keys", () => {
+  it("builds household keys", () => {
     expect(queryKeys.households("u-1")).toEqual(["households", "u-1"]);
-    expect(queryKeys.workspace("h-1")).toEqual(["workspace", "h-1"]);
+    expect(queryKeys.household("h-1")).toEqual(["household", "h-1"]);
+    expect(queryKeys.householdTasks("h-1")).toEqual(["household", "h-1", "tasks"]);
   });
 });

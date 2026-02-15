@@ -33,7 +33,7 @@ import { useShoppingSuggestions, type ShoppingSuggestion } from "./hooks/use-sho
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarElement, Filler, Tooltip, Legend);
 
-interface ShoppingTabProps {
+interface ShoppingPageProps {
   section?: "list" | "history";
   items: ShoppingItem[];
   completions: ShoppingItemCompletion[];
@@ -75,7 +75,7 @@ const formatRecurrence = (
   return t("shopping.recurrenceEveryDays", { count: value });
 };
 
-export const ShoppingTab = ({
+export const ShoppingPage = ({
   section = "list",
   items,
   completions,
@@ -87,7 +87,7 @@ export const ShoppingTab = ({
   onToggle,
   onUpdate,
   onDelete
-}: ShoppingTabProps) => {
+}: ShoppingPageProps) => {
   const { t, i18n } = useTranslation();
   const [recurrenceUnit, setRecurrenceUnit] = useState<ShoppingRecurrenceUnit>("days");
   const [editRecurrenceUnit, setEditRecurrenceUnit] = useState<ShoppingRecurrenceUnit>("days");

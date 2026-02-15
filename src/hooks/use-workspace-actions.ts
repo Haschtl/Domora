@@ -11,7 +11,7 @@ interface UseWorkspaceActionsOptions {
 export const useWorkspaceActions = ({ queryClient, activeHouseholdId, executeAction }: UseWorkspaceActionsOptions) => {
   const invalidateWorkspace = useCallback(async () => {
     if (!activeHouseholdId) return;
-    await queryClient.invalidateQueries({ queryKey: queryKeys.workspace(activeHouseholdId) });
+    await queryClient.invalidateQueries({ queryKey: queryKeys.household(activeHouseholdId), exact: false });
   }, [activeHouseholdId, queryClient]);
 
   const runWithWorkspaceInvalidation = useCallback(

@@ -1,16 +1,16 @@
 import { useRef } from "react";
 import type { ReactNode } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import type { FinanceEntry } from "../../../lib/types";
+import type { FinanceEntry } from "../../lib/types";
 import { MoreHorizontal } from "lucide-react";
-import { Badge } from "../../../components/ui/badge";
-import { Button } from "../../../components/ui/button";
+import { Badge } from "../../components/ui/badge";
+import { Button } from "../../components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger
-} from "../../../components/ui/dropdown-menu";
+} from "../../components/ui/dropdown-menu";
 
 interface FinanceEntriesListProps {
   header?: ReactNode;

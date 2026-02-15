@@ -1,6 +1,6 @@
 import { useMemo } from "react";
-import { getHouseholdItemSuggestions } from "../../../lib/household-items";
-import type { ShoppingItemCompletion } from "../../../lib/types";
+import { getHouseholdItemSuggestions } from "../../lib/household-items";
+import type { ShoppingItemCompletion } from "../../lib/types";
 
 export interface ShoppingSuggestion {
   key: string;

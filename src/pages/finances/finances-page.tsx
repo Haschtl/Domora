@@ -78,7 +78,7 @@ import { useFinancesDerivedData } from "./hooks/use-finances-derived-data";
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, ArcElement, Tooltip, Legend);
 
-interface FinancesTabProps {
+interface FinancesPageProps {
   section?: "overview" | "stats" | "archive" | "subscriptions";
   entries: FinanceEntry[];
   subscriptions: FinanceSubscription[];
@@ -340,7 +340,7 @@ const compressImageToDataUrl = async (file: File) => {
   return imageCompression.getDataUrlFromFile(compressed);
 };
 
-export const FinancesTab = ({
+export const FinancesPage = ({
   section = "overview",
   entries,
   subscriptions,
@@ -361,7 +361,7 @@ export const FinancesTab = ({
   onUpdateMemberSettings,
   onUpdateMemberSettingsForUser,
   onRequestCashAudit
-}: FinancesTabProps) => {
+}: FinancesPageProps) => {
   const { t, i18n } = useTranslation();
   const categorySuggestionsListId = useId();
   const entryNameSuggestionsListId = useId();

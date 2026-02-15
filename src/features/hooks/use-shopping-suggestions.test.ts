@@ -1,5 +1,5 @@
-import { getHouseholdItemSuggestions } from "../../../lib/household-items";
-import type { ShoppingItemCompletion } from "../../../lib/types";
+import { getHouseholdItemSuggestions } from "../../lib/household-items";
+import type { ShoppingItemCompletion } from "../../lib/types";
 import { buildShoppingSuggestions } from "./use-shopping-suggestions";
 
 const completion = (partial: Partial<ShoppingItemCompletion>): ShoppingItemCompletion => ({

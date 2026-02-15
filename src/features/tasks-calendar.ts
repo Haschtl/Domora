@@ -1,4 +1,4 @@
-import type { TaskCompletion, TaskItem } from "../../lib/types";
+import type { TaskCompletion, TaskItem } from "../lib/types";
 
 export const startOfMonth = (date: Date) => new Date(date.getFullYear(), date.getMonth(), 1);
 const endOfMonth = (date: Date) => new Date(date.getFullYear(), date.getMonth() + 1, 0);

@@ -1,8 +1,8 @@
 import type { ReactNode } from "react";
-import type { FinanceEntry } from "../../../lib/types";
-import { Badge } from "../../../components/ui/badge";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../../components/ui/card";
-import { SectionPanel } from "../../../components/ui/section-panel";
+import type { FinanceEntry } from "../../lib/types";
+import { Badge } from "../../components/ui/badge";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
+import { SectionPanel } from "../../components/ui/section-panel";
 import { FinanceEntriesList } from "./FinanceEntriesList";
 
 interface FinanceHistoryCardProps {

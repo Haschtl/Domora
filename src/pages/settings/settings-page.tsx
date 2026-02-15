@@ -31,7 +31,7 @@ import { Switch } from "../../components/ui/switch";
 import { getPushPreferences, upsertPushPreferences } from "../../lib/api";
 import { MemberAvatar } from "../../components/member-avatar";
 
-interface SettingsTabProps {
+interface SettingsPageProps {
   section?: "me" | "household";
   household: Household;
   members: HouseholdMember[];
@@ -125,7 +125,7 @@ const serializePushPreferences = (prefs: PushPreferences) => {
   });
 };
 
-export const SettingsTab = ({
+export const SettingsPage = ({
   section = "me",
   household,
   members,
@@ -151,7 +151,7 @@ export const SettingsTab = ({
   onSignOut,
   onLeaveHousehold,
   onDissolveHousehold
-}: SettingsTabProps) => {
+}: SettingsPageProps) => {
   const { t } = useTranslation();
   const isOwner = currentMember?.role === "owner";
 

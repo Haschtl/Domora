@@ -3,108 +3,11 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useStore } from "@tanstack/react-store";
 import type { Session } from "@supabase/supabase-js";
 import { appStore, setActiveHouseholdId } from "../lib/app-store";
-import {
-  getBucketItems,
-  getCashAuditRequests,
-  getCurrentSession,
-  getFinanceEntries,
-  getFinanceSubscriptions,
-  getHouseholdEvents,
-  getHouseholdMemberPimpers,
-  getHouseholdMembers,
-  getHouseholdsForUser,
-  getShoppingCompletions,
-  getShoppingItems,
-  getTaskCompletions,
-  getTasks
-} from "../lib/api";
+import { getCurrentSession, getHouseholdsForUser } from "../lib/api";
+import { householdQueryOptions } from "../lib/household-queries";
 import { queryKeys } from "../lib/query-keys";
 import { supabase } from "../lib/supabase";
-import type {
-  BucketItem,
-  CashAuditRequest,
-  FinanceEntry,
-  FinanceSubscription,
-  HouseholdEvent,
-  Household,
-  HouseholdMember,
-  HouseholdMemberPimpers,
-  ShoppingItem,
-  ShoppingItemCompletion,
-  TaskCompletion,
-  TaskItem
-} from "../lib/types";
-
-interface WorkspaceData {
-  bucketItems: BucketItem[];
-  shoppingItems: ShoppingItem[];
-  shoppingCompletions: ShoppingItemCompletion[];
-  tasks: TaskItem[];
-  taskCompletions: TaskCompletion[];
-  finances: FinanceEntry[];
-  cashAuditRequests: CashAuditRequest[];
-  financeSubscriptions: FinanceSubscription[];
-  householdMembers: HouseholdMember[];
-  memberPimpers: HouseholdMemberPimpers[];
-  householdEvents: HouseholdEvent[];
-}
-
-const emptyWorkspace: WorkspaceData = {
-  bucketItems: [],
-  shoppingItems: [],
-  shoppingCompletions: [],
-  tasks: [],
-  taskCompletions: [],
-  finances: [],
-  cashAuditRequests: [],
-  financeSubscriptions: [],
-  householdMembers: [],
-  memberPimpers: [],
-  householdEvents: []
-};
-
-const getWorkspaceData = async (householdId: string): Promise<WorkspaceData> => {
-  const [
-    bucketItems,
-    shoppingItems,
-    shoppingCompletions,
-    tasks,
-    taskCompletions,
-    finances,
-    cashAuditRequests,
-    financeSubscriptions,
-    householdMembers,
-    memberPimpers,
-    householdEvents
-  ] =
-    await Promise.all([
-      getBucketItems(householdId),
-      getShoppingItems(householdId),
-      getShoppingCompletions(householdId),
-      getTasks(householdId),
-      getTaskCompletions(householdId),
-      getFinanceEntries(householdId),
-      getCashAuditRequests(householdId),
-      getFinanceSubscriptions(householdId),
-      getHouseholdMembers(householdId),
-      getHouseholdMemberPimpers(householdId),
-      getHouseholdEvents(householdId)
-    ]);
-
-  return {
-    bucketItems,
-    shoppingItems,
-    shoppingCompletions,
-    tasks,
-    taskCompletions,
-    finances,
-    cashAuditRequests,
-    financeSubscriptions,
-    householdMembers,
-    memberPimpers,
-    householdEvents
-  };
-};
+import type { Household, HouseholdMember } from "../lib/types";
 
 export const useWorkspaceData = () => {
   const queryClient = useQueryClient();
@@ -140,6 +43,19 @@ export const useWorkspaceData = () => {
   const activeHouseholdId = useStore(appStore, (state: { activeHouseholdId: string | null }) => state.activeHouseholdId);
 
   useEffect(() => {
+    if (households.length === 0) {
+      setActiveHouseholdId(null);
+      return;
+    }
+
+    if (activeHouseholdId && households.some((entry) => entry.id === activeHouseholdId)) {
+      return;
+    }
+
+    setActiveHouseholdId(households[0].id);
+  }, [activeHouseholdId, households]);
+
+  useEffect(() => {
     if (!activeHouseholdId) return;
 
     const channel = supabase
@@ -153,7 +69,7 @@ export const useWorkspaceData = () => {
           filter: `household_id=eq.${activeHouseholdId}`
         },
         () => {
-          void queryClient.invalidateQueries({ queryKey: queryKeys.workspace(activeHouseholdId) });
+          void queryClient.invalidateQueries({ queryKey: queryKeys.householdEvents(activeHouseholdId) });
         }
       )
       .subscribe();
@@ -163,31 +79,17 @@ export const useWorkspaceData = () => {
     };
   }, [activeHouseholdId, queryClient]);
 
-  useEffect(() => {
-    if (households.length === 0) {
-      setActiveHouseholdId(null);
-      return;
-    }
-
-    if (activeHouseholdId && households.some((entry) => entry.id === activeHouseholdId)) {
-      return;
-    }
-
-    setActiveHouseholdId(households[0].id);
-  }, [activeHouseholdId, households]);
-
   const activeHousehold = useMemo(
     () => households.find((entry) => entry.id === activeHouseholdId) ?? null,
     [activeHouseholdId, households]
   );
 
-  const workspaceQuery = useQuery<WorkspaceData>({
-    queryKey: activeHousehold ? queryKeys.workspace(activeHousehold.id) : ["workspace", "none"],
-    queryFn: () => getWorkspaceData(activeHousehold!.id),
+  const householdMembersQuery = useQuery<HouseholdMember[]>({
+    queryKey: activeHousehold ? queryKeys.householdMembers(activeHousehold.id) : ["household", "none", "members"],
+    queryFn: () => householdQueryOptions.householdMembers(activeHousehold!.id).queryFn(),
     enabled: Boolean(activeHousehold)
   });
-
-  const workspace = workspaceQuery.data ?? emptyWorkspace;
+  const householdMembers = householdMembersQuery.data ?? [];
 
   const userEmail = session?.user.email;
   const userAvatarUrl = useMemo(() => {
@@ -207,17 +109,12 @@ export const useWorkspaceData = () => {
 
   const currentMember = useMemo(
     () =>
-      userId ? workspace.householdMembers.find((entry: HouseholdMember) => entry.user_id === userId) ?? null : null,
-    [workspace.householdMembers, userId]
+      userId ? householdMembers.find((entry: HouseholdMember) => entry.user_id === userId) ?? null : null,
+    [householdMembers, userId]
   );
   const userPaypalName = currentMember?.paypal_name ?? null;
   const userRevolutName = currentMember?.revolut_name ?? null;
   const userWeroName = currentMember?.wero_name ?? null;
-
-  const completedTasks = useMemo(
-    () => workspace.tasks.filter((task: TaskItem) => task.done).length,
-    [workspace.tasks]
-  );
 
   return {
     sessionQuery,
@@ -228,15 +125,13 @@ export const useWorkspaceData = () => {
     householdsLoadError,
     activeHouseholdId,
     activeHousehold,
-    workspace,
+    householdMembers,
     userEmail,
     userAvatarUrl,
     userDisplayName,
     userPaypalName,
     userRevolutName,
     userWeroName,
-    currentMember,
-    completedTasks,
-    householdEvents: workspace.householdEvents
+    currentMember
   };
 };

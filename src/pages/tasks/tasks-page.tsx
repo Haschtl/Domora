@@ -86,7 +86,7 @@ ChartJS.register(
   Legend
 );
 
-interface TasksTabProps {
+interface TasksPageProps {
   section?: "overview" | "stats" | "history" | "settings";
   tasks: TaskItem[];
   completions: TaskCompletion[];
@@ -315,7 +315,7 @@ const buildSkipMathChallenge = (seedSource: string): SkipMathChallenge => {
   };
 };
 
-export const TasksTab = ({
+export const TasksPage = ({
   section = "overview",
   tasks,
   completions,
@@ -334,7 +334,7 @@ export const TasksTab = ({
   onUpdateMemberTaskLaziness,
   onResetHouseholdPimpers,
   canManageTaskLaziness
-}: TasksTabProps) => {
+}: TasksPageProps) => {
   const { t, i18n } = useTranslation();
   const language = i18n.resolvedLanguage ?? i18n.language;
 

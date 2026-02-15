@@ -1,6 +1,6 @@
 import { useMemo } from "react";
-import { getTaskLibrarySuggestions } from "../../../lib/task-suggestions";
-import type { TaskCompletion, TaskItem } from "../../../lib/types";
+import { getTaskLibrarySuggestions } from "../../lib/task-suggestions";
+import type { TaskCompletion, TaskItem } from "../../lib/types";
 
 export interface TaskSuggestion {
   key: string;

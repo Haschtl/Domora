@@ -1,0 +1,98 @@
+import { useQuery } from "@tanstack/react-query";
+import { householdQueryOptions } from "../lib/household-queries";
+import type {
+  BucketItem,
+  CashAuditRequest,
+  FinanceEntry,
+  FinanceSubscription,
+  HouseholdEvent,
+  HouseholdMemberPimpers,
+  ShoppingItem,
+  ShoppingItemCompletion,
+  TaskCompletion,
+  TaskItem
+} from "../lib/types";
+
+const emptyArrayQuery = <T>() => ({
+  queryFn: async (): Promise<T[]> => []
+});
+
+export const useHouseholdBucketItems = (householdId: string | null) =>
+  useQuery<BucketItem[]>({
+    ...(householdId
+      ? householdQueryOptions.bucketItems(householdId)
+      : { queryKey: ["household", "none", "bucket-items"], ...emptyArrayQuery<BucketItem>() }),
+    enabled: Boolean(householdId)
+  });
+
+export const useHouseholdShoppingItems = (householdId: string | null) =>
+  useQuery<ShoppingItem[]>({
+    ...(householdId
+      ? householdQueryOptions.shoppingItems(householdId)
+      : { queryKey: ["household", "none", "shopping-items"], ...emptyArrayQuery<ShoppingItem>() }),
+    enabled: Boolean(householdId)
+  });
+
+export const useHouseholdShoppingCompletions = (householdId: string | null) =>
+  useQuery<ShoppingItemCompletion[]>({
+    ...(householdId
+      ? householdQueryOptions.shoppingCompletions(householdId)
+      : { queryKey: ["household", "none", "shopping-completions"], ...emptyArrayQuery<ShoppingItemCompletion>() }),
+    enabled: Boolean(householdId)
+  });
+
+export const useHouseholdTasks = (householdId: string | null, enabled = true) =>
+  useQuery<TaskItem[]>({
+    ...(householdId
+      ? householdQueryOptions.tasks(householdId)
+      : { queryKey: ["household", "none", "tasks"], ...emptyArrayQuery<TaskItem>() }),
+    enabled: Boolean(householdId) && enabled
+  });
+
+export const useHouseholdTaskCompletions = (householdId: string | null, enabled = true) =>
+  useQuery<TaskCompletion[]>({
+    ...(householdId
+      ? householdQueryOptions.taskCompletions(householdId)
+      : { queryKey: ["household", "none", "task-completions"], ...emptyArrayQuery<TaskCompletion>() }),
+    enabled: Boolean(householdId) && enabled
+  });
+
+export const useHouseholdFinances = (householdId: string | null, enabled = true) =>
+  useQuery<FinanceEntry[]>({
+    ...(householdId
+      ? householdQueryOptions.finances(householdId)
+      : { queryKey: ["household", "none", "finances"], ...emptyArrayQuery<FinanceEntry>() }),
+    enabled: Boolean(householdId) && enabled
+  });
+
+export const useHouseholdCashAuditRequests = (householdId: string | null, enabled = true) =>
+  useQuery<CashAuditRequest[]>({
+    ...(householdId
+      ? householdQueryOptions.cashAuditRequests(householdId)
+      : { queryKey: ["household", "none", "cash-audit-requests"], ...emptyArrayQuery<CashAuditRequest>() }),
+    enabled: Boolean(householdId) && enabled
+  });
+
+export const useHouseholdFinanceSubscriptions = (householdId: string | null, enabled = true) =>
+  useQuery<FinanceSubscription[]>({
+    ...(householdId
+      ? householdQueryOptions.financeSubscriptions(householdId)
+      : { queryKey: ["household", "none", "finance-subscriptions"], ...emptyArrayQuery<FinanceSubscription>() }),
+    enabled: Boolean(householdId) && enabled
+  });
+
+export const useHouseholdMemberPimpers = (householdId: string | null, enabled = true) =>
+  useQuery<HouseholdMemberPimpers[]>({
+    ...(householdId
+      ? householdQueryOptions.memberPimpers(householdId)
+      : { queryKey: ["household", "none", "member-pimpers"], ...emptyArrayQuery<HouseholdMemberPimpers>() }),
+    enabled: Boolean(householdId) && enabled
+  });
+
+export const useHouseholdEvents = (householdId: string | null, enabled = true) =>
+  useQuery<HouseholdEvent[]>({
+    ...(householdId
+      ? householdQueryOptions.householdEvents(householdId)
+      : { queryKey: ["household", "none", "events"], ...emptyArrayQuery<HouseholdEvent>() }),
+    enabled: Boolean(householdId) && enabled
+  });

@@ -1,6 +1,6 @@
 import { useMemo } from "react";
-import type { FinanceEntry, HouseholdMember } from "../../../lib/types";
-import { calculateBalancesByMember, calculateReimbursementPreview, splitAmountEvenly } from "../../../lib/finance-math";
+import type { FinanceEntry, HouseholdMember } from "../../lib/types";
+import { calculateBalancesByMember, calculateReimbursementPreview, splitAmountEvenly } from "../../lib/finance-math";
 
 interface UseFinancesDerivedDataInput {
   entries: FinanceEntry[];

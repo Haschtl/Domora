@@ -1,9 +1,9 @@
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { GripVertical } from "lucide-react";
-import { Badge } from "../../../components/ui/badge";
-import { MemberAvatar } from "../../../components/member-avatar";
-import { PimpersIcon } from "../../../components/pimpers-icon";
+import { Badge } from "../../components/ui/badge";
+import { MemberAvatar } from "../../components/member-avatar";
+import { PimpersIcon } from "../../components/pimpers-icon";
 
 interface SortableRotationItemProps {
   id: string;

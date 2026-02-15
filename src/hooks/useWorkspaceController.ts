@@ -62,10 +62,10 @@ import type {
   ShoppingItem,
   TaskItem
 } from "../lib/types";
-import { useTaskNotifications } from "./useTaskNotifications";
 import { useWorkspaceData } from "./use-workspace-data";
 import { useWorkspaceActions } from "./use-workspace-actions";
 import { registerWebPushToken } from "../lib/push-registration";
+import { useNotificationPermission } from "./use-notification-permission";
 
 export const useWorkspaceController = () => {
   const { t } = useTranslation();
@@ -78,22 +78,20 @@ export const useWorkspaceController = () => {
     householdsLoadError,
     activeHouseholdId,
     activeHousehold,
-    workspace,
+    householdMembers,
     userEmail,
     userAvatarUrl,
     userDisplayName,
     userPaypalName,
     userRevolutName,
     userWeroName,
-    currentMember,
-    completedTasks,
-    householdEvents
+    currentMember
   } = useWorkspaceData();
 
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
-  const { permission, requestPermission } = useTaskNotifications(workspace.tasks, workspace.householdEvents, userId);
+  const { permission, requestPermission } = useNotificationPermission();
 
   const actionMutation = useMutation({
     mutationFn: async (action: () => Promise<void>) => action()
@@ -710,16 +708,7 @@ export const useWorkspaceController = () => {
     households,
     householdsLoadError,
     activeHousehold,
-    bucketItems: workspace.bucketItems,
-    shoppingItems: workspace.shoppingItems,
-    shoppingCompletions: workspace.shoppingCompletions,
-    tasks: workspace.tasks,
-    taskCompletions: workspace.taskCompletions,
-    finances: workspace.finances,
-    financeSubscriptions: workspace.financeSubscriptions,
-    cashAuditRequests: workspace.cashAuditRequests,
-    householdMembers: workspace.householdMembers,
-    memberPimpers: workspace.memberPimpers,
+    householdMembers,
     userId,
     userEmail,
     userAvatarUrl,
@@ -728,8 +717,6 @@ export const useWorkspaceController = () => {
     userRevolutName,
     userWeroName,
     currentMember,
-    completedTasks,
-    householdEvents,
     notificationPermission: permission,
     setActiveHousehold,
     onSignIn,
