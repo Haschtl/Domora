@@ -2,7 +2,7 @@ import * as React from "react";
 import { cn } from "../../lib/utils";
 
 export const Input = React.forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLInputElement>>(
-  ({ className, ...props }, ref) => (
+  ({ className, autoComplete, autoCorrect, autoCapitalize, spellCheck, ...props }, ref) => (
     <input
       ref={ref}
       className={cn(
@@ -11,6 +11,10 @@ export const Input = React.forwardRef<HTMLInputElement, React.InputHTMLAttribute
         "dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-400 dark:focus:border-brand-500 dark:focus:ring-brand-900",
         className
       )}
+      autoComplete={autoComplete ?? "off"}
+      autoCorrect={autoCorrect ?? "off"}
+      autoCapitalize={autoCapitalize ?? "none"}
+      spellCheck={spellCheck ?? false}
       {...props}
     />
   )
