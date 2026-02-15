@@ -785,7 +785,7 @@ export const ShoppingTab = ({
             className={`fixed inset-x-0 z-40 px-3 sm:hidden ${
               mobileTabBarVisible
                 ? "bottom-[calc(env(safe-area-inset-bottom)+4.75rem)]"
-                : "bottom-[calc(env(safe-area-inset-bottom)+0.75rem)]"
+                : "bottom-[calc(env(safe-area-inset-bottom)+0.2rem)]"
             }`}
           >
             <div
