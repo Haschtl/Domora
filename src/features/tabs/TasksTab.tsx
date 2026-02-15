@@ -1,4 +1,4 @@
-import { type CSSProperties, type RefObject, useRef, useState, useEffect, useMemo } from "react";
+import { type CSSProperties, type RefObject, useCallback, useRef, useState, useEffect, useMemo } from "react";
 import { useForm } from "@tanstack/react-form";
 import imageCompression from "browser-image-compression";
 import {
@@ -38,6 +38,7 @@ import {
 import SparklesEffect from "react-sparkle";
 import { Bar } from "react-chartjs-2";
 import { useTranslation } from "react-i18next";
+import type { CaptchaType } from "recaptz";
 import type {
   HouseholdMember,
   HouseholdMemberPimpers,
@@ -67,6 +68,7 @@ import { StarRating } from "../../components/ui/star-rating";
 import { Switch } from "../../components/ui/switch";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../../components/ui/tooltip";
 import { MemberAvatar } from "../../components/member-avatar";
+import { RecaptzCaptcha } from "../../components/recaptz-captcha";
 import { useSmartSuggestions } from "../../hooks/use-smart-suggestions";
 import { formatDateTime, formatShortDay, isDueNow } from "../../lib/date";
 import { createDiceBearAvatarDataUri } from "../../lib/avatar";
@@ -323,6 +325,16 @@ export const TasksTab = ({
   const [isCoarsePointer, setIsCoarsePointer] = useState(false);
   const [openCalendarTooltipDay, setOpenCalendarTooltipDay] = useState<string | null>(null);
   const [skipChallengeAnswerInput, setSkipChallengeAnswerInput] = useState("");
+  const [skipCaptchaQueue, setSkipCaptchaQueue] = useState<CaptchaType[]>([]);
+  const [skipCaptchaIndex, setSkipCaptchaIndex] = useState(0);
+  const [skipCaptchaValid, setSkipCaptchaValid] = useState(false);
+  const [skipCaptchaAutoConfirm, setSkipCaptchaAutoConfirm] = useState(false);
+  const [skipCaptchaUiState, setSkipCaptchaUiState] = useState<"ready" | "loading" | "error">("ready");
+  const [skipCaptchaError, setSkipCaptchaError] = useState<string | null>(null);
+  const [skipCaptchaKey, setSkipCaptchaKey] = useState(0);
+  const [isSkipFinalDialogOpen, setIsSkipFinalDialogOpen] = useState(false);
+  const [skipFinalConfirmPresses, setSkipFinalConfirmPresses] = useState(0);
+  const skipCaptchaTimerRef = useRef<number | null>(null);
   const addCurrentStateUploadInputRef = useRef<HTMLInputElement | null>(null);
   const addTargetStateUploadInputRef = useRef<HTMLInputElement | null>(null);
   const editCurrentStateUploadInputRef = useRef<HTMLInputElement | null>(null);
@@ -500,6 +512,100 @@ export const TasksTab = ({
     const parsed = Number(skipChallengeAnswerInput.trim());
     return Number.isFinite(parsed) && parsed === skipMathChallenge.answer;
   }, [skipChallengeAnswerInput, skipMathChallenge]);
+  const skipCaptchaTypes = useMemo<CaptchaType[]>(
+    () => ["numbers", "letters", "mixed", "slider", "math", "pattern"],
+    []
+  );
+  const skipCaptchaCurrent =
+    pendingTaskAction?.kind === "skip" ? skipCaptchaQueue[skipCaptchaIndex] : undefined;
+  const isSkipCaptchaComplete =
+    pendingTaskAction?.kind === "skip" &&
+    skipCaptchaQueue.length > 0 &&
+    skipCaptchaIndex >= skipCaptchaQueue.length;
+  const resetSkipCaptchaState = useCallback(() => {
+    setSkipCaptchaQueue([]);
+    setSkipCaptchaIndex(0);
+    setSkipCaptchaValid(false);
+    setSkipCaptchaAutoConfirm(false);
+    setSkipCaptchaUiState("ready");
+    setSkipCaptchaError(null);
+    setSkipCaptchaKey(0);
+    setIsSkipFinalDialogOpen(false);
+    setSkipFinalConfirmPresses(0);
+    if (skipCaptchaTimerRef.current !== null) {
+      window.clearTimeout(skipCaptchaTimerRef.current);
+      skipCaptchaTimerRef.current = null;
+    }
+  }, []);
+  const retrySkipCaptcha = useCallback(() => {
+    setSkipCaptchaUiState("ready");
+    setSkipCaptchaError(null);
+    setSkipCaptchaValid(false);
+    setSkipCaptchaKey((value) => value + 1);
+    if (skipCaptchaTimerRef.current !== null) {
+      window.clearTimeout(skipCaptchaTimerRef.current);
+      skipCaptchaTimerRef.current = null;
+    }
+  }, []);
+  const onConfirmTaskAction = useCallback(async () => {
+    if (!pendingTaskAction) return;
+    if (
+      pendingTaskAction.kind === "skip" &&
+      (!isSkipMathChallengeSolved || !isSkipCaptchaComplete)
+    ) {
+      return;
+    }
+
+    const { kind, task } = pendingTaskAction;
+    if (kind === "skip") {
+      await onSkip(task);
+    } else if (kind === "takeover") {
+      await onTakeover(task);
+    } else {
+      await onComplete(task);
+    }
+
+    setPendingTaskAction(null);
+  }, [
+    isSkipCaptchaComplete,
+    isSkipMathChallengeSolved,
+    onComplete,
+    onSkip,
+    onTakeover,
+    pendingTaskAction
+  ]);
+
+  useEffect(() => {
+    if (pendingTaskAction?.kind !== "skip") {
+      resetSkipCaptchaState();
+      setSkipCaptchaAutoConfirm(false);
+      return;
+    }
+
+    const count = 3 + Math.floor(Math.random() * 3);
+    const queue = Array.from({ length: count }, () => {
+      const pick = skipCaptchaTypes[Math.floor(Math.random() * skipCaptchaTypes.length)];
+      return pick;
+    });
+    setSkipCaptchaQueue(queue);
+    setSkipCaptchaIndex(0);
+    setSkipCaptchaValid(false);
+    setSkipCaptchaAutoConfirm(false);
+    setSkipCaptchaUiState("ready");
+    setSkipCaptchaError(null);
+  }, [pendingTaskAction?.kind, resetSkipCaptchaState, skipCaptchaTypes]);
+
+  useEffect(() => {
+    if (!skipCaptchaAutoConfirm) return;
+    if (pendingTaskAction?.kind !== "skip") {
+      setSkipCaptchaAutoConfirm(false);
+      return;
+    }
+    if (!isSkipCaptchaComplete || !isSkipMathChallengeSolved) return;
+    setSkipCaptchaAutoConfirm(false);
+    setIsSkipFinalDialogOpen(true);
+    setSkipFinalConfirmPresses(0);
+  }, [isSkipCaptchaComplete, isSkipMathChallengeSolved, pendingTaskAction?.kind, skipCaptchaAutoConfirm]);
 
   useEffect(() => {
     if (statsTaskFilterId === "all") return;
@@ -1183,6 +1289,18 @@ export const TasksTab = ({
       ) : null}
     </div>
   );
+  const adjustPreviewOrder = useCallback(
+    (order: string[]) => {
+      if (!taskBeingEdited?.assignee_id) return order;
+      const totalCandidates = order.length;
+      if (totalCandidates <= 1) return order;
+      const activeCandidates = order.filter((memberId) => !(memberById.get(memberId)?.vacation_mode ?? false)).length;
+      if (activeCandidates <= 1) return order;
+      if (order[0] !== taskBeingEdited.assignee_id) return order;
+      return [...order.slice(1), order[0]];
+    },
+    [memberById, taskBeingEdited?.assignee_id]
+  );
 
   const onRotationDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
@@ -1249,21 +1367,7 @@ export const TasksTab = ({
     setTaskPendingToggleActive(null);
   };
 
-  const onConfirmTaskAction = async () => {
-    if (!pendingTaskAction) return;
-    if (pendingTaskAction.kind === "skip" && !isSkipMathChallengeSolved) return;
-
-    const { kind, task } = pendingTaskAction;
-    if (kind === "skip") {
-      await onSkip(task);
-    } else if (kind === "takeover") {
-      await onTakeover(task);
-    } else {
-      await onComplete(task);
-    }
-
-    setPendingTaskAction(null);
-  };
+  // moved above to avoid TDZ in effects
 
   const weekdayLabels = useMemo(() => {
     const monday = new Date(Date.UTC(2026, 0, 5));
@@ -2691,7 +2795,10 @@ export const TasksTab = ({
         <Dialog
           open={pendingTaskAction !== null}
           onOpenChange={(open) => {
-            if (!open) setPendingTaskAction(null);
+            if (!open) {
+              setPendingTaskAction(null);
+              resetSkipCaptchaState();
+            }
           }}
         >
           <DialogContent className="sm:max-w-lg">
@@ -2700,7 +2807,10 @@ export const TasksTab = ({
               size="sm"
               variant="ghost"
               className="absolute right-3 top-3 h-8 w-8 p-0"
-              onClick={() => setPendingTaskAction(null)}
+              onClick={() => {
+                setPendingTaskAction(null);
+                resetSkipCaptchaState();
+              }}
               aria-label={t("common.cancel")}
             >
               <X className="h-4 w-4" />
@@ -2771,11 +2881,14 @@ export const TasksTab = ({
               </div>
             ) : null}
 
-            <div className="flex justify-end gap-2">
+            <div className="flex justify-end mt-2 gap-2">
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => setPendingTaskAction(null)}
+                onClick={() => {
+                  setPendingTaskAction(null);
+                  resetSkipCaptchaState();
+                }}
               >
                 {t("common.cancel")}
               </Button>
@@ -2784,7 +2897,7 @@ export const TasksTab = ({
                 disabled={
                   busy ||
                   (pendingTaskAction?.kind === "skip" &&
-                    !isSkipMathChallengeSolved)
+                    (!isSkipMathChallengeSolved || !isSkipCaptchaComplete))
                 }
                 className={
                   pendingTaskAction?.kind === "skip"
@@ -2799,6 +2912,175 @@ export const TasksTab = ({
                     ? t("tasks.confirmTakeOverAction")
                     : t("tasks.confirmCompleteAction")}
               </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog
+          open={
+            pendingTaskAction?.kind === "skip" &&
+            isSkipMathChallengeSolved &&
+            !isSkipCaptchaComplete &&
+            Boolean(skipCaptchaCurrent)
+          }
+          onOpenChange={(open) => {
+            if (!open) {
+              setPendingTaskAction(null);
+              resetSkipCaptchaState();
+            }
+          }}
+        >
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>{t("tasks.skipCaptchaPopupTitle")}</DialogTitle>
+              <DialogDescription>{t("tasks.skipCaptchaPopupHint")}</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3">
+              <div className="relative min-h-[220px] overflow-hidden rounded-xl">
+                {skipCaptchaCurrent ? (
+                  <RecaptzCaptcha
+                    key={`skip-captcha-${skipCaptchaIndex}-${skipCaptchaCurrent}-${skipCaptchaKey}`}
+                    type={skipCaptchaCurrent}
+                    onReload={retrySkipCaptcha}
+                    reloadLabel={t("tasks.skipCaptchaPopupReload")}
+                    onValidate={(isValid) => {
+                      setSkipCaptchaValid(isValid);
+                      if (isValid && skipCaptchaUiState !== "ready") {
+                        setSkipCaptchaUiState("ready");
+                        setSkipCaptchaError(null);
+                      }
+                    }}
+                  />
+                ) : null}
+                {skipCaptchaUiState !== "ready" ? (
+                  <div className="absolute inset-0 z-10 flex flex-col items-center justify-center rounded-xl bg-white/85 p-4 text-center text-xs text-slate-700 backdrop-blur-sm dark:bg-slate-900/85 dark:text-slate-200">
+                    <div className="mb-3 flex flex-col items-center gap-3">
+                      <div className="h-6 w-6 animate-spin rounded-full border-2 border-slate-300 border-t-brand-500 dark:border-slate-600 dark:border-t-brand-300" />
+                      <div className="w-44 space-y-2">
+                        <div className="h-2 w-full animate-pulse rounded-full bg-slate-200/80 dark:bg-slate-700/80" />
+                        <div className="h-2 w-5/6 animate-pulse rounded-full bg-slate-200/70 dark:bg-slate-700/70" />
+                      </div>
+                    </div>
+                    <p className="font-semibold">
+                      {skipCaptchaUiState === "loading"
+                        ? t("tasks.skipCaptchaPopupLoading")
+                        : skipCaptchaError ?? t("tasks.skipCaptchaPopupError")}
+                    </p>
+                    {skipCaptchaUiState === "error" ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="mt-3"
+                        onClick={retrySkipCaptcha}
+                      >
+                        {t("tasks.skipCaptchaPopupRetry")}
+                      </Button>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setPendingTaskAction(null);
+                    resetSkipCaptchaState();
+                  }}
+                >
+                  {t("common.cancel")}
+                </Button>
+                {skipCaptchaUiState === "error" ? (
+                  <Button type="button" variant="outline" onClick={retrySkipCaptcha}>
+                    {t("tasks.skipCaptchaPopupRetry")}
+                  </Button>
+                ) : null}
+                <Button
+                  type="button"
+                  disabled={!skipCaptchaValid || skipCaptchaUiState === "loading" || skipCaptchaUiState === "error"}
+                  onClick={() => {
+                    setSkipCaptchaUiState("loading");
+                    setSkipCaptchaError(null);
+                    if (skipCaptchaTimerRef.current !== null) {
+                      window.clearTimeout(skipCaptchaTimerRef.current);
+                    }
+                    const delay = 400 + Math.floor(Math.random() * 2400);
+                    skipCaptchaTimerRef.current = window.setTimeout(() => {
+                      const shouldFail = Math.random() < 0.45;
+                      if (shouldFail) {
+                        const errorText =
+                          Math.random() < 0.5
+                            ? t("tasks.skipCaptchaPopupError")
+                            : t("tasks.skipCaptchaPopupConnectionError");
+                        setSkipCaptchaError(errorText);
+                        setSkipCaptchaUiState("error");
+                        setSkipCaptchaValid(false);
+                        return;
+                      }
+                      setSkipCaptchaUiState("ready");
+                      setSkipCaptchaValid(false);
+                      if (skipCaptchaIndex + 1 >= skipCaptchaQueue.length) {
+                        setSkipCaptchaIndex(skipCaptchaQueue.length);
+                        setSkipCaptchaAutoConfirm(true);
+                        return;
+                      }
+                      setSkipCaptchaIndex((current) => current + 1);
+                    }, delay);
+                  }}
+                >
+                  {skipCaptchaIndex + 1 >= skipCaptchaQueue.length
+                    ? t("tasks.skipCaptchaPopupDone")
+                    : t("tasks.skipCaptchaPopupNext")}
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog
+          open={pendingTaskAction?.kind === "skip" && isSkipFinalDialogOpen}
+          onOpenChange={(open) => {
+            if (!open) {
+              setPendingTaskAction(null);
+              resetSkipCaptchaState();
+              return;
+            }
+            setIsSkipFinalDialogOpen(true);
+          }}
+        >
+          <DialogContent className="sm:max-w-sm overflow-hidden border border-rose-900/60 bg-slate-950/95 p-6 text-rose-100 shadow-[0_18px_40px_rgba(0,0,0,0.45)]">
+            <div className="relative flex min-h-[240px] flex-col items-center justify-center text-center">
+              <DialogHeader>
+                <DialogTitle className="text-2xl font-semibold text-rose-200">Skippen?</DialogTitle>
+                <DialogDescription className="text-rose-300/80">
+                  Wirklich sicher? Dann druck zehnmal.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="mt-8 flex w-full items-center justify-center">
+                <Button
+                  type="button"
+                  size="sm"
+                  className="h-6 w-10 rounded-full bg-rose-600 text-[10px] font-semibold uppercase tracking-wide text-white shadow-[0_0_18px_rgba(244,63,94,0.55)] transition-transform"
+                  style={{
+                    transform: `scale(${1 + skipFinalConfirmPresses * 0.45})`
+                  }}
+                  onClick={() => {
+                    setSkipFinalConfirmPresses((current) => {
+                      const next = current + 1;
+                      if (next >= 10) {
+                        setIsSkipFinalDialogOpen(false);
+                        setSkipFinalConfirmPresses(0);
+                        void onConfirmTaskAction();
+                        return 0;
+                      }
+                      return next;
+                    });
+                  }}
+                >
+                  Ja
+                </Button>
+              </div>
             </div>
           </DialogContent>
         </Dialog>
@@ -3149,19 +3431,19 @@ export const TasksTab = ({
                       <span className="font-semibold">
                         {t("tasks.rotationOrderPreviewTheoretical")}:
                       </span>
-                      {renderRotationAvatarStack(editRotationVariants.theoretical)}
+                      {renderRotationAvatarStack(adjustPreviewOrder(editRotationVariants.theoretical))}
                     </div>
                     <div className="flex items-center justify-between gap-2">
                       <span className="font-semibold">
                         {t("tasks.rotationOrderPreviewFairness")}:
                       </span>
-                      {renderRotationAvatarStack(editRotationVariants.fairnessActual)}
+                      {renderRotationAvatarStack(adjustPreviewOrder(editRotationVariants.fairnessActual))}
                     </div>
                     <div className="flex items-center justify-between gap-2">
                       <span className="font-semibold">
                         {t("tasks.rotationOrderPreviewFairnessProjection")}:
                       </span>
-                      {renderRotationAvatarStack(editRotationVariants.fairnessProjection)}
+                      {renderRotationAvatarStack(adjustPreviewOrder(editRotationVariants.fairnessProjection))}
                     </div>
                   </div>
                 </div>

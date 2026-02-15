@@ -317,11 +317,11 @@ alter table push_preferences enable row level security;
 alter table push_jobs enable row level security;
 alter table push_log enable row level security;
 
-create policy if not exists "push_tokens_select_own"
+create policy "push_tokens_select_own"
   on push_tokens for select
   using (auth.uid() = user_id);
 
-create policy if not exists "push_tokens_insert_own"
+create policy "push_tokens_insert_own"
   on push_tokens for insert
   with check (
     auth.uid() = user_id
@@ -332,16 +332,16 @@ create policy if not exists "push_tokens_insert_own"
     )
   );
 
-create policy if not exists "push_tokens_update_own"
+create policy "push_tokens_update_own"
   on push_tokens for update
   using (auth.uid() = user_id)
   with check (auth.uid() = user_id);
 
-create policy if not exists "push_preferences_select_own"
+create policy "push_preferences_select_own"
   on push_preferences for select
   using (auth.uid() = user_id);
 
-create policy if not exists "push_preferences_upsert_own"
+create policy "push_preferences_upsert_own"
   on push_preferences for insert
   with check (
     auth.uid() = user_id
@@ -352,7 +352,7 @@ create policy if not exists "push_preferences_upsert_own"
     )
   );
 
-create policy if not exists "push_preferences_update_own"
+create policy "push_preferences_update_own"
   on push_preferences for update
   using (auth.uid() = user_id)
   with check (auth.uid() = user_id);
@@ -1306,6 +1306,19 @@ as $$
   )
   select p.user_id
   from projected p
+  join task_info ti on true
+  join (
+    select
+      count(*)::integer as total_candidates,
+      count(*) filter (where vacation_mode = false)::integer as active_candidates
+    from candidates
+  ) as availability on true
+  where (
+    ti.assignee_id is null
+    or p.user_id is distinct from ti.assignee_id
+    or availability.total_candidates <= 1
+    or availability.active_candidates <= 1
+  )
   order by
     case when p.vacation_mode then 1 else 0 end asc,
     case
