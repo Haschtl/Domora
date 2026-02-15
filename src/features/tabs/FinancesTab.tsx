@@ -413,7 +413,7 @@ export const FinancesTab = ({
   const showArchive = section === "archive";
   const showSubscriptions = section === "subscriptions";
   const canEditApartment = currentMember?.role === "owner";
-  const mobileOverviewListHeight = mobileTabBarVisible ? "calc(100dvh - 15rem)" : "calc(100dvh - 12rem)";
+  const mobileOverviewListHeight = mobileTabBarVisible ? "calc(100dvh - 9rem)" : "calc(100dvh - 5rem)";
   const addEntryForm = useForm({
     defaultValues: {
       description: "",

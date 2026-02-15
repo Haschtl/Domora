@@ -150,7 +150,7 @@ export const FinanceEntriesList = ({
     return (
       <>
         {header ? <div className="mt-4">{header}</div> : null}
-        <ul className="mt-4 space-y-2">{entries.map((entry) => renderEntry(entry))}</ul>
+        <ul className="mt-4 list-none space-y-2">{entries.map((entry) => renderEntry(entry))}</ul>
       </>
     );
   }
@@ -158,10 +158,9 @@ export const FinanceEntriesList = ({
   return (
     <div
       ref={parentRef}
-      className="mt-4 overflow-auto pr-1"
+      className="w-[100vw] left-0 p-4 pt-8 pb-20 absolute sm:relative sm:h-full sm:w-full overflow-auto -translate-y-8 sm:translate-y-0"
       style={{ height: typeof virtualHeight === "number" ? `${virtualHeight}px` : virtualHeight }}
     >
-      {header ? <div className="mb-3">{header}</div> : null}
       <div
         style={{
           height: `${rowVirtualizer.getTotalSize()}px`,
@@ -179,7 +178,7 @@ export const FinanceEntriesList = ({
                 data-index={virtualItem.index}
                 style={{
                   transform: `translateY(${virtualItem.start}px)`,
-                  paddingBottom: "0.75rem"
+                  paddingBottom: "0.75rem",
                 }}
               >
                 {header}
@@ -192,7 +191,7 @@ export const FinanceEntriesList = ({
             <div
               key={entry.id}
               ref={rowVirtualizer.measureElement}
-              className="absolute left-0 top-0 w-full"
+              className="absolute left-0 top-0 w-full list-none"
               data-index={virtualItem.index}
               style={{
                 transform: `translateY(${virtualItem.start}px)`,
