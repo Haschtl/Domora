@@ -469,28 +469,40 @@ for each row execute function queue_push_on_task_takeover();
 
 do $$
 begin
-  perform cron.schedule(
-    'dispatch-push-jobs',
-    '*/2 * * * *',
-    $cron$
-    select
-      net.http_post(
-        url:='https://YOUR_PROJECT_REF.functions.supabase.co/dispatch-push-jobs',
-        headers:='{"Content-Type": "application/json"}'::jsonb
+  if exists (
+    select 1
+    from pg_extension
+    where extname = 'pg_cron'
+  ) and to_regnamespace('cron') is not null then
+    if to_regprocedure('net.http_post(jsonb)') is not null then
+      perform cron.schedule(
+        'dispatch-push-jobs',
+        '*/2 * * * *',
+        $cron$
+        select
+          net.http_post(
+            url:='https://YOUR_PROJECT_REF.functions.supabase.co/dispatch-push-jobs',
+            headers:='{"Content-Type": "application/json"}'::jsonb
+          );
+        $cron$
       );
-    $cron$
-  );
-  perform cron.schedule(
-    'schedule-task-due',
-    '0 9 * * *',
-    $cron$
-    select
-      net.http_post(
-        url:='https://YOUR_PROJECT_REF.functions.supabase.co/schedule-task-due',
-        headers:='{"Content-Type": "application/json"}'::jsonb
+      perform cron.schedule(
+        'schedule-task-due',
+        '0 9 * * *',
+        $cron$
+        select
+          net.http_post(
+            url:='https://YOUR_PROJECT_REF.functions.supabase.co/schedule-task-due',
+            headers:='{"Content-Type": "application/json"}'::jsonb
+          );
+        $cron$
       );
-    $cron$
-  );
+    else
+      raise notice 'net.http_post not available';
+    end if;
+  else
+    raise notice 'cron.schedule not available';
+  end if;
 exception
   when undefined_function then
     raise notice 'cron.schedule not available';
