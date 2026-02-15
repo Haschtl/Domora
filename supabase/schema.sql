@@ -13,6 +13,10 @@ create table if not exists households (
   utilities_on_room_sqm_percent numeric(5, 2) not null default 0
     check (utilities_on_room_sqm_percent >= 0 and utilities_on_room_sqm_percent <= 100),
   task_laziness_enabled boolean not null default false,
+  theme_primary_color text not null default '#1f8a7f',
+  theme_accent_color text not null default '#14b8a6',
+  theme_font_family text not null default '"Space Grotesk", "Segoe UI", sans-serif',
+  theme_radius_scale numeric(4, 2) not null default 1,
   landing_page_markdown text not null default '',
   invite_code text not null unique,
   created_by uuid not null references auth.users(id) on delete cascade,
@@ -276,6 +280,10 @@ alter table households add column if not exists cold_rent_monthly numeric(12, 2)
 alter table households add column if not exists utilities_monthly numeric(12, 2);
 alter table households add column if not exists utilities_on_room_sqm_percent numeric(5, 2) not null default 0;
 alter table households add column if not exists task_laziness_enabled boolean not null default false;
+alter table households add column if not exists theme_primary_color text not null default '#1f8a7f';
+alter table households add column if not exists theme_accent_color text not null default '#14b8a6';
+alter table households add column if not exists theme_font_family text not null default '"Space Grotesk", "Segoe UI", sans-serif';
+alter table households add column if not exists theme_radius_scale numeric(4, 2) not null default 1;
 alter table households add column if not exists landing_page_markdown text not null default '';
 
 update households
@@ -290,11 +298,43 @@ update households
 set task_laziness_enabled = false
 where task_laziness_enabled is null;
 
+update households
+set theme_primary_color = '#1f8a7f'
+where theme_primary_color is null
+   or theme_primary_color !~ '^#[0-9A-Fa-f]{6}$';
+
+update households
+set theme_accent_color = '#14b8a6'
+where theme_accent_color is null
+   or theme_accent_color !~ '^#[0-9A-Fa-f]{6}$';
+
+update households
+set theme_font_family = '"Space Grotesk", "Segoe UI", sans-serif'
+where theme_font_family is null
+   or char_length(trim(theme_font_family)) = 0;
+
+update households
+set theme_radius_scale = 1
+where theme_radius_scale is null
+   or theme_radius_scale <= 0;
+
 alter table households
 alter column utilities_on_room_sqm_percent set not null;
 
 alter table households
 alter column task_laziness_enabled set not null;
+
+alter table households
+alter column theme_primary_color set not null;
+
+alter table households
+alter column theme_accent_color set not null;
+
+alter table households
+alter column theme_font_family set not null;
+
+alter table households
+alter column theme_radius_scale set not null;
 
 alter table tasks add column if not exists last_due_notification_at timestamptz;
 
@@ -587,6 +627,36 @@ begin
     alter table households
       add constraint households_utilities_on_room_sqm_percent_range_check
       check (utilities_on_room_sqm_percent >= 0 and utilities_on_room_sqm_percent <= 100);
+  end if;
+
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'households_theme_primary_color_format_check'
+  ) then
+    alter table households
+      add constraint households_theme_primary_color_format_check
+      check (theme_primary_color ~ '^#[0-9A-Fa-f]{6}$');
+  end if;
+
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'households_theme_accent_color_format_check'
+  ) then
+    alter table households
+      add constraint households_theme_accent_color_format_check
+      check (theme_accent_color ~ '^#[0-9A-Fa-f]{6}$');
+  end if;
+
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'households_theme_radius_scale_range_check'
+  ) then
+    alter table households
+      add constraint households_theme_radius_scale_range_check
+      check (theme_radius_scale >= 0.5 and theme_radius_scale <= 1.5);
   end if;
 end;
 $$;

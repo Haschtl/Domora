@@ -13,6 +13,10 @@ export interface Household {
   utilities_monthly: number | null;
   utilities_on_room_sqm_percent: number;
   task_laziness_enabled: boolean;
+  theme_primary_color: string;
+  theme_accent_color: string;
+  theme_font_family: string;
+  theme_radius_scale: number;
   landing_page_markdown: string;
   invite_code: string;
   created_by: string;
@@ -29,6 +33,10 @@ export interface UpdateHouseholdInput {
   utilitiesMonthly: number | null;
   utilitiesOnRoomSqmPercent: number;
   taskLazinessEnabled: boolean;
+  themePrimaryColor: string;
+  themeAccentColor: string;
+  themeFontFamily: string;
+  themeRadiusScale: number;
 }
 
 export interface HouseholdMember {
@@ -148,6 +156,7 @@ export interface TaskCompletion {
 
 export type HouseholdEventType =
   | "task_completed"
+  | "pimpers_reset"
   | "task_skipped"
   | "shopping_completed"
   | "finance_created"

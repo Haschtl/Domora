@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useForm } from "@tanstack/react-form";
 import imageCompression from "browser-image-compression";
 import { Camera, Check, Crown, Share2, UserMinus, X } from "lucide-react";
@@ -10,6 +10,7 @@ import { createTrianglifyBannerBackground } from "../../lib/banner";
 import { createMemberLabelGetter } from "../../lib/member-label";
 import { ThemeLanguageControls } from "../../components/theme-language-controls";
 import { PaymentBrandIcon } from "../../components/payment-brand-icon";
+import { applyHouseholdTheme } from "../../lib/household-theme";
 import { Button } from "../../components/ui/button";
 import { Checkbox } from "../../components/ui/checkbox";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
@@ -25,6 +26,7 @@ import {
 } from "../../components/ui/dialog";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "../../components/ui/accordion";
 import { Input } from "../../components/ui/input";
+import { InputWithSuffix } from "../../components/ui/input-with-suffix";
 import { Label } from "../../components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
 import { Switch } from "../../components/ui/switch";
@@ -204,14 +206,59 @@ export const SettingsPage = ({
       await onUpdateUserPaymentHandles(value);
     }
   });
-
+  const normalizeThemeRadiusScale = (value: string) => {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return 1;
+    return Math.min(1.5, Math.max(0.5, parsed));
+  };
+  const themePresets = useMemo(
+    () => [
+      {
+        id: "domora",
+        label: t("settings.householdThemePresetDefault"),
+        primary: "#1f8a7f",
+        accent: "#14b8a6",
+        font: '"Space Grotesk", "Segoe UI", sans-serif',
+        radius: "1"
+      },
+      {
+        id: "sunset",
+        label: t("settings.householdThemePresetSunset"),
+        primary: "#f97316",
+        accent: "#f43f5e",
+        font: '"Plus Jakarta Sans", "Segoe UI", sans-serif',
+        radius: "1.1"
+      },
+      {
+        id: "ocean",
+        label: t("settings.householdThemePresetOcean"),
+        primary: "#0ea5e9",
+        accent: "#22c55e",
+        font: '"IBM Plex Sans", "Segoe UI", sans-serif',
+        radius: "0.9"
+      },
+      {
+        id: "mono",
+        label: t("settings.householdThemePresetMono"),
+        primary: "#334155",
+        accent: "#64748b",
+        font: '"Source Sans 3", "Segoe UI", sans-serif',
+        radius: "0.8"
+      }
+    ],
+    [t]
+  );
   const householdForm = useForm({
     defaultValues: {
       name: household.name ?? "",
       imageUrl: household.image_url ?? "",
       address: household.address ?? "",
       currency: household.currency ?? "EUR",
-      taskLazinessEnabled: household.task_laziness_enabled ?? false
+      taskLazinessEnabled: household.task_laziness_enabled ?? false,
+      themePrimaryColor: household.theme_primary_color ?? "#1f8a7f",
+      themeAccentColor: household.theme_accent_color ?? "#14b8a6",
+      themeFontFamily: household.theme_font_family ?? '"Space Grotesk", "Segoe UI", sans-serif',
+      themeRadiusScale: String(household.theme_radius_scale ?? 1)
     },
     onSubmit: async ({ value }: {
       value: {
@@ -220,6 +267,10 @@ export const SettingsPage = ({
         address: string;
         currency: string;
         taskLazinessEnabled: boolean;
+        themePrimaryColor: string;
+        themeAccentColor: string;
+        themeFontFamily: string;
+        themeRadiusScale: string;
       };
     }) => {
       if (!isOwner) {
@@ -249,10 +300,38 @@ export const SettingsPage = ({
         coldRentMonthly: household.cold_rent_monthly,
         utilitiesMonthly: household.utilities_monthly,
         utilitiesOnRoomSqmPercent: household.utilities_on_room_sqm_percent,
-        taskLazinessEnabled: value.taskLazinessEnabled
+        taskLazinessEnabled: value.taskLazinessEnabled,
+        themePrimaryColor: value.themePrimaryColor,
+        themeAccentColor: value.themeAccentColor,
+        themeFontFamily: value.themeFontFamily,
+        themeRadiusScale: normalizeThemeRadiusScale(value.themeRadiusScale)
       });
     }
   });
+
+  const applyThemePreview = useCallback(
+    (next?: Partial<{
+      themePrimaryColor: string;
+      themeAccentColor: string;
+      themeFontFamily: string;
+      themeRadiusScale: string;
+    }>) => {
+      const values = {
+        themePrimaryColor: householdForm.state.values.themePrimaryColor,
+        themeAccentColor: householdForm.state.values.themeAccentColor,
+        themeFontFamily: householdForm.state.values.themeFontFamily,
+        themeRadiusScale: householdForm.state.values.themeRadiusScale,
+        ...next
+      };
+      applyHouseholdTheme({
+        primaryColor: values.themePrimaryColor,
+        accentColor: values.themeAccentColor,
+        fontFamily: values.themeFontFamily,
+        radiusScale: normalizeThemeRadiusScale(values.themeRadiusScale)
+      });
+    },
+    [householdForm.state.values, normalizeThemeRadiusScale]
+  );
 
 
   useEffect(() => {
@@ -261,6 +340,13 @@ export const SettingsPage = ({
     householdForm.setFieldValue("address", household.address ?? "");
     householdForm.setFieldValue("currency", household.currency ?? "EUR");
     householdForm.setFieldValue("taskLazinessEnabled", household.task_laziness_enabled ?? false);
+    householdForm.setFieldValue("themePrimaryColor", household.theme_primary_color ?? "#1f8a7f");
+    householdForm.setFieldValue("themeAccentColor", household.theme_accent_color ?? "#14b8a6");
+    householdForm.setFieldValue(
+      "themeFontFamily",
+      household.theme_font_family ?? '"Space Grotesk", "Segoe UI", sans-serif'
+    );
+    householdForm.setFieldValue("themeRadiusScale", String(household.theme_radius_scale ?? 1));
   }, [
     household.address,
     household.currency,
@@ -268,6 +354,10 @@ export const SettingsPage = ({
     household.image_url,
     household.name,
     household.task_laziness_enabled,
+    household.theme_primary_color,
+    household.theme_accent_color,
+    household.theme_font_family,
+    household.theme_radius_scale,
     householdForm
   ]);
 
@@ -343,7 +433,11 @@ export const SettingsPage = ({
         coldRentMonthly: household.cold_rent_monthly,
         utilitiesMonthly: household.utilities_monthly,
         utilitiesOnRoomSqmPercent: household.utilities_on_room_sqm_percent,
-        taskLazinessEnabled: householdForm.state.values.taskLazinessEnabled
+        taskLazinessEnabled: householdForm.state.values.taskLazinessEnabled,
+        themePrimaryColor: householdForm.state.values.themePrimaryColor,
+        themeAccentColor: householdForm.state.values.themeAccentColor,
+        themeFontFamily: householdForm.state.values.themeFontFamily,
+        themeRadiusScale: normalizeThemeRadiusScale(householdForm.state.values.themeRadiusScale)
       });
       setHouseholdUploadError(null);
     } catch {
@@ -364,7 +458,11 @@ export const SettingsPage = ({
         coldRentMonthly: household.cold_rent_monthly,
         utilitiesMonthly: household.utilities_monthly,
         utilitiesOnRoomSqmPercent: household.utilities_on_room_sqm_percent,
-        taskLazinessEnabled: householdForm.state.values.taskLazinessEnabled
+        taskLazinessEnabled: householdForm.state.values.taskLazinessEnabled,
+        themePrimaryColor: householdForm.state.values.themePrimaryColor,
+        themeAccentColor: householdForm.state.values.themeAccentColor,
+        themeFontFamily: householdForm.state.values.themeFontFamily,
+        themeRadiusScale: normalizeThemeRadiusScale(householdForm.state.values.themeRadiusScale)
       });
       setHouseholdUploadError(null);
     } catch {
@@ -405,6 +503,7 @@ export const SettingsPage = ({
         vacation_mode: currentMember?.vacation_mode ?? false,
         room_size_sqm: currentMember?.room_size_sqm ?? null,
         common_area_factor: currentMember?.common_area_factor ?? 1,
+        task_laziness_factor: currentMember?.task_laziness_factor ?? 1,
         created_at: currentMember?.created_at ?? new Date(0).toISOString()
       });
     }
@@ -509,6 +608,35 @@ export const SettingsPage = ({
   };
   const showMe = section === "me";
   const showHousehold = section === "household";
+
+  useEffect(() => {
+    if (!showHousehold || !isOwner) return;
+    applyHouseholdTheme({
+      primaryColor: householdForm.state.values.themePrimaryColor,
+      accentColor: householdForm.state.values.themeAccentColor,
+      fontFamily: householdForm.state.values.themeFontFamily,
+      radiusScale: normalizeThemeRadiusScale(householdForm.state.values.themeRadiusScale)
+    });
+    return () => {
+      applyHouseholdTheme({
+        primaryColor: household.theme_primary_color,
+        accentColor: household.theme_accent_color,
+        fontFamily: household.theme_font_family,
+        radiusScale: household.theme_radius_scale
+      });
+    };
+  }, [
+    household.theme_accent_color,
+    household.theme_font_family,
+    household.theme_primary_color,
+    household.theme_radius_scale,
+    householdForm.state.values.themeAccentColor,
+    householdForm.state.values.themeFontFamily,
+    householdForm.state.values.themePrimaryColor,
+    householdForm.state.values.themeRadiusScale,
+    isOwner,
+    showHousehold
+  ]);
 
   return (
     <div className="space-y-4">
@@ -1381,6 +1509,228 @@ export const SettingsPage = ({
                     />
                   )}
                 />
+              </div>
+
+              <div className="rounded-xl border border-brand-200 bg-white px-3 py-3 dark:border-slate-700 dark:bg-slate-900">
+                <div>
+                  <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
+                    {t("settings.householdThemeTitle")}
+                  </p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    {t("settings.householdThemeDescription")}
+                  </p>
+                </div>
+                <div className="mt-3 space-y-2">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                    {t("settings.householdThemePresets")}
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {themePresets.map((preset) => (
+                      <button
+                        key={preset.id}
+                        type="button"
+                        className="inline-flex items-center gap-2 rounded-full border border-brand-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-brand-50/60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+                        onClick={() => {
+                          if (!isOwner || busy) return;
+                          householdForm.setFieldValue("themePrimaryColor", preset.primary);
+                          householdForm.setFieldValue("themeAccentColor", preset.accent);
+                          householdForm.setFieldValue("themeFontFamily", preset.font);
+                          householdForm.setFieldValue("themeRadiusScale", preset.radius);
+                          applyThemePreview({
+                            themePrimaryColor: preset.primary,
+                            themeAccentColor: preset.accent,
+                            themeFontFamily: preset.font,
+                            themeRadiusScale: preset.radius
+                          });
+                        }}
+                        disabled={!isOwner || busy}
+                      >
+                        <span
+                          className="h-3 w-3 rounded-full border border-slate-300 dark:border-slate-600"
+                          style={{ backgroundColor: preset.primary }}
+                        />
+                        <span
+                          className="h-3 w-3 rounded-full border border-slate-300 dark:border-slate-600"
+                          style={{ backgroundColor: preset.accent }}
+                        />
+                        {preset.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  <householdForm.Field
+                    name="themePrimaryColor"
+                    children={(field: {
+                      state: { value: string };
+                      handleChange: (value: string) => void;
+                    }) => (
+                      <div className="space-y-1">
+                        <Label>{t("settings.householdThemePrimaryLabel")}</Label>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="color"
+                            value={field.state.value}
+                            disabled={busy || !isOwner}
+                            onChange={(event) => {
+                              field.handleChange(event.target.value);
+                              applyThemePreview({ themePrimaryColor: event.target.value });
+                            }}
+                            className="h-9 w-10 cursor-pointer rounded border border-brand-200 bg-white p-0 dark:border-slate-700 dark:bg-slate-900"
+                            aria-label={t("settings.householdThemePrimaryLabel")}
+                          />
+                          <Input
+                            value={field.state.value}
+                            disabled={busy || !isOwner}
+                            onChange={(event) => {
+                              field.handleChange(event.target.value);
+                              applyThemePreview({ themePrimaryColor: event.target.value });
+                            }}
+                            placeholder="#1f8a7f"
+                          />
+                        </div>
+                      </div>
+                    )}
+                  />
+                  <householdForm.Field
+                    name="themeAccentColor"
+                    children={(field: {
+                      state: { value: string };
+                      handleChange: (value: string) => void;
+                    }) => (
+                      <div className="space-y-1">
+                        <Label>{t("settings.householdThemeAccentLabel")}</Label>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="color"
+                            value={field.state.value}
+                            disabled={busy || !isOwner}
+                            onChange={(event) => {
+                              field.handleChange(event.target.value);
+                              applyThemePreview({ themeAccentColor: event.target.value });
+                            }}
+                            className="h-9 w-10 cursor-pointer rounded border border-brand-200 bg-white p-0 dark:border-slate-700 dark:bg-slate-900"
+                            aria-label={t("settings.householdThemeAccentLabel")}
+                          />
+                          <Input
+                            value={field.state.value}
+                            disabled={busy || !isOwner}
+                            onChange={(event) => {
+                              field.handleChange(event.target.value);
+                              applyThemePreview({ themeAccentColor: event.target.value });
+                            }}
+                            placeholder="#14b8a6"
+                          />
+                        </div>
+                      </div>
+                    )}
+                  />
+                  <householdForm.Field
+                    name="themeFontFamily"
+                    children={(field: {
+                      state: { value: string };
+                      handleChange: (value: string) => void;
+                    }) => (
+                      <div className="space-y-1">
+                        <Label>{t("settings.householdThemeFontLabel")}</Label>
+                        <select
+                          className="h-10 w-full rounded-xl border border-brand-200 bg-white px-3 text-sm text-slate-900 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                          style={{ fontFamily: field.state.value }}
+                          value={field.state.value}
+                          onChange={(event) => {
+                            field.handleChange(event.target.value);
+                            applyThemePreview({ themeFontFamily: event.target.value });
+                          }}
+                          disabled={busy || !isOwner}
+                        >
+                          <option
+                            value='"Space Grotesk", "Segoe UI", sans-serif'
+                            style={{ fontFamily: '"Space Grotesk", "Segoe UI", sans-serif' }}
+                          >
+                            Space Grotesk
+                          </option>
+                          <option value='"Inter", "Segoe UI", sans-serif' style={{ fontFamily: '"Inter", "Segoe UI", sans-serif' }}>
+                            Inter
+                          </option>
+                          <option value='"Manrope", "Segoe UI", sans-serif' style={{ fontFamily: '"Manrope", "Segoe UI", sans-serif' }}>
+                            Manrope
+                          </option>
+                          <option value='"Sora", "Segoe UI", sans-serif' style={{ fontFamily: '"Sora", "Segoe UI", sans-serif' }}>
+                            Sora
+                          </option>
+                          <option
+                            value='"Plus Jakarta Sans", "Segoe UI", sans-serif'
+                            style={{ fontFamily: '"Plus Jakarta Sans", "Segoe UI", sans-serif' }}
+                          >
+                            Plus Jakarta Sans
+                          </option>
+                          <option
+                            value='"IBM Plex Sans", "Segoe UI", sans-serif'
+                            style={{ fontFamily: '"IBM Plex Sans", "Segoe UI", sans-serif' }}
+                          >
+                            IBM Plex Sans
+                          </option>
+                          <option value='"Fira Sans", "Segoe UI", sans-serif' style={{ fontFamily: '"Fira Sans", "Segoe UI", sans-serif' }}>
+                            Fira Sans
+                          </option>
+                          <option value='"Rubik", "Segoe UI", sans-serif' style={{ fontFamily: '"Rubik", "Segoe UI", sans-serif' }}>
+                            Rubik
+                          </option>
+                          <option value='"Nunito", "Segoe UI", sans-serif' style={{ fontFamily: '"Nunito", "Segoe UI", sans-serif' }}>
+                            Nunito
+                          </option>
+                          <option
+                            value='"Source Sans 3", "Segoe UI", sans-serif'
+                            style={{ fontFamily: '"Source Sans 3", "Segoe UI", sans-serif' }}
+                          >
+                            Source Sans 3
+                          </option>
+                          <option
+                            value='"Merriweather", "Georgia", serif'
+                            style={{ fontFamily: '"Merriweather", "Georgia", serif' }}
+                          >
+                            Merriweather
+                          </option>
+                          <option value='"Lora", "Georgia", serif' style={{ fontFamily: '"Lora", "Georgia", serif' }}>
+                            Lora
+                          </option>
+                          <option
+                            value='"Playfair Display", "Georgia", serif'
+                            style={{ fontFamily: '"Playfair Display", "Georgia", serif' }}
+                          >
+                            Playfair Display
+                          </option>
+                        </select>
+                      </div>
+                    )}
+                  />
+                  <householdForm.Field
+                    name="themeRadiusScale"
+                    children={(field: {
+                      state: { value: string };
+                      handleChange: (value: string) => void;
+                    }) => (
+                      <div className="space-y-1">
+                        <Label>{t("settings.householdThemeRadiusLabel")}</Label>
+                        <InputWithSuffix
+                          suffix="×"
+                          type="number"
+                          min="0.5"
+                          max="1.5"
+                          step="0.1"
+                          inputMode="decimal"
+                          value={field.state.value}
+                          onChange={(event) => {
+                            field.handleChange(event.target.value);
+                            applyThemePreview({ themeRadiusScale: event.target.value });
+                          }}
+                          placeholder="1.0"
+                          disabled={busy || !isOwner}
+                        />
+                      </div>
+                    )}
+                  />
+                </div>
               </div>
 
               {householdUploadError ? (

@@ -49,6 +49,16 @@ const householdSchema = z.object({
   utilities_monthly: nonNegativeOptionalNumberSchema,
   utilities_on_room_sqm_percent: percentageNumberSchema.default(0),
   task_laziness_enabled: z.coerce.boolean().default(false),
+  theme_primary_color: z
+    .string()
+    .regex(/^#[0-9A-Fa-f]{6}$/)
+    .default("#1f8a7f"),
+  theme_accent_color: z
+    .string()
+    .regex(/^#[0-9A-Fa-f]{6}$/)
+    .default("#14b8a6"),
+  theme_font_family: z.string().min(1).default('"Space Grotesk", "Segoe UI", sans-serif'),
+  theme_radius_scale: z.coerce.number().min(0.5).max(1.5).default(1),
   landing_page_markdown: z.string().default(""),
   invite_code: z.string().min(1),
   created_by: z.string().uuid(),

@@ -2399,7 +2399,7 @@ export const TasksPage = ({
                                 {t("tasks.frequencyActualValue", {
                                   count: (() => {
                                     const actual = actualFrequencyDaysByTaskId.get(task.id);
-                                    if (actual == null) return "-";
+                                    if (actual == null) return task.frequency_days;
                                     return Number(actual.toFixed(1));
                                   })(),
                                 })}

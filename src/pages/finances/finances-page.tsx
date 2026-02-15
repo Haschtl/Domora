@@ -72,9 +72,9 @@ import { formatDateOnly, formatShortDay } from "../../lib/date";
 import { calculateBalancesByMember, calculateSettlementTransfers, splitAmountEvenly } from "../../lib/finance-math";
 import { createMemberLabelGetter, type MemberLabelCase } from "../../lib/member-label";
 import { MemberAvatar } from "../../components/member-avatar";
-import { FinanceEntriesList } from "./components/FinanceEntriesList";
-import { FinanceHistoryCard } from "./components/FinanceHistoryCard";
-import { useFinancesDerivedData } from "./hooks/use-finances-derived-data";
+import { FinanceEntriesList } from "../../features/components/FinanceEntriesList";
+import { FinanceHistoryCard } from "../../features/components/FinanceHistoryCard";
+import { useFinancesDerivedData } from "../../features/hooks/use-finances-derived-data";
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, ArcElement, Tooltip, Legend);
 
@@ -670,7 +670,11 @@ export const FinancesPage = ({
         coldRentMonthly: parsedColdRent,
         utilitiesMonthly: parsedUtilities,
         utilitiesOnRoomSqmPercent: parsedUtilitiesOnRoomSqmPercent,
-        taskLazinessEnabled: household.task_laziness_enabled ?? false
+        taskLazinessEnabled: household.task_laziness_enabled ?? false,
+        themePrimaryColor: household.theme_primary_color ?? "#1f8a7f",
+        themeAccentColor: household.theme_accent_color ?? "#14b8a6",
+        themeFontFamily: household.theme_font_family ?? '"Space Grotesk", "Segoe UI", sans-serif',
+        themeRadiusScale: household.theme_radius_scale ?? 1
       });
     }
   });

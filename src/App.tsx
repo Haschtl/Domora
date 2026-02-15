@@ -31,6 +31,7 @@ import { useHouseholdEvents, useHouseholdTasks } from "./hooks/use-household-dat
 import { useTaskNotifications } from "./hooks/useTaskNotifications";
 import { useWorkspaceController } from "./hooks/useWorkspaceController";
 import { ensureHouseholdQueries } from "./lib/household-queries";
+import { applyHouseholdTheme } from "./lib/household-theme";
 
 const AuthView = lazy(() => import("./features/AuthView").then((module) => ({ default: module.AuthView })));
 const HouseholdSetupView = lazy(() =>
@@ -235,7 +236,7 @@ const AppLayout = () => {
   const [hasPrefetchedTasks, setHasPrefetchedTasks] = useState(false);
   const loadingOverlayDelayTimerRef = useRef<number | null>(null);
   const loadingOverlayHideTimerRef = useRef<number | null>(null);
-  const delayedPrefetchTimerRef = useRef<number | null>(null);
+  const delayedPrefetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const shouldLoadTaskData =
     tab === "tasks" || tab === "home" || hasPrefetchedTasks || notificationPermission === "granted";
   const tasksQuery = useHouseholdTasks(activeHousehold?.id ?? null, shouldLoadTaskData);
@@ -268,15 +269,15 @@ const AppLayout = () => {
     };
 
     const scheduleIdle = () => {
-      if (typeof window === "undefined") return;
-      if ("requestIdleCallback" in window) {
-        const handle = window.requestIdleCallback(runPrefetch, { timeout: 1200 });
-        return () => window.cancelIdleCallback(handle);
+      const win = globalThis as Window & typeof globalThis;
+      if ("requestIdleCallback" in win) {
+        const handle = win.requestIdleCallback(runPrefetch, { timeout: 1200 });
+        return () => win.cancelIdleCallback(handle);
       }
-      delayedPrefetchTimerRef.current = window.setTimeout(runPrefetch, 700);
+      delayedPrefetchTimerRef.current = setTimeout(runPrefetch, 700);
       return () => {
         if (delayedPrefetchTimerRef.current) {
-          window.clearTimeout(delayedPrefetchTimerRef.current);
+          clearTimeout(delayedPrefetchTimerRef.current);
           delayedPrefetchTimerRef.current = null;
         }
       };
@@ -464,6 +465,25 @@ const AppLayout = () => {
     const householdName = activeHousehold?.name?.trim();
     document.title = householdName ? `${householdName} | ${brand}` : brand;
   }, [activeHousehold?.name, t]);
+
+  useEffect(() => {
+    applyHouseholdTheme(
+      activeHousehold
+        ? {
+            primaryColor: activeHousehold.theme_primary_color,
+            accentColor: activeHousehold.theme_accent_color,
+            fontFamily: activeHousehold.theme_font_family,
+            radiusScale: activeHousehold.theme_radius_scale
+          }
+        : {}
+    );
+  }, [
+    activeHousehold?.id,
+    activeHousehold?.theme_primary_color,
+    activeHousehold?.theme_accent_color,
+    activeHousehold?.theme_font_family,
+    activeHousehold?.theme_radius_scale
+  ]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;

@@ -29,7 +29,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { useSmartSuggestions } from "../../hooks/use-smart-suggestions";
 import { addRecurringIntervalToIso, formatDateTime, formatShortDay } from "../../lib/date";
 import { createMemberLabelGetter } from "../../lib/member-label";
-import { useShoppingSuggestions, type ShoppingSuggestion } from "./hooks/use-shopping-suggestions";
+import { useShoppingSuggestions, type ShoppingSuggestion } from "../../features/hooks/use-shopping-suggestions";
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarElement, Filler, Tooltip, Legend);
 

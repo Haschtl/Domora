@@ -69,6 +69,11 @@ export const ensureHouseholdQueries = async (
   queries: HouseholdQueryKey[]
 ) => {
   await Promise.all(
-    queries.map((key) => queryClient.ensureQueryData(householdQueryOptions[key](householdId)))
+    queries.map((key) => {
+      const options = householdQueryOptions[key](householdId);
+      return queryClient.ensureQueryData(
+        options as Parameters<QueryClient["ensureQueryData"]>[0]
+      );
+    })
   );
 };

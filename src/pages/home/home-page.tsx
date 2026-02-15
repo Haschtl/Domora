@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { CalendarCheck2, GripVertical, MoreHorizontal, Pencil, Plus, Receipt, ShoppingCart, Trash2, Wallet, X } from "lucide-react";
 import ReactMarkdown from "react-markdown";
@@ -7,7 +7,6 @@ import { useTranslation } from "react-i18next";
 import type { Components } from "react-markdown";
 import { type JsxComponentDescriptor, type JsxEditorProps, useLexicalNodeRemove } from "@mdxeditor/editor";
 import { createTrianglifyBannerBackground } from "../../lib/banner";
-import { MXEditor } from "../../components/mx-editor";
 import { formatDateTime } from "../../lib/date";
 import { createMemberLabelGetter } from "../../lib/member-label";
 import { calculateBalancesByMember } from "../../lib/finance-math";
@@ -37,13 +36,18 @@ import { Label } from "../../components/ui/label";
 import { MultiDateCalendarSelect } from "../../components/ui/multi-date-calendar-select";
 import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "../../components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
-import {
+import {   
   LANDING_WIDGET_KEYS,
   type LandingWidgetKey,
   canEditLandingByRole,
   getEffectiveLandingMarkdown,
   getSavedLandingMarkdown
-} from "./home-landing.utils";
+ } from "../../features/home-landing.utils";
+
+const MXEditorLazy = lazy(() =>
+  import("../../components/mx-editor").then((module) => ({ default: module.MXEditor }))
+);
+
 
 interface HomePageProps {
   section?: "summary" | "bucket" | "feed";
@@ -382,6 +386,9 @@ export const HomePage = ({
   const effectiveMarkdown = getEffectiveLandingMarkdown(savedMarkdown, defaultLandingMarkdown);
   const [markdownDraft, setMarkdownDraft] = useState(effectiveMarkdown);
   const canEdit = canEditLandingByRole(currentMember?.role ?? null);
+  const prefetchEditor = useCallback(() => {
+    void import("../../components/mx-editor");
+  }, []);
   const hasContent = effectiveMarkdown.trim().length > 0;
   const householdImageUrl = household.image_url?.trim() ?? "";
   const bannerBackgroundImage = useMemo(
@@ -1183,6 +1190,8 @@ export const HomePage = ({
                       size="sm"
                       variant="outline"
                       className="absolute right-2 top-2 z-10 h-9 w-9 rounded-full border-brand-200 bg-white/95 px-0 shadow-sm hover:bg-brand-50 dark:border-slate-700 dark:bg-slate-900/95 dark:hover:bg-slate-800"
+                      onMouseEnter={prefetchEditor}
+                      onFocus={prefetchEditor}
                       onClick={() => setIsEditingLanding(true)}
                       disabled={!canEdit}
                       aria-label={t("home.editLanding")}
@@ -1216,18 +1225,26 @@ export const HomePage = ({
                   })();
                 }}
               >
-                <MXEditor
-                  value={convertLandingTokensToEditorJsx(markdownDraft)}
-                  onChange={(nextValue) =>
-                    setMarkdownDraft(convertEditorJsxToLandingTokens(nextValue))
+                <Suspense
+                  fallback={
+                    <div className="rounded-xl border border-dashed border-brand-200 bg-brand-50/40 px-4 py-8 text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-300">
+                      {t("common.loading")}
+                    </div>
                   }
-                  placeholder={t("home.markdownPlaceholder")}
-                  chrome="flat"
-                  insertOptions={landingInsertOptionsForEditor}
-                  insertPlaceholder={t("home.insertWidgetPlaceholder")}
-                  insertButtonLabel={t("home.insertWidgetAction")}
-                  jsxComponentDescriptors={landingWidgetJsxDescriptors}
-                />
+                >
+                  <MXEditorLazy
+                    value={convertLandingTokensToEditorJsx(markdownDraft)}
+                    onChange={(nextValue) =>
+                      setMarkdownDraft(convertEditorJsxToLandingTokens(nextValue))
+                    }
+                    placeholder={t("home.markdownPlaceholder")}
+                    chrome="flat"
+                    insertOptions={landingInsertOptionsForEditor}
+                    insertPlaceholder={t("home.insertWidgetPlaceholder")}
+                    insertButtonLabel={t("home.insertWidgetAction")}
+                    jsxComponentDescriptors={landingWidgetJsxDescriptors}
+                  />
+                </Suspense>
                 <div className="flex justify-end gap-2">
                   <Button
                     type="button"
