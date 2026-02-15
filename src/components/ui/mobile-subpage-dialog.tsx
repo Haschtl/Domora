@@ -44,7 +44,7 @@ export const MobileSubpageDialog = ({
       )}
     >
       <div className="flex h-full flex-col">
-        <DialogHeader className="sticky top-0 z-10 border-b border-brand-100 bg-white px-4 py-3 dark:border-slate-800 dark:bg-slate-900">
+        <DialogHeader className="sticky top-0 z-10 border-b border-brand-100 bg-white px-4 py-3 shadow-[0_8px_18px_rgba(15,23,42,0.08)] dark:border-slate-800 dark:bg-slate-900 dark:shadow-[0_8px_18px_rgba(2,6,23,0.45)]">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <DialogTitle className="truncate">{title}</DialogTitle>
@@ -61,7 +61,7 @@ export const MobileSubpageDialog = ({
         <div className="flex-1 overflow-y-auto px-4 py-4">{children}</div>
 
         {footer ? (
-          <div className="sticky bottom-0 border-t border-brand-100 bg-white px-4 py-3 dark:border-slate-800 dark:bg-slate-900">
+          <div className="sticky bottom-0 border-t border-brand-100 bg-white px-4 py-3 shadow-[0_-8px_18px_rgba(15,23,42,0.08)] dark:border-slate-800 dark:bg-slate-900 dark:shadow-[0_-8px_18px_rgba(2,6,23,0.45)]">
             {footer}
           </div>
         ) : null}

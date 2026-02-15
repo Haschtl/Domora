@@ -158,6 +158,8 @@ export const SettingsTab = ({
   const [profileUploadError, setProfileUploadError] = useState<string | null>(null);
   const [householdUploadError, setHouseholdUploadError] = useState<string | null>(null);
   const [inviteCopied, setInviteCopied] = useState(false);
+  const [vacationDialogOpen, setVacationDialogOpen] = useState(false);
+  const [pendingVacationMode, setPendingVacationMode] = useState<boolean | null>(null);
   const [pushPreferences, setPushPreferences] = useState<PushPreferences | null>(null);
   const [pushPreferencesSnapshot, setPushPreferencesSnapshot] = useState<string | null>(null);
   const [pushPreferencesBusy, setPushPreferencesBusy] = useState(false);
@@ -419,6 +421,7 @@ export const SettingsTab = ({
   const pushTopics = useMemo(
     () => [
       { id: "task_due", label: t("settings.pushUsedForTaskDue") },
+      { id: "task_reminder", label: t("settings.pushUsedForTaskReminder") },
       { id: "task_completed", label: t("settings.pushUsedForTaskCompleted") },
       { id: "task_skipped", label: t("settings.pushUsedForTaskSkipped") },
       { id: "task_taken_over", label: t("settings.pushUsedForTaskTakenOver") },
@@ -727,11 +730,49 @@ export const SettingsTab = ({
                   checked={currentMember?.vacation_mode ?? false}
                   disabled={busy || !currentMember}
                   onCheckedChange={(checked) => {
-                    void onUpdateVacationMode(checked);
+                    setPendingVacationMode(checked);
+                    setVacationDialogOpen(true);
                   }}
                   aria-label={t("settings.vacationModeLabel")}
                 />
               </div>
+              <Dialog
+                open={vacationDialogOpen}
+                onOpenChange={(open) => {
+                  setVacationDialogOpen(open);
+                  if (!open) {
+                    setPendingVacationMode(null);
+                  }
+                }}
+              >
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>{t("settings.vacationModeConfirmTitle")}</DialogTitle>
+                    <DialogDescription>
+                      {pendingVacationMode
+                        ? t("settings.vacationModeConfirmEnable")
+                        : t("settings.vacationModeConfirmDisable")}
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="mt-4 flex justify-end gap-2">
+                    <DialogClose asChild>
+                      <Button variant="ghost">{t("common.cancel")}</Button>
+                    </DialogClose>
+                    <DialogClose asChild>
+                      <Button
+                        type="button"
+                        onClick={() => {
+                          if (pendingVacationMode === null) return;
+                          void onUpdateVacationMode(pendingVacationMode);
+                        }}
+                        disabled={busy || pendingVacationMode === null}
+                      >
+                        {t("common.confirm")}
+                      </Button>
+                    </DialogClose>
+                  </div>
+                </DialogContent>
+              </Dialog>
 
               <div className="rounded-xl border border-brand-200 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900">
                 <div className="flex items-center justify-between gap-3">

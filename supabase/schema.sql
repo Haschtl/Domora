@@ -1141,6 +1141,77 @@ before update on household_members
 for each row
 execute function guard_household_member_role_change();
 
+create or replace function apply_vacation_return_pimpers()
+returns trigger
+language plpgsql
+security invoker
+set search_path = public
+as $$
+declare
+  winsorized_mean numeric;
+begin
+  if old.vacation_mode = true and new.vacation_mode = false then
+    with active_members as (
+      select hm.user_id
+      from household_members hm
+      where hm.household_id = new.household_id
+        and hm.vacation_mode = false
+        and hm.user_id <> new.user_id
+    ),
+    active_pimpers as (
+      select coalesce(hmp.total_pimpers, 0)::numeric as total_pimpers
+      from active_members am
+      left join household_member_pimpers hmp
+        on hmp.household_id = new.household_id
+       and hmp.user_id = am.user_id
+    ),
+    bounds as (
+      select
+        percentile_cont(0.1) within group (order by total_pimpers) as p10,
+        percentile_cont(0.9) within group (order by total_pimpers) as p90
+      from active_pimpers
+    ),
+    capped as (
+      select
+        greatest(b.p10, least(ap.total_pimpers, b.p90)) as capped_value
+      from active_pimpers ap
+      cross join bounds b
+    )
+    select avg(capped_value)
+    into winsorized_mean
+    from capped;
+
+    if winsorized_mean is not null then
+      insert into household_member_pimpers (
+        household_id,
+        user_id,
+        total_pimpers,
+        updated_at
+      )
+      values (
+        new.household_id,
+        new.user_id,
+        greatest(coalesce((select total_pimpers from household_member_pimpers where household_id = new.household_id and user_id = new.user_id), 0), winsorized_mean)::integer,
+        now()
+      )
+      on conflict (household_id, user_id)
+      do update
+      set
+        total_pimpers = greatest(household_member_pimpers.total_pimpers, excluded.total_pimpers),
+        updated_at = now();
+    end if;
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_household_members_vacation_return_pimpers on household_members;
+create trigger trg_household_members_vacation_return_pimpers
+after update of vacation_mode on household_members
+for each row
+execute function apply_vacation_return_pimpers();
+
 create or replace function reset_due_recurring_shopping_items(p_household_id uuid)
 returns integer
 language plpgsql

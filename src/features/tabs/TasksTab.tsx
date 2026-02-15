@@ -38,6 +38,7 @@ import {
 import SparklesEffect from "react-sparkle";
 import { Bar } from "react-chartjs-2";
 import { useTranslation } from "react-i18next";
+import { toast } from "react-toastify";
 import type { CaptchaType } from "recaptz";
 import type {
   HouseholdMember,
@@ -73,6 +74,7 @@ import { useSmartSuggestions } from "../../hooks/use-smart-suggestions";
 import { formatDateTime, formatShortDay, isDueNow } from "../../lib/date";
 import { createDiceBearAvatarDataUri } from "../../lib/avatar";
 import { createMemberLabelGetter } from "../../lib/member-label";
+import { supabase } from "../../lib/supabase";
 import { SortableRotationItem } from "./components/SortableRotationItem";
 import { useTaskSuggestions, type TaskSuggestion } from "./hooks/use-task-suggestions";
 import { buildCalendarEntriesByDay, buildCompletionSpansByDay, buildMonthGrid, dayKey, startOfMonth } from "./tasks-calendar";
@@ -224,6 +226,39 @@ const relativeDueChipLabel = (
 
   return isFuture ? t("tasks.dueIn", { value: valueLabel }) : t("tasks.dueSince", { value: valueLabel });
 };
+
+const reminderLateLabel = (
+  dueAtIso: string,
+  t: (key: string, options?: Record<string, unknown>) => string
+) => {
+  const dueAt = new Date(dueAtIso);
+  if (Number.isNaN(dueAt.getTime())) return t("tasks.reminderLateNow");
+  const diffMs = Date.now() - dueAt.getTime();
+  if (diffMs <= 0) return t("tasks.reminderLateNow");
+
+  const minuteMs = 60 * 1000;
+  const hourMs = 60 * minuteMs;
+  const dayMs = 24 * hourMs;
+  const weekMs = 7 * dayMs;
+
+  const toCount = (unitMs: number) => Math.max(1, Math.floor(diffMs / unitMs));
+
+  let valueLabel: string;
+  if (diffMs < hourMs) {
+    valueLabel = t("tasks.relativeMinutes", { count: toCount(minuteMs) });
+  } else if (diffMs < dayMs) {
+    valueLabel = t("tasks.relativeHours", { count: toCount(hourMs) });
+  } else if (diffMs < weekMs) {
+    valueLabel = t("tasks.relativeDays", { count: toCount(dayMs) });
+  } else {
+    valueLabel = t("tasks.relativeWeeks", { count: toCount(weekMs) });
+  }
+
+  return t("tasks.reminderLateBy", { value: valueLabel });
+};
+
+const interpolateTemplate = (template: string, values: Record<string, string>) =>
+  template.replace(/\{\{(\w+)\}\}/g, (_, key) => values[key] ?? "");
 
 const hashStringToUint32 = (value: string) => {
   let hash = 2166136261;
@@ -498,6 +533,14 @@ export const TasksTab = ({
     members.forEach((member) => map.set(member.user_id, member));
     return map;
   }, [members]);
+  const reminderTemplates = useMemo(() => {
+    const titlesRaw = t("tasks.reminderTitles", { returnObjects: true }) as unknown;
+    const bodiesRaw = t("tasks.reminderBodies", { returnObjects: true }) as unknown;
+    return {
+      titles: Array.isArray(titlesRaw) ? titlesRaw : [],
+      bodies: Array.isArray(bodiesRaw) ? bodiesRaw : []
+    };
+  }, [t]);
   const resolveMemberColor = useMemo(
     () => (memberId: string) => normalizeUserColor(memberById.get(memberId)?.user_color) ?? fallbackColorFromUserId(memberId),
     [memberById]
@@ -547,6 +590,33 @@ export const TasksTab = ({
       skipCaptchaTimerRef.current = null;
     }
   }, []);
+  const sendTaskReminder = useCallback(
+    async (task: TaskItem, assigneeName: string) => {
+      if (!task.assignee_id) return;
+      const late = reminderLateLabel(task.due_at, t);
+      const taskTitle = task.title || t("tasks.confirmCompleteTitle");
+      const fallbackTitle = `Erinnerung: ${taskTitle}`;
+      const fallbackBody = `${late}. ${taskTitle}`;
+      const pick = (list: string[], fallback: string) =>
+        list.length > 0 ? list[Math.floor(Math.random() * list.length)] : fallback;
+      const values = { title: taskTitle, late, member: assigneeName };
+      const rawTitle = pick(reminderTemplates.titles, fallbackTitle);
+      const rawBody = pick(reminderTemplates.bodies, fallbackBody);
+      const title = interpolateTemplate(rawTitle, values);
+      const body = interpolateTemplate(rawBody, values);
+
+      const { error } = await supabase.functions.invoke("send-task-reminder", {
+        body: { taskId: task.id, title, body }
+      });
+
+      if (error) {
+        toast.error(t("tasks.reminderError"));
+        return;
+      }
+      toast.success(t("tasks.reminderSent", { member: assigneeName }));
+    },
+    [reminderTemplates.bodies, reminderTemplates.titles, t]
+  );
   const onConfirmTaskAction = useCallback(async () => {
     if (!pendingTaskAction) return;
     if (
@@ -2047,6 +2117,7 @@ export const TasksTab = ({
                   task.assignee_id !== null &&
                   !isAssignedToCurrentUser &&
                   !busy;
+                const canRemind = isDue && task.assignee_id !== null && !busy;
                 const primaryImageUrl = isDue
                   ? task.current_state_image_url
                   : task.target_state_image_url;
@@ -2234,6 +2305,16 @@ export const TasksTab = ({
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
+                              {canRemind ? (
+                                <DropdownMenuItem
+                                  onClick={() => {
+                                    if (!task.assignee_id) return;
+                                    void sendTaskReminder(task, assigneeText);
+                                  }}
+                                >
+                                  {t("tasks.reminderAction")}
+                                </DropdownMenuItem>
+                              ) : null}
                               <DropdownMenuItem
                                 onClick={() => {
                                   if (!task.is_active) {

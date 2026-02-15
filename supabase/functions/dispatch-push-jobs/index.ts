@@ -92,6 +92,9 @@ const buildMessage = (job: PushJob) => {
   } else if (event === "task_due") {
     base.title = "Aufgabe fällig";
     base.body = String(payload.title ?? "Eine Aufgabe ist fällig.");
+  } else if (event === "task_reminder") {
+    base.title = String(payload.title ?? "Erinnerung");
+    base.body = String(payload.body ?? "Eine Aufgabe wartet.");
   }
 
   const dataPayload = payload.payload ?? payload;
@@ -147,8 +150,12 @@ serve(async (_req) => {
     const allUserIds = (members ?? [])
       .map((entry) => String(entry.user_id))
       .filter((userId) => userId !== actorUserId);
+    const explicitTarget = payload.target_user_id ? String(payload.target_user_id) : null;
+    const targetScope = explicitTarget ? [explicitTarget] : allUserIds;
+    const householdUserIds = new Set((members ?? []).map((entry) => String(entry.user_id)));
+    const targetUserIds = targetScope.filter((userId) => householdUserIds.has(userId));
 
-    if (allUserIds.length === 0) {
+    if (targetUserIds.length === 0) {
       await supabase.from("push_jobs").update({ status: "sent" }).eq("id", job.id);
       processed += 1;
       continue;
@@ -158,13 +165,13 @@ serve(async (_req) => {
       .from("push_preferences")
       .select("user_id,enabled,topics,quiet_hours")
       .eq("household_id", job.household_id)
-      .in("user_id", allUserIds);
+      .in("user_id", targetUserIds);
     const prefByUser = new Map(
       (prefs ?? []).map((p) => [String(p.user_id), p as { user_id: string; enabled: boolean; topics?: string[]; quiet_hours?: Record<string, unknown> }])
     );
     const eventType = String(job.payload?.event ?? job.type);
     const quietUsers: Array<{ userId: string; nextAllowedAt: Date }> = [];
-    const targetUserIds = allUserIds.filter((userId) => {
+    const filteredTargetUserIds = targetUserIds.filter((userId) => {
       const pref = prefByUser.get(userId);
       if (pref && pref.enabled === false) return false;
       const topics = Array.isArray(pref?.topics) ? pref?.topics ?? [] : [];
@@ -177,7 +184,7 @@ serve(async (_req) => {
       return true;
     });
 
-    if (targetUserIds.length === 0) {
+    if (filteredTargetUserIds.length === 0) {
       if (quietUsers.length > 0) {
         const nextAt = quietUsers
           .map((entry) => entry.nextAllowedAt.getTime())
@@ -198,7 +205,7 @@ serve(async (_req) => {
       .select("id,user_id,token")
       .eq("household_id", job.household_id)
       .eq("status", "active")
-      .in("user_id", targetUserIds);
+      .in("user_id", filteredTargetUserIds);
 
     const message = buildMessage(job);
     let successCount = 0;

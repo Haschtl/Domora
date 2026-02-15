@@ -40,6 +40,7 @@ export const resources = {
         add: "Hinzufügen",
         back: "Zurück",
         cancel: "Abbrechen",
+        confirm: "Bestätigen",
         trigger: "Auslösen",
         logout: "Logout",
         and: "und",
@@ -373,6 +374,23 @@ export const resources = {
         skipCaptchaPopupReload: "Neu laden",
         skipCaptchaPopupNext: "Weiter",
         skipCaptchaPopupDone: "Fertig",
+        reminderAction: "Erinnern",
+        reminderSent: "Erinnerung geschickt an {{member}}.",
+        reminderError: "Erinnerung konnte nicht gesendet werden.",
+        reminderLateBy: "{{value}} zu spät",
+        reminderLateNow: "jetzt fällig",
+        reminderTitles: [
+          "„{{title}}“ ruft",
+          "Aufgabe fällig: {{title}}",
+          "Erinnerung: {{title}}",
+          "Zeit für „{{title}}“"
+        ],
+        reminderBodies: [
+          "Du bist {{late}}. „{{title}}“ macht sich nicht von selbst.",
+          "„{{title}}“ wartet schon {{late}}. Beweg dich.",
+          "{{late}} drüber. Zeit für „{{title}}“.",
+          "„{{title}}“ ist {{late}}. Keine Ausreden."
+        ],
         confirmSkipAction: "Ja, skippen",
         confirmTakeOverTitle: "Übernehmen?",
         confirmTakeOverDescription: '„{{title}}“ geht auf dich?',
@@ -642,6 +660,11 @@ export const resources = {
         vacationModeLabel: "Urlaubsmodus",
         vacationModeDescription:
           "Wenn aktiv, wirst du bei neuen Task-Zuweisungen nachrangig behandelt und in Finanzen standardmäßig abgewählt.",
+        vacationModeConfirmTitle: "Urlaubsmodus ändern?",
+        vacationModeConfirmEnable:
+          "Im Urlaubsmodus wirst du bei neuen Aufgaben nachrangig behandelt. Für die Fairness zählen deine Pimpers neutral. Aktivieren?",
+        vacationModeConfirmDisable:
+          "Urlaubsmodus beenden? Deine Pimpers werden neutral aufgefüllt, damit dir nicht alles aufgedrückt wird.",
         pushTitle: "Push-Benachrichtigungen",
         pushDescription: "Aktiviere Benachrichtigungen für Aufgaben und WG-Action.",
         pushStatusLabel: "Status: {{status}}",
@@ -653,6 +676,7 @@ export const resources = {
         pushEnableAction: "Push anschalten",
         pushUsedForTitle: "Wofür Push genutzt wird",
         pushUsedForTaskDue: "Erinnerung, wenn deine Aufgabe fällig ist",
+        pushUsedForTaskReminder: "Freche Erinnerung, wenn dich jemand anstupst",
         pushUsedForTaskCompleted: "Info, wenn jemand eine Aufgabe erledigt",
         pushUsedForTaskSkipped: "Info, wenn jemand eine Aufgabe überspringt",
         pushUsedForTaskTakenOver: "Info, wenn jemand eine Aufgabe übernimmt",
@@ -837,6 +861,7 @@ export const resources = {
         add: "Add",
         back: "Back",
         cancel: "Cancel",
+        confirm: "Confirm",
         trigger: "Trigger",
         logout: "Logout",
         and: "and",
@@ -1164,6 +1189,23 @@ export const resources = {
         skipCaptchaPopupReload: "Reload",
         skipCaptchaPopupNext: "Next",
         skipCaptchaPopupDone: "Done",
+        reminderAction: "Remind",
+        reminderSent: "Reminder sent to {{member}}.",
+        reminderError: "Could not send reminder.",
+        reminderLateBy: "{{value}} late",
+        reminderLateNow: "due now",
+        reminderTitles: [
+          "“{{title}}” is waiting",
+          "Task due: {{title}}",
+          "Reminder: {{title}}",
+          "Time for “{{title}}”"
+        ],
+        reminderBodies: [
+          "You are {{late}}. “{{title}}” won’t do itself.",
+          "“{{title}}” has been waiting {{late}}. Move it.",
+          "{{late}} overdue. Time for “{{title}}”.",
+          "“{{title}}” is {{late}}. No excuses."
+        ],
         confirmSkipAction: "Yes, skip",
         confirmTakeOverTitle: "Take it over?",
         confirmTakeOverDescription: 'You taking "{{title}}"?',
@@ -1429,6 +1471,11 @@ export const resources = {
         vacationModeLabel: "Vacation mode",
         vacationModeDescription:
           "When enabled, you are deprioritized for new task assignments and deselected by default in finances.",
+        vacationModeConfirmTitle: "Change vacation mode?",
+        vacationModeConfirmEnable:
+          "In vacation mode you’re deprioritized for new tasks. Your fairness score stays neutral. Enable it?",
+        vacationModeConfirmDisable:
+          "End vacation mode? Your pimpers are topped up to neutral so you’re not slammed with tasks.",
         pushTitle: "Push notifications",
         pushDescription: "Enable notifications for tasks and household action.",
         pushStatusLabel: "Status: {{status}}",
@@ -1440,6 +1487,7 @@ export const resources = {
         pushEnableAction: "Turn on push",
         pushUsedForTitle: "Push is used for",
         pushUsedForTaskDue: "Reminder when your task is due",
+        pushUsedForTaskReminder: "Sassy reminder when someone nudges you",
         pushUsedForTaskCompleted: "Info when someone completed a task",
         pushUsedForTaskSkipped: "Info when someone skips a task",
         pushUsedForTaskTakenOver: "Info when someone takes over a task",

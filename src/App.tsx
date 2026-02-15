@@ -914,7 +914,7 @@ const App = () => {
           </div>
 
           {!isMobileKeyboardOpen ? (
-            <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-brand-200 bg-white/95 px-2 py-2 backdrop-blur dark:border-slate-700 dark:bg-slate-900/95 sm:hidden">
+            <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-brand-200 bg-white/95 px-2 py-2 shadow-[0_-8px_18px_rgba(15,23,42,0.08)] backdrop-blur dark:border-slate-700 dark:bg-slate-900/95 dark:shadow-[0_-8px_18px_rgba(2,6,23,0.45)] sm:hidden">
               <ul className="grid grid-cols-5 gap-1">
                 {tabItems.map((item) => {
                   const Icon = item.icon;
