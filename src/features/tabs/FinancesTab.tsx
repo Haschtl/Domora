@@ -2888,22 +2888,24 @@ export const FinancesTab = ({
                               max={COMMON_FACTOR_MAX}
                               step="0.01"
                               value={sliderValue}
-                              onChange={(event) =>
-                                field.handleChange(event.target.value)
-                              }
+                              onChange={(event) => {
+                                const raw = Number(event.target.value);
+                                const snapped = raw >= 0.95 && raw <= 1.05 ? 1 : Math.round(raw * 100) / 100;
+                                field.handleChange(String(snapped));
+                              }}
                               className="common-factor-slider w-full"
                               style={sliderStyle}
                               aria-label={t("settings.commonFactorLabel")}
                             />
-                            <div className="flex items-center justify-between text-xs">
-                              <span className="font-semibold text-rose-600 dark:text-rose-400">
-                                0
+                            <div className="grid grid-cols-3 items-center text-xs">
+                              <span className="text-left font-semibold text-rose-600 dark:text-rose-400">
+                                0%
                               </span>
-                              <span className="font-semibold text-emerald-700 dark:text-emerald-400">
-                                1.00
+                              <span className="text-center font-semibold text-emerald-700 dark:text-emerald-400">
+                                100%
                               </span>
-                              <span className="font-semibold text-emerald-600 dark:text-emerald-400">
-                                2.00
+                              <span className="text-right font-semibold text-emerald-600 dark:text-emerald-400">
+                                200%
                               </span>
                             </div>
                             <div className="flex items-center justify-between">
@@ -2916,7 +2918,7 @@ export const FinancesTab = ({
                                 )}
                               </div>
                               <div className="text-right text-xs font-semibold text-slate-600 dark:text-slate-300">
-                                {percentage}% ({sliderValue.toFixed(2)})
+                                {percentage}%
                               </div>
                             </div>
                           </div>

@@ -1253,6 +1253,10 @@ export const SettingsTab = ({
                   const canDemoteLastOwner = isMemberOwner && ownerCount <= 1;
                   const nextRole = isMemberOwner ? "member" : "owner";
                   const displayLabel = memberLabel(member.user_id);
+                  const commonAreaLabel =
+                    member.common_area_factor != null ? `${Math.round(member.common_area_factor * 100)}%` : "—";
+                  const lazinessLabel =
+                    member.task_laziness_factor != null ? `${Math.round(member.task_laziness_factor * 100)}%` : "—";
                   const avatarUrl =
                     member.avatar_url?.trim() ||
                     createDiceBearAvatarDataUri(
@@ -1279,6 +1283,10 @@ export const SettingsTab = ({
                             {isMemberOwner
                               ? t("settings.tenantsRoleOwner")
                               : t("settings.tenantsRoleMember")}
+                          </p>
+                          <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
+                            {commonAreaLabel} {t("settings.tenantsCommonShort")},{" "}
+                            {lazinessLabel} {t("settings.tenantsLazinessShort")}
                           </p>
                         </div>
                       </div>

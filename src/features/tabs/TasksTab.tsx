@@ -973,12 +973,13 @@ export const TasksTab = ({
                   type="range"
                   min={0}
                   max={2}
-                  step={0.1}
+                  step={0.01}
                   value={sliderValue}
                   disabled={!canEdit || busy}
                   onChange={(event) => {
-                    const next = Number(event.target.value);
-                    setLazinessDraftByUserId((current) => ({ ...current, [member.user_id]: next }));
+                    const raw = Number(event.target.value);
+                    const snapped = raw >= 0.95 && raw <= 1.05 ? 1 : Math.round(raw * 100) / 100;
+                    setLazinessDraftByUserId((current) => ({ ...current, [member.user_id]: snapped }));
                   }}
                   onMouseUp={() => {
                     void onCommitTaskLaziness(member.user_id, sliderValue);
@@ -990,10 +991,10 @@ export const TasksTab = ({
                   style={sliderStyle}
                   aria-label={t("tasks.lazinessTitle")}
                 />
-                <div className="mt-1 flex items-center justify-between text-[11px] font-semibold">
-                  <span className="text-slate-500 dark:text-slate-300">0%</span>
-                  <span className="text-emerald-700 dark:text-emerald-400">100%</span>
-                  <span className="text-indigo-600 dark:text-indigo-300">200%</span>
+                <div className="mt-1 grid grid-cols-3 items-center text-[11px] font-semibold">
+                  <span className="text-left text-slate-500 dark:text-slate-300">0%</span>
+                  <span className="text-center text-emerald-700 dark:text-emerald-400">100%</span>
+                  <span className="text-right text-indigo-600 dark:text-indigo-300">200%</span>
                 </div>
                 <div className="mt-2 flex items-center justify-between gap-2">
                   <span className={`inline-flex items-center gap-1 text-xs font-semibold ${level.className}`}>

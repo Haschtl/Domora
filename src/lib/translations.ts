@@ -761,6 +761,8 @@ export const resources = {
         tenantsMakeOwner: "Zum Hauptmieter machen",
         tenantsDemoteOwner: "Hauptmieter zurücknehmen",
         tenantsKick: "Rauswerfen",
+        tenantsCommonShort: "gemein",
+        tenantsLazinessShort: "faul",
         inviteAction: "Einladen",
         inviteDialogTitle: "Mitbewohner einladen",
         inviteDialogDescription:
@@ -1536,6 +1538,8 @@ export const resources = {
         tenantsMakeOwner: "Make owner",
         tenantsDemoteOwner: "Revoke owner",
         tenantsKick: "Kick",
+        tenantsCommonShort: "common",
+        tenantsLazinessShort: "lazy",
         inviteAction: "Invite",
         inviteDialogTitle: "Invite roommate",
         inviteDialogDescription:
