@@ -43,10 +43,16 @@ serve(async (req) => {
   const token = headerToken || payloadToken;
   const authDebug = {
     tag: "send-task-reminder:auth-debug",
+    supabaseUrl,
+    requestHost: req.headers.get("host") ?? null,
+    requestOrigin: req.headers.get("origin") ?? null,
     hasAuthHeader: Boolean(authHeader),
     authHeaderPrefix: authHeader ? authHeader.slice(0, 12) : null,
     hasHeaderToken: Boolean(headerToken),
     hasPayloadToken: Boolean(payloadToken),
+    headerTokenPrefix: headerToken ? headerToken.slice(0, 16) : null,
+    payloadTokenPrefix: payloadToken ? payloadToken.slice(0, 16) : null,
+    tokenLength: token ? token.length : 0,
     payloadKeys: Object.keys(payload ?? {}),
     contentLength: req.headers.get("content-length") ?? null,
     userAgent: req.headers.get("user-agent") ?? null
@@ -65,7 +71,16 @@ serve(async (req) => {
     });
   }
 
-  const { data: authData } = await supabase.auth.getUser(token);
+  const { data: authData, error: authError } = await supabase.auth.getUser(token);
+  if (authError) {
+    console.error(
+      JSON.stringify({
+        tag: "send-task-reminder:auth-error",
+        message: authError.message,
+        status: authError.status ?? null
+      })
+    );
+  }
   const user = authData?.user ?? null;
   if (!user) {
     console.error(
@@ -74,10 +89,18 @@ serve(async (req) => {
         reason: "invalid-user"
       })
     );
-    return new Response(JSON.stringify({ ok: false, error: "invalid-user", debug: authDebug }), {
-      status: 401,
-      headers: { "content-type": "application/json", ...corsHeaders }
-    });
+    return new Response(
+      JSON.stringify({
+        ok: false,
+        error: "invalid-user",
+        authError: authError ? { message: authError.message, status: authError.status ?? null } : null,
+        debug: authDebug
+      }),
+      {
+        status: 401,
+        headers: { "content-type": "application/json", ...corsHeaders }
+      }
+    );
   }
 
   const taskId = String(payload.taskId ?? "").trim();

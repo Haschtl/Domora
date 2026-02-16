@@ -355,6 +355,7 @@ alter table household_whiteboards add column if not exists updated_at timestampt
 create or replace function set_updated_at()
 returns trigger
 language plpgsql
+set search_path = public
 as $$
 begin
   new.updated_at = now();
@@ -390,13 +391,13 @@ alter table push_log enable row level security;
 drop policy if exists "push_tokens_select_own" on push_tokens;
 create policy "push_tokens_select_own"
   on push_tokens for select
-  using (auth.uid() = user_id);
+  using ((select auth.uid()) = user_id);
 
 drop policy if exists "push_tokens_insert_own" on push_tokens;
 create policy "push_tokens_insert_own"
   on push_tokens for insert
   with check (
-    auth.uid() = user_id
+    (select auth.uid()) = user_id
     and exists (
       select 1 from household_members
       where household_members.household_id = push_tokens.household_id
@@ -407,19 +408,19 @@ create policy "push_tokens_insert_own"
 drop policy if exists "push_tokens_update_own" on push_tokens;
 create policy "push_tokens_update_own"
   on push_tokens for update
-  using (auth.uid() = user_id)
-  with check (auth.uid() = user_id);
+  using ((select auth.uid()) = user_id)
+  with check ((select auth.uid()) = user_id);
 
 drop policy if exists "push_preferences_select_own" on push_preferences;
 create policy "push_preferences_select_own"
   on push_preferences for select
-  using (auth.uid() = user_id);
+  using ((select auth.uid()) = user_id);
 
 drop policy if exists "push_preferences_upsert_own" on push_preferences;
 create policy "push_preferences_upsert_own"
   on push_preferences for insert
   with check (
-    auth.uid() = user_id
+    (select auth.uid()) = user_id
     and exists (
       select 1 from household_members
       where household_members.household_id = push_preferences.household_id
@@ -430,8 +431,22 @@ create policy "push_preferences_upsert_own"
 drop policy if exists "push_preferences_update_own" on push_preferences;
 create policy "push_preferences_update_own"
   on push_preferences for update
-  using (auth.uid() = user_id)
-  with check (auth.uid() = user_id);
+  using ((select auth.uid()) = user_id)
+  with check ((select auth.uid()) = user_id);
+
+drop policy if exists "push_jobs_service_role" on push_jobs;
+create policy "push_jobs_service_role"
+  on push_jobs for all
+  to service_role
+  using (true)
+  with check (true);
+
+drop policy if exists "push_log_service_role" on push_log;
+create policy "push_log_service_role"
+  on push_log for all
+  to service_role
+  using (true)
+  with check (true);
 
 create or replace function queue_push_from_household_event()
 returns trigger
@@ -1274,13 +1289,41 @@ create index if not exists idx_shopping_item_completions_household_completed_at 
 create index if not exists idx_tasks_household_due_at on tasks (household_id, due_at asc);
 create index if not exists idx_tasks_household_active on tasks (household_id, is_active, id);
 create index if not exists idx_task_completions_household_completed_at on task_completions (household_id, completed_at desc);
-create index if not exists idx_task_completions_task_completed_at on task_completions (task_id, completed_at desc);
 create index if not exists idx_task_completion_ratings_household_completion on task_completion_ratings (household_id, task_completion_id);
 create index if not exists idx_household_events_household_created_at on household_events (household_id, created_at desc);
 create index if not exists idx_finance_entries_household_entry_date on finance_entries (household_id, entry_date desc);
 create index if not exists idx_finance_subscriptions_household_created_at on finance_subscriptions (household_id, created_at desc);
 create index if not exists idx_household_members_user_household on household_members (user_id, household_id);
 create index if not exists idx_task_rotation_members_user_task on task_rotation_members (user_id, task_id);
+
+create index if not exists idx_bucket_item_date_votes_user_id on bucket_item_date_votes (user_id);
+create index if not exists idx_bucket_items_created_by on bucket_items (created_by);
+create index if not exists idx_bucket_items_done_by on bucket_items (done_by);
+create index if not exists idx_cash_audit_requests_household_id on cash_audit_requests (household_id);
+create index if not exists idx_cash_audit_requests_requested_by on cash_audit_requests (requested_by);
+create index if not exists idx_finance_entries_created_by on finance_entries (created_by);
+create index if not exists idx_finance_entries_paid_by on finance_entries (paid_by);
+create index if not exists idx_finance_subscriptions_created_by on finance_subscriptions (created_by);
+create index if not exists idx_household_events_actor_user_id on household_events (actor_user_id);
+create index if not exists idx_household_events_subject_user_id on household_events (subject_user_id);
+create index if not exists idx_household_member_pimpers_user_id on household_member_pimpers (user_id);
+create index if not exists idx_household_whiteboards_updated_by on household_whiteboards (updated_by);
+create index if not exists idx_households_created_by on households (created_by);
+create index if not exists idx_push_jobs_household_id on push_jobs (household_id);
+create index if not exists idx_push_jobs_user_id on push_jobs (user_id);
+create index if not exists idx_push_log_job_id on push_log (job_id);
+create index if not exists idx_push_log_token_id on push_log (token_id);
+create index if not exists idx_push_preferences_household_id on push_preferences (household_id);
+create index if not exists idx_push_tokens_household_id on push_tokens (household_id);
+create index if not exists idx_shopping_item_completions_completed_by on shopping_item_completions (completed_by);
+create index if not exists idx_shopping_item_completions_item_id on shopping_item_completions (shopping_item_id);
+create index if not exists idx_shopping_items_created_by on shopping_items (created_by);
+create index if not exists idx_shopping_items_done_by on shopping_items (done_by);
+create index if not exists idx_task_completion_ratings_user_id on task_completion_ratings (user_id);
+create index if not exists idx_task_completions_user_id on task_completions (user_id);
+create index if not exists idx_tasks_assignee_id on tasks (assignee_id);
+create index if not exists idx_tasks_created_by on tasks (created_by);
+create index if not exists idx_tasks_done_by on tasks (done_by);
 
 create or replace function is_household_member(hid uuid)
 returns boolean
@@ -2364,7 +2407,7 @@ drop policy if exists households_insert on households;
 create policy households_insert on households
 for insert
 to authenticated
-with check (auth.uid() = created_by);
+with check ((select auth.uid()) = created_by);
 
 drop policy if exists households_update on households;
 create policy households_update on households
@@ -2383,14 +2426,14 @@ drop policy if exists household_members_select on household_members;
 create policy household_members_select on household_members
 for select
 to authenticated
-using (is_household_member(household_id) or user_id = auth.uid());
+using (is_household_member(household_id) or user_id = (select auth.uid()));
 
 drop policy if exists household_members_insert on household_members;
 create policy household_members_insert on household_members
 for insert
 to authenticated
 with check (
-  auth.uid() = user_id
+  (select auth.uid()) = user_id
   and is_household_owner(household_members.household_id)
 );
 
@@ -2398,22 +2441,22 @@ drop policy if exists household_members_delete on household_members;
 create policy household_members_delete on household_members
 for delete
 to authenticated
-using (auth.uid() = user_id or is_household_owner(household_id));
+using ((select auth.uid()) = user_id or is_household_owner(household_id));
 
 drop policy if exists household_members_update on household_members;
 create policy household_members_update on household_members
 for update
 to authenticated
-using (auth.uid() = user_id or is_household_owner(household_id))
+using ((select auth.uid()) = user_id or is_household_owner(household_id))
 with check (
   is_household_owner(household_id)
   or (
-    auth.uid() = user_id
+    (select auth.uid()) = user_id
     and exists (
       select 1
       from household_members hm
       where hm.household_id = household_members.household_id
-        and hm.user_id = auth.uid()
+        and hm.user_id = (select auth.uid())
         and hm.role = household_members.role
     )
   )
@@ -2424,13 +2467,13 @@ create policy user_profiles_select on user_profiles
 for select
 to authenticated
 using (
-  auth.uid() = user_id
+  (select auth.uid()) = user_id
   or exists (
     select 1
     from household_members hm_viewer
     join household_members hm_target
       on hm_target.household_id = hm_viewer.household_id
-    where hm_viewer.user_id = auth.uid()
+    where hm_viewer.user_id = (select auth.uid())
       and hm_target.user_id = user_profiles.user_id
   )
 );
@@ -2439,14 +2482,14 @@ drop policy if exists user_profiles_insert on user_profiles;
 create policy user_profiles_insert on user_profiles
 for insert
 to authenticated
-with check (auth.uid() = user_id);
+with check ((select auth.uid()) = user_id);
 
 drop policy if exists user_profiles_update on user_profiles;
 create policy user_profiles_update on user_profiles
 for update
 to authenticated
-using (auth.uid() = user_id)
-with check (auth.uid() = user_id);
+using ((select auth.uid()) = user_id)
+with check ((select auth.uid()) = user_id);
 
 drop policy if exists shopping_items_all on shopping_items;
 create policy shopping_items_all on shopping_items
@@ -2472,13 +2515,13 @@ drop policy if exists bucket_item_date_votes_insert on bucket_item_date_votes;
 create policy bucket_item_date_votes_insert on bucket_item_date_votes
 for insert
 to authenticated
-with check (is_household_member(household_id) and auth.uid() = user_id);
+with check (is_household_member(household_id) and (select auth.uid()) = user_id);
 
 drop policy if exists bucket_item_date_votes_delete on bucket_item_date_votes;
 create policy bucket_item_date_votes_delete on bucket_item_date_votes
 for delete
 to authenticated
-using (is_household_member(household_id) and auth.uid() = user_id);
+using (is_household_member(household_id) and (select auth.uid()) = user_id);
 
 drop policy if exists shopping_item_completions_select on shopping_item_completions;
 create policy shopping_item_completions_select on shopping_item_completions
@@ -2490,7 +2533,7 @@ drop policy if exists shopping_item_completions_insert on shopping_item_completi
 create policy shopping_item_completions_insert on shopping_item_completions
 for insert
 to authenticated
-with check (is_household_member(household_id) and auth.uid() = completed_by);
+with check (is_household_member(household_id) and (select auth.uid()) = completed_by);
 
 drop policy if exists tasks_all on tasks;
 create policy tasks_all on tasks
@@ -2531,14 +2574,14 @@ drop policy if exists household_member_pimpers_insert_own on household_member_pi
 create policy household_member_pimpers_insert_own on household_member_pimpers
 for insert
 to authenticated
-with check (is_household_member(household_id) and auth.uid() = user_id);
+with check (is_household_member(household_id) and (select auth.uid()) = user_id);
 
 drop policy if exists household_member_pimpers_update_own on household_member_pimpers;
 create policy household_member_pimpers_update_own on household_member_pimpers
 for update
 to authenticated
-using (is_household_member(household_id) and auth.uid() = user_id)
-with check (is_household_member(household_id) and auth.uid() = user_id);
+using (is_household_member(household_id) and (select auth.uid()) = user_id)
+with check (is_household_member(household_id) and (select auth.uid()) = user_id);
 
 drop policy if exists task_completions_select on task_completions;
 create policy task_completions_select on task_completions
@@ -2550,7 +2593,7 @@ drop policy if exists task_completions_insert on task_completions;
 create policy task_completions_insert on task_completions
 for insert
 to authenticated
-with check (is_household_member(household_id) and auth.uid() = user_id);
+with check (is_household_member(household_id) and (select auth.uid()) = user_id);
 
 drop policy if exists task_completion_ratings_select on task_completion_ratings;
 create policy task_completion_ratings_select on task_completion_ratings
@@ -2570,7 +2613,7 @@ for insert
 to authenticated
 with check (
   is_household_member(household_id)
-  and (actor_user_id is null or auth.uid() = actor_user_id)
+  and (actor_user_id is null or (select auth.uid()) = actor_user_id)
 );
 
 drop policy if exists household_whiteboards_select on household_whiteboards;
@@ -2583,14 +2626,14 @@ drop policy if exists household_whiteboards_upsert on household_whiteboards;
 create policy household_whiteboards_upsert on household_whiteboards
 for insert
 to authenticated
-with check (is_household_member(household_id) and (updated_by is null or auth.uid() = updated_by));
+with check (is_household_member(household_id) and (updated_by is null or (select auth.uid()) = updated_by));
 
 drop policy if exists household_whiteboards_update on household_whiteboards;
 create policy household_whiteboards_update on household_whiteboards
 for update
 to authenticated
 using (is_household_member(household_id))
-with check (is_household_member(household_id) and (updated_by is null or auth.uid() = updated_by));
+with check (is_household_member(household_id) and (updated_by is null or (select auth.uid()) = updated_by));
 
 drop policy if exists finance_entries_all on finance_entries;
 drop policy if exists finance_entries_select on finance_entries;
@@ -2606,18 +2649,18 @@ using (is_household_member(household_id));
 create policy finance_entries_insert on finance_entries
 for insert
 to authenticated
-with check (is_household_member(household_id) and auth.uid() = created_by);
+with check (is_household_member(household_id) and (select auth.uid()) = created_by);
 
 create policy finance_entries_update_own on finance_entries
 for update
 to authenticated
-using (is_household_member(household_id) and auth.uid() = created_by)
-with check (is_household_member(household_id) and auth.uid() = created_by);
+using (is_household_member(household_id) and (select auth.uid()) = created_by)
+with check (is_household_member(household_id) and (select auth.uid()) = created_by);
 
 create policy finance_entries_delete_own on finance_entries
 for delete
 to authenticated
-using (is_household_member(household_id) and auth.uid() = created_by);
+using (is_household_member(household_id) and (select auth.uid()) = created_by);
 
 drop policy if exists cash_audit_requests_all on cash_audit_requests;
 create policy cash_audit_requests_all on cash_audit_requests
