@@ -2173,6 +2173,7 @@ declare
   v_completion task_completions%rowtype;
   v_latest_completion_id uuid;
   v_user_id uuid;
+  v_rater_name text;
 begin
   v_user_id := auth.uid();
 
@@ -2211,6 +2212,11 @@ begin
   if v_latest_completion_id is distinct from v_completion.id then
     raise exception 'Only the latest completion of a task can be rated';
   end if;
+
+  select nullif(trim(coalesce(up.display_name, '')), '')
+  into v_rater_name
+  from user_profiles up
+  where up.user_id = v_user_id;
 
   insert into task_completion_ratings (
     task_completion_id,
@@ -2252,7 +2258,8 @@ begin
       'taskCompletionId', v_completion.id,
       'title', v_completion.task_title_snapshot,
       'rating', p_rating,
-      'target_user_id', v_completion.user_id
+      'target_user_id', v_completion.user_id,
+      'rater_name', v_rater_name
     ),
     now()
   );
