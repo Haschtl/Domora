@@ -24,6 +24,7 @@ export const SettingsPageContainer = ({ section }: SettingsPageContainerProps) =
     busy,
     notificationPermission,
     onEnableNotifications,
+    onReregisterPushToken,
     onUpdateHousehold,
     onUpdateUserAvatar,
     onUpdateUserDisplayName,
@@ -72,6 +73,7 @@ export const SettingsPageContainer = ({ section }: SettingsPageContainerProps) =
       busy={busy}
       notificationPermission={notificationPermission}
       onEnableNotifications={onEnableNotifications}
+      onReregisterPushToken={onReregisterPushToken}
       onUpdateHousehold={onUpdateHousehold}
       onUpdateUserAvatar={onUpdateUserAvatar}
       onUpdateUserDisplayName={onUpdateUserDisplayName}

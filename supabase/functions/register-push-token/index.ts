@@ -13,14 +13,23 @@ type RegisterRequest = {
 };
 
 serve(async (req) => {
+  const corsHeaders = {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+    "Access-Control-Allow-Methods": "POST, OPTIONS"
+  };
+
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { status: 200, headers: corsHeaders });
+  }
   if (req.method !== "POST") {
-    return new Response("Method Not Allowed", { status: 405 });
+    return new Response("Method Not Allowed", { status: 405, headers: corsHeaders });
   }
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY");
   if (!supabaseUrl || !supabaseAnonKey) {
-    return new Response("Missing Supabase env", { status: 500 });
+    return new Response("Missing Supabase env", { status: 500, headers: corsHeaders });
   }
 
   const authHeader = req.headers.get("Authorization") ?? "";
@@ -30,18 +39,18 @@ serve(async (req) => {
 
   const { data: authData, error: authError } = await supabase.auth.getUser();
   if (authError || !authData?.user) {
-    return new Response("Unauthorized", { status: 401 });
+    return new Response("Unauthorized", { status: 401, headers: corsHeaders });
   }
 
   let payload: RegisterRequest;
   try {
     payload = await req.json();
   } catch {
-    return new Response("Invalid JSON", { status: 400 });
+    return new Response("Invalid JSON", { status: 400, headers: corsHeaders });
   }
 
   if (!payload?.token || !payload?.deviceId || !payload?.householdId) {
-    return new Response("Missing fields", { status: 400 });
+    return new Response("Missing fields", { status: 400, headers: corsHeaders });
   }
 
   const platform = payload.platform ?? "web";
@@ -67,11 +76,11 @@ serve(async (req) => {
     );
 
   if (error) {
-    return new Response(error.message, { status: 400 });
+    return new Response(error.message, { status: 400, headers: corsHeaders });
   }
 
   return new Response(JSON.stringify({ ok: true }), {
     status: 200,
-    headers: { "content-type": "application/json" }
+    headers: { "content-type": "application/json", ...corsHeaders }
   });
 });

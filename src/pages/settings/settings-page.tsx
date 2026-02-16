@@ -4,6 +4,7 @@ import imageCompression from "browser-image-compression";
 import { Camera, Check, Crown, Share2, UserMinus, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import QRCode from "react-qr-code";
+import { isSupported } from "firebase/messaging";
 import type { Household, HouseholdMember, PushPreferences, TaskItem, UpdateHouseholdInput } from "../../lib/types";
 import { createDiceBearAvatarDataUri, getMemberAvatarSeed } from "../../lib/avatar";
 import { createTrianglifyBannerBackground } from "../../lib/banner";
@@ -33,6 +34,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { Switch } from "../../components/ui/switch";
 import { getPushPreferences, upsertHouseholdWhiteboard, upsertPushPreferences } from "../../lib/api";
 import { MemberAvatar } from "../../components/member-avatar";
+import { isFirebaseConfigured } from "../../lib/firebase-config";
 
 interface SettingsPageProps {
   section?: "me" | "household";
@@ -50,6 +52,7 @@ interface SettingsPageProps {
   busy: boolean;
   notificationPermission: NotificationPermission;
   onEnableNotifications: () => Promise<void>;
+  onReregisterPushToken: () => Promise<void>;
   onUpdateHousehold: (input: UpdateHouseholdInput) => Promise<void>;
   onUpdateUserAvatar: (avatarUrl: string) => Promise<void>;
   onUpdateUserDisplayName: (displayName: string) => Promise<void>;
@@ -145,6 +148,7 @@ export const SettingsPage = ({
   busy,
   notificationPermission,
   onEnableNotifications,
+  onReregisterPushToken,
   onUpdateHousehold,
   onUpdateUserAvatar,
   onUpdateUserDisplayName,
@@ -545,7 +549,35 @@ export const SettingsPage = ({
   );
   const canDissolveHousehold = isOwner && uniqueMembers.length === 1 && uniqueMembers[0]?.user_id === userId;
   const pushEnabled = notificationPermission === "granted";
+  const [firebaseMessagingSupport, setFirebaseMessagingSupport] = useState<
+    "checking" | "supported" | "unsupported" | "missing_config"
+  >("checking");
+
+  useEffect(() => {
+    let active = true;
+    const checkSupport = async () => {
+      if (!isFirebaseConfigured) {
+        if (active) setFirebaseMessagingSupport("missing_config");
+        return;
+      }
+      if (typeof window === "undefined") {
+        if (active) setFirebaseMessagingSupport("unsupported");
+        return;
+      }
+      try {
+        const supported = await isSupported();
+        if (active) setFirebaseMessagingSupport(supported ? "supported" : "unsupported");
+      } catch {
+        if (active) setFirebaseMessagingSupport("unsupported");
+      }
+    };
+    void checkSupport();
+    return () => {
+      active = false;
+    };
+  }, []);
   const pushPermissionLabel = t(`settings.pushStatus.${notificationPermission}`);
+  const pushSupportLabel = t(`settings.pushSupport.${firebaseMessagingSupport}`);
   const pushTopics = useMemo(
     () => [
       { id: "task_due", label: t("settings.pushUsedForTaskDue") },
@@ -1002,6 +1034,11 @@ export const SettingsPage = ({
                         status: pushPermissionLabel,
                       })}
                     </p>
+                    <p className="text-xs text-slate-600 dark:text-slate-300">
+                      {t("settings.pushSupportLabel", {
+                        status: pushSupportLabel,
+                      })}
+                    </p>
                   </div>
                   <Switch
                     checked={pushEnabled}
@@ -1013,6 +1050,18 @@ export const SettingsPage = ({
                     disabled={busy || pushEnabled}
                     aria-label={t("settings.pushEnableAction")}
                   />
+                </div>
+                <div className="mt-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      void onReregisterPushToken();
+                    }}
+                    disabled={busy || firebaseMessagingSupport !== "supported"}
+                  >
+                    {t("settings.pushReregisterAction")}
+                  </Button>
                 </div>
                 <Accordion
                   type="single"

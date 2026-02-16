@@ -1177,6 +1177,22 @@ export const useWorkspaceController = () => {
     });
   }, [activeHousehold, executeAction, requestPermission, t]);
 
+  const onReregisterPushToken = useCallback(async () => {
+    await executeAction(async () => {
+      if (!activeHousehold) return;
+      if (permission !== "granted") {
+        setError(t("app.pushDenied"));
+        return;
+      }
+      await registerWebPushToken({
+        householdId: activeHousehold.id,
+        locale: typeof navigator !== "undefined" ? navigator.language : undefined,
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone
+      });
+      setMessage(t("app.pushEnabled"));
+    });
+  }, [activeHousehold, executeAction, permission, t]);
+
   useEffect(() => {
     if (!activeHousehold) return;
     if (permission !== "granted") return;
@@ -1536,6 +1552,7 @@ export const useWorkspaceController = () => {
     onDeleteFinanceSubscription,
     onRequestCashAudit,
     onEnableNotifications,
+    onReregisterPushToken,
     onUpdateHomeMarkdown,
     onUpdateHouseholdWhiteboard,
     onUpdateHousehold,
