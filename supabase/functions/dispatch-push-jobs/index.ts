@@ -77,6 +77,11 @@ const buildMessage = (job: PushJob) => {
   } else if (event === "task_taken_over") {
     base.title = "Aufgabe übernommen";
     base.body = String(payload.title ?? payload.payload?.title ?? "Eine Aufgabe wurde übernommen.");
+  } else if (event === "task_rated") {
+    base.title = "Bewertung erhalten";
+    const title = String(payload.payload?.title ?? "Eine Aufgabe");
+    const rating = payload.payload?.rating != null ? `${payload.payload?.rating}` : "eine";
+    base.body = `${title} wurde mit ${rating} Sternen bewertet.`;
   } else if (event === "shopping_completed") {
     base.title = "Einkauf erledigt";
     base.body = String(payload.payload?.title ?? "Ein Einkauf wurde abgehakt.");

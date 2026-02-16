@@ -1914,6 +1914,7 @@ const DEFAULT_PUSH_TOPICS = [
   "task_completed",
   "task_skipped",
   "task_taken_over",
+  "task_rated",
   "vacation_mode",
   "member_of_month",
   "finance_created",

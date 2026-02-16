@@ -170,7 +170,7 @@ create table if not exists task_completion_ratings (
 create table if not exists household_events (
   id uuid primary key default gen_random_uuid(),
   household_id uuid not null references households(id) on delete cascade,
-  event_type text not null check (event_type in ('task_completed', 'task_skipped', 'shopping_completed', 'finance_created', 'role_changed', 'cash_audit_requested', 'admin_hint', 'pimpers_reset', 'vacation_mode_enabled', 'vacation_mode_disabled')),
+  event_type text not null check (event_type in ('task_completed', 'task_skipped', 'task_rated', 'shopping_completed', 'finance_created', 'role_changed', 'cash_audit_requested', 'admin_hint', 'pimpers_reset', 'vacation_mode_enabled', 'vacation_mode_disabled')),
   actor_user_id uuid references auth.users(id) on delete set null,
   subject_user_id uuid references auth.users(id) on delete set null,
   payload jsonb not null default '{}'::jsonb,
@@ -448,7 +448,16 @@ begin
     new.event_type,
     new.household_id,
     new.actor_user_id,
-    jsonb_build_object('event', new.event_type, 'payload', new.payload, 'actor_user_id', new.actor_user_id),
+    jsonb_build_object(
+      'event',
+      new.event_type,
+      'payload',
+      new.payload,
+      'actor_user_id',
+      new.actor_user_id,
+      'target_user_id',
+      new.payload->>'target_user_id'
+    ),
     now(),
     dedupe
   )
@@ -1056,6 +1065,7 @@ begin
         event_type in (
           'task_completed',
           'task_skipped',
+          'task_rated',
           'shopping_completed',
           'finance_created',
           'role_changed',
@@ -2223,6 +2233,29 @@ begin
   set
     rating = excluded.rating,
     updated_at = now();
+
+  insert into household_events (
+    household_id,
+    event_type,
+    actor_user_id,
+    subject_user_id,
+    payload,
+    created_at
+  )
+  values (
+    v_completion.household_id,
+    'task_rated',
+    v_user_id,
+    v_completion.user_id,
+    jsonb_build_object(
+      'taskId', v_completion.task_id,
+      'taskCompletionId', v_completion.id,
+      'title', v_completion.task_title_snapshot,
+      'rating', p_rating,
+      'target_user_id', v_completion.user_id
+    ),
+    now()
+  );
 end;
 $$;
 

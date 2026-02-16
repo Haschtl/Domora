@@ -629,6 +629,19 @@ export const HomePage = ({
           };
         }
 
+        if (entry.event_type === "task_rated") {
+          return {
+            id: `event-${entry.id}`,
+            at: entry.created_at,
+            icon: "task",
+              text: t("home.activityTaskRated", {
+              user: labelForUserId(entry.actor_user_id),
+              task: String(payload.title ?? t("tasks.fallbackTitle")),
+              rating: String(payload.rating ?? "")
+            })
+          };
+        }
+
         if (entry.event_type === "shopping_completed") {
           return {
             id: `event-${entry.id}`,

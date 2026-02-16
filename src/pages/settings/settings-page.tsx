@@ -552,6 +552,7 @@ export const SettingsPage = ({
       { id: "task_completed", label: t("settings.pushUsedForTaskCompleted") },
       { id: "task_skipped", label: t("settings.pushUsedForTaskSkipped") },
       { id: "task_taken_over", label: t("settings.pushUsedForTaskTakenOver") },
+      { id: "task_rated", label: t("settings.pushUsedForTaskRated") },
       { id: "vacation_mode", label: t("settings.pushUsedForVacationMode") },
       { id: "member_of_month", label: t("settings.pushUsedForMemberOfMonth") },
       { id: "finance_created", label: t("settings.pushUsedForFinanceCreated") },
@@ -1018,6 +1019,7 @@ export const SettingsPage = ({
                           <li>{t("settings.pushUsedForTaskCompleted")}</li>
                           <li>{t("settings.pushUsedForTaskSkipped")}</li>
                           <li>{t("settings.pushUsedForTaskTakenOver")}</li>
+                          <li>{t("settings.pushUsedForTaskRated")}</li>
                           <li>{t("settings.pushUsedForVacationMode")}</li>
                           <li>{t("settings.pushUsedForMemberOfMonth")}</li>
                           <li>{t("settings.pushUsedForFinanceCreated")}</li>

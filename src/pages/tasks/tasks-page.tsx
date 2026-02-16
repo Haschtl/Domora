@@ -4075,6 +4075,28 @@ export const TasksPage = ({
               </div>
             ) : null}
 
+            {pendingTaskAction &&
+            (pendingTaskAction.kind === "complete" ||
+              pendingTaskAction.kind === "takeover") &&
+            pendingTaskAction.task.target_state_image_url ? (
+              <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm dark:border-emerald-900/60 dark:bg-emerald-950/40">
+                <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-300">
+                  {t("tasks.confirmTargetStateTitle")}
+                </p>
+                <p className="mt-1 text-sm text-emerald-800 dark:text-emerald-200">
+                  {t("tasks.confirmTargetStatePrompt")}
+                </p>
+                <div className="mt-3 overflow-hidden rounded-lg border border-emerald-200 bg-white dark:border-emerald-900/60 dark:bg-slate-900">
+                  <img
+                    src={pendingTaskAction.task.target_state_image_url}
+                    alt={t("tasks.targetStateImageAlt")}
+                    className="h-48 w-full object-cover"
+                    loading="lazy"
+                  />
+                </div>
+              </div>
+            ) : null}
+
             <div className="flex justify-end mt-2 gap-2">
               <Button
                 type="button"
