@@ -2581,6 +2581,7 @@ export const FinancesPage = ({
               entries={group.entries}
               emptyText={t("finances.emptyFiltered")}
               paidByText={paidByText}
+              createdByTooltip={(entry) => `Erstellt von ${memberLabel(entry.created_by)}`}
               receiptImageUrl={(entry) => entry.receipt_image_url}
               receiptLabel={t("finances.receiptLink")}
               formatMoney={moneyLabel}
@@ -3612,6 +3613,7 @@ export const FinancesPage = ({
               formatMoney={moneyLabel}
               paidByText={paidByText}
               entryDateText={entryDateText}
+              createdByTooltip={(entry) => `Erstellt von ${memberLabel(entry.created_by)}`}
               receiptImageUrl={(entry) => entry.receipt_image_url}
               receiptLabel={t("finances.receiptLink")}
               entryChipText={personalEntryDeltaLabel}

@@ -24,6 +24,7 @@ interface FinanceEntriesListProps {
   entryChipText?: (entry: FinanceEntry) => string | null;
   entryChipClassName?: (entry: FinanceEntry) => string | undefined;
   amountClassName?: string;
+  createdByTooltip?: (entry: FinanceEntry) => string | null;
   onEdit?: (entry: FinanceEntry) => void;
   onDelete?: (entry: FinanceEntry) => void;
   canEditEntry?: (entry: FinanceEntry) => boolean;
@@ -49,6 +50,7 @@ export const FinanceEntriesList = ({
   entryChipText,
   entryChipClassName,
   amountClassName = "text-sm font-semibold text-brand-800 dark:text-brand-200",
+  createdByTooltip,
   onEdit,
   onDelete,
   canEditEntry,
@@ -144,7 +146,14 @@ export const FinanceEntriesList = ({
             </a>
           ) : null}
         </div>
-        {entryDateText ? <p className="shrink-0 text-xs text-slate-500 dark:text-slate-400">{entryDateText(entry)}</p> : null}
+        {entryDateText ? (
+          <p
+            className="shrink-0 text-xs text-slate-500 dark:text-slate-400"
+            title={createdByTooltip ? createdByTooltip(entry) ?? undefined : undefined}
+          >
+            {entryDateText(entry)}
+          </p>
+        ) : null}
       </div>
     </li>
   );
@@ -161,7 +170,7 @@ export const FinanceEntriesList = ({
   const virtualContainerClassName =
     virtualLayout === "inline"
       ? "relative w-full overflow-auto rounded-xl border border-brand-100 bg-white/90 p-3 dark:border-slate-700 dark:bg-slate-900"
-      : "w-[100vw] left-0 p-4 pt-8 pb-20 absolute sm:relative sm:h-full sm:w-full overflow-auto -translate-y-8 sm:translate-y-0";
+      : "w-[100vw] sm:w-full left-0 p-4 pt-8 pb-20 absolute sm:relative sm:h-full sm:w-full overflow-auto -translate-y-8 sm:translate-y-0";
 
   return (
     <div
