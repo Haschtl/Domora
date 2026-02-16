@@ -42,7 +42,7 @@ export const useWorkspaceActions = ({ queryClient, activeHouseholdId, executeAct
         }));
 
         options.updates.forEach(({ queryKey, updater }) => {
-          queryClient.setQueryData(queryKey, (current:unknown) => updater(current));
+          queryClient.setQueryData<unknown>(queryKey, (current: unknown) => updater(current));
         });
 
         try {

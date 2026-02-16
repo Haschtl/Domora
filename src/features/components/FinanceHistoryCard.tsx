@@ -21,6 +21,7 @@ interface FinanceHistoryCardProps {
   entryChipText?: (entry: FinanceEntry) => string | null;
   entryChipClassName?: (entry: FinanceEntry) => string | undefined;
   amountClassName?: string;
+  createdByTooltip?: (entry: FinanceEntry) => string | null;
   onEdit?: (entry: FinanceEntry) => void;
   onDelete?: (entry: FinanceEntry) => void;
   canEditEntry?: (entry: FinanceEntry) => boolean;
@@ -53,6 +54,7 @@ export const FinanceHistoryCard = ({
   entryChipText,
   entryChipClassName,
   amountClassName,
+  createdByTooltip,
   onEdit,
   onDelete,
   canEditEntry,
@@ -80,6 +82,7 @@ export const FinanceHistoryCard = ({
         entryChipText={entryChipText}
         entryChipClassName={entryChipClassName}
         amountClassName={amountClassName}
+        createdByTooltip={createdByTooltip}
         onEdit={onEdit}
         onDelete={onDelete}
         canEditEntry={canEditEntry}

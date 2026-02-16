@@ -134,8 +134,8 @@ const applyCompletionRating = (completion: TaskCompletion, rating: number) => {
   const previousRating = completion.my_rating;
   const currentCount = completion.rating_count ?? 0;
   const currentAverage = completion.rating_average ?? 0;
-  let nextCount = currentCount;
-  let nextAverage:number;
+  let nextCount: number;
+  let nextAverage: number;
 
   if (previousRating == null) {
     const total = currentAverage * currentCount;
@@ -144,6 +144,7 @@ const applyCompletionRating = (completion: TaskCompletion, rating: number) => {
   } else if (currentCount > 0) {
     const total = currentAverage * currentCount;
     nextAverage = (total - previousRating + rating) / currentCount;
+    nextCount = currentCount;
   } else {
     nextAverage = rating;
     nextCount = 1;
