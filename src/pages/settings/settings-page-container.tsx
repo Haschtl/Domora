@@ -1,6 +1,7 @@
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import { SettingsPage } from "./settings-page";
 import { useWorkspace } from "../../context/workspace-context";
+import { useHouseholdTasks } from "../../hooks/use-household-data";
 
 interface SettingsPageContainerProps {
   section: "me" | "household";
@@ -36,6 +37,8 @@ export const SettingsPageContainer = ({ section }: SettingsPageContainerProps) =
     onDissolveHousehold
   } = useWorkspace();
 
+  const tasksQuery = useHouseholdTasks(activeHousehold?.id ?? null);
+
   const onLeaveHouseholdWithRedirect = async () => {
     await onLeaveHousehold();
     if (location.pathname.startsWith("/settings")) {
@@ -58,6 +61,7 @@ export const SettingsPageContainer = ({ section }: SettingsPageContainerProps) =
       household={activeHousehold}
       members={householdMembers}
       currentMember={currentMember}
+      tasks={tasksQuery.data ?? []}
       userId={userId}
       userEmail={userEmail}
       userAvatarUrl={userAvatarUrl}

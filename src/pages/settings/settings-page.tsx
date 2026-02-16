@@ -4,10 +4,11 @@ import imageCompression from "browser-image-compression";
 import { Camera, Check, Crown, Share2, UserMinus, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import QRCode from "react-qr-code";
-import type { Household, HouseholdMember, PushPreferences, UpdateHouseholdInput } from "../../lib/types";
+import type { Household, HouseholdMember, PushPreferences, TaskItem, UpdateHouseholdInput } from "../../lib/types";
 import { createDiceBearAvatarDataUri } from "../../lib/avatar";
 import { createTrianglifyBannerBackground } from "../../lib/banner";
 import { createMemberLabelGetter } from "../../lib/member-label";
+import { isDueNow } from "../../lib/date";
 import { ThemeLanguageControls } from "../../components/theme-language-controls";
 import { PaymentBrandIcon } from "../../components/payment-brand-icon";
 import { applyHouseholdTheme } from "../../lib/household-theme";
@@ -38,6 +39,7 @@ interface SettingsPageProps {
   household: Household;
   members: HouseholdMember[];
   currentMember: HouseholdMember | null;
+  tasks: TaskItem[];
   userId: string;
   userEmail: string | undefined;
   userAvatarUrl: string | null;
@@ -132,6 +134,7 @@ export const SettingsPage = ({
   household,
   members,
   currentMember,
+  tasks,
   userId,
   userEmail,
   userAvatarUrl,
@@ -926,16 +929,23 @@ export const SettingsPage = ({
                   }
                 }}
               >
-                <DialogContent>
-                  <DialogHeader>
-                    <DialogTitle>{t("settings.vacationModeConfirmTitle")}</DialogTitle>
-                    <DialogDescription>
-                      {pendingVacationMode
-                        ? t("settings.vacationModeConfirmEnable")
-                        : t("settings.vacationModeConfirmDisable")}
-                    </DialogDescription>
-                  </DialogHeader>
-                  <div className="mt-4 flex justify-end gap-2">
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>{t("settings.vacationModeConfirmTitle")}</DialogTitle>
+                      <DialogDescription>
+                        {pendingVacationMode
+                          ? t("settings.vacationModeConfirmEnable")
+                          : t("settings.vacationModeConfirmDisable")}
+                      </DialogDescription>
+                    </DialogHeader>
+                    {pendingVacationMode && dueTasksAssignedCount > 0 ? (
+                      <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-100">
+                        {t("settings.vacationModeOpenTasksWarning", {
+                          count: dueTasksAssignedCount
+                        })}
+                      </p>
+                    ) : null}
+                    <div className="mt-4 flex justify-end gap-2">
                     <DialogClose asChild>
                       <Button variant="ghost">{t("common.cancel")}</Button>
                     </DialogClose>
@@ -2130,3 +2140,14 @@ export const SettingsPage = ({
     </div>
   );
 };
+  const dueTasksAssignedToYou = useMemo(() => {
+    if (!userId) return [];
+    return tasks.filter(
+      (task) =>
+        task.is_active &&
+        !task.done &&
+        task.assignee_id === userId &&
+        isDueNow(task.due_at)
+    );
+  }, [tasks, userId]);
+  const dueTasksAssignedCount = dueTasksAssignedToYou.length;

@@ -109,6 +109,7 @@ create table if not exists tasks (
   frequency_days integer not null default 7,
   effort_pimpers integer not null default 1,
   grace_minutes integer not null default 1440,
+  delay_penalty_per_day numeric(6, 3) not null default 0.25 check (delay_penalty_per_day >= 0),
   prioritize_low_pimpers boolean not null default true,
   assignee_fairness_mode text not null default 'expected' check (assignee_fairness_mode in ('actual', 'projection', 'expected')),
   is_active boolean not null default true,
@@ -116,6 +117,7 @@ create table if not exists tasks (
   done_at timestamptz,
   done_by uuid references auth.users(id) on delete set null,
   assignee_id uuid references auth.users(id) on delete set null,
+  ignore_delay_penalty_once boolean not null default false,
   created_by uuid not null references auth.users(id) on delete cascade,
   created_at timestamptz not null default now(),
   check (frequency_days > 0),
@@ -135,7 +137,7 @@ create table if not exists task_rotation_members (
 create table if not exists household_member_pimpers (
   household_id uuid not null references households(id) on delete cascade,
   user_id uuid not null references auth.users(id) on delete cascade,
-  total_pimpers integer not null default 0,
+  total_pimpers numeric(12, 2) not null default 0,
   updated_at timestamptz not null default now(),
   primary key (household_id, user_id),
   check (total_pimpers >= 0)
@@ -147,11 +149,11 @@ create table if not exists task_completions (
   household_id uuid not null references households(id) on delete cascade,
   task_title_snapshot text not null default '',
   user_id uuid not null references auth.users(id) on delete cascade,
-  pimpers_earned integer not null,
+  pimpers_earned numeric(12, 2) not null,
   due_at_snapshot timestamptz,
   delay_minutes integer not null default 0,
   completed_at timestamptz not null default now(),
-  check (pimpers_earned > 0),
+  check (pimpers_earned >= 0),
   check (delay_minutes >= 0)
 );
 
@@ -964,6 +966,36 @@ do $$
 begin
   if exists (
     select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'task_completions'
+      and column_name = 'pimpers_earned'
+      and data_type = 'integer'
+  ) then
+    alter table task_completions
+      alter column pimpers_earned type numeric(12, 2)
+      using pimpers_earned::numeric;
+  end if;
+
+  if exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'household_member_pimpers'
+      and column_name = 'total_pimpers'
+      and data_type = 'integer'
+  ) then
+    alter table household_member_pimpers
+      alter column total_pimpers type numeric(12, 2)
+      using total_pimpers::numeric;
+  end if;
+end;
+$$;
+
+do $$
+begin
+  if exists (
+    select 1
     from pg_constraint
     where conname = 'finance_entries_paid_by_user_ids_non_empty_check'
   ) then
@@ -1046,6 +1078,25 @@ begin
       check (delay_minutes >= 0);
   end if;
 
+  if exists (
+    select 1
+    from pg_constraint
+    where conname = 'task_completions_pimpers_earned_check'
+  ) then
+    alter table task_completions
+      drop constraint task_completions_pimpers_earned_check;
+  end if;
+
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'task_completions_pimpers_earned_non_negative_check'
+  ) then
+    alter table task_completions
+      add constraint task_completions_pimpers_earned_non_negative_check
+      check (pimpers_earned >= 0);
+  end if;
+
   if not exists (
     select 1
     from pg_constraint
@@ -1119,11 +1170,13 @@ alter table tasks add column if not exists cron_pattern text not null default '0
 alter table tasks add column if not exists frequency_days integer not null default 7;
 alter table tasks add column if not exists effort_pimpers integer not null default 1;
 alter table tasks add column if not exists grace_minutes integer not null default 1440;
+alter table tasks add column if not exists delay_penalty_per_day numeric(6, 3) not null default 0.25;
 alter table tasks add column if not exists prioritize_low_pimpers boolean not null default true;
 alter table tasks add column if not exists assignee_fairness_mode text not null default 'expected';
 alter table tasks add column if not exists is_active boolean not null default true;
 alter table tasks add column if not exists done_at timestamptz;
 alter table tasks add column if not exists done_by uuid references auth.users(id) on delete set null;
+alter table tasks add column if not exists ignore_delay_penalty_once boolean not null default false;
 
 update tasks
 set assignee_fairness_mode = 'expected'
@@ -1134,6 +1187,11 @@ update tasks
 set grace_minutes = 1440
 where grace_minutes is null
    or grace_minutes < 0;
+
+update tasks
+set delay_penalty_per_day = 0.25
+where delay_penalty_per_day is null
+   or delay_penalty_per_day < 0;
 
 alter table tasks
 alter column assignee_fairness_mode set not null;
@@ -1161,6 +1219,16 @@ begin
     alter table tasks
       add constraint tasks_grace_minutes_non_negative_check
       check (grace_minutes >= 0);
+  end if;
+
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'tasks_delay_penalty_per_day_non_negative_check'
+  ) then
+    alter table tasks
+      add constraint tasks_delay_penalty_per_day_non_negative_check
+      check (delay_penalty_per_day >= 0);
   end if;
 end;
 $$;
@@ -1358,7 +1426,16 @@ begin
       values (
         new.household_id,
         new.user_id,
-        greatest(coalesce((select total_pimpers from household_member_pimpers where household_id = new.household_id and user_id = new.user_id), 0), winsorized_mean)::integer,
+        round(
+          greatest(
+            coalesce(
+              (select total_pimpers from household_member_pimpers where household_id = new.household_id and user_id = new.user_id),
+              0
+            ),
+            winsorized_mean
+          ),
+          2
+        ),
         now()
       )
       on conflict (household_id, user_id)
@@ -1649,6 +1726,9 @@ declare
   v_next_assignee uuid;
   v_interval_days integer;
   v_grace_minutes integer;
+  v_delay_minutes integer;
+  v_penalty numeric;
+  v_pimpers_earned numeric(12, 2);
 begin
   if auth.uid() is distinct from p_user_id then
     raise exception 'Authenticated user does not match p_user_id';
@@ -1686,6 +1766,22 @@ begin
   v_interval_days := task_cron_interval_days(v_task.cron_pattern, v_task.frequency_days);
   v_grace_minutes := greatest(coalesce(v_task.grace_minutes, 0), 0);
   v_next_due := greatest(v_task.due_at, now()) + make_interval(days => greatest(v_interval_days, 1));
+  v_delay_minutes := greatest(
+    0,
+    floor(
+      extract(
+        epoch from (
+          now() - (v_task.due_at + make_interval(mins => v_grace_minutes))
+        )
+      ) / 60
+    )::integer
+  );
+  v_penalty :=
+    case
+      when coalesce(v_task.ignore_delay_penalty_once, false) then 0
+      else coalesce(v_task.delay_penalty_per_day, 0) * (v_delay_minutes::numeric / 1440.0)
+    end;
+  v_pimpers_earned := round(greatest(v_task.effort_pimpers - v_penalty, 0), 2);
 
   insert into task_completions (
     task_id,
@@ -1702,18 +1798,9 @@ begin
     v_task.household_id,
     v_task.title,
     p_user_id,
-    greatest(v_task.effort_pimpers, 1),
+    v_pimpers_earned,
     v_task.due_at,
-    greatest(
-      0,
-      floor(
-        extract(
-          epoch from (
-            now() - (v_task.due_at + make_interval(mins => v_grace_minutes))
-          )
-        ) / 60
-      )::integer
-    ),
+    v_delay_minutes,
     now()
   );
 
@@ -1726,7 +1813,7 @@ begin
   values (
     v_task.household_id,
     p_user_id,
-    greatest(v_task.effort_pimpers, 1),
+    v_pimpers_earned,
     now()
   )
   on conflict (household_id, user_id)
@@ -1747,7 +1834,8 @@ begin
     done_at = now(),
     done_by = p_user_id,
     due_at = v_next_due,
-    assignee_id = coalesce(v_next_assignee, assignee_id)
+    assignee_id = coalesce(v_next_assignee, assignee_id),
+    ignore_delay_penalty_once = false
   where id = v_task.id;
 end;
 $$;
@@ -1831,7 +1919,8 @@ begin
     done_at = null,
     done_by = null,
     due_at = v_next_due,
-    assignee_id = coalesce(v_next_assignee, assignee_id)
+    assignee_id = coalesce(v_next_assignee, assignee_id),
+    ignore_delay_penalty_once = false
   where id = v_task.id;
 end;
 $$;

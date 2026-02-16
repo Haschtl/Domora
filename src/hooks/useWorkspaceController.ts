@@ -610,6 +610,7 @@ export const useWorkspaceController = () => {
         cron_pattern: input.cronPattern?.trim() || taskFrequencyDaysToCronPattern(input.frequencyDays),
         frequency_days: input.frequencyDays,
         effort_pimpers: input.effortPimpers,
+        delay_penalty_per_day: input.delayPenaltyPerDay,
         grace_minutes: input.graceMinutes,
         prioritize_low_pimpers: input.prioritizeLowPimpers,
         assignee_fairness_mode: input.assigneeFairnessMode,
@@ -618,6 +619,7 @@ export const useWorkspaceController = () => {
         done_at: null,
         done_by: null,
         assignee_id: input.rotationUserIds[0] ?? null,
+        ignore_delay_penalty_once: false,
         created_by: userId,
         created_at: nowIso,
         rotation_user_ids: input.rotationUserIds
@@ -650,6 +652,9 @@ export const useWorkspaceController = () => {
       const delayMinutes = Number.isNaN(dueAt.getTime())
         ? 0
         : Math.max(0, Math.floor((Date.parse(nowIso) - (dueAt.getTime() + graceMinutes * 60 * 1000)) / 60000));
+      const penaltyPerDay = Math.max(0, task.delay_penalty_per_day ?? 0);
+      const penalty = task.ignore_delay_penalty_once ? 0 : penaltyPerDay * (delayMinutes / 1440);
+      const earned = Math.max(task.effort_pimpers - penalty, 0);
 
       const completion: TaskCompletion = {
         id: uuid(),
@@ -657,7 +662,7 @@ export const useWorkspaceController = () => {
         household_id: task.household_id,
         task_title_snapshot: task.title,
         user_id: userId,
-        pimpers_earned: Math.max(task.effort_pimpers, 1),
+        pimpers_earned: Number(earned.toFixed(2)),
         due_at_snapshot: task.due_at,
         delay_minutes: delayMinutes,
         completed_at: nowIso,
@@ -680,7 +685,8 @@ export const useWorkspaceController = () => {
                       done_at: nowIso,
                       done_by: userId,
                       due_at: nextDueAt,
-                      assignee_id: nextAssignee
+                      assignee_id: nextAssignee,
+                      ignore_delay_penalty_once: false
                     }
                   : entry
               );
@@ -699,14 +705,14 @@ export const useWorkspaceController = () => {
             updater: (current) => {
               const pimpers = (current as HouseholdMemberPimpers[]) ?? [];
               const existing = pimpers.find((entry) => entry.user_id === userId);
-              const earned = Math.max(task.effort_pimpers, 1);
+              const earnedValue = Number(earned.toFixed(2));
               if (!existing) {
                 return [
                   ...pimpers,
                   {
                     household_id: task.household_id,
                     user_id: userId,
-                    total_pimpers: earned,
+                    total_pimpers: earnedValue,
                     updated_at: nowIso
                   }
                 ];
@@ -715,7 +721,7 @@ export const useWorkspaceController = () => {
                 entry.user_id === userId
                   ? {
                       ...entry,
-                      total_pimpers: entry.total_pimpers + earned,
+                      total_pimpers: entry.total_pimpers + earnedValue,
                       updated_at: nowIso
                     }
                   : entry
@@ -785,7 +791,8 @@ export const useWorkspaceController = () => {
                 entry.id === task.id
                   ? {
                       ...entry,
-                      assignee_id: userId
+                      assignee_id: userId,
+                      ignore_delay_penalty_once: true
                     }
                   : entry
               );
@@ -867,6 +874,7 @@ export const useWorkspaceController = () => {
                       cron_pattern: input.cronPattern?.trim() || taskFrequencyDaysToCronPattern(input.frequencyDays),
                       frequency_days: input.frequencyDays,
                       effort_pimpers: input.effortPimpers,
+                      delay_penalty_per_day: input.delayPenaltyPerDay,
                       grace_minutes: input.graceMinutes,
                       prioritize_low_pimpers: input.prioritizeLowPimpers,
                       assignee_fairness_mode: input.assigneeFairnessMode,

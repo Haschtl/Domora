@@ -117,6 +117,7 @@ const taskSchema = z.object({
   frequency_days: z.coerce.number().int().positive(),
   effort_pimpers: z.coerce.number().int().positive(),
   grace_minutes: z.coerce.number().int().nonnegative().default(1440),
+  delay_penalty_per_day: z.coerce.number().nonnegative().default(0.25),
   prioritize_low_pimpers: z.coerce.boolean().default(true),
   assignee_fairness_mode: z.enum(["actual", "projection", "expected"]).default("expected"),
   is_active: z.coerce.boolean().default(true),
@@ -124,6 +125,7 @@ const taskSchema = z.object({
   done_at: z.string().nullable().optional().transform((value) => value ?? null),
   done_by: z.string().uuid().nullable().optional().transform((value) => value ?? null),
   assignee_id: z.string().uuid().nullable().optional().transform((value) => value ?? null),
+  ignore_delay_penalty_once: z.coerce.boolean().optional().default(false),
   created_by: z.string().uuid(),
   created_at: z.string().min(1)
 });
@@ -144,7 +146,7 @@ const taskCompletionSchema = z.object({
   household_id: z.string().uuid(),
   task_title_snapshot: z.string().default(""),
   user_id: z.string().uuid(),
-  pimpers_earned: z.coerce.number().int().positive(),
+  pimpers_earned: z.coerce.number().nonnegative(),
   due_at_snapshot: z.string().nullable().optional().transform((value) => value ?? null),
   delay_minutes: z.coerce.number().int().nonnegative().default(0),
   completed_at: z.string().min(1),

@@ -1,6 +1,17 @@
 @import "tailwindcss";
 @import "@excalidraw/excalidraw/index.css";
 
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
 @font-face {
   font-family: "Fira Sans";
   src: url('/fonts/fira-sans-w400-normal.woff2') format('woff2');

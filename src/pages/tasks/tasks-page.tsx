@@ -61,7 +61,7 @@ import { Input } from "../../components/ui/input";
 import { InputWithSuffix } from "../../components/ui/input-with-suffix";
 import { Label } from "../../components/ui/label";
 import { MobileSubpageDialog } from "../../components/ui/mobile-subpage-dialog";
-import { PimpersIcon } from "../../components/pimpers-icon";
+import { PimpersStack } from "../../components/pimpers-stack";
 import { PersonSelect } from "../../components/person-select";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
 import { StarRating } from "../../components/ui/star-rating";
@@ -78,6 +78,7 @@ import { supabase } from "../../lib/supabase";
 import { buildCalendarEntriesByDay, buildCompletionSpansByDay, buildMonthGrid, dayKey, startOfMonth } from "../../features/tasks-calendar";
 import { TaskSuggestion, useTaskSuggestions } from "../../features/hooks/use-task-suggestions";
 import { SortableRotationItem } from "../../features/components/SortableRotationItem";
+import { PimpersIcon } from "../../components/pimpers-icon";
 ChartJS.register(
   CategoryScale,
   LinearScale,
@@ -126,6 +127,7 @@ type TaskFormValues = {
   frequencyDays: string;
   effortPimpers: string;
   graceDays: string;
+  delayPenaltyPerDay: string;
   prioritizeLowPimpers: boolean;
   assigneeFairnessMode: "actual" | "projection" | "expected";
 };
@@ -151,6 +153,7 @@ const createDefaultTaskFormValues = (): TaskFormValues => ({
   frequencyDays: "7",
   effortPimpers: "1",
   graceDays: "1",
+  delayPenaltyPerDay: "0.25",
   prioritizeLowPimpers: true,
   assigneeFairnessMode: "expected"
 });
@@ -548,6 +551,7 @@ export const TasksPage = ({
       const parsedFrequencyDays = Number(value.frequencyDays);
       const parsedEffort = Number(value.effortPimpers);
       const parsedGraceDays = Number(value.graceDays);
+      const parsedPenaltyPerDay = Number(value.delayPenaltyPerDay);
       const graceMinutes = Number.isFinite(parsedGraceDays)
         ? Math.max(0, Math.round(parsedGraceDays * 24 * 60))
         : 1440;
@@ -571,6 +575,7 @@ export const TasksPage = ({
         frequencyDays: effectiveFrequencyDays,
         cronPattern,
         effortPimpers: Number.isFinite(parsedEffort) ? Math.max(1, Math.floor(parsedEffort)) : 1,
+        delayPenaltyPerDay: Number.isFinite(parsedPenaltyPerDay) ? Math.max(0, parsedPenaltyPerDay) : 0.25,
         graceMinutes,
         prioritizeLowPimpers: value.prioritizeLowPimpers,
         assigneeFairnessMode: value.assigneeFairnessMode,
@@ -612,6 +617,7 @@ export const TasksPage = ({
       const parsedFrequencyDays = Number(value.frequencyDays);
       const parsedEffort = Number(value.effortPimpers);
       const parsedGraceDays = Number(value.graceDays);
+      const parsedPenaltyPerDay = Number(value.delayPenaltyPerDay);
       const graceMinutes = Number.isFinite(parsedGraceDays)
         ? Math.max(0, Math.round(parsedGraceDays * 24 * 60))
         : 1440;
@@ -635,6 +641,7 @@ export const TasksPage = ({
         frequencyDays: effectiveFrequencyDays,
         cronPattern,
         effortPimpers: Number.isFinite(parsedEffort) ? Math.max(1, Math.floor(parsedEffort)) : 1,
+        delayPenaltyPerDay: Number.isFinite(parsedPenaltyPerDay) ? Math.max(0, parsedPenaltyPerDay) : 0.25,
         graceMinutes,
         prioritizeLowPimpers: value.prioritizeLowPimpers,
         assigneeFairnessMode: value.assigneeFairnessMode,
@@ -1227,7 +1234,7 @@ export const TasksPage = ({
                 <div
               role="button"
               tabIndex={0}
-              className="relative inline-flex h-28 w-full items-center justify-center overflow-hidden rounded-xl border border-brand-200 bg-brand-50 text-slate-600 transition hover:border-brand-300 hover:bg-brand-100 focus:outline-none focus:ring-2 focus:ring-brand-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:bg-slate-800"
+              className="relative inline-flex h-28 w-full items-center justify-center overflow-hidden rounded-xl border border-brand-200 bg-slate-100 text-slate-600 transition hover:border-brand-300 hover:bg-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-200 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:bg-slate-900"
               onClick={() => options.uploadInputRef.current?.click()}
               onKeyDown={(event) => {
                 if (event.key === "Enter" || event.key === " ") {
@@ -1244,7 +1251,7 @@ export const TasksPage = ({
                   style={{ backgroundImage: `url(${field.state.value})` }}
                 />
               ) : null}
-              <span className="absolute inset-0 bg-gradient-to-r from-slate-900/25 via-slate-900/5 to-slate-900/30" />
+              <span className="absolute inset-0 bg-gradient-to-r from-slate-900/25 via-slate-900/5 to-slate-900/30 dark:from-slate-950/80 dark:via-slate-950/40 dark:to-slate-950/80" />
               <Tooltip>
                 <TooltipTrigger asChild>
                   <button
@@ -1700,14 +1707,6 @@ export const TasksPage = ({
     );
     return { nextAssigneeId, turnsUntilYou, intervalDays };
   }, [editRotationCandidates, editTaskForm.state.values.frequencyDays, taskBeingEdited, userId]);
-  const normalizePreviewOrder = useCallback(
-    (order: string[]) => {
-      const active = order.filter((memberId) => !(memberById.get(memberId)?.vacation_mode ?? false));
-      return active.length > 0 ? active : order;
-    },
-    [memberById]
-  );
-
   const renderRotationAvatarStack = (memberIds: string[], maxCount = 8) => (
     <div className="flex items-center">
       {memberIds.slice(0, maxCount).map((memberId, index) => {
@@ -1789,6 +1788,7 @@ export const TasksPage = ({
     editTaskForm.setFieldValue("startDate", task.start_date);
     editTaskForm.setFieldValue("frequencyDays", String(task.frequency_days));
     editTaskForm.setFieldValue("effortPimpers", String(task.effort_pimpers));
+    editTaskForm.setFieldValue("delayPenaltyPerDay", String(task.delay_penalty_per_day ?? 0.25));
     editTaskForm.setFieldValue(
       "graceDays",
       String(Number(((task.grace_minutes ?? 1440) / 1440).toFixed(2)))
@@ -2564,6 +2564,33 @@ export const TasksPage = ({
                               />
 
                               <taskForm.Field
+                                name="delayPenaltyPerDay"
+                                children={(field: {
+                                  state: { value: string };
+                                  handleChange: (value: string) => void;
+                                }) => (
+                                  <div className="space-y-1">
+                                    <Label>{t("tasks.delayPenaltyLabel")}</Label>
+                                    <InputWithSuffix
+                                      suffix={t("tasks.delayPenaltyUnit")}
+                                      type="number"
+                                      min="0"
+                                      step="0.05"
+                                      inputMode="decimal"
+                                      value={field.state.value}
+                                      onChange={(event) =>
+                                        field.handleChange(event.target.value)
+                                      }
+                                      placeholder={t("tasks.delayPenaltyPlaceholder")}
+                                    />
+                                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                                      {t("tasks.delayPenaltyHint")}
+                                    </p>
+                                  </div>
+                                )}
+                              />
+
+                              <taskForm.Field
                                 name="prioritizeLowPimpers"
                                 children={(field: {
                                   state: { value: boolean };
@@ -2872,18 +2899,41 @@ export const TasksPage = ({
 
                       <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
                         <div className="flex items-center">
-                          <div className="flex items-center -space-x-2 text-brand-600 dark:text-brand-300">
-                            {Array.from({
-                              length: Math.min(task.effort_pimpers, 6),
-                            }).map((_, index) => (
-                              <span
-                                key={`${task.id}-pimper-${index}`}
-                                className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-white/70 bg-white/80 shadow-sm dark:border-slate-900/70 dark:bg-slate-900/70"
-                              >
-                                <PimpersIcon className="h-3 w-3" />
-                              </span>
-                            ))}
-                          </div>
+                          {(() => {
+                            const nowMs = Date.now();
+                            const dueAt = new Date(task.due_at).getTime();
+                            const graceMs = Math.max(0, task.grace_minutes) * 60_000;
+                            const delayMinutes = Math.max(0, Math.floor((nowMs - (dueAt + graceMs)) / 60_000));
+                            const penaltyPerDay = Math.max(0, task.delay_penalty_per_day ?? 0);
+                            const penalty = penaltyPerDay * (delayMinutes / 1440);
+                            const earned = Math.max(task.effort_pimpers - penalty, 0);
+                            const iconCount = Math.min(task.effort_pimpers, 6);
+                            return (
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <PimpersStack count={iconCount} earned={earned} />
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  <p className="text-xs">
+                                    {t("tasks.delayPenaltyTooltipCurrent", {
+                                      earned: earned.toFixed(2),
+                                      total: Number(task.effort_pimpers).toFixed(2)
+                                    })}
+                                  </p>
+                                  <p className="text-xs">
+                                    {t("tasks.delayPenaltyTooltipDelay", {
+                                      days: (delayMinutes / 1440).toFixed(1)
+                                    })}
+                                  </p>
+                                  <p className="text-xs">
+                                    {t("tasks.delayPenaltyTooltipPenalty", {
+                                      penalty: penalty.toFixed(2)
+                                    })}
+                                  </p>
+                                </TooltipContent>
+                              </Tooltip>
+                            );
+                          })()}
                           {task.effort_pimpers > 6 ? (
                             <span className="ml-2 text-xs text-slate-500 dark:text-slate-400">
                               +{task.effort_pimpers - 6}
@@ -4038,7 +4088,7 @@ export const TasksPage = ({
               }}
             >
               {editRotationForecast ? (
-                <div className="rounded-xl border border-brand-100 bg-brand-50/40 p-3 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-800/50 dark:text-slate-200">
+                <div className="rounded-xl border border-brand-100 bg-brand-50/20 p-3 text-sm text-slate-700 dark:bg-slate-800/50 dark:text-slate-200">
                   <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
                     {t("tasks.rotationForecastTitle")}
                   </p>
@@ -4291,6 +4341,33 @@ export const TasksPage = ({
                       />
 
                       <editTaskForm.Field
+                        name="delayPenaltyPerDay"
+                        children={(field: {
+                          state: { value: string };
+                          handleChange: (value: string) => void;
+                        }) => (
+                          <div className="space-y-1">
+                            <Label>{t("tasks.delayPenaltyLabel")}</Label>
+                            <InputWithSuffix
+                              suffix={t("tasks.delayPenaltyUnit")}
+                              type="number"
+                              min="0"
+                              step="0.05"
+                              inputMode="decimal"
+                              value={field.state.value}
+                              onChange={(event) =>
+                                field.handleChange(event.target.value)
+                              }
+                              placeholder={t("tasks.delayPenaltyPlaceholder")}
+                            />
+                            <p className="text-xs text-slate-500 dark:text-slate-400">
+                              {t("tasks.delayPenaltyHint")}
+                            </p>
+                          </div>
+                        )}
+                      />
+
+                      <editTaskForm.Field
                         name="prioritizeLowPimpers"
                         children={(field: {
                           state: { value: boolean };
@@ -4422,10 +4499,8 @@ export const TasksPage = ({
                                 {t("tasks.rotationOrderPreviewTheoretical")}:
                               </span>
                               {renderRotationAvatarStack(
-                                normalizePreviewOrder(
-                                  adjustPreviewOrder(
-                                    editRotationVariants.theoretical,
-                                  ),
+                                adjustPreviewOrder(
+                                  editRotationVariants.theoretical,
                                 ),
                               )}
                             </div>
@@ -4434,10 +4509,8 @@ export const TasksPage = ({
                                 {t("tasks.rotationOrderPreviewFairness")}:
                               </span>
                               {renderRotationAvatarStack(
-                                normalizePreviewOrder(
-                                  adjustPreviewOrder(
-                                    editRotationVariants.fairnessActual,
-                                  ),
+                                adjustPreviewOrder(
+                                  editRotationVariants.fairnessActual,
                                 ),
                               )}
                             </div>
@@ -4449,10 +4522,8 @@ export const TasksPage = ({
                                 :
                               </span>
                               {renderRotationAvatarStack(
-                                normalizePreviewOrder(
-                                  adjustPreviewOrder(
-                                    editRotationVariants.fairnessProjection,
-                                  ),
+                                adjustPreviewOrder(
+                                  editRotationVariants.fairnessProjection,
                                 ),
                               )}
                             </div>
@@ -4462,10 +4533,8 @@ export const TasksPage = ({
                                 :
                               </span>
                               {renderRotationAvatarStack(
-                                normalizePreviewOrder(
-                                  adjustPreviewOrder(
-                                    editRotationVariants.fairnessExpected,
-                                  ),
+                                adjustPreviewOrder(
+                                  editRotationVariants.fairnessExpected,
                                 ),
                               )}
                             </div>

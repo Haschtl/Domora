@@ -153,6 +153,7 @@ const taskSchema = z.object({
   frequency_days: z.coerce.number().int().positive(),
   effort_pimpers: z.coerce.number().int().positive(),
   grace_minutes: z.coerce.number().int().nonnegative().default(1440),
+  delay_penalty_per_day: z.coerce.number().nonnegative().default(0.25),
   prioritize_low_pimpers: z.coerce.boolean().default(true),
   assignee_fairness_mode: z.enum(["actual", "projection", "expected"]).default("expected"),
   is_active: z.coerce.boolean().default(true),
@@ -160,6 +161,7 @@ const taskSchema = z.object({
   done_at: z.string().nullable().optional().transform((value) => value ?? null),
   done_by: z.string().uuid().nullable().optional().transform((value) => value ?? null),
   assignee_id: z.string().uuid().nullable().optional().transform((value) => value ?? null),
+  ignore_delay_penalty_once: z.coerce.boolean().optional().default(false),
   created_by: z.string().uuid(),
   created_at: z.string().min(1)
 });
@@ -180,7 +182,7 @@ const taskCompletionSchema = z.object({
   household_id: z.string().uuid(),
   task_title_snapshot: z.string().default(""),
   user_id: z.string().uuid(),
-  pimpers_earned: z.coerce.number().int().positive(),
+  pimpers_earned: z.coerce.number().nonnegative(),
   due_at_snapshot: z.string().nullable().optional().transform((value) => value ?? null),
   delay_minutes: z.coerce.number().int().nonnegative().default(0),
   completed_at: z.string().min(1),
@@ -1528,6 +1530,7 @@ export const addTask = async (
     frequencyDays: z.coerce.number().int().positive(),
     cronPattern: z.string().trim().min(1).nullable().optional(),
     effortPimpers: z.coerce.number().int().positive(),
+    delayPenaltyPerDay: z.coerce.number().nonnegative().default(0.25),
     graceMinutes: z.coerce.number().int().nonnegative().default(1440),
     prioritizeLowPimpers: z.coerce.boolean(),
     assigneeFairnessMode: z.enum(["actual", "projection", "expected"]).default("expected"),
@@ -1543,6 +1546,7 @@ export const addTask = async (
     frequencyDays: input.frequencyDays,
     cronPattern: input.cronPattern ?? null,
     effortPimpers: input.effortPimpers,
+    delayPenaltyPerDay: input.delayPenaltyPerDay,
     graceMinutes: input.graceMinutes,
     prioritizeLowPimpers: input.prioritizeLowPimpers,
     assigneeFairnessMode: input.assigneeFairnessMode,
@@ -1569,6 +1573,7 @@ export const addTask = async (
       cron_pattern: cronPattern,
       frequency_days: parsedInput.frequencyDays,
       effort_pimpers: parsedInput.effortPimpers,
+      delay_penalty_per_day: parsedInput.delayPenaltyPerDay,
       grace_minutes: parsedInput.graceMinutes,
       prioritize_low_pimpers: parsedInput.prioritizeLowPimpers,
       assignee_fairness_mode: parsedInput.assigneeFairnessMode,
@@ -1607,6 +1612,7 @@ export const updateTask = async (taskId: string, input: NewTaskInput): Promise<v
     frequencyDays: z.coerce.number().int().positive(),
     cronPattern: z.string().trim().min(1).nullable().optional(),
     effortPimpers: z.coerce.number().int().positive(),
+    delayPenaltyPerDay: z.coerce.number().nonnegative().default(0.25),
     graceMinutes: z.coerce.number().int().nonnegative().default(1440),
     prioritizeLowPimpers: z.coerce.boolean(),
     assigneeFairnessMode: z.enum(["actual", "projection", "expected"]).default("expected"),
@@ -1621,6 +1627,7 @@ export const updateTask = async (taskId: string, input: NewTaskInput): Promise<v
     frequencyDays: input.frequencyDays,
     cronPattern: input.cronPattern ?? null,
     effortPimpers: input.effortPimpers,
+    delayPenaltyPerDay: input.delayPenaltyPerDay,
     graceMinutes: input.graceMinutes,
     prioritizeLowPimpers: input.prioritizeLowPimpers,
     assigneeFairnessMode: input.assigneeFairnessMode,
@@ -1643,6 +1650,7 @@ export const updateTask = async (taskId: string, input: NewTaskInput): Promise<v
       cron_pattern: cronPattern,
       frequency_days: parsedInput.frequencyDays,
       effort_pimpers: parsedInput.effortPimpers,
+      delay_penalty_per_day: parsedInput.delayPenaltyPerDay,
       grace_minutes: parsedInput.graceMinutes,
       prioritize_low_pimpers: parsedInput.prioritizeLowPimpers,
       assignee_fairness_mode: parsedInput.assigneeFairnessMode,
@@ -1751,7 +1759,7 @@ export const takeoverTask = async (taskId: string, userId: string): Promise<void
 
   const { error: updateError } = await supabase
     .from("tasks")
-    .update({ assignee_id: validatedUserId })
+    .update({ assignee_id: validatedUserId, ignore_delay_penalty_once: true })
     .eq("id", validatedTaskId);
   if (updateError) throw updateError;
 };

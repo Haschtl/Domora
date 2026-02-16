@@ -126,6 +126,7 @@ export interface TaskItem {
   cron_pattern: string;
   frequency_days: number;
   effort_pimpers: number;
+  delay_penalty_per_day: number;
   prioritize_low_pimpers: boolean;
   assignee_fairness_mode: "actual" | "projection" | "expected";
   grace_minutes: number;
@@ -134,6 +135,7 @@ export interface TaskItem {
   done_at: string | null;
   done_by: string | null;
   assignee_id: string | null;
+  ignore_delay_penalty_once: boolean;
   created_by: string;
   created_at: string;
   rotation_user_ids: string[];
@@ -192,6 +194,7 @@ export interface NewTaskInput {
   frequencyDays: number;
   cronPattern?: string | null;
   effortPimpers: number;
+  delayPenaltyPerDay: number;
   prioritizeLowPimpers: boolean;
   assigneeFairnessMode: "actual" | "projection" | "expected";
   graceMinutes: number;
