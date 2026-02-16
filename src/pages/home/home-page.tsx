@@ -21,10 +21,13 @@ import { useTranslation } from "react-i18next";
 import type { Components } from "react-markdown";
 import { type JsxComponentDescriptor, type JsxEditorProps, useLexicalNodeRemove } from "@mdxeditor/editor";
 import { createTrianglifyBannerBackground } from "../../lib/banner";
-import { formatDateTime } from "../../lib/date";
+import { formatDateTime, getLastMonthRange } from "../../lib/date";
 import { createMemberLabelGetter } from "../../lib/member-label";
+import { createDiceBearAvatarDataUri } from "../../lib/avatar";
 import { calculateBalancesByMember } from "../../lib/finance-math";
+import { getMemberOfMonth } from "../../lib/task-leaderboard";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../../components/ui/tooltip";
+import { MemberAvatar } from "../../components/member-avatar";
 const ExcalidrawBoardLazy = lazy(() =>
   import("../../components/excalidraw-board").then((module) => ({ default: module.ExcalidrawBoard }))
 );
@@ -104,6 +107,7 @@ const LANDING_WIDGET_COMPONENTS: Array<{ key: LandingWidgetKey; tag: string }> =
   { key: "household-balance", tag: "LandingWidgetHouseholdBalance" },
   { key: "recent-activity", tag: "LandingWidgetRecentActivity" },
   { key: "bucket-short-list", tag: "LandingWidgetBucketShortList" },
+  { key: "member-of-month", tag: "LandingWidgetMemberOfMonth" },
   { key: "fairness-score", tag: "LandingWidgetFairnessScore" },
   { key: "reliability-score", tag: "LandingWidgetReliabilityScore" },
   { key: "expenses-by-month", tag: "LandingWidgetExpensesByMonth" },
@@ -350,6 +354,7 @@ export const HomePage = ({
       { label: t("home.widgetHouseholdBalance"), value: widgetTokenFromKey("household-balance") },
       { label: t("home.widgetRecentActivity"), value: widgetTokenFromKey("recent-activity") },
       { label: t("home.widgetBucketShortList"), value: widgetTokenFromKey("bucket-short-list") },
+      { label: t("home.widgetMemberOfMonth"), value: widgetTokenFromKey("member-of-month") },
       { label: t("home.widgetFairness"), value: widgetTokenFromKey("fairness-score") },
       { label: t("home.widgetReliability"), value: widgetTokenFromKey("reliability-score") },
       { label: t("home.widgetExpensesByMonth"), value: widgetTokenFromKey("expenses-by-month") },
@@ -582,6 +587,19 @@ export const HomePage = ({
       rows: rows.sort((a, b) => b.score - a.score)
     };
   }, [members, taskCompletions]);
+  const lastMonthRange = useMemo(() => getLastMonthRange(), []);
+  const memberOfMonth = useMemo(
+    () => getMemberOfMonth(taskCompletions, lastMonthRange),
+    [lastMonthRange, taskCompletions]
+  );
+  const memberOfMonthProfile = useMemo(
+    () => (memberOfMonth ? members.find((entry) => entry.user_id === memberOfMonth.userId) ?? null : null),
+    [memberOfMonth, members]
+  );
+  const memberOfMonthLabel = useMemo(
+    () => new Intl.DateTimeFormat(language, { month: "long", year: "numeric" }).format(lastMonthRange.start),
+    [language, lastMonthRange]
+  );
   const recentActivity = useMemo(() => {
     type ActivityItem = { id: string; at: string; icon: "task" | "shopping" | "finance" | "audit"; text: string };
     return householdEvents
@@ -663,6 +681,28 @@ export const HomePage = ({
             text: t("home.activityPimpersReset", {
               user: labelForUserId(entry.actor_user_id),
               total: Number(payload.total_reset ?? 0)
+            })
+          };
+        }
+
+        if (entry.event_type === "vacation_mode_enabled") {
+          return {
+            id: `event-${entry.id}`,
+            at: entry.created_at,
+            icon: "audit",
+            text: t("home.activityVacationEnabled", {
+              user: labelForUserId(entry.actor_user_id)
+            })
+          };
+        }
+
+        if (entry.event_type === "vacation_mode_disabled") {
+          return {
+            id: `event-${entry.id}`,
+            at: entry.created_at,
+            icon: "audit",
+            text: t("home.activityVacationDisabled", {
+              user: labelForUserId(entry.actor_user_id)
             })
           };
         }
@@ -923,6 +963,51 @@ export const HomePage = ({
       );
     }
 
+    if (key === "member-of-month") {
+      return (
+        <div className="rounded-xl border border-brand-100 bg-white/80 p-3 dark:border-slate-700 dark:bg-slate-900/70">
+          <p className="text-xs text-slate-500 dark:text-slate-400">{t("home.widgetMemberOfMonth")}</p>
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            {t("home.widgetMemberOfMonthHint", { month: memberOfMonthLabel })}
+          </p>
+          {memberOfMonth ? (
+            <div className="mt-2 flex items-center justify-between gap-3">
+              <div className="flex min-w-0 items-center gap-2">
+                <MemberAvatar
+                  src={
+                    memberOfMonthProfile?.avatar_url?.trim() ||
+                    createDiceBearAvatarDataUri(
+                      memberLabel(memberOfMonth.userId),
+                      memberOfMonthProfile?.user_color
+                    )
+                  }
+                  alt={memberLabel(memberOfMonth.userId)}
+                  isVacation={memberOfMonthProfile?.vacation_mode ?? false}
+                  isMemberOfMonth
+                  className="h-8 w-8 rounded-full border border-brand-200 dark:border-slate-700"
+                />
+                <div className="min-w-0">
+                  <p className="truncate text-lg font-semibold text-slate-900 dark:text-slate-100">
+                    {memberLabel(memberOfMonth.userId)}
+                  </p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    {t("tasks.pimpersValue", { count: memberOfMonth.totalPimpers })}
+                  </p>
+                </div>
+              </div>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                {t("home.widgetMemberOfMonthDelay", {
+                  minutes: Math.round(memberOfMonth.averageDelayMinutes)
+                })}
+              </p>
+            </div>
+          ) : (
+            <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">{t("home.widgetMemberOfMonthEmpty")}</p>
+          )}
+        </div>
+      );
+    }
+
     if (key === "fairness-score") {
       return (
         <div className="rounded-xl border border-brand-100 p-3 dark:border-slate-700 dark:bg-slate-800/60">
@@ -1028,6 +1113,9 @@ export const HomePage = ({
     openBucketItemsCount,
     taskFairness,
     taskReliability,
+    memberOfMonth,
+    memberOfMonthLabel,
+    memberOfMonthProfile,
     memberLabel,
     navigate,
     onCompleteTask,

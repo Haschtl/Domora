@@ -41,6 +41,7 @@ import type {
   Household,
   HouseholdMember,
   HouseholdMemberPimpers,
+  HouseholdEvent,
   NewTaskInput,
   TaskCompletion,
   TaskItem
@@ -69,9 +70,10 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../../
 import { MemberAvatar } from "../../components/member-avatar";
 import { RecaptzCaptcha } from "../../components/recaptz-captcha";
 import { useSmartSuggestions } from "../../hooks/use-smart-suggestions";
-import { formatDateTime, formatShortDay, isDueNow } from "../../lib/date";
+import { formatDateTime, formatShortDay, getLastMonthRange, isDueNow } from "../../lib/date";
 import { createDiceBearAvatarDataUri } from "../../lib/avatar";
 import { createMemberLabelGetter } from "../../lib/member-label";
+import { getMemberOfMonth } from "../../lib/task-leaderboard";
 import { supabase } from "../../lib/supabase";
 import { buildCalendarEntriesByDay, buildCompletionSpansByDay, buildMonthGrid, dayKey, startOfMonth } from "../../features/tasks-calendar";
 import { TaskSuggestion, useTaskSuggestions } from "../../features/hooks/use-task-suggestions";
@@ -89,6 +91,7 @@ interface TasksPageProps {
   household: Household;
   tasks: TaskItem[];
   completions: TaskCompletion[];
+  householdEvents: HouseholdEvent[];
   members: HouseholdMember[];
   memberPimpers: HouseholdMemberPimpers[];
   userId: string;
@@ -109,6 +112,10 @@ type PendingTaskAction = {
   kind: "skip" | "takeover" | "complete";
   task: TaskItem;
 };
+
+type TaskHistoryItem =
+  | { type: "completion"; entry: TaskCompletion }
+  | { type: "skipped"; id: string; taskTitle: string; userId: string | null; createdAt: string };
 
 type TaskFormValues = {
   title: string;
@@ -445,6 +452,7 @@ export const TasksPage = ({
   household,
   tasks,
   completions,
+  householdEvents,
   members,
   memberPimpers,
   userId,
@@ -690,11 +698,88 @@ export const TasksPage = ({
     });
     return map;
   }, [completions]);
+  const lastMonthRange = useMemo(() => getLastMonthRange(), []);
+  const memberOfMonth = useMemo(
+    () => getMemberOfMonth(completions, lastMonthRange),
+    [completions, lastMonthRange]
+  );
+  const memberOfMonthLabel = useMemo(
+    () => new Intl.DateTimeFormat(language, { month: "long", year: "numeric" }).format(lastMonthRange.start),
+    [language, lastMonthRange]
+  );
   const memberById = useMemo(() => {
     const map = new Map<string, HouseholdMember>();
     members.forEach((member) => map.set(member.user_id, member));
     return map;
   }, [members]);
+  const onTimeStreaks = useMemo(() => {
+    const actionByUser = new Map<string, Array<{ at: number; type: "completion" | "skipped"; delay: number; id: string }>>();
+    completions.forEach((entry) => {
+      const current = actionByUser.get(entry.user_id) ?? [];
+      current.push({
+        at: new Date(entry.completed_at).getTime(),
+        type: "completion",
+        delay: Math.max(0, entry.delay_minutes ?? 0),
+        id: entry.id
+      });
+      actionByUser.set(entry.user_id, current);
+    });
+    householdEvents
+      .filter((event) => event.event_type === "task_skipped")
+      .forEach((event) => {
+        if (!event.actor_user_id) return;
+        const current = actionByUser.get(event.actor_user_id) ?? [];
+        current.push({
+          at: new Date(event.created_at).getTime(),
+          type: "skipped",
+          delay: 1,
+          id: event.id
+        });
+        actionByUser.set(event.actor_user_id, current);
+      });
+
+    const rows = members.map((member) => {
+      const actions = (actionByUser.get(member.user_id) ?? []).slice().sort((a, b) => {
+        return b.at - a.at || a.id.localeCompare(b.id);
+      });
+      let streak = 0;
+      for (const action of actions) {
+        if (action.type !== "completion" || action.delay > 0) break;
+        streak += 1;
+      }
+      return { userId: member.user_id, streak };
+    });
+
+    return rows.sort((a, b) => b.streak - a.streak || a.userId.localeCompare(b.userId));
+  }, [completions, householdEvents, members]);
+
+  const historyItems = useMemo<TaskHistoryItem[]>(() => {
+    const completionItems: TaskHistoryItem[] = completions.map((entry) => ({
+      type: "completion",
+      entry
+    }));
+    const skippedItems: TaskHistoryItem[] = householdEvents
+      .filter((event) => event.event_type === "task_skipped")
+      .map((event) => ({
+        type: "skipped",
+        id: event.id,
+        taskTitle: String(event.payload?.title ?? t("tasks.fallbackTitle")),
+        userId: event.actor_user_id,
+        createdAt: event.created_at
+      }));
+
+    return [...completionItems, ...skippedItems].sort((a, b) => {
+      const left =
+        a.type === "completion"
+          ? new Date(a.entry.completed_at).getTime()
+          : new Date(a.createdAt).getTime();
+      const right =
+        b.type === "completion"
+          ? new Date(b.entry.completed_at).getTime()
+          : new Date(b.createdAt).getTime();
+      return right - left;
+    });
+  }, [completions, householdEvents, t]);
   const reminderTemplates = useMemo(() => {
     const titlesRaw = t("tasks.reminderTitles", { returnObjects: true }) as unknown;
     const bodiesRaw = t("tasks.reminderBodies", { returnObjects: true }) as unknown;
@@ -1585,6 +1670,43 @@ export const TasksPage = ({
       fairnessExpected
     };
   }, [averageDelayByUserId, editRotationUserIds, editTaskForm.state.values.frequencyDays, pimperByUserId, taskBeingEdited, tasks]);
+  const editRotationCandidates = useMemo(() => {
+    const active = editRotationUserIds.filter((memberId) => !(memberById.get(memberId)?.vacation_mode ?? false));
+    return active.length > 0 ? active : editRotationUserIds;
+  }, [editRotationUserIds, memberById]);
+  const editRotationForecast = useMemo(() => {
+    if (!taskBeingEdited || editRotationCandidates.length === 0) {
+      return null;
+    }
+    const currentAssignee = taskBeingEdited.assignee_id;
+    const currentIndex = currentAssignee ? editRotationCandidates.indexOf(currentAssignee) : -1;
+    const nextIndex =
+      currentIndex >= 0
+        ? (currentIndex + 1) % editRotationCandidates.length
+        : 0;
+    const nextAssigneeId = editRotationCandidates[nextIndex] ?? null;
+    const yourIndex = editRotationCandidates.indexOf(userId);
+    const turnsUntilYou =
+      yourIndex < 0
+        ? null
+        : currentIndex >= 0
+          ? yourIndex >= currentIndex
+            ? yourIndex - currentIndex
+            : editRotationCandidates.length - currentIndex + yourIndex
+          : yourIndex;
+    const intervalDays = Math.max(
+      1,
+      Math.floor(Number(editTaskForm.state.values.frequencyDays) || 1)
+    );
+    return { nextAssigneeId, turnsUntilYou, intervalDays };
+  }, [editRotationCandidates, editTaskForm.state.values.frequencyDays, taskBeingEdited, userId]);
+  const normalizePreviewOrder = useCallback(
+    (order: string[]) => {
+      const active = order.filter((memberId) => !(memberById.get(memberId)?.vacation_mode ?? false));
+      return active.length > 0 ? active : order;
+    },
+    [memberById]
+  );
 
   const renderRotationAvatarStack = (memberIds: string[], maxCount = 8) => (
     <div className="flex items-center">
@@ -3008,6 +3130,73 @@ export const TasksPage = ({
           </Card>
         ) : null}
 
+        {showStats ? (
+          <Card className="rounded-xl border border-slate-300 bg-white/88 p-3 text-slate-800 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-100 mb-4">
+            <CardHeader>
+              <CardTitle>{t("tasks.memberOfMonthTitle")}</CardTitle>
+              <CardDescription>{t("tasks.memberOfMonthHint", { month: memberOfMonthLabel })}</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {memberOfMonth ? (
+                <div className="flex items-center justify-between gap-3 rounded-lg border border-brand-100 bg-white/90 p-3 dark:border-slate-700 dark:bg-slate-900">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <MemberAvatar
+                      src={
+                        memberById.get(memberOfMonth.userId)?.avatar_url?.trim() ||
+                        createDiceBearAvatarDataUri(userLabel(memberOfMonth.userId))
+                      }
+                      alt={userLabel(memberOfMonth.userId)}
+                      isVacation={memberById.get(memberOfMonth.userId)?.vacation_mode ?? false}
+                      isMemberOfMonth
+                      className="h-9 w-9 rounded-full border border-brand-200 dark:border-slate-700"
+                    />
+                    <div className="min-w-0">
+                      <p className="truncate text-base font-semibold text-slate-900 dark:text-slate-100">
+                        {userLabel(memberOfMonth.userId)}
+                      </p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">
+                        {t("tasks.pimpersValue", { count: memberOfMonth.totalPimpers })}
+                      </p>
+                    </div>
+                  </div>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    {t("tasks.memberOfMonthDelay", {
+                      minutes: Math.round(memberOfMonth.averageDelayMinutes)
+                    })}
+                  </p>
+                </div>
+              ) : (
+                <p className="text-sm text-slate-500 dark:text-slate-400">{t("tasks.memberOfMonthEmpty")}</p>
+              )}
+            </CardContent>
+          </Card>
+        ) : null}
+
+        {showStats ? (
+          <Card className="rounded-xl border border-slate-300 bg-white/88 p-3 text-slate-800 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-100 mb-4">
+            <CardHeader>
+              <CardTitle>{t("tasks.onTimeStreakTitle")}</CardTitle>
+              <CardDescription>{t("tasks.onTimeStreakHint")}</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {onTimeStreaks.some((row) => row.streak > 0) ? (
+                <ul className="space-y-1 text-sm">
+                  {onTimeStreaks.map((row) => (
+                    <li key={`streak-${row.userId}`} className="flex items-center justify-between gap-2">
+                      <span className="text-slate-700 dark:text-slate-300">{userLabel(row.userId)}</span>
+                      <span className="font-medium text-slate-900 dark:text-slate-100">
+                        {t("tasks.onTimeStreakValue", { count: row.streak })}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-sm text-slate-500 dark:text-slate-400">{t("tasks.onTimeStreakEmpty")}</p>
+              )}
+            </CardContent>
+          </Card>
+        ) : null}
+
         {showStats && sortedMemberRows.length > 0 ? (
           <Card className="rounded-xl border border-slate-300 bg-white/88 p-3 text-slate-800 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-100 mb-4">
             <CardHeader>
@@ -3363,110 +3552,122 @@ export const TasksPage = ({
                 <CardTitle>{t("tasks.historyTitle")}</CardTitle>
               </CardHeader>
               <CardContent>
-                {completions.length === 0 ? (
+                {historyItems.length === 0 ? (
                   <p className="text-sm text-slate-500 dark:text-slate-400">
                     {t("tasks.historyEmpty")}
                   </p>
                 ) : null}
 
-                {completions.length > 0 ? (
+                {historyItems.length > 0 ? (
                   <ul className="space-y-2">
-                    {completions.map((entry) => (
-                      <li
-                        key={entry.id}
-                        className="rounded-lg border border-brand-100 bg-white/90 p-2 dark:border-slate-700 dark:bg-slate-900"
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
-                            {entry.task_title_snapshot ||
-                              t("tasks.fallbackTitle")}
-                          </p>
-                          <p className="text-xs text-slate-500 dark:text-slate-400">
-                            {formatDateTime(entry.completed_at, language)}
-                          </p>
-                        </div>
-                        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                          {t("tasks.historyLine", {
-                            user: userLabel(entry.user_id),
-                            pimpers: `${entry.pimpers_earned}`,
-                          })}
-                          <span className="ml-1 inline-flex align-middle">
-                            <PimpersIcon />
-                          </span>
-                        </p>
-                        <div className="mt-2 flex flex-wrap items-center gap-2">
-                          {/* {entry.rating_count > 0 ? (
-                            <p className="text-xs text-slate-500 dark:text-slate-400">
-                              {t("tasks.ratingSummary", {
-                                average: Number(
-                                  (entry.rating_average ?? 0).toFixed(1),
-                                ),
-                                count: entry.rating_count,
+                    {historyItems.map((item) => {
+                      if (item.type === "skipped") {
+                        return (
+                          <li
+                            key={`skip-${item.id}`}
+                            className="rounded-lg border border-brand-100 bg-white/90 p-2 dark:border-slate-700 dark:bg-slate-900"
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
+                                {item.taskTitle}
+                              </p>
+                              <p className="text-xs text-slate-500 dark:text-slate-400">
+                                {formatDateTime(item.createdAt, language)}
+                              </p>
+                            </div>
+                            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                              {t("tasks.historySkippedLine", {
+                                user: item.userId ? userLabel(item.userId) : t("common.memberFallback"),
                               })}
                             </p>
-                          ) : (
-                            <p className="text-xs text-slate-500 dark:text-slate-400">
-                              {t("tasks.ratingNoVotes")}
+                          </li>
+                        );
+                      }
+
+                      const entry = item.entry;
+                      return (
+                        <li
+                          key={entry.id}
+                          className="rounded-lg border border-brand-100 bg-white/90 p-2 dark:border-slate-700 dark:bg-slate-900"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
+                              {entry.task_title_snapshot ||
+                                t("tasks.fallbackTitle")}
                             </p>
-                          )} */}
-                          <div className="ml-auto">
-                            {entry.rating_count > 0 || entry.my_rating ? (
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <div>
-                                    <StarRating
-                                      value={entry.my_rating ?? 0}
-                                      displayValue={entry.rating_average ?? 0}
-                                      disabled={
-                                        busy ||
-                                        !(
-                                          entry.user_id !== userId &&
-                                          latestCompletionIdByTask.get(
-                                            entry.task_id,
-                                          ) === entry.id
-                                        )
-                                      }
-                                      onChange={(rating) =>
-                                        void onRateTaskCompletion(
-                                          entry.id,
-                                          rating,
-                                        )
-                                      }
-                                      getLabel={(rating) =>
-                                        t("tasks.rateAction", { rating })
-                                      }
-                                    />
-                                  </div>
-                                </TooltipTrigger>
-                                <TooltipContent>
-                                  <p className="text-xs">
-                                    {t("tasks.ratingTooltipCount", {
-                                      count: entry.rating_count,
-                                    })}
-                                  </p>
-                                  <p className="text-xs">
-                                    {t("tasks.ratingTooltipAverage", {
-                                      average: Number(
-                                        (entry.rating_average ?? 0).toFixed(1),
-                                      ),
-                                    })}
-                                  </p>
-                                  <p className="text-xs">
-                                    {t("tasks.ratingTooltipMine", {
-                                      rating: entry.my_rating ?? "-",
-                                    })}
-                                  </p>
-                                </TooltipContent>
-                              </Tooltip>
-                            ) : (
-                              <p className="text-xs text-slate-500 dark:text-slate-400">
-                                {t("tasks.ratingNoVotes")}
-                              </p>
-                            )}
+                            <p className="text-xs text-slate-500 dark:text-slate-400">
+                              {formatDateTime(entry.completed_at, language)}
+                            </p>
                           </div>
-                        </div>
-                      </li>
-                    ))}
+                          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                            {t("tasks.historyLine", {
+                              user: userLabel(entry.user_id),
+                              pimpers: `${entry.pimpers_earned}`,
+                            })}
+                            <span className="ml-1 inline-flex align-middle">
+                              <PimpersIcon />
+                            </span>
+                          </p>
+                          <div className="mt-2 flex flex-wrap items-center gap-2">
+                            <div className="ml-auto">
+                              {entry.rating_count > 0 || entry.my_rating ? (
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <div>
+                                      <StarRating
+                                        value={entry.my_rating ?? 0}
+                                        displayValue={entry.rating_average ?? 0}
+                                        disabled={
+                                          busy ||
+                                          !(
+                                            entry.user_id !== userId &&
+                                            latestCompletionIdByTask.get(
+                                              entry.task_id,
+                                            ) === entry.id
+                                          )
+                                        }
+                                        onChange={(rating) =>
+                                          void onRateTaskCompletion(
+                                            entry.id,
+                                            rating,
+                                          )
+                                        }
+                                        getLabel={(rating) =>
+                                          t("tasks.rateAction", { rating })
+                                        }
+                                      />
+                                    </div>
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    <p className="text-xs">
+                                      {t("tasks.ratingTooltipCount", {
+                                        count: entry.rating_count,
+                                      })}
+                                    </p>
+                                    <p className="text-xs">
+                                      {t("tasks.ratingTooltipAverage", {
+                                        average: Number(
+                                          (entry.rating_average ?? 0).toFixed(1),
+                                        ),
+                                      })}
+                                    </p>
+                                    <p className="text-xs">
+                                      {t("tasks.ratingTooltipMine", {
+                                        rating: entry.my_rating ?? "-",
+                                      })}
+                                    </p>
+                                  </TooltipContent>
+                                </Tooltip>
+                              ) : (
+                                <p className="text-xs text-slate-500 dark:text-slate-400">
+                                  {t("tasks.ratingNoVotes")}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        </li>
+                      );
+                    })}
                   </ul>
                 ) : null}
               </CardContent>
@@ -3836,6 +4037,40 @@ export const TasksPage = ({
                 void editTaskForm.handleSubmit();
               }}
             >
+              {editRotationForecast ? (
+                <div className="rounded-xl border border-brand-100 bg-brand-50/40 p-3 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-800/50 dark:text-slate-200">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                    {t("tasks.rotationForecastTitle")}
+                  </p>
+                  <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                    <div className="rounded-lg border border-brand-100 bg-white/80 p-2 dark:border-slate-700 dark:bg-slate-900/70">
+                      <p className="text-xs text-slate-500 dark:text-slate-400">
+                        {t("tasks.rotationForecastNext")}
+                      </p>
+                      <p className="font-semibold text-slate-900 dark:text-slate-100">
+                        {editRotationForecast.nextAssigneeId
+                          ? userLabel(editRotationForecast.nextAssigneeId)
+                          : t("common.memberFallback")}
+                      </p>
+                    </div>
+                    <div className="rounded-lg border border-brand-100 bg-white/80 p-2 dark:border-slate-700 dark:bg-slate-900/70">
+                      <p className="text-xs text-slate-500 dark:text-slate-400">
+                        {t("tasks.rotationForecastYou")}
+                      </p>
+                      <p className="font-semibold text-slate-900 dark:text-slate-100">
+                        {editRotationForecast.turnsUntilYou === null
+                          ? t("tasks.rotationForecastYouMissing")
+                          : editRotationForecast.turnsUntilYou === 0
+                            ? t("tasks.rotationForecastYouNow")
+                            : t("tasks.rotationForecastYouDays", {
+                                days: editRotationForecast.turnsUntilYou * editRotationForecast.intervalDays
+                              })}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+
               <editTaskForm.Field
                 name="title"
                 children={(field: {
@@ -4187,8 +4422,10 @@ export const TasksPage = ({
                                 {t("tasks.rotationOrderPreviewTheoretical")}:
                               </span>
                               {renderRotationAvatarStack(
-                                adjustPreviewOrder(
-                                  editRotationVariants.theoretical,
+                                normalizePreviewOrder(
+                                  adjustPreviewOrder(
+                                    editRotationVariants.theoretical,
+                                  ),
                                 ),
                               )}
                             </div>
@@ -4197,8 +4434,10 @@ export const TasksPage = ({
                                 {t("tasks.rotationOrderPreviewFairness")}:
                               </span>
                               {renderRotationAvatarStack(
-                                adjustPreviewOrder(
-                                  editRotationVariants.fairnessActual,
+                                normalizePreviewOrder(
+                                  adjustPreviewOrder(
+                                    editRotationVariants.fairnessActual,
+                                  ),
                                 ),
                               )}
                             </div>
@@ -4210,8 +4449,10 @@ export const TasksPage = ({
                                 :
                               </span>
                               {renderRotationAvatarStack(
-                                adjustPreviewOrder(
-                                  editRotationVariants.fairnessProjection,
+                                normalizePreviewOrder(
+                                  adjustPreviewOrder(
+                                    editRotationVariants.fairnessProjection,
+                                  ),
                                 ),
                               )}
                             </div>
@@ -4221,8 +4462,10 @@ export const TasksPage = ({
                                 :
                               </span>
                               {renderRotationAvatarStack(
-                                adjustPreviewOrder(
-                                  editRotationVariants.fairnessExpected,
+                                normalizePreviewOrder(
+                                  adjustPreviewOrder(
+                                    editRotationVariants.fairnessExpected,
+                                  ),
                                 ),
                               )}
                             </div>

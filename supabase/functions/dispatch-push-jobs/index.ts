@@ -95,6 +95,17 @@ const buildMessage = (job: PushJob) => {
   } else if (event === "task_reminder") {
     base.title = String(payload.title ?? "Erinnerung");
     base.body = String(payload.body ?? "Eine Aufgabe wartet.");
+  } else if (event === "member_of_month") {
+    base.title = String(payload.title ?? "Mitbewohner:in des Monats");
+    base.body = String(payload.body ?? "Neue Auszeichnung in der WG.");
+  } else if (event === "vacation_mode_enabled") {
+    base.title = "Urlaubsmodus aktiviert";
+    const name = String(payload.payload?.name ?? "Jemand");
+    base.body = `${name} ist jetzt im Urlaub.`;
+  } else if (event === "vacation_mode_disabled") {
+    base.title = "Urlaubsmodus beendet";
+    const name = String(payload.payload?.name ?? "Jemand");
+    base.body = `${name} ist wieder da.`;
   }
 
   const dataPayload = payload.payload ?? payload;
@@ -142,6 +153,9 @@ serve(async (_req) => {
       .eq("status", "pending");
     if (lockError) continue;
 
+    const payload = job.payload ?? {};
+    const eventType = String(payload.event ?? job.type);
+    const topicType = eventType.startsWith("vacation_mode_") ? "vacation_mode" : eventType;
     const actorUserId = String(job.payload?.actor_user_id ?? job.user_id ?? "");
     const { data: members } = await supabase
       .from("household_members")
@@ -149,7 +163,7 @@ serve(async (_req) => {
       .eq("household_id", job.household_id);
     const allUserIds = (members ?? [])
       .map((entry) => String(entry.user_id))
-      .filter((userId) => userId !== actorUserId);
+      .filter((userId) => (eventType === "task_skipped" ? true : userId !== actorUserId));
     const explicitTarget = payload.target_user_id ? String(payload.target_user_id) : null;
     const targetScope = explicitTarget ? [explicitTarget] : allUserIds;
     const householdUserIds = new Set((members ?? []).map((entry) => String(entry.user_id)));
@@ -169,13 +183,12 @@ serve(async (_req) => {
     const prefByUser = new Map(
       (prefs ?? []).map((p) => [String(p.user_id), p as { user_id: string; enabled: boolean; topics?: string[]; quiet_hours?: Record<string, unknown> }])
     );
-    const eventType = String(job.payload?.event ?? job.type);
     const quietUsers: Array<{ userId: string; nextAllowedAt: Date }> = [];
     const filteredTargetUserIds = targetUserIds.filter((userId) => {
       const pref = prefByUser.get(userId);
       if (pref && pref.enabled === false) return false;
       const topics = Array.isArray(pref?.topics) ? pref?.topics ?? [] : [];
-      if (topics.length > 0 && !topics.includes(eventType)) return false;
+      if (topics.length > 0 && !topics.includes(topicType)) return false;
       const quiet = isWithinQuietHours(new Date(), pref?.quiet_hours as { start?: string; end?: string; offsetMinutes?: number } | null);
       if (quiet.active && quiet.nextAllowedAt) {
         quietUsers.push({ userId, nextAllowedAt: quiet.nextAllowedAt });

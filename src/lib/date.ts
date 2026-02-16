@@ -1,4 +1,16 @@
-import { addDays, addMinutes, addMonths, addWeeks, format, isBefore, isValid, parseISO } from "date-fns";
+import {
+  addDays,
+  addMinutes,
+  addMonths,
+  addWeeks,
+  endOfMonth,
+  format,
+  isBefore,
+  isValid,
+  parseISO,
+  startOfMonth,
+  subMonths
+} from "date-fns";
 import { de, enGB } from "date-fns/locale";
 import type { ShoppingRecurrenceUnit } from "./types";
 
@@ -54,4 +66,12 @@ export const isDueNow = (iso: string) => {
   const dueAt = toDate(iso);
   if (!dueAt) return false;
   return isBefore(dueAt, new Date()) || dueAt.getTime() === Date.now();
+};
+
+export const getLastMonthRange = (reference = new Date()) => {
+  const lastMonth = subMonths(reference, 1);
+  return {
+    start: startOfMonth(lastMonth),
+    end: endOfMonth(lastMonth)
+  };
 };

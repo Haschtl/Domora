@@ -168,7 +168,7 @@ create table if not exists task_completion_ratings (
 create table if not exists household_events (
   id uuid primary key default gen_random_uuid(),
   household_id uuid not null references households(id) on delete cascade,
-  event_type text not null check (event_type in ('task_completed', 'task_skipped', 'shopping_completed', 'finance_created', 'role_changed', 'cash_audit_requested', 'admin_hint', 'pimpers_reset')),
+  event_type text not null check (event_type in ('task_completed', 'task_skipped', 'shopping_completed', 'finance_created', 'role_changed', 'cash_audit_requested', 'admin_hint', 'pimpers_reset', 'vacation_mode_enabled', 'vacation_mode_disabled')),
   actor_user_id uuid references auth.users(id) on delete set null,
   subject_user_id uuid references auth.users(id) on delete set null,
   payload jsonb not null default '{}'::jsonb,
@@ -575,6 +575,17 @@ begin
         select
           net.http_post(
             url:='https://YOUR_PROJECT_REF.functions.supabase.co/schedule-task-due',
+            headers:='{"Content-Type": "application/json"}'::jsonb
+          );
+        $cron$
+      );
+      perform cron.schedule(
+        'schedule-member-of-month',
+        '5 8 1 * *',
+        $cron$
+        select
+          net.http_post(
+            url:='https://YOUR_PROJECT_REF.functions.supabase.co/schedule-member-of-month',
             headers:='{"Content-Type": "application/json"}'::jsonb
           );
         $cron$
@@ -1018,7 +1029,9 @@ begin
           'role_changed',
           'cash_audit_requested',
           'admin_hint',
-          'pimpers_reset'
+          'pimpers_reset',
+          'vacation_mode_enabled',
+          'vacation_mode_disabled'
         )
       );
   end if;
@@ -1434,13 +1447,29 @@ as $$
     join households h on h.id = t.household_id
     where t.id = p_task_id
   ),
-  rotation as (
+  rotation_base as (
     select
       trm.user_id,
       trm.position,
+      coalesce(hm.vacation_mode, false) as vacation_mode,
       row_number() over (order by trm.position asc, trm.user_id asc) - 1 as rotation_index
     from task_rotation_members trm
+    join task_info ti on true
+    left join household_members hm
+      on hm.household_id = ti.household_id
+     and hm.user_id = trm.user_id
     where trm.task_id = p_task_id
+  ),
+  rotation_active as (
+    select *
+    from rotation_base
+    where vacation_mode = false
+  ),
+  rotation_candidates as (
+    select * from rotation_active
+    union all
+    select * from rotation_base
+    where not exists (select 1 from rotation_active)
   ),
   rotation_meta as (
     select
@@ -1448,14 +1477,14 @@ as $$
       coalesce(
         (
           select r.rotation_index
-          from rotation r
+          from rotation_candidates r
           join task_info ti on true
           where r.user_id = ti.assignee_id
           limit 1
         ),
         0
       ) as current_rotation_index
-    from rotation
+    from rotation_candidates
   ),
   candidates as (
     select
@@ -1475,7 +1504,7 @@ as $$
         when r.rotation_index >= rm.current_rotation_index then r.rotation_index - rm.current_rotation_index
         else rm.rotation_count - rm.current_rotation_index + r.rotation_index
       end as turns_until_turn
-    from rotation r
+    from rotation_candidates r
     join rotation_meta rm on true
     join task_info ti on true
     left join household_member_pimpers hmp
@@ -1503,20 +1532,46 @@ as $$
     where t2.id <> ti.task_id
       and t2.is_active = true
   ),
+  task_rotation_base as (
+    select
+      trm.task_id,
+      trm.user_id,
+      coalesce(hm.vacation_mode, false) as vacation_mode
+    from task_rotation_members trm
+    join active_tasks at on at.task_id = trm.task_id
+    join task_info ti on true
+    left join household_members hm
+      on hm.household_id = ti.household_id
+     and hm.user_id = trm.user_id
+  ),
+  task_rotation_active as (
+    select *
+    from task_rotation_base
+    where vacation_mode = false
+  ),
+  task_rotation_candidates as (
+    select * from task_rotation_active
+    union all
+    select *
+    from task_rotation_base trb
+    where not exists (
+      select 1
+      from task_rotation_active tra
+      where tra.task_id = trb.task_id
+    )
+  ),
   task_rotation_counts as (
     select
       trm.task_id,
       count(*)::numeric as rotation_count
-    from task_rotation_members trm
-    join active_tasks at on at.task_id = trm.task_id
+    from task_rotation_candidates trm
     group by trm.task_id
   ),
   member_active_tasks as (
     select distinct
       trm.user_id,
       trm.task_id
-    from task_rotation_members trm
-    join active_tasks at on at.task_id = trm.task_id
+    from task_rotation_candidates trm
   ),
   projected as (
     select

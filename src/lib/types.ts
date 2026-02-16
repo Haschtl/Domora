@@ -162,6 +162,8 @@ export type HouseholdEventType =
   | "finance_created"
   | "role_changed"
   | "cash_audit_requested"
+  | "vacation_mode_enabled"
+  | "vacation_mode_disabled"
   | "admin_hint";
 
 export interface HouseholdEvent {

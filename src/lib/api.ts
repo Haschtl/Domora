@@ -434,7 +434,10 @@ const insertHouseholdEvent = async (input: {
         "finance_created",
         "role_changed",
         "cash_audit_requested",
-        "admin_hint"
+        "admin_hint",
+        "pimpers_reset",
+        "vacation_mode_enabled",
+        "vacation_mode_disabled"
       ]),
       actorUserId: z.string().uuid().nullable().optional(),
       subjectUserId: z.string().uuid().nullable().optional(),
@@ -876,6 +879,19 @@ export const updateMemberVacationMode = async (
     .single();
 
   if (error) throw error;
+  const { data: profile } = await supabase
+    .from("user_profiles")
+    .select("display_name")
+    .eq("user_id", validatedUserId)
+    .maybeSingle();
+  const displayName = (profile as { display_name?: string | null } | null)?.display_name ?? null;
+  await insertHouseholdEvent({
+    householdId: validatedHouseholdId,
+    eventType: parsedVacationMode ? "vacation_mode_enabled" : "vacation_mode_disabled",
+    actorUserId: validatedUserId,
+    subjectUserId: validatedUserId,
+    payload: { enabled: parsedVacationMode, name: displayName }
+  });
   return normalizeHouseholdMember(data as Record<string, unknown>);
 };
 
@@ -1889,6 +1905,8 @@ const DEFAULT_PUSH_TOPICS = [
   "task_completed",
   "task_skipped",
   "task_taken_over",
+  "vacation_mode",
+  "member_of_month",
   "finance_created",
   "shopping_added",
   "shopping_completed",

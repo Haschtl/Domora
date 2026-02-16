@@ -2,6 +2,7 @@ import { TasksPage } from "./tasks-page";
 import { useWorkspace } from "../../context/workspace-context";
 import {
   useHouseholdMemberPimpers,
+  useHouseholdEvents,
   useHouseholdTaskCompletions,
   useHouseholdTasks
 } from "../../hooks/use-household-data";
@@ -31,6 +32,7 @@ export const TasksPageContainer = ({ section }: TasksPageContainerProps) => {
   const tasksQuery = useHouseholdTasks(activeHousehold?.id ?? null);
   const completionsQuery = useHouseholdTaskCompletions(activeHousehold?.id ?? null);
   const memberPimpersQuery = useHouseholdMemberPimpers(activeHousehold?.id ?? null);
+  const eventsQuery = useHouseholdEvents(activeHousehold?.id ?? null);
 
   if (!activeHousehold || !userId) return null;
 
@@ -40,6 +42,7 @@ export const TasksPageContainer = ({ section }: TasksPageContainerProps) => {
       household={activeHousehold}
       tasks={tasksQuery.data ?? []}
       completions={completionsQuery.data ?? []}
+      householdEvents={eventsQuery.data ?? []}
       members={householdMembers}
       memberPimpers={memberPimpersQuery.data ?? []}
       userId={userId}
