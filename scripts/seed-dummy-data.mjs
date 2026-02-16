@@ -24,7 +24,18 @@ export const memberColors = [
   "#f59e0b"
 ];
 
-export const financeCategories = ["groceries", "utilities", "internet", "cleaning", "household", "repairs"];
+export const financeCategories = [
+  "groceries",
+  "utilities",
+  "internet",
+  "cleaning",
+  "household",
+  "repairs",
+  "subscriptions",
+  "transport",
+  "dining",
+  "health"
+];
 
 export const taskTitles = [
   "Küche putzen",
@@ -137,8 +148,9 @@ export const buildTaskRows = ({ taskCount, users, householdId, ownerId, now }) =
       due_at: dueAt.toISOString(),
       frequency_days: 3 + (i % 5),
       effort_pimpers: effort,
+      grace_minutes: i % 3 === 0 ? 1440 : 720,
       prioritize_low_pimpers: i % 4 !== 0,
-      assignee_fairness_mode: i % 2 === 0 ? "projection" : "actual",
+      assignee_fairness_mode: i % 3 === 0 ? "expected" : i % 2 === 0 ? "projection" : "actual",
       done: isDone,
       done_at: doneAt ? doneAt.toISOString() : null,
       done_by: isDone ? assignee.id : null,
@@ -287,6 +299,24 @@ export const buildEventRows = ({
       },
       created_at: new Date(Date.now() - (index + 1) * 12 * 60 * 60 * 1000).toISOString()
     });
+  });
+
+  rows.push({
+    household_id: householdId,
+    event_type: "pimpers_reset",
+    actor_user_id: memberRows[0]?.user_id ?? null,
+    subject_user_id: null,
+    payload: { total_reset: memberRows.length },
+    created_at: new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString()
+  });
+
+  rows.push({
+    household_id: householdId,
+    event_type: "admin_hint",
+    actor_user_id: null,
+    subject_user_id: null,
+    payload: { message: "Auto-heal fixed 2 issue(s): rotation=1, assignee_reset=1" },
+    created_at: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString()
   });
 
   return rows.sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
@@ -517,6 +547,74 @@ export const buildCashAuditRows = ({ householdId, requestedBy, now, auditCount =
 
   return rows;
 };
+
+export const buildWhiteboardRow = ({ householdId, ownerId }) => ({
+  household_id: householdId,
+  scene_json: JSON.stringify({
+    elements: [
+      {
+        id: "seed-title",
+        type: "text",
+        x: 120,
+        y: 80,
+        width: 320,
+        height: 40,
+        text: "WG Whiteboard",
+        fontSize: 28,
+        textAlign: "left"
+      },
+      {
+        id: "seed-box",
+        type: "rectangle",
+        x: 100,
+        y: 140,
+        width: 420,
+        height: 180
+      },
+      {
+        id: "seed-note",
+        type: "text",
+        x: 120,
+        y: 170,
+        width: 360,
+        height: 80,
+        text: "Einkaufsideen:\n- Hafermilch\n- Spaghetti\n- Spülmittel",
+        fontSize: 18
+      }
+    ],
+    files: {},
+    appState: { zoom: { value: 1 } }
+  }),
+  updated_by: ownerId,
+  updated_at: new Date().toISOString()
+});
+
+export const buildPushPreferenceRows = ({ householdId, users }) =>
+  users.map((user, index) => ({
+    household_id: householdId,
+    user_id: user.id,
+    enabled: index % 4 !== 0,
+    quiet_hours: index % 3 === 0 ? { start: "22:00", end: "07:00" } : {},
+    topics: index % 2 === 0 ? ["tasks", "shopping", "finance"] : ["tasks", "shopping"],
+    updated_at: new Date().toISOString()
+  }));
+
+export const buildPushTokenRows = ({ householdId, users }) =>
+  users.map((user, index) => ({
+    household_id: householdId,
+    user_id: user.id,
+    platform: "web",
+    provider: "webpush",
+    token: `demo-token-${user.id}-${index}`,
+    device_id: `demo-device-${index + 1}`,
+    app_version: "0.1.0",
+    locale: "de",
+    timezone: "Europe/Vienna",
+    status: index % 5 === 0 ? "invalid" : "active",
+    last_seen_at: new Date().toISOString(),
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString()
+  }));
 
 export const buildShoppingCompletionRows = ({ insertedShoppingItems, householdId }) =>
   insertedShoppingItems

@@ -262,14 +262,14 @@ const scoreCategory = (normalized: string, keywords: string[]) => {
 export const suggestCategoryLabel = (text: string, locale: string | undefined) => {
   const normalized = normalizeText(text);
   if (!normalized) return null;
-  let best: { def: CategoryDefinition; score: number } | null = null;
-  CATEGORY_DEFINITIONS.forEach((def) => {
+  const best = CATEGORY_DEFINITIONS.reduce<{ def: CategoryDefinition; score: number } | null>((current, def) => {
     const score = scoreCategory(normalized, def.keywords);
-    if (score <= 0) return;
-    if (!best || score > best.score) {
-      best = { def, score };
+    if (score <= 0) return current;
+    if (!current || score > current.score) {
+      return { def, score };
     }
-  });
+    return current;
+  }, null);
   if (!best || best.score < 2) return null;
   const useGerman = !locale || locale.toLowerCase().startsWith("de");
   return useGerman ? best.def.labels.de : best.def.labels.en;

@@ -85,7 +85,7 @@ const sanitizeElements = (elements?: readonly unknown[]) => {
 
 const normalizeAppState = (appState?: Partial<AppState>) => {
   if (!appState || typeof appState !== "object") return {};
-  const { width, height, collaborators, ...rest } = appState as Record<string, unknown>;
+  const { ...rest } = appState as Record<string, unknown>;
   const sanitized: Partial<AppState> = { ...(rest as Partial<AppState>) };
   if (sanitized.zoom && typeof sanitized.zoom.value === "number") {
     const clamped = Math.min(Math.max(sanitized.zoom.value, 0.1), 2);
@@ -206,19 +206,23 @@ export const ExcalidrawBoard = ({
         maxWidth: "100%",
         // padding: "0 6px",
         margin: "0 auto",
-        overflow: "hidden"
+        overflow: "hidden",
       }}
     >
       <div style={{ width: innerWidth, height: safeHeight, margin: "0 auto" }}>
         <Excalidraw
-          initialData={initialData}
+        // @ts-expect-error whooo
+          initialData={initialData as unknown}
           viewModeEnabled={readOnly}
           theme={theme}
           onChange={(elements, appState, files) => {
             if (!onSceneChange) return;
             const sanitizedElements = sanitizeElements(elements);
             const sanitizedFiles = files ?? {};
-            const signature = buildSceneSignature(sanitizedElements, sanitizedFiles);
+            const signature = buildSceneSignature(
+              sanitizedElements,
+              sanitizedFiles,
+            );
             if (lastSceneSignatureRef.current === signature) return;
             lastSceneSignatureRef.current = signature;
             const sanitizedAppState = normalizeAppState(appState);
@@ -227,11 +231,14 @@ export const ExcalidrawBoard = ({
               appState: {
                 ...sanitizedAppState,
                 theme,
-                viewBackgroundColor: appState.viewBackgroundColor ?? themeColors.background,
-                currentItemStrokeColor: appState.currentItemStrokeColor ?? themeColors.primary,
-                currentItemBackgroundColor: appState.currentItemBackgroundColor ?? themeColors.accent
+                viewBackgroundColor:
+                  appState.viewBackgroundColor ?? themeColors.background,
+                currentItemStrokeColor:
+                  appState.currentItemStrokeColor ?? themeColors.primary,
+                currentItemBackgroundColor:
+                  appState.currentItemBackgroundColor ?? themeColors.accent,
               },
-              files: sanitizedFiles
+              files: sanitizedFiles,
             });
             onSceneChange(payload);
           }}

@@ -12,10 +12,13 @@ import {
   buildRotationRows,
   buildTaskRows,
   buildCashAuditRows,
+  buildPushPreferenceRows,
+  buildPushTokenRows,
   buildBucketRows,
   buildBucketVoteRows,
   buildSubscriptionRows,
   buildTaskCompletionRatingRows,
+  buildWhiteboardRow,
   memberColors,
   memberProfiles,
   randomCode,
@@ -73,6 +76,11 @@ const appTablesToClear = [
   { table: "cash_audit_requests", markerColumn: "id" },
   { table: "finance_subscriptions", markerColumn: "id" },
   { table: "finance_entries", markerColumn: "id" },
+  { table: "push_log", markerColumn: "id" },
+  { table: "push_jobs", markerColumn: "id" },
+  { table: "push_tokens", markerColumn: "id" },
+  { table: "push_preferences", markerColumn: "user_id" },
+  { table: "household_whiteboards", markerColumn: "household_id" },
   { table: "household_events", markerColumn: "id" },
   { table: "task_completion_ratings", markerColumn: "task_completion_id" },
   { table: "task_completions", markerColumn: "id" },
@@ -188,6 +196,11 @@ const run = async () => {
       apartment_size_sqm: 103.5,
       cold_rent_monthly: 1690,
       utilities_monthly: 400,
+      task_laziness_enabled: true,
+      theme_primary_color: "#1f8a7f",
+      theme_accent_color: "#14b8a6",
+      theme_font_family: '"Space Grotesk", "Segoe UI", sans-serif',
+      theme_radius_scale: 1.1,
       landing_page_markdown: [
         "# Willkommen in der Demo-WG",
         "",
@@ -230,6 +243,24 @@ const run = async () => {
   const { error: profileError } = await supabase.from("user_profiles").upsert(profileRows);
   if (profileError) {
     throw new Error(`Failed to upsert user profiles: ${profileError.message}`);
+  }
+
+  const whiteboardRow = buildWhiteboardRow({ householdId, ownerId: owner.id });
+  const { error: whiteboardError } = await supabase.from("household_whiteboards").upsert(whiteboardRow);
+  if (whiteboardError) {
+    throw new Error(`Failed to upsert household whiteboard: ${whiteboardError.message}`);
+  }
+
+  const pushPreferenceRows = buildPushPreferenceRows({ householdId, users });
+  const { error: pushPreferencesError } = await supabase.from("push_preferences").upsert(pushPreferenceRows);
+  if (pushPreferencesError) {
+    throw new Error(`Failed to upsert push preferences: ${pushPreferencesError.message}`);
+  }
+
+  const pushTokenRows = buildPushTokenRows({ householdId, users });
+  const { error: pushTokensError } = await supabase.from("push_tokens").upsert(pushTokenRows);
+  if (pushTokensError) {
+    throw new Error(`Failed to upsert push tokens: ${pushTokensError.message}`);
   }
 
   const subscriptionRows = buildSubscriptionRows({
