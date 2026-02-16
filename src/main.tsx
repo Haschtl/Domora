@@ -6,6 +6,8 @@ import "./i18n";
 import "./index.css";
 import "@mdxeditor/editor/style.css";
 import "react-toastify/dist/ReactToastify.css";
+import { toast } from "react-toastify";
+import { registerSW } from "virtual:pwa-register";
 import { ThemedToastContainer } from "./components/themed-toast-container";
 import { queryClient } from "./lib/query-client";
 import { ThemeProvider } from "./lib/theme";
@@ -21,3 +23,30 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
     </QueryClientProvider>
   </React.StrictMode>
 );
+
+if ("serviceWorker" in navigator) {
+  let hadController = Boolean(navigator.serviceWorker.controller);
+  let updateToastShown = false;
+
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (!hadController) {
+      hadController = true;
+      return;
+    }
+    if (updateToastShown) return;
+    updateToastShown = true;
+    toast.success("App wurde aktualisiert.");
+  });
+
+  let updateSW: (reload?: boolean) => void = () => {};
+  updateSW = registerSW({
+    immediate: true,
+    onNeedRefresh() {
+      toast.info("Update verfügbar. Bitte App neu laden.");
+    },
+    onRegisteredSW() {
+      if (!hadController) return;
+      updateSW();
+    }
+  });
+}
