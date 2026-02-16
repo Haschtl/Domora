@@ -3338,20 +3338,13 @@ export const FinancesPage = ({
                     >
                       <div className="flex items-start justify-between gap-2">
                         <div className="space-y-1">
-                          <div className="flex items-center gap-2">
+                          <div className="flex flex-wrap items-center gap-2">
                             <p className="font-medium text-slate-900 dark:text-slate-100">
                               {subscription.name}
                             </p>
-                            <div className="flip-chip" aria-hidden={false}>
-                              <div className="flip-chip-inner">
-                                <Badge className="flip-chip-face text-[10px]">
-                                  {subscription.category}
-                                </Badge>
-                                <Badge className="flip-chip-face flip-chip-back text-[10px]">
-                                  {recurrenceLabel(subscription)}
-                                </Badge>
-                              </div>
-                            </div>
+                            <Badge className="text-[10px]">
+                              {subscription.category}
+                            </Badge>
                           </div>
                           <p className="text-xs text-slate-500 dark:text-slate-400">
                             {t("finances.subscriptionRecursLabel", {
