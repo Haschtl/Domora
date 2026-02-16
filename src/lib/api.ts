@@ -33,6 +33,34 @@ import type {
 
 const buildInviteCode = () => Math.random().toString(36).slice(2, 8).toUpperCase();
 
+const SELECT_HOUSEHOLD_FIELDS =
+  "id,name,image_url,address,currency,apartment_size_sqm,cold_rent_monthly,utilities_monthly,utilities_on_room_sqm_percent,task_laziness_enabled,theme_primary_color,theme_accent_color,theme_font_family,theme_radius_scale,landing_page_markdown,invite_code,created_by,created_at";
+const SELECT_HOUSEHOLD_MEMBER_FIELDS =
+  "household_id,user_id,role,room_size_sqm,common_area_factor,task_laziness_factor,vacation_mode,created_at";
+const SELECT_HOUSEHOLD_MEMBER_WITH_PROFILE_FIELDS =
+  "household_id,user_id,role,room_size_sqm,common_area_factor,task_laziness_factor,vacation_mode,created_at,display_name,avatar_url,user_color,paypal_name,revolut_name,wero_name";
+const SELECT_HOUSEHOLD_MEMBER_PIMPERS_FIELDS = "household_id,user_id,total_pimpers,updated_at";
+const SELECT_SHOPPING_ITEM_FIELDS =
+  "id,household_id,title,tags,recurrence_interval_value,recurrence_interval_unit,done,done_at,done_by,created_by,created_at";
+const SELECT_SHOPPING_COMPLETION_FIELDS =
+  "id,shopping_item_id,household_id,title_snapshot,tags_snapshot,completed_by,completed_at";
+const SELECT_BUCKET_ITEM_FIELDS =
+  "id,household_id,title,description_markdown,suggested_dates,done,done_at,done_by,created_by,created_at";
+const SELECT_BUCKET_ITEM_VOTE_FIELDS = "bucket_item_id,household_id,suggested_date,user_id,created_at";
+const SELECT_TASK_FIELDS =
+  "id,household_id,title,description,current_state_image_url,target_state_image_url,start_date,due_at,cron_pattern,frequency_days,effort_pimpers,grace_minutes,delay_penalty_per_day,prioritize_low_pimpers,assignee_fairness_mode,is_active,done,done_at,done_by,assignee_id,ignore_delay_penalty_once,created_by,created_at";
+const SELECT_TASK_COMPLETION_FIELDS =
+  "id,task_id,household_id,task_title_snapshot,user_id,pimpers_earned,due_at_snapshot,delay_minutes,completed_at";
+const SELECT_TASK_COMPLETION_RATING_FIELDS = "task_completion_id,household_id,user_id,rating";
+const SELECT_FINANCE_ENTRY_FIELDS =
+  "id,household_id,description,category,amount,receipt_image_url,paid_by,paid_by_user_ids,beneficiary_user_ids,entry_date,created_by,created_at";
+const SELECT_CASH_AUDIT_FIELDS = "id,household_id,requested_by,status,created_at";
+const SELECT_HOUSEHOLD_EVENT_FIELDS =
+  "id,household_id,event_type,actor_user_id,subject_user_id,payload,created_at";
+const SELECT_FINANCE_SUBSCRIPTION_FIELDS =
+  "id,household_id,name,category,amount,paid_by_user_ids,beneficiary_user_ids,cron_pattern,created_by,created_at,updated_at";
+const SELECT_PUSH_PREFERENCES_FIELDS = "user_id,household_id,enabled,quiet_hours,topics";
+
 const optionalNumberSchema = z.preprocess(
   (value) => {
     if (value === null || value === undefined || value === "") return null;
@@ -95,16 +123,6 @@ const householdMemberSchema = z.object({
   vacation_mode: z.coerce.boolean().default(false),
   created_at: z.string().min(1)
 });
-const userProfileSchema = z.object({
-  user_id: z.string().uuid(),
-  display_name: z.string().nullable().optional().transform((value) => value ?? null),
-  avatar_url: z.string().nullable().optional().transform((value) => value ?? null),
-  user_color: z.string().nullable().optional().transform((value) => value ?? null),
-  paypal_name: z.string().nullable().optional().transform((value) => value ?? null),
-  revolut_name: z.string().nullable().optional().transform((value) => value ?? null),
-  wero_name: z.string().nullable().optional().transform((value) => value ?? null)
-});
-
 const shoppingItemSchema = z.object({
   id: z.string().uuid(),
   household_id: z.string().uuid(),
@@ -579,7 +597,7 @@ export const updateUserColor = async (userColor: string) => {
 export const getHouseholdsForUser = async (userId: string): Promise<Household[]> => {
   const { data, error } = await supabase
     .from("household_members")
-    .select("household:households(*)")
+    .select(`household:households(${SELECT_HOUSEHOLD_FIELDS})`)
     .eq("user_id", userId);
 
   if (error) throw error;
@@ -596,48 +614,19 @@ export const getHouseholdsForUser = async (userId: string): Promise<Household[]>
 
 export const getHouseholdMembers = async (householdId: string): Promise<HouseholdMember[]> => {
   const { data, error } = await supabase
-    .from("household_members")
-    .select("*")
+    .from("household_members_with_profiles")
+    .select(SELECT_HOUSEHOLD_MEMBER_WITH_PROFILE_FIELDS)
     .eq("household_id", householdId)
     .order("created_at", { ascending: true });
 
   if (error) throw error;
-  const members = (data ?? []).map((entry) => normalizeHouseholdMember(entry as Record<string, unknown>));
-
-  if (members.length === 0) return members;
-
-  const memberUserIds = [...new Set(members.map((entry) => entry.user_id))];
-  const { data: profileRows, error: profileError } = await supabase
-    .from("user_profiles")
-    .select("user_id,display_name,avatar_url,user_color,paypal_name,revolut_name,wero_name")
-    .in("user_id", memberUserIds);
-
-  if (profileError) throw profileError;
-
-  const profileByUserId = new Map(
-    (profileRows ?? [])
-      .map((entry) => userProfileSchema.parse(entry as Record<string, unknown>))
-      .map((entry) => [entry.user_id, entry] as const)
-  );
-
-  return members.map((entry) => {
-    const profile = profileByUserId.get(entry.user_id);
-    return {
-      ...entry,
-      display_name: profile?.display_name ?? null,
-      avatar_url: profile?.avatar_url ?? null,
-      user_color: profile?.user_color ?? null,
-      paypal_name: profile?.paypal_name ?? null,
-      revolut_name: profile?.revolut_name ?? null,
-      wero_name: profile?.wero_name ?? null
-    };
-  });
+  return (data ?? []).map((entry) => normalizeHouseholdMember(entry as Record<string, unknown>));
 };
 
 export const getHouseholdMemberPimpers = async (householdId: string): Promise<HouseholdMemberPimpers[]> => {
   const { data, error } = await supabase
     .from("household_member_pimpers")
-    .select("*")
+    .select(SELECT_HOUSEHOLD_MEMBER_PIMPERS_FIELDS)
     .eq("household_id", householdId)
     .order("total_pimpers", { ascending: true });
 
@@ -661,7 +650,7 @@ export const createHousehold = async (name: string, userId: string): Promise<Hou
       invite_code: buildInviteCode(),
       created_by: validatedUserId
     })
-    .select("*")
+    .select(SELECT_HOUSEHOLD_FIELDS)
     .single();
 
   if (error) throw error;
@@ -697,7 +686,7 @@ export const joinHouseholdByInvite = async (inviteCode: string, userId: string):
 
   const { data: household, error } = await supabase
     .from("households")
-    .select("*")
+    .select(SELECT_HOUSEHOLD_FIELDS)
     .eq("id", resolvedHouseholdId)
     .single();
   if (error) throw error;
@@ -744,7 +733,7 @@ export const updateHouseholdSettings = async (
       theme_radius_scale: parsedInput.themeRadiusScale
     })
     .eq("id", validatedHouseholdId)
-    .select("*")
+    .select(SELECT_HOUSEHOLD_FIELDS)
     .single();
 
   if (error) throw error;
@@ -764,7 +753,7 @@ export const updateHouseholdLandingPage = async (
       landing_page_markdown: parsedMarkdown
     })
     .eq("id", validatedHouseholdId)
-    .select("*")
+    .select(SELECT_HOUSEHOLD_FIELDS)
     .single();
 
   if (error) throw error;
@@ -834,7 +823,7 @@ export const updateMemberSettings = async (
     })
     .eq("household_id", validatedHouseholdId)
     .eq("user_id", validatedUserId)
-    .select("*")
+    .select(SELECT_HOUSEHOLD_MEMBER_FIELDS)
     .single();
 
   if (error) throw error;
@@ -857,7 +846,7 @@ export const updateMemberTaskLaziness = async (
     })
     .eq("household_id", validatedHouseholdId)
     .eq("user_id", validatedUserId)
-    .select("*")
+    .select(SELECT_HOUSEHOLD_MEMBER_FIELDS)
     .single();
 
   if (error) throw error;
@@ -880,7 +869,7 @@ export const updateMemberVacationMode = async (
     })
     .eq("household_id", validatedHouseholdId)
     .eq("user_id", validatedUserId)
-    .select("*")
+    .select(SELECT_HOUSEHOLD_MEMBER_FIELDS)
     .single();
 
   if (error) throw error;
@@ -916,23 +905,26 @@ export const leaveHousehold = async (householdId: string, userId: string) => {
   const validatedHouseholdId = z.string().uuid().parse(householdId);
   const validatedUserId = z.string().uuid().parse(userId);
 
-  const { data: financeRows, error: financeError } = await supabase
-    .from("finance_entries")
-    .select("*")
-    .eq("household_id", validatedHouseholdId);
+  const [
+    { data: financeRows, error: financeError },
+    { data: auditRows, error: auditError }
+  ] = await Promise.all([
+    supabase
+      .from("finance_entries")
+      .select(SELECT_FINANCE_ENTRY_FIELDS)
+      .eq("household_id", validatedHouseholdId),
+    supabase
+      .from("cash_audit_requests")
+      .select("created_at")
+      .eq("household_id", validatedHouseholdId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+  ]);
 
   if (financeError) throw financeError;
+  if (auditError) throw auditError;
 
   const allEntries = (financeRows ?? []).map((row) => normalizeFinanceEntry(row as Record<string, unknown>));
-
-  const { data: auditRows, error: auditError } = await supabase
-    .from("cash_audit_requests")
-    .select("created_at")
-    .eq("household_id", validatedHouseholdId)
-    .order("created_at", { ascending: false })
-    .limit(1);
-
-  if (auditError) throw auditError;
 
   const lastCashAuditAt = String(auditRows?.[0]?.created_at ?? "");
   const auditDay = lastCashAuditAt ? lastCashAuditAt.slice(0, 10) : null;
@@ -1117,7 +1109,7 @@ export const getBucketItems = async (householdId: string): Promise<BucketItem[]>
   const validatedHouseholdId = z.string().uuid().parse(householdId);
   const { data, error } = await supabase
     .from("bucket_items")
-    .select("*")
+    .select(SELECT_BUCKET_ITEM_FIELDS)
     .eq("household_id", validatedHouseholdId)
     .order("done", { ascending: true })
     .order("created_at", { ascending: false });
@@ -1127,7 +1119,7 @@ export const getBucketItems = async (householdId: string): Promise<BucketItem[]>
 
   const { data: voteRows, error: votesError } = await supabase
     .from("bucket_item_date_votes")
-    .select("*")
+    .select(SELECT_BUCKET_ITEM_VOTE_FIELDS)
     .eq("household_id", validatedHouseholdId);
 
   if (votesError) throw votesError;
@@ -1183,7 +1175,7 @@ export const addBucketItem = async (
       done: false,
       created_by: parsedInput.userId
     })
-    .select("*")
+    .select(SELECT_BUCKET_ITEM_FIELDS)
     .single();
 
   if (error) throw error;
@@ -1302,7 +1294,7 @@ export const getShoppingItems = async (householdId: string): Promise<ShoppingIte
 
   const { data, error } = await supabase
     .from("shopping_items")
-    .select("*")
+    .select(SELECT_SHOPPING_ITEM_FIELDS)
     .eq("household_id", householdId)
     .order("done", { ascending: true })
     .order("created_at", { ascending: false });
@@ -1349,7 +1341,7 @@ export const addShoppingItem = async (
       done: false,
       created_by: parsedInput.userId
     })
-    .select("*")
+    .select(SELECT_SHOPPING_ITEM_FIELDS)
     .single();
 
   if (error) throw error;
@@ -1452,7 +1444,7 @@ export const updateShoppingItem = async (
       recurrence_interval_unit: parsedInput.recurrenceInterval?.unit ?? null
     })
     .eq("id", parsedInput.id)
-    .select("*")
+    .select(SELECT_SHOPPING_ITEM_FIELDS)
     .single();
 
   if (error) throw error;
@@ -1462,7 +1454,7 @@ export const updateShoppingItem = async (
 export const getShoppingCompletions = async (householdId: string): Promise<ShoppingItemCompletion[]> => {
   const { data, error } = await supabase
     .from("shopping_item_completions")
-    .select("*")
+    .select(SELECT_SHOPPING_COMPLETION_FIELDS)
     .eq("household_id", householdId)
     .order("completed_at", { ascending: false })
     .limit(200);
@@ -1485,7 +1477,7 @@ export const getTasks = async (householdId: string): Promise<TaskItem[]> => {
 
   const { data, error } = await supabase
     .from("tasks")
-    .select("*")
+    .select(SELECT_TASK_FIELDS)
     .eq("household_id", householdId)
     .order("due_at", { ascending: true });
 
@@ -1584,7 +1576,7 @@ export const addTask = async (
       done: false,
       created_by: parsedInput.userId
     })
-    .select("*")
+    .select(SELECT_TASK_FIELDS)
     .single();
 
   if (error) throw error;
@@ -1801,7 +1793,7 @@ export const getTaskCompletions = async (householdId: string): Promise<TaskCompl
   const currentUserId = await requireAuthenticatedUserId();
   const { data, error } = await supabase
     .from("task_completions")
-    .select("*")
+    .select(SELECT_TASK_COMPLETION_FIELDS)
     .eq("household_id", householdId)
     .order("completed_at", { ascending: false })
     .limit(200);
@@ -1813,7 +1805,7 @@ export const getTaskCompletions = async (householdId: string): Promise<TaskCompl
   const completionIds = completions.map((entry) => entry.id);
   const { data: ratingsData, error: ratingsError } = await supabase
     .from("task_completion_ratings")
-    .select("task_completion_id,household_id,user_id,rating")
+    .select(SELECT_TASK_COMPLETION_RATING_FIELDS)
     .eq("household_id", householdId)
     .in("task_completion_id", completionIds);
 
@@ -1879,7 +1871,7 @@ export const rateTaskCompletion = async (taskCompletionId: string, rating: numbe
 export const getFinanceEntries = async (householdId: string): Promise<FinanceEntry[]> => {
   const { data, error } = await supabase
     .from("finance_entries")
-    .select("*")
+    .select(SELECT_FINANCE_ENTRY_FIELDS)
     .eq("household_id", householdId)
     .order("created_at", { ascending: false });
 
@@ -1888,7 +1880,7 @@ export const getFinanceEntries = async (householdId: string): Promise<FinanceEnt
   return (data ?? []).map((entry) => normalizeFinanceEntry(entry as Record<string, unknown>));
 };
 
-type FinanceEntriesPage = {
+export type FinanceEntriesPage = {
   rows: FinanceEntry[];
   nextCursor: string | null;
 };
@@ -1916,7 +1908,7 @@ export const getFinanceEntriesPage = async (
   const parsedCursor = parseFinanceCursor(cursor);
   let query = supabase
     .from("finance_entries")
-    .select("*")
+    .select(SELECT_FINANCE_ENTRY_FIELDS)
     .eq("household_id", householdId)
     .order("entry_date", { ascending: false })
     .order("created_at", { ascending: false })
@@ -1948,7 +1940,7 @@ export const getFinanceEntriesPage = async (
 export const getCashAuditRequests = async (householdId: string): Promise<CashAuditRequest[]> => {
   const { data, error } = await supabase
     .from("cash_audit_requests")
-    .select("*")
+    .select(SELECT_CASH_AUDIT_FIELDS)
     .eq("household_id", householdId)
     .order("created_at", { ascending: false });
 
@@ -1960,7 +1952,7 @@ export const getCashAuditRequests = async (householdId: string): Promise<CashAud
 export const getHouseholdEvents = async (householdId: string): Promise<HouseholdEvent[]> => {
   const { data, error } = await supabase
     .from("household_events")
-    .select("*")
+    .select(SELECT_HOUSEHOLD_EVENT_FIELDS)
     .eq("household_id", householdId)
     .order("created_at", { ascending: false })
     .limit(300);
@@ -1969,7 +1961,7 @@ export const getHouseholdEvents = async (householdId: string): Promise<Household
   return (data ?? []).map((entry) => normalizeHouseholdEvent(entry as Record<string, unknown>));
 };
 
-type HouseholdEventsPage = {
+export type HouseholdEventsPage = {
   rows: HouseholdEvent[];
   nextCursor: string | null;
 };
@@ -1996,7 +1988,7 @@ export const getHouseholdEventsPage = async (
   const parsedCursor = parseEventCursor(cursor);
   let query = supabase
     .from("household_events")
-    .select("*")
+    .select(SELECT_HOUSEHOLD_EVENT_FIELDS)
     .eq("household_id", householdId)
     .order("created_at", { ascending: false })
     .order("id", { ascending: false })
@@ -2044,7 +2036,7 @@ export const getPushPreferences = async (householdId: string, userId: string): P
   const validatedUserId = z.string().uuid().parse(userId);
   const { data, error } = await supabase
     .from("push_preferences")
-    .select("*")
+    .select(SELECT_PUSH_PREFERENCES_FIELDS)
     .eq("household_id", validatedHouseholdId)
     .eq("user_id", validatedUserId)
     .single();
@@ -2089,7 +2081,7 @@ export const upsertPushPreferences = async (input: {
       quiet_hours: parsed.quietHours,
       topics: parsed.topics
     })
-    .select("*")
+    .select(SELECT_PUSH_PREFERENCES_FIELDS)
     .single();
   if (error) throw error;
   return data as PushPreferences;
@@ -2098,7 +2090,7 @@ export const upsertPushPreferences = async (input: {
 export const getFinanceSubscriptions = async (householdId: string): Promise<FinanceSubscription[]> => {
   const { data, error } = await supabase
     .from("finance_subscriptions")
-    .select("*")
+    .select(SELECT_FINANCE_SUBSCRIPTION_FIELDS)
     .eq("household_id", householdId)
     .order("created_at", { ascending: false });
 
@@ -2158,7 +2150,7 @@ export const addFinanceEntry = async (
       created_by: creatorId,
       created_at: `${normalizedEntryDate}T12:00:00.000Z`
     })
-    .select("*")
+    .select(SELECT_FINANCE_ENTRY_FIELDS)
     .single();
 
   if (error) throw error;
@@ -2229,7 +2221,7 @@ export const updateFinanceEntry = async (
     })
     .eq("id", parsedInput.id)
     .eq("created_by", creatorId)
-    .select("*")
+    .select(SELECT_FINANCE_ENTRY_FIELDS)
     .single();
 
   if (error) throw error;
@@ -2308,7 +2300,7 @@ export const addFinanceSubscription = async (
       cron_pattern: recurrenceToCronPattern(parsedInput.recurrence),
       created_by: parsedInput.userId
     })
-    .select("*")
+    .select(SELECT_FINANCE_SUBSCRIPTION_FIELDS)
     .single();
 
   if (error) throw error;
@@ -2349,7 +2341,7 @@ export const updateFinanceSubscription = async (
       updated_at: new Date().toISOString()
     })
     .eq("id", parsedInput.id)
-    .select("*")
+    .select(SELECT_FINANCE_SUBSCRIPTION_FIELDS)
     .single();
 
   if (error) throw error;

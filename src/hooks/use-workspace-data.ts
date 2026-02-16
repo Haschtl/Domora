@@ -58,167 +58,70 @@ export const useWorkspaceData = () => {
   useEffect(() => {
     if (!activeHouseholdId) return;
 
-    const channel = supabase
-      .channel(`household-realtime-${activeHouseholdId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "bucket_items",
-          filter: `household_id=eq.${activeHouseholdId}`
-        },
-        () => {
-          void queryClient.invalidateQueries({ queryKey: queryKeys.householdBucketItems(activeHouseholdId) });
-        }
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "shopping_items",
-          filter: `household_id=eq.${activeHouseholdId}`
-        },
-        () => {
-          void queryClient.invalidateQueries({ queryKey: queryKeys.householdShoppingItems(activeHouseholdId) });
-        }
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "shopping_item_completions",
-          filter: `household_id=eq.${activeHouseholdId}`
-        },
-        () => {
-          void queryClient.invalidateQueries({ queryKey: queryKeys.householdShoppingCompletions(activeHouseholdId) });
-        }
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "tasks",
-          filter: `household_id=eq.${activeHouseholdId}`
-        },
-        () => {
-          void queryClient.invalidateQueries({ queryKey: queryKeys.householdTasks(activeHouseholdId) });
-        }
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "task_completions",
-          filter: `household_id=eq.${activeHouseholdId}`
-        },
-        () => {
-          void queryClient.invalidateQueries({ queryKey: queryKeys.householdTaskCompletions(activeHouseholdId) });
-        }
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "finance_entries",
-          filter: `household_id=eq.${activeHouseholdId}`
-        },
-        () => {
-          void queryClient.invalidateQueries({ queryKey: queryKeys.householdFinances(activeHouseholdId) });
-        }
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "cash_audit_requests",
-          filter: `household_id=eq.${activeHouseholdId}`
-        },
-        () => {
-          void queryClient.invalidateQueries({ queryKey: queryKeys.householdCashAuditRequests(activeHouseholdId) });
-        }
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "finance_subscriptions",
-          filter: `household_id=eq.${activeHouseholdId}`
-        },
-        () => {
-          void queryClient.invalidateQueries({ queryKey: queryKeys.householdFinanceSubscriptions(activeHouseholdId) });
-        }
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "household_members",
-          filter: `household_id=eq.${activeHouseholdId}`
-        },
-        () => {
-          void queryClient.invalidateQueries({ queryKey: queryKeys.householdMembers(activeHouseholdId) });
-        }
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "household_member_pimpers",
-          filter: `household_id=eq.${activeHouseholdId}`
-        },
-        () => {
-          void queryClient.invalidateQueries({ queryKey: queryKeys.householdMemberPimpers(activeHouseholdId) });
-        }
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "household_events",
-          filter: `household_id=eq.${activeHouseholdId}`
-        },
-        () => {
-          void queryClient.invalidateQueries({ queryKey: queryKeys.householdEvents(activeHouseholdId) });
-        }
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "household_whiteboards",
-          filter: `household_id=eq.${activeHouseholdId}`
-        },
-        () => {
-          void queryClient.invalidateQueries({ queryKey: queryKeys.householdWhiteboard(activeHouseholdId) });
-        }
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "households",
-          filter: `id=eq.${activeHouseholdId}`
-        },
-        () => {
-          if (userId) {
-            void queryClient.invalidateQueries({ queryKey: queryKeys.households(userId) });
-          }
-        }
-      )
-      .subscribe();
+    const events: Array<"INSERT" | "UPDATE" | "DELETE"> = ["INSERT", "UPDATE", "DELETE"];
+    const channel = supabase.channel(`household-realtime-${activeHouseholdId}`);
+    const subscribeTable = (
+      table: string,
+      filter: string,
+      onInvalidate: () => void
+    ) => {
+      events.forEach((event) => {
+        channel.on(
+          "postgres_changes",
+          {
+            event,
+            schema: "public",
+            table,
+            filter
+          },
+          onInvalidate
+        );
+      });
+    };
+
+    subscribeTable("bucket_items", `household_id=eq.${activeHouseholdId}`, () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.householdBucketItems(activeHouseholdId) });
+    });
+    subscribeTable("shopping_items", `household_id=eq.${activeHouseholdId}`, () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.householdShoppingItems(activeHouseholdId) });
+    });
+    subscribeTable("shopping_item_completions", `household_id=eq.${activeHouseholdId}`, () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.householdShoppingCompletions(activeHouseholdId) });
+    });
+    subscribeTable("tasks", `household_id=eq.${activeHouseholdId}`, () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.householdTasks(activeHouseholdId) });
+    });
+    subscribeTable("task_completions", `household_id=eq.${activeHouseholdId}`, () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.householdTaskCompletions(activeHouseholdId) });
+    });
+    subscribeTable("finance_entries", `household_id=eq.${activeHouseholdId}`, () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.householdFinances(activeHouseholdId) });
+    });
+    subscribeTable("cash_audit_requests", `household_id=eq.${activeHouseholdId}`, () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.householdCashAuditRequests(activeHouseholdId) });
+    });
+    subscribeTable("finance_subscriptions", `household_id=eq.${activeHouseholdId}`, () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.householdFinanceSubscriptions(activeHouseholdId) });
+    });
+    subscribeTable("household_members", `household_id=eq.${activeHouseholdId}`, () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.householdMembers(activeHouseholdId) });
+    });
+    subscribeTable("household_member_pimpers", `household_id=eq.${activeHouseholdId}`, () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.householdMemberPimpers(activeHouseholdId) });
+    });
+    subscribeTable("household_events", `household_id=eq.${activeHouseholdId}`, () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.householdEvents(activeHouseholdId) });
+    });
+    subscribeTable("household_whiteboards", `household_id=eq.${activeHouseholdId}`, () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.householdWhiteboard(activeHouseholdId) });
+    });
+    subscribeTable("households", `id=eq.${activeHouseholdId}`, () => {
+      if (userId) {
+        void queryClient.invalidateQueries({ queryKey: queryKeys.households(userId) });
+      }
+    });
+
+    channel.subscribe();
 
     return () => {
       void supabase.removeChannel(channel);

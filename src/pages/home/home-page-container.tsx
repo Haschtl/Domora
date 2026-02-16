@@ -1,15 +1,8 @@
 import { useMemo } from "react";
 import { HomePage } from "./home-page";
 import { useWorkspace } from "../../context/workspace-context";
-import {
-  useHouseholdBucketItems,
-  useHouseholdCashAuditRequests,
-  useHouseholdEvents,
-  useHouseholdFinances,
-  useHouseholdTaskCompletions,
-  useHouseholdTasks,
-  useHouseholdWhiteboard
-} from "../../hooks/use-household-data";
+import { useHouseholdEvents, useHouseholdFinances, useHouseholdHomeBatch } from "../../hooks/use-household-data";
+import type { BucketItem, CashAuditRequest, HouseholdWhiteboard, TaskCompletion, TaskItem } from "../../lib/types";
 
 interface HomePageContainerProps {
   section: "summary" | "bucket" | "feed";
@@ -37,25 +30,31 @@ export const HomePageContainer = ({ section }: HomePageContainerProps) => {
     onUpdateHouseholdWhiteboard
   } = useWorkspace();
 
-  const bucketQuery = useHouseholdBucketItems(activeHousehold?.id ?? null);
-  const tasksQuery = useHouseholdTasks(activeHousehold?.id ?? null);
-  const completionsQuery = useHouseholdTaskCompletions(activeHousehold?.id ?? null);
+  const homeBatchQuery = useHouseholdHomeBatch(activeHousehold?.id ?? null);
   const financesQuery = useHouseholdFinances(activeHousehold?.id ?? null);
-  const cashAuditQuery = useHouseholdCashAuditRequests(activeHousehold?.id ?? null);
   const eventsQuery = useHouseholdEvents(activeHousehold?.id ?? null);
-  const whiteboardQuery = useHouseholdWhiteboard(activeHousehold?.id ?? null);
 
   const events = useMemo(
     () => eventsQuery.data?.pages.flatMap((page) => page.rows) ?? [],
     [eventsQuery.data]
   );
 
-  if (!activeHousehold || !userId) return null;
+  const homeData = homeBatchQuery.data as
+    | {
+        bucketItems: BucketItem[];
+        tasks: TaskItem[];
+        taskCompletions: TaskCompletion[];
+        cashAuditRequests: CashAuditRequest[];
+        householdWhiteboard: HouseholdWhiteboard;
+      }
+    | undefined;
 
   const financeEntries = useMemo(
     () => financesQuery.data?.pages.flatMap((page) => page.rows) ?? [],
     [financesQuery.data]
   );
+
+  if (!activeHousehold || !userId) return null;
 
   return (
     <HomePage
@@ -68,16 +67,16 @@ export const HomePageContainer = ({ section }: HomePageContainerProps) => {
       userLabel={userDisplayName ?? userEmail}
       busy={busy}
       mobileTabBarVisible={mobileTabBarVisible}
-      bucketItems={bucketQuery.data ?? []}
-      tasks={tasksQuery.data ?? []}
-      taskCompletions={completionsQuery.data ?? []}
+      bucketItems={homeData?.bucketItems ?? []}
+      tasks={homeData?.tasks ?? []}
+      taskCompletions={homeData?.taskCompletions ?? []}
       financeEntries={financeEntries}
-      cashAuditRequests={cashAuditQuery.data ?? []}
+      cashAuditRequests={homeData?.cashAuditRequests ?? []}
       householdEvents={events}
       eventsHasMore={eventsQuery.hasNextPage ?? false}
       eventsLoadingMore={eventsQuery.isFetchingNextPage}
       onLoadMoreEvents={() => void eventsQuery.fetchNextPage()}
-      whiteboardSceneJson={whiteboardQuery.data?.scene_json ?? ""}
+      whiteboardSceneJson={homeData?.householdWhiteboard?.scene_json ?? ""}
       onSelectHousehold={(householdId) => {
         const next = households.find((entry) => entry.id === householdId);
         if (next) setActiveHousehold(next);

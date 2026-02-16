@@ -1,6 +1,7 @@
 import { ShoppingPage } from "./shopping-page";
 import { useWorkspace } from "../../context/workspace-context";
-import { useHouseholdShoppingCompletions, useHouseholdShoppingItems } from "../../hooks/use-household-data";
+import { useHouseholdShoppingBatch } from "../../hooks/use-household-data";
+import type { ShoppingItem, ShoppingItemCompletion } from "../../lib/types";
 
 interface ShoppingPageContainerProps {
   section: "list" | "history";
@@ -19,16 +20,22 @@ export const ShoppingPageContainer = ({ section }: ShoppingPageContainerProps) =
     onDeleteShoppingItem
   } = useWorkspace();
 
-  const itemsQuery = useHouseholdShoppingItems(activeHousehold?.id ?? null);
-  const completionsQuery = useHouseholdShoppingCompletions(activeHousehold?.id ?? null);
+  const shoppingBatchQuery = useHouseholdShoppingBatch(activeHousehold?.id ?? null);
 
   if (!activeHousehold || !userId) return null;
+
+  const shoppingData = shoppingBatchQuery.data as
+    | {
+        shoppingItems: ShoppingItem[];
+        shoppingCompletions: ShoppingItemCompletion[];
+      }
+    | undefined;
 
   return (
     <ShoppingPage
       section={section}
-      items={itemsQuery.data ?? []}
-      completions={completionsQuery.data ?? []}
+      items={shoppingData?.shoppingItems ?? []}
+      completions={shoppingData?.shoppingCompletions ?? []}
       members={householdMembers}
       userId={userId}
       busy={busy}
