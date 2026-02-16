@@ -27,12 +27,15 @@ serve(async (req) => {
     return new Response("Missing env", { status: 500, headers: corsHeaders });
   }
 
-  const supabase = createClient(supabaseUrl, supabaseServiceKey, {
-    global: { headers: { Authorization: req.headers.get("Authorization") ?? "" } }
-  });
+  const supabase = createClient(supabaseUrl, supabaseServiceKey);
+  const authHeader = req.headers.get("Authorization") ?? "";
+  const token = authHeader.replace(/^Bearer\s+/i, "").trim();
+  if (!token) {
+    return new Response("Unauthorized", { status: 401, headers: corsHeaders });
+  }
 
-  const { data: authData } = await supabase.auth.getUser();
-  const user = authData?.user;
+  const { data: authData } = await supabase.auth.getUser(token);
+  const user = authData?.user ?? null;
   if (!user) {
     return new Response("Unauthorized", { status: 401, headers: corsHeaders });
   }

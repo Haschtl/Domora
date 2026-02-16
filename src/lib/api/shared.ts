@@ -161,6 +161,7 @@ const householdEventSchema = z.object({
   event_type: z.enum([
     "task_completed",
     "task_skipped",
+    "task_rated",
     "shopping_completed",
     "finance_created",
     "role_changed",

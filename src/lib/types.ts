@@ -160,6 +160,7 @@ export type HouseholdEventType =
   | "task_completed"
   | "pimpers_reset"
   | "task_skipped"
+  | "task_rated"
   | "shopping_completed"
   | "finance_created"
   | "role_changed"
