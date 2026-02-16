@@ -1,6 +1,6 @@
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { householdQueryOptions } from "../lib/household-queries";
-import { getHouseholdEventsPage } from "../lib/api";
+import { getFinanceEntriesPage, getHouseholdEventsPage } from "../lib/api";
 import type {
   BucketItem,
   CashAuditRequest,
@@ -60,11 +60,12 @@ export const useHouseholdTaskCompletions = (householdId: string | null, enabled 
   });
 
 export const useHouseholdFinances = (householdId: string | null, enabled = true) =>
-  useQuery<FinanceEntry[]>({
-    ...(householdId
-      ? householdQueryOptions.finances(householdId)
-      : { queryKey: ["household", "none", "finances"], ...emptyArrayQuery<FinanceEntry>() }),
-    enabled: Boolean(householdId) && enabled
+  useInfiniteQuery({
+    queryKey: householdId ? householdQueryOptions.finances(householdId).queryKey : ["household", "none", "finances"],
+    queryFn: ({ pageParam }) => getFinanceEntriesPage(householdId!, { cursor: pageParam as string | null | undefined }),
+    enabled: Boolean(householdId) && enabled,
+    initialPageParam: null,
+    getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined
   });
 
 export const useHouseholdCashAuditRequests = (householdId: string | null, enabled = true) =>

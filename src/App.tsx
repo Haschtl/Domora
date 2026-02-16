@@ -247,7 +247,10 @@ const AppLayout = () => {
     activeHousehold?.id ?? null,
     tab === "home" || notificationPermission === "granted"
   );
-  const householdEvents = eventsQuery.data ?? [];
+  const householdEvents = useMemo(
+    () => eventsQuery.data?.pages.flatMap((page) => page.rows) ?? [],
+    [eventsQuery.data]
+  );
   useTaskNotifications(tasks, householdEvents, userId, notificationPermission);
 
   useEffect(() => {
@@ -262,11 +265,9 @@ const AppLayout = () => {
         "shoppingCompletions",
         "tasks",
         "taskCompletions",
-        "finances",
         "cashAuditRequests",
         "financeSubscriptions",
         "memberPimpers",
-        "householdEvents",
         "householdWhiteboard"
       ]);
     };

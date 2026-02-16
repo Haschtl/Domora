@@ -1888,6 +1888,63 @@ export const getFinanceEntries = async (householdId: string): Promise<FinanceEnt
   return (data ?? []).map((entry) => normalizeFinanceEntry(entry as Record<string, unknown>));
 };
 
+type FinanceEntriesPage = {
+  rows: FinanceEntry[];
+  nextCursor: string | null;
+};
+
+const buildFinanceCursor = (row: { entry_date: string; created_at: string; id: string }) =>
+  `${row.entry_date}::${row.created_at}::${row.id}`;
+
+const parseFinanceCursor = (cursor?: string | null) => {
+  if (!cursor) return null;
+  const [entryDate, createdAt, id] = cursor.split("::");
+  if (!entryDate || !createdAt || !id) return null;
+  return { entryDate, createdAt, id };
+};
+
+export const getFinanceEntriesPage = async (
+  householdId: string,
+  {
+    limit = 80,
+    cursor
+  }: {
+    limit?: number;
+    cursor?: string | null;
+  } = {}
+): Promise<FinanceEntriesPage> => {
+  const parsedCursor = parseFinanceCursor(cursor);
+  let query = supabase
+    .from("finance_entries")
+    .select("*")
+    .eq("household_id", householdId)
+    .order("entry_date", { ascending: false })
+    .order("created_at", { ascending: false })
+    .order("id", { ascending: false })
+    .limit(limit + 1);
+
+  if (parsedCursor) {
+    query = query.or(
+      `entry_date.lt.${parsedCursor.entryDate},and(entry_date.eq.${parsedCursor.entryDate},created_at.lt.${parsedCursor.createdAt}),and(entry_date.eq.${parsedCursor.entryDate},created_at.eq.${parsedCursor.createdAt},id.lt.${parsedCursor.id})`
+    );
+  }
+
+  const { data, error } = await query;
+  if (error) throw error;
+
+  const rows = (data ?? []).map((entry) => normalizeFinanceEntry(entry as Record<string, unknown>));
+  if (rows.length <= limit) {
+    return { rows, nextCursor: null };
+  }
+
+  const nextRows = rows.slice(0, limit);
+  const lastRow = nextRows[nextRows.length - 1];
+  return {
+    rows: nextRows,
+    nextCursor: lastRow ? buildFinanceCursor(lastRow) : null
+  };
+};
+
 export const getCashAuditRequests = async (householdId: string): Promise<CashAuditRequest[]> => {
   const { data, error } = await supabase
     .from("cash_audit_requests")

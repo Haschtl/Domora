@@ -52,6 +52,11 @@ export const HomePageContainer = ({ section }: HomePageContainerProps) => {
 
   if (!activeHousehold || !userId) return null;
 
+  const financeEntries = useMemo(
+    () => financesQuery.data?.pages.flatMap((page) => page.rows) ?? [],
+    [financesQuery.data]
+  );
+
   return (
     <HomePage
       section={section}
@@ -66,7 +71,7 @@ export const HomePageContainer = ({ section }: HomePageContainerProps) => {
       bucketItems={bucketQuery.data ?? []}
       tasks={tasksQuery.data ?? []}
       taskCompletions={completionsQuery.data ?? []}
-      financeEntries={financesQuery.data ?? []}
+      financeEntries={financeEntries}
       cashAuditRequests={cashAuditQuery.data ?? []}
       householdEvents={events}
       eventsHasMore={eventsQuery.hasNextPage ?? false}

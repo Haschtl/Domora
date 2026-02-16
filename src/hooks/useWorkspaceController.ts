@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { v4 as uuid } from "uuid";
 import { useMutation } from "@tanstack/react-query";
+import type { InfiniteData } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import {
   addBucketItem,
@@ -90,6 +91,23 @@ const sortTasks = (items: TaskItem[]) => [...items].sort((a, b) => a.due_at.loca
 
 const sortFinanceEntries = (items: FinanceEntry[]) =>
   [...items].sort((a, b) => b.created_at.localeCompare(a.created_at));
+
+const updateFinancePages = (
+  current: InfiniteData<{ rows: FinanceEntry[]; nextCursor: string | null }> | FinanceEntry[] | undefined,
+  updater: (rows: FinanceEntry[], pageIndex: number) => FinanceEntry[]
+) => {
+  if (!current) return current;
+  if (Array.isArray(current)) {
+    return updater(current, 0);
+  }
+  return {
+    ...current,
+    pages: current.pages.map((page, index) => ({
+      ...page,
+      rows: updater(page.rows, index)
+    }))
+  };
+};
 
 const sortFinanceSubscriptions = (items: FinanceSubscription[]) =>
   [...items].sort((a, b) => b.created_at.localeCompare(a.created_at));
@@ -975,7 +993,12 @@ export const useWorkspaceController = () => {
         updates: [
           {
             queryKey: queryKeys.householdFinances(activeHousehold.id),
-            updater: (current) => sortFinanceEntries([optimisticEntry, ...((current as FinanceEntry[]) ?? [])])
+            updater: (current) =>
+              updateFinancePages(
+                current as InfiniteData<{ rows: FinanceEntry[]; nextCursor: string | null }> | FinanceEntry[] | undefined,
+                (rows, pageIndex) =>
+                  pageIndex === 0 ? sortFinanceEntries([optimisticEntry, ...rows]) : rows
+              )
           }
         ],
         action: async () => {
@@ -1009,24 +1032,28 @@ export const useWorkspaceController = () => {
           {
             queryKey: queryKeys.householdFinances(activeHousehold.id),
             updater: (current) => {
-              const entries = (current as FinanceEntry[]) ?? [];
-              const next = entries.map((existing) =>
-                existing.id === entry.id
-                  ? {
-                      ...existing,
-                      description: input.description,
-                      amount: input.amount,
-                      category: input.category || "general",
-                      receipt_image_url: input.receiptImageUrl ?? null,
-                      paid_by: input.paidByUserIds[0],
-                      paid_by_user_ids: input.paidByUserIds,
-                      beneficiary_user_ids: input.beneficiaryUserIds,
-                      entry_date: normalizedEntryDate,
-                      created_at: createdAt
-                    }
-                  : existing
+              return updateFinancePages(
+                current as InfiniteData<{ rows: FinanceEntry[]; nextCursor: string | null }> | FinanceEntry[] | undefined,
+                (rows) => {
+                  const next = rows.map((existing) =>
+                    existing.id === entry.id
+                      ? {
+                          ...existing,
+                          description: input.description,
+                          amount: input.amount,
+                          category: input.category || "general",
+                          receipt_image_url: input.receiptImageUrl ?? null,
+                          paid_by: input.paidByUserIds[0],
+                          paid_by_user_ids: input.paidByUserIds,
+                          beneficiary_user_ids: input.beneficiaryUserIds,
+                          entry_date: normalizedEntryDate,
+                          created_at: createdAt
+                        }
+                      : existing
+                  );
+                  return sortFinanceEntries(next);
+                }
               );
-              return sortFinanceEntries(next);
             }
           }
         ],
@@ -1046,7 +1073,11 @@ export const useWorkspaceController = () => {
         updates: [
           {
             queryKey: queryKeys.householdFinances(activeHousehold.id),
-            updater: (current) => ((current as FinanceEntry[]) ?? []).filter((existing) => existing.id !== entry.id)
+            updater: (current) =>
+              updateFinancePages(
+                current as InfiniteData<{ rows: FinanceEntry[]; nextCursor: string | null }> | FinanceEntry[] | undefined,
+                (rows) => rows.filter((existing) => existing.id !== entry.id)
+              )
           }
         ],
         action: async () => {

@@ -83,6 +83,9 @@ ChartJS.register(CategoryScale, LinearScale, BarElement, ArcElement, Tooltip, Le
 interface FinancesPageProps {
   section?: "overview" | "stats" | "archive" | "subscriptions";
   entries: FinanceEntry[];
+  entriesHasMore?: boolean;
+  entriesLoadingMore?: boolean;
+  onLoadMoreEntries?: () => void;
   subscriptions: FinanceSubscription[];
   cashAuditRequests: CashAuditRequest[];
   household: Household;
@@ -345,6 +348,9 @@ const compressImageToDataUrl = async (file: File) => {
 export const FinancesPage = ({
   section = "overview",
   entries,
+  entriesHasMore = false,
+  entriesLoadingMore = false,
+  onLoadMoreEntries,
   subscriptions,
   cashAuditRequests,
   household,
@@ -2626,6 +2632,17 @@ export const FinancesPage = ({
               busy={busy}
             />
           ))}
+          {entriesHasMore ? (
+            <div className="mt-4 flex justify-center">
+              <Button
+                variant="outline"
+                onClick={() => onLoadMoreEntries?.()}
+                disabled={entriesLoadingMore}
+              >
+                {t("common.loadMore")}
+              </Button>
+            </div>
+          ) : null}
         </>
       ) : null}
 

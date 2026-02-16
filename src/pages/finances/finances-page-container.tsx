@@ -1,3 +1,4 @@
+import { useEffect, useMemo } from "react";
 import { FinancesPage } from "./finances-page";
 import { useWorkspace } from "../../context/workspace-context";
 import {
@@ -36,10 +37,36 @@ export const FinancesPageContainer = ({ section }: FinancesPageContainerProps) =
 
   if (!activeHousehold || !userId) return null;
 
+  const entries = useMemo(
+    () => financesQuery.data?.pages.flatMap((page) => page.rows) ?? [],
+    [financesQuery.data]
+  );
+  const latestAuditDay = cashAuditQuery.data?.[0]?.created_at?.slice(0, 10) ?? null;
+  const oldestLoadedDay = useMemo(() => {
+    if (entries.length === 0) return null;
+    return entries.reduce((oldest, entry) => {
+      const entryDay = entry.entry_date || entry.created_at.slice(0, 10);
+      if (!oldest || entryDay < oldest) return entryDay;
+      return oldest;
+    }, null as string | null);
+  }, [entries]);
+
+  useEffect(() => {
+    if (!latestAuditDay) return;
+    if (!financesQuery.hasNextPage || financesQuery.isFetchingNextPage) return;
+    if (!oldestLoadedDay) return;
+    if (oldestLoadedDay > latestAuditDay) {
+      void financesQuery.fetchNextPage();
+    }
+  }, [financesQuery.hasNextPage, financesQuery.isFetchingNextPage, financesQuery.fetchNextPage, latestAuditDay, oldestLoadedDay]);
+
   return (
     <FinancesPage
       section={section}
-      entries={financesQuery.data ?? []}
+      entries={entries}
+      entriesHasMore={financesQuery.hasNextPage ?? false}
+      entriesLoadingMore={financesQuery.isFetchingNextPage}
+      onLoadMoreEntries={() => void financesQuery.fetchNextPage()}
       subscriptions={subscriptionsQuery.data ?? []}
       cashAuditRequests={cashAuditQuery.data ?? []}
       household={activeHousehold}
