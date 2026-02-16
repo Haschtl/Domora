@@ -13,6 +13,14 @@ import {
   currentFormat$,
   currentListType$,
   iconComponentFor$,
+  linkDialogState$,
+  onClickLinkCallback$,
+  onWindowChange$,
+  showLinkTitleField$,
+  switchFromPreviewToLinkEdit$,
+  updateLink$,
+  cancelLinkEdit$,
+  removeLink$,
   openLinkEditDialog$,
   useCellValue,
   useCellValues,
@@ -38,10 +46,14 @@ import {
   CAN_REDO_COMMAND,
   CAN_UNDO_COMMAND,
   COMMAND_PRIORITY_CRITICAL,
+  KEY_ESCAPE_COMMAND,
   REDO_COMMAND,
   UNDO_COMMAND
 } from "lexical";
 import { $createHeadingNode, $createQuoteNode } from "@lexical/rich-text";
+import { Button } from "./ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "./ui/dialog";
+import { Input } from "./ui/input";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
 
 const toolbarButtonBase =
@@ -284,6 +296,170 @@ const DomoraToolbar = ({ children }: { children?: ReactNode }) => (
   </TooltipProvider>
 );
 
+const DomoraLinkDialog = () => {
+  const [
+    linkDialogState,
+    iconComponentFor,
+    onClickLinkCallback,
+    showLinkTitleField,
+    activeEditor
+  ] = useCellValues(
+    linkDialogState$,
+    iconComponentFor$,
+    onClickLinkCallback$,
+    showLinkTitleField$,
+    activeEditor$
+  );
+  const updateLink = usePublisher(updateLink$);
+  const cancelLinkEdit = usePublisher(cancelLinkEdit$);
+  const switchFromPreviewToLinkEdit = usePublisher(switchFromPreviewToLinkEdit$);
+  const removeLink = usePublisher(removeLink$);
+  const publishWindowChange = usePublisher(onWindowChange$);
+  const t = useTranslation();
+  const [url, setUrl] = useState("");
+  const [title, setTitle] = useState("");
+  const [text, setText] = useState("");
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (linkDialogState.type === "edit") {
+      setUrl(linkDialogState.url ?? "");
+      setTitle(linkDialogState.title ?? "");
+      setText(linkDialogState.text ?? "");
+    }
+  }, [linkDialogState]);
+
+  useEffect(() => {
+    const update = () => publishWindowChange(true);
+    window.addEventListener("resize", update);
+    window.addEventListener("scroll", update);
+    return () => {
+      window.removeEventListener("resize", update);
+      window.removeEventListener("scroll", update);
+    };
+  }, [publishWindowChange]);
+
+  if (linkDialogState.type === "inactive") return null;
+
+  const closeDialog = () => {
+    if (linkDialogState.type === "edit") {
+      cancelLinkEdit();
+      return;
+    }
+    activeEditor?.dispatchCommand(KEY_ESCAPE_COMMAND, undefined);
+  };
+
+  const showAnchorTextField =
+    linkDialogState.type === "edit" ? linkDialogState.withAnchorText : false;
+
+  return (
+    <Dialog open onOpenChange={(open) => !open && closeDialog()}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>
+            {linkDialogState.type === "edit"
+              ? t("createLink.title", "Link")
+              : t("linkPreview.title", "Link")}
+          </DialogTitle>
+          <DialogDescription>
+            {linkDialogState.type === "edit"
+              ? t("createLink.url", "URL")
+              : t("linkPreview.open", "Open link")}
+          </DialogDescription>
+        </DialogHeader>
+
+        {linkDialogState.type === "edit" ? (
+          <form
+            className="space-y-3"
+            onSubmit={(event) => {
+              event.preventDefault();
+              updateLink({ url, title, text });
+            }}
+          >
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                {t("createLink.url", "URL")}
+              </label>
+              <Input
+                value={url}
+                onChange={(event) => setUrl(event.target.value)}
+                placeholder={t("createLink.urlPlaceholder", "Paste a URL")}
+              />
+            </div>
+            {showAnchorTextField ? (
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                  {t("createLink.text", "Anchor text")}
+                </label>
+                <Input
+                  value={text}
+                  onChange={(event) => setText(event.target.value)}
+                  placeholder={t("createLink.text", "Anchor text")}
+                />
+              </div>
+            ) : null}
+            {showLinkTitleField ? (
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                  {t("createLink.title", "Link title")}
+                </label>
+                <Input
+                  value={title}
+                  onChange={(event) => setTitle(event.target.value)}
+                  placeholder={t("createLink.title", "Link title")}
+                />
+              </div>
+            ) : null}
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="ghost" onClick={closeDialog}>
+                {t("dialogControls.cancel", "Cancel")}
+              </Button>
+              <Button type="submit">{t("dialogControls.save", "Save")}</Button>
+            </div>
+          </form>
+        ) : (
+          <div className="space-y-3">
+            <a
+              href={linkDialogState.url}
+              className="block rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+              target={linkDialogState.url.startsWith("http") ? "_blank" : undefined}
+              rel={linkDialogState.url.startsWith("http") ? "noreferrer" : undefined}
+              onClick={(event) => {
+                if (onClickLinkCallback) {
+                  event.preventDefault();
+                  onClickLinkCallback(linkDialogState.url);
+                }
+              }}
+            >
+              <span className="break-all">{linkDialogState.url}</span>
+            </a>
+            <div className="flex flex-wrap justify-end gap-2">
+              <Button type="button" variant="ghost" onClick={() => switchFromPreviewToLinkEdit()}>
+                {t("linkPreview.edit", "Edit link URL")}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  void window.navigator.clipboard.writeText(linkDialogState.url).then(() => {
+                    setCopied(true);
+                    window.setTimeout(() => setCopied(false), 1200);
+                  });
+                }}
+              >
+                {copied ? t("linkPreview.copied", "Copied!") : t("linkPreview.copyToClipboard", "Copy")}
+              </Button>
+              <Button type="button" variant="danger" onClick={() => removeLink()}>
+                {t("linkPreview.remove", "Remove link")}
+              </Button>
+            </div>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+};
+
 interface MXEditorProps {
   value: string;
   onChange: (value: string) => void;
@@ -356,7 +532,7 @@ export const MXEditor = ({
     quotePlugin(),
     thematicBreakPlugin(),
     linkPlugin(),
-    linkDialogPlugin(),
+    linkDialogPlugin({ LinkDialog: DomoraLinkDialog }),
     ...(jsxComponentDescriptors.length > 0 ? [jsxPlugin({ jsxComponentDescriptors })] : []),
     markdownShortcutPlugin(),
     toolbarPlugin({
