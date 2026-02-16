@@ -54,7 +54,9 @@ export const isDueNow = (iso: string, graceMinutes = 0) => {
   const dueAt = toDate(iso);
   if (!dueAt) return false;
   const graceMs = Math.max(0, graceMinutes) * 60 * 1000;
-  return Date.now() >= dueAt.getTime() && Date.now() <= dueAt.getTime() + graceMs;
+  return Date.now() >= dueAt.getTime() && Date.now() <= dueAt.getTime() + graceMs
+    ? true
+    : Date.now() >= dueAt.getTime();
 };
 
 export const getLastMonthRange = (reference = new Date()) => {
