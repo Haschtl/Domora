@@ -23,7 +23,7 @@ import { type JsxComponentDescriptor, type JsxEditorProps, useLexicalNodeRemove 
 import { createTrianglifyBannerBackground } from "../../lib/banner";
 import { formatDateTime, getLastMonthRange } from "../../lib/date";
 import { createMemberLabelGetter } from "../../lib/member-label";
-import { createDiceBearAvatarDataUri } from "../../lib/avatar";
+import { createDiceBearAvatarDataUri, getMemberAvatarSeed } from "../../lib/avatar";
 import { calculateBalancesByMember } from "../../lib/finance-math";
 import { getMemberOfMonth } from "../../lib/task-leaderboard";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../../components/ui/tooltip";
@@ -977,7 +977,10 @@ export const HomePage = ({
                   src={
                     memberOfMonthProfile?.avatar_url?.trim() ||
                     createDiceBearAvatarDataUri(
-                      memberLabel(memberOfMonth.userId),
+                      getMemberAvatarSeed(
+                        memberOfMonth.userId,
+                        memberOfMonthProfile?.display_name
+                      ),
                       memberOfMonthProfile?.user_color
                     )
                   }

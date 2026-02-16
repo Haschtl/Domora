@@ -62,10 +62,11 @@ export const addRecurringIntervalToIso = (iso: string, value: number, unit: Shop
   }
 };
 
-export const isDueNow = (iso: string) => {
+export const isDueNow = (iso: string, graceMinutes = 0) => {
   const dueAt = toDate(iso);
   if (!dueAt) return false;
-  return isBefore(dueAt, new Date()) || dueAt.getTime() === Date.now();
+  const graceMs = Math.max(0, graceMinutes) * 60 * 1000;
+  return Date.now() >= dueAt.getTime() && Date.now() <= dueAt.getTime() + graceMs;
 };
 
 export const getLastMonthRange = (reference = new Date()) => {

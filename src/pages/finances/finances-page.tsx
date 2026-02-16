@@ -68,7 +68,7 @@ import {
   DropdownMenuTrigger
 } from "../../components/ui/dropdown-menu";
 import { getDateLocale } from "../../i18n";
-import { createDiceBearAvatarDataUri } from "../../lib/avatar";
+import { createDiceBearAvatarDataUri, getMemberAvatarSeed } from "../../lib/avatar";
 import { formatDateOnly, formatShortDay } from "../../lib/date";
 import { calculateBalancesByMember, calculateSettlementTransfers, splitAmountEvenly } from "../../lib/finance-math";
 import { createMemberLabelGetter, type MemberLabelCase } from "../../lib/member-label";
@@ -826,7 +826,7 @@ export const FinancesPage = ({
     const member = memberById.get(memberId);
     const avatarUrl = member?.avatar_url?.trim() ?? "";
     if (avatarUrl) return avatarUrl;
-    const seed = member?.display_name?.trim() || memberLabel(memberId);
+    const seed = getMemberAvatarSeed(memberId, member?.display_name);
     return createDiceBearAvatarDataUri(seed, member?.user_color);
   };
   const moneyLabel = useCallback((value: number) => formatMoney(value, locale), [locale]);

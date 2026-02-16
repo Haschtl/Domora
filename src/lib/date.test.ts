@@ -18,5 +18,6 @@ describe("date utils", () => {
 
     expect(isDueNow(past)).toBe(true);
     expect(isDueNow(future)).toBe(false);
+    expect(isDueNow(past, -5)).toBe(true);
   });
 });

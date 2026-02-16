@@ -13,6 +13,11 @@ const normalizeHexColor = (value: string | null | undefined) => {
   return raw.toLowerCase();
 };
 
+export const getMemberAvatarSeed = (memberId: string, displayName?: string | null) => {
+  const normalized = (displayName ?? "").trim();
+  return normalized.length > 0 ? normalized : memberId;
+};
+
 export const createDiceBearAvatarDataUri = (seed: string | null | undefined, backgroundColor?: string | null) => {
   const normalizedSeed = normalizeSeed(seed, "domora-user");
   const normalizedColor = normalizeHexColor(backgroundColor);

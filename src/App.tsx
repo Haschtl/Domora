@@ -292,7 +292,7 @@ const AppLayout = () => {
   }, [activeHousehold, queryClient, session]);
 
   const dueTasksBadge = useMemo(() => {
-    const dueTasks = tasks.filter((task) => task.is_active && !task.done && isDueNow(task.due_at));
+    const dueTasks = tasks.filter((task) => task.is_active && !task.done && isDueNow(task.due_at, task.grace_minutes));
     const allDue = dueTasks.length;
     const myDue = userId ? dueTasks.filter((task) => task.assignee_id === userId).length : 0;
     return {

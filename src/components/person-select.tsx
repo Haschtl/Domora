@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { User } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { createDiceBearAvatarDataUri } from "../lib/avatar";
+import { createDiceBearAvatarDataUri, getMemberAvatarSeed } from "../lib/avatar";
 import type { HouseholdMember } from "../lib/types";
 import { createMemberLabelGetter } from "../lib/member-label";
 import { cn } from "../lib/utils";
@@ -69,7 +69,8 @@ export const PersonSelect = (props: PersonSelectProps) => {
     [members, props.currentUserId, props.youLabels, t, youLabel]
   );
   const getMemberAvatar = (member: HouseholdMember) =>
-    member.avatar_url?.trim() || createDiceBearAvatarDataUri(member.display_name?.trim() || member.user_id, member.user_color);
+    member.avatar_url?.trim() ||
+    createDiceBearAvatarDataUri(getMemberAvatarSeed(member.user_id, member.display_name), member.user_color);
   const firstNameFromLabel = (label: string) => {
     const normalized = label.trim();
     if (!normalized) return normalized;

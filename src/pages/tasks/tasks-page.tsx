@@ -328,12 +328,21 @@ const fallbackColorFromUserId = (userId: string) => {
 
 const relativeDueChipLabel = (
   dueAtIso: string,
+  graceMinutes: number | null | undefined,
   t: (key: string, options?: Record<string, unknown>) => string
 ) => {
   const dueAt = new Date(dueAtIso);
   if (Number.isNaN(dueAt.getTime())) return t("tasks.noDate");
+  const graceMs = Math.max(0, graceMinutes ?? 0) * 60 * 1000;
+  const nowMs = Date.now();
+  const dueAtMs = dueAt.getTime();
+  const effectiveDueMs = dueAtMs + graceMs;
 
-  const diffMs = dueAt.getTime() - Date.now();
+  if (nowMs >= dueAtMs && nowMs <= effectiveDueMs) {
+    return t("tasks.dueNow");
+  }
+
+  const diffMs = (nowMs < dueAtMs ? dueAtMs : effectiveDueMs) - nowMs;
   const isFuture = diffMs >= 0;
   const absMs = Math.abs(diffMs);
 
@@ -363,11 +372,13 @@ const relativeDueChipLabel = (
 
 const reminderLateLabel = (
   dueAtIso: string,
+  graceMinutes: number | null | undefined,
   t: (key: string, options?: Record<string, unknown>) => string
 ) => {
   const dueAt = new Date(dueAtIso);
   if (Number.isNaN(dueAt.getTime())) return t("tasks.reminderLateNow");
-  const diffMs = Date.now() - dueAt.getTime();
+  const graceMs = Math.max(0, graceMinutes ?? 0) * 60 * 1000;
+  const diffMs = Date.now() - (dueAt.getTime() + graceMs);
   if (diffMs <= 0) return t("tasks.reminderLateNow");
 
   const minuteMs = 60 * 1000;
@@ -517,6 +528,14 @@ export const TasksPage = ({
   const addTargetStateCameraInputRef = useRef<HTMLInputElement | null>(null);
   const editCurrentStateCameraInputRef = useRef<HTMLInputElement | null>(null);
   const editTargetStateCameraInputRef = useRef<HTMLInputElement | null>(null);
+  const shuffleMembers = useCallback((ids: string[]) => {
+    const next = [...ids];
+    for (let i = next.length - 1; i > 0; i -= 1) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [next[i], next[j]] = [next[j], next[i]];
+    }
+    return next;
+  }, []);
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: { distance: 6 }
@@ -662,13 +681,16 @@ export const TasksPage = ({
     setRotationUserIds((current) => {
       const filtered = current.filter((entry) => validUserIds.has(entry));
       if (filtered.length > 0) return filtered;
-
-      if (validUserIds.has(userId)) return [userId];
-
-      const firstMember = members[0]?.user_id;
-      return firstMember ? [firstMember] : [];
+      return shuffleMembers(members.map((entry) => entry.user_id));
     });
-  }, [members, userId]);
+  }, [members, shuffleMembers, userId]);
+
+  useEffect(() => {
+    if (!isCreateDialogOpen) return;
+    const allMemberIds = members.map((entry) => entry.user_id);
+    if (allMemberIds.length === 0) return;
+    setRotationUserIds(shuffleMembers(allMemberIds));
+  }, [isCreateDialogOpen, members, shuffleMembers]);
 
   useEffect(() => {
     if (!taskBeingEdited) return;
@@ -847,7 +869,7 @@ export const TasksPage = ({
   const sendTaskReminder = useCallback(
     async (task: TaskItem, assigneeName: string) => {
       if (!task.assignee_id) return;
-      const late = reminderLateLabel(task.due_at, t);
+      const late = reminderLateLabel(task.due_at, task.grace_minutes, t);
       const taskTitle = task.title || t("tasks.confirmCompleteTitle");
       const fallbackTitle = `Erinnerung: ${taskTitle}`;
       const fallbackBody = `${late}. ${taskTitle}`;
@@ -1159,6 +1181,21 @@ export const TasksPage = ({
   );
 
   const allTaskSuggestions = useTaskSuggestions(tasks, completions, language);
+  const existingTaskTitleSet = useMemo(() => {
+    const set = new Set<string>();
+    tasks.forEach((task) => {
+      const normalized = task.title.trim().toLocaleLowerCase(language);
+      if (normalized) set.add(normalized);
+    });
+    return set;
+  }, [language, tasks]);
+  const availableTaskSuggestions = useMemo(
+    () =>
+      allTaskSuggestions.filter(
+        (entry) => !existingTaskTitleSet.has(entry.title.trim().toLocaleLowerCase(language))
+      ),
+    [allTaskSuggestions, existingTaskTitleSet, language]
+  );
 
   const applyTaskSuggestion = (suggestion: TaskSuggestion) => {
     taskForm.setFieldValue("title", suggestion.title);
@@ -1299,7 +1336,7 @@ export const TasksPage = ({
     onKeyDown: onTitleKeyDown,
     applySuggestion: onSelectTaskSuggestion
   } = useSmartSuggestions<TaskSuggestion>({
-    items: allTaskSuggestions,
+    items: availableTaskSuggestions,
     query: taskTitleQuery,
     getLabel: (entry) => entry.title,
     onApply: applyTaskSuggestion,
@@ -2776,7 +2813,7 @@ export const TasksPage = ({
             <div className="space-y-2">
               {visibleTasks.map((task) => {
                 const isDue =
-                  task.is_active && !task.done && isDueNow(task.due_at);
+                  task.is_active && !task.done && isDueNow(task.due_at, task.grace_minutes);
                 const isAssignedToCurrentUser = task.assignee_id === userId;
                 const dueAtMs = new Date(task.due_at).getTime();
                 const canCompleteEarly =
@@ -2801,7 +2838,7 @@ export const TasksPage = ({
                   : null;
                 const hasPrimaryImage = Boolean(primaryImageUrl);
                 const hasSecondaryImage = Boolean(secondaryImageUrl);
-                const dueChipText = relativeDueChipLabel(task.due_at, t);
+                const dueChipText = relativeDueChipLabel(task.due_at, task.grace_minutes, t);
                 const assigneeText = task.assignee_id
                   ? userLabel(task.assignee_id)
                   : t("tasks.unassigned");

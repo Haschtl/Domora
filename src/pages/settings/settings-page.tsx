@@ -5,7 +5,7 @@ import { Camera, Check, Crown, Share2, UserMinus, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import QRCode from "react-qr-code";
 import type { Household, HouseholdMember, PushPreferences, TaskItem, UpdateHouseholdInput } from "../../lib/types";
-import { createDiceBearAvatarDataUri } from "../../lib/avatar";
+import { createDiceBearAvatarDataUri, getMemberAvatarSeed } from "../../lib/avatar";
 import { createTrianglifyBannerBackground } from "../../lib/banner";
 import { createMemberLabelGetter } from "../../lib/member-label";
 import { isDueNow } from "../../lib/date";
@@ -177,7 +177,7 @@ export const SettingsPage = ({
         task.is_active &&
         !task.done &&
         task.assignee_id === userId &&
-        isDueNow(task.due_at)
+        isDueNow(task.due_at, task.grace_minutes)
     );
   }, [tasks, userId]);
   const dueTasksAssignedCount = dueTasksAssignedToYou.length;
@@ -1884,7 +1884,7 @@ export const SettingsPage = ({
                   const avatarUrl =
                     member.avatar_url?.trim() ||
                     createDiceBearAvatarDataUri(
-                      member.display_name?.trim() || displayLabel,
+                      getMemberAvatarSeed(member.user_id, member.display_name),
                       member.user_color
                     );
 
