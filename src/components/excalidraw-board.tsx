@@ -134,7 +134,6 @@ export const ExcalidrawBoard = ({
   height = 520
 }: ExcalidrawBoardProps) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const [layoutSize, setLayoutSize] = useState({ width: 0, height: 0 });
   const [viewportHeight, setViewportHeight] = useState<number | null>(null);
   const [theme, setTheme] = useState<Theme>(getThemePreference() as Theme);
   const lastSceneSignatureRef = useRef<string | null>(null);
@@ -180,19 +179,6 @@ export const ExcalidrawBoard = ({
   }, []);
 
   useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
-    const resizeObserver = new ResizeObserver((entries) => {
-      const entry = entries[0];
-      if (!entry) return;
-      const { width, height: observedHeight } = entry.contentRect;
-      setLayoutSize({ width, height: observedHeight });
-    });
-    resizeObserver.observe(container);
-    return () => resizeObserver.disconnect();
-  }, []);
-
-  useEffect(() => {
     const updateViewportHeight = () => {
       setViewportHeight(window.innerHeight);
     };
@@ -201,10 +187,8 @@ export const ExcalidrawBoard = ({
     return () => window.removeEventListener("resize", updateViewportHeight);
   }, []);
 
-  const safeWidth = clampSize(layoutSize.width, 900, 1400);
   const heightCap = viewportHeight ? Math.floor(viewportHeight * 0.7) : 900;
   const safeHeight = clampSize(height, 420, Math.min(900, heightCap));
-  const innerWidth = layoutSize.width > 0 ? Math.min(safeWidth, layoutSize.width) : safeWidth;
 
   return (
     <div
@@ -221,7 +205,7 @@ export const ExcalidrawBoard = ({
         overflow: "hidden",
       }}
     >
-      <div style={{ width: innerWidth, height: safeHeight, margin: "0 auto", maxWidth: "100%" }}>
+      <div style={{ width: "100%", height: "100%", margin: "0 auto", maxWidth: "100%" }}>
         <Excalidraw
         // @ts-expect-error whooo
           initialData={initialData as unknown}

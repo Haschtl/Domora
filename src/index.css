@@ -121,6 +121,28 @@
   font-display: swap;
 }
 
+.excalidraw-embed {
+  position: relative;
+  max-width: 100%;
+  overflow: hidden;
+  contain: layout paint size;
+}
+
+.excalidraw-embed .excalidraw,
+.excalidraw-embed .App {
+  width: 100% !important;
+  height: 100% !important;
+  max-width: 100% !important;
+  max-height: 100% !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+}
+
+.excalidraw-embed canvas {
+  max-width: 100% !important;
+  max-height: 100% !important;
+}
+
 @font-face {
   font-family: "Manrope";
   src: url('/fonts/manrope-w400-normal.woff2') format('woff2');
