@@ -486,6 +486,17 @@ body {
   --toastify-color-error: #f87171;
 }
 
+.dark .border-brand-100,
+.dark .border-brand-200,
+.dark .border-brand-300 {
+  border-color: #1f2937;
+}
+
+.dark .border-brand-200\/70,
+.dark .border-brand-200\/80 {
+  border-color: rgb(31 41 55 / 0.7);
+}
+
 .Toastify__toast-container {
   width: min(26rem, calc(100vw - 1.25rem));
   padding: 0.625rem;

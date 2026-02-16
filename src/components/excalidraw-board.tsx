@@ -108,6 +108,19 @@ const normalizeAppState = (appState?: Partial<AppState>) => {
   return sanitized;
 };
 
+const buildSceneSignature = (elements: readonly unknown[], files: Record<string, unknown>) => {
+  const elementParts = elements.map((entry) => {
+    if (!entry || typeof entry !== "object") return "x";
+    const element = entry as Record<string, unknown>;
+    const id = typeof element.id === "string" ? element.id : "x";
+    const version = typeof element.version === "number" ? element.version : 0;
+    const updated = typeof element.updated === "number" ? element.updated : 0;
+    return `${id}:${version}:${updated}`;
+  });
+  const fileKeys = Object.keys(files ?? {}).sort();
+  return `${elementParts.join("|")}::${fileKeys.join(",")}`;
+};
+
 const clampSize = (value: number, fallback: number, max: number) => {
   if (!Number.isFinite(value) || value <= 0) return fallback;
   return Math.min(value, max);
@@ -123,6 +136,7 @@ export const ExcalidrawBoard = ({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [layoutSize, setLayoutSize] = useState({ width: 0, height: 0 });
   const [theme, setTheme] = useState<Theme>(getThemePreference() as Theme);
+  const lastSceneSignatureRef = useRef<string | null>(null);
 
   const themeColors = {
     primary: readCssColor("--brand-500", "#1f8a7f"),
@@ -133,9 +147,11 @@ export const ExcalidrawBoard = ({
   const initialData = useMemo<ExcalidrawInitialDataState>(() => {
     const parsed = safeParseScene(sceneJson);
     const baseAppState = normalizeAppState(parsed?.appState);
+    const initialElements = sanitizeElements(parsed?.elements);
+    const initialFiles = parsed?.files ?? {};
     return {
-      elements: sanitizeElements(parsed?.elements),
-      files: parsed?.files ?? {},
+      elements: initialElements,
+      files: initialFiles,
       appState: {
         ...baseAppState,
         collaborators: new Map(),
@@ -148,6 +164,13 @@ export const ExcalidrawBoard = ({
       }
     };
   }, [sceneJson, theme, themeColors]);
+
+  useEffect(() => {
+    const parsed = safeParseScene(sceneJson);
+    const initialElements = sanitizeElements(parsed?.elements);
+    const initialFiles = parsed?.files ?? {};
+    lastSceneSignatureRef.current = buildSceneSignature(initialElements, initialFiles);
+  }, [sceneJson]);
 
   useEffect(() => {
     const observer = new MutationObserver(() => setTheme(getThemePreference()));
@@ -170,6 +193,7 @@ export const ExcalidrawBoard = ({
 
   const safeWidth = clampSize(layoutSize.width, 900, 1400);
   const safeHeight = clampSize(height, 520, 900);
+  const innerWidth = layoutSize.width > 0 ? Math.min(safeWidth, layoutSize.width) : safeWidth;
 
   return (
     <div
@@ -180,20 +204,26 @@ export const ExcalidrawBoard = ({
         maxHeight: safeHeight,
         width: "100%",
         maxWidth: "100%",
+        // padding: "0 6px",
         margin: "0 auto",
         overflow: "hidden"
       }}
     >
-      <div style={{ width: safeWidth, height: safeHeight, margin: "0 auto" }}>
+      <div style={{ width: innerWidth, height: safeHeight, margin: "0 auto" }}>
         <Excalidraw
           initialData={initialData}
           viewModeEnabled={readOnly}
           theme={theme}
           onChange={(elements, appState, files) => {
             if (!onSceneChange) return;
+            const sanitizedElements = sanitizeElements(elements);
+            const sanitizedFiles = files ?? {};
+            const signature = buildSceneSignature(sanitizedElements, sanitizedFiles);
+            if (lastSceneSignatureRef.current === signature) return;
+            lastSceneSignatureRef.current = signature;
             const sanitizedAppState = normalizeAppState(appState);
             const payload = JSON.stringify({
-              elements: sanitizeElements(elements),
+              elements: sanitizedElements,
               appState: {
                 ...sanitizedAppState,
                 theme,
@@ -201,7 +231,7 @@ export const ExcalidrawBoard = ({
                 currentItemStrokeColor: appState.currentItemStrokeColor ?? themeColors.primary,
                 currentItemBackgroundColor: appState.currentItemBackgroundColor ?? themeColors.accent
               },
-              files
+              files: sanitizedFiles
             });
             onSceneChange(payload);
           }}

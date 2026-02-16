@@ -601,8 +601,10 @@ export const ShoppingPage = ({
               return (
                 <li
                   key={item.id}
-                  className={`rounded-xl border border-brand-100 bg-brand-50/40 p-3 transition dark:border-slate-700 dark:bg-slate-800/70 ${
-                    isToggling ? "ring-2 ring-amber-300/80 shadow-[inset_0_0_0_1px_rgba(251,191,36,0.35)] opacity-80 cursor-wait" : ""
+                  className={`relative z-0 rounded-xl border border-slate-300 bg-white/88 p-3 text-slate-800 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-100 ${
+                    isToggling
+                      ? "ring-2 ring-amber-300/80 shadow-[inset_0_0_0_1px_rgba(251,191,36,0.35)] opacity-80 cursor-wait"
+                      : ""
                   }`}
                 >
                   <div className="flex items-center gap-2">
@@ -611,17 +613,26 @@ export const ShoppingPage = ({
                       disabled={busy || isToggling}
                       onCheckedChange={() => void handleToggleItem(item)}
                     />
-                    {isToggling ? <Loader2 className="h-4 w-4 animate-spin text-amber-500" /> : null}
+                    {isToggling ? (
+                      <Loader2 className="h-4 w-4 animate-spin text-amber-500" />
+                    ) : null}
                     <span
                       className={
-                        item.done ? "flex-1 text-slate-400 line-through" : "flex-1 text-slate-800 dark:text-slate-100"
+                        item.done
+                          ? "flex-1 text-slate-400 line-through"
+                          : "flex-1 text-slate-800 dark:text-slate-100"
                       }
                     >
                       {item.title}
                     </span>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
-                        <Button size="sm" variant="ghost" aria-label={t("shopping.itemActions")} disabled={busy}>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          aria-label={t("shopping.itemActions")}
+                          disabled={busy}
+                        >
                           <MoreHorizontal className="h-4 w-4" />
                         </Button>
                       </DropdownMenuTrigger>
@@ -646,10 +657,15 @@ export const ShoppingPage = ({
                       </Badge>
                     ))}
 
-                    {item.recurrence_interval_value && item.recurrence_interval_unit ? (
+                    {item.recurrence_interval_value &&
+                    item.recurrence_interval_unit ? (
                       <Badge className="bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-100">
                         {t("shopping.recursAfter", {
-                          value: formatRecurrence(item.recurrence_interval_value, item.recurrence_interval_unit, t)
+                          value: formatRecurrence(
+                            item.recurrence_interval_value,
+                            item.recurrence_interval_unit,
+                            t,
+                          ),
                         })}
                       </Badge>
                     ) : null}
@@ -658,7 +674,7 @@ export const ShoppingPage = ({
                   {item.done_at ? (
                     <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
                       {t("shopping.doneAt", {
-                        value: formatDateTime(item.done_at, language)
+                        value: formatDateTime(item.done_at, language),
                       })}
                     </p>
                   ) : null}
@@ -666,7 +682,7 @@ export const ShoppingPage = ({
                   {nextOpenAt ? (
                     <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
                       {t("shopping.reopensAt", {
-                        value: formatDateTime(nextOpenAt, language)
+                        value: formatDateTime(nextOpenAt, language),
                       })}
                     </p>
                   ) : null}
@@ -982,7 +998,7 @@ export const ShoppingPage = ({
             return (
               <li
                 key={item.id}
-                className={`rounded-xl border border-brand-100 bg-brand-50/40 p-3 transition dark:border-slate-700 dark:bg-slate-800/70 ${
+                className={`rounded-xl border border-brand-100 bg-white p-3 transition dark:border-slate-700 dark:bg-slate-900 ${
                   isToggling ? "ring-2 ring-amber-300/80 shadow-[inset_0_0_0_1px_rgba(251,191,36,0.35)] opacity-80 cursor-wait" : ""
                 }`}
               >

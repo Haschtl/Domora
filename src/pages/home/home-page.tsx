@@ -1,6 +1,21 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { CalendarCheck2, GripVertical, MoreHorizontal, Pencil, Plus, Receipt, ShoppingCart, Trash2, Wallet, X } from "lucide-react";
+import {
+  CalendarCheck2,
+  Check,
+  GripVertical,
+  CircleDot,
+  Info,
+  Loader2,
+  MoreHorizontal,
+  Pencil,
+  Plus,
+  Receipt,
+  ShoppingCart,
+  Trash2,
+  Wallet,
+  X
+} from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useTranslation } from "react-i18next";
@@ -395,7 +410,7 @@ export const HomePage = ({
   const [markdownDraft, setMarkdownDraft] = useState(effectiveMarkdown);
   const [whiteboardDraft, setWhiteboardDraft] = useState(whiteboardSceneJson);
   const [whiteboardError, setWhiteboardError] = useState<string | null>(null);
-  const [whiteboardStatus, setWhiteboardStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [whiteboardStatus, setWhiteboardStatus] = useState<"idle" | "saving" | "saved" | "unsaved" | "error">("idle");
   const whiteboardSaveTimerRef = useRef<number | null>(null);
   const lastSavedWhiteboardRef = useRef(whiteboardSceneJson);
   const canEdit = canEditLandingByRole(currentMember?.role ?? null);
@@ -1051,10 +1066,31 @@ export const HomePage = ({
   const whiteboardStatusLabel = useMemo(() => {
     if (whiteboardError) return whiteboardError;
     if (whiteboardStatus === "saving") return t("home.whiteboardSaving");
+    if (whiteboardStatus === "unsaved") return t("home.whiteboardUnsaved");
     if (whiteboardStatus === "saved") return t("home.whiteboardSaved");
     if (whiteboardStatus === "error") return t("home.whiteboardSaveError");
     return t("home.whiteboardIdle");
   }, [t, whiteboardError, whiteboardStatus]);
+
+  const whiteboardStatusIndicator = useMemo(() => {
+    if (whiteboardStatus === "saving") {
+      return <Loader2 className="h-4 w-4 animate-spin text-brand-600 dark:text-brand-300" />;
+    }
+    if (whiteboardStatus === "saved") {
+      return (
+        <Check className="h-4 w-4 text-emerald-600 dark:text-emerald-300" />
+      );
+    }
+    if (whiteboardStatus === "unsaved") {
+      return (
+        <CircleDot className="h-4 w-4 text-amber-500 dark:text-amber-300" />
+      );
+    }
+    if (whiteboardStatus === "error") {
+      return <X className="h-4 w-4 text-rose-500 dark:text-rose-300" />;
+    }
+    return null;
+  }, [whiteboardStatus]);
 
   useEffect(() => {
     setMarkdownDraft(getEffectiveLandingMarkdown(getSavedLandingMarkdown(household.landing_page_markdown), defaultLandingMarkdown));
@@ -1097,10 +1133,11 @@ export const HomePage = ({
     }
 
     setWhiteboardError(null);
-    setWhiteboardStatus("saving");
+          setWhiteboardStatus("unsaved");
     whiteboardSaveTimerRef.current = window.setTimeout(() => {
       void (async () => {
         try {
+          setWhiteboardStatus("saving");
           await onSaveWhiteboard(whiteboardDraft);
           lastSavedWhiteboardRef.current = whiteboardDraft;
           setWhiteboardStatus("saved");
@@ -1717,8 +1754,12 @@ export const HomePage = ({
               <CardTitle>{t("home.whiteboardTitle")}</CardTitle>
               <CardDescription>{t("home.whiteboardDescription")}</CardDescription>
             </div>
-            <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
-              {whiteboardStatusLabel}
+            <span
+              className="inline-flex items-center gap-2 text-xs font-medium text-slate-500 dark:text-slate-400"
+              aria-live="polite"
+            >
+              {whiteboardStatusIndicator}
+              <span className="hidden sm:inline">{whiteboardStatusLabel}</span>
             </span>
           </div>
         </CardHeader>

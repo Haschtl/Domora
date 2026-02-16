@@ -131,6 +131,7 @@ export const resources = {
         whiteboardIdle: "Automatisch gespeichert",
         whiteboardSaving: "Speichert...",
         whiteboardSaved: "Gespeichert",
+        whiteboardUnsaved: "Ungespeicherte Änderungen",
         whiteboardSaveError: "Speichern fehlgeschlagen",
         whiteboardTooLarge: "Whiteboard ist zu groß (max. 10 MB).",
         whiteboardError: "Whiteboard konnte nicht geladen werden.",
@@ -178,7 +179,8 @@ export const resources = {
         activityFinanceCreated: "Finanzeintrag „{{name}}“ mit {{amount}} €",
         activityCashAudit: "{{user}} hat einen Kassensturz gestartet",
         activityRoleChanged: "{{user}} hat jetzt die Rolle {{role}}",
-        activityPimpersReset: "{{user}} hat die Pimpers zurückgesetzt ({{total}} Personen)",
+        activityPimpersReset:
+          "{{user}} hat die Pimpers zurückgesetzt ({{total}} Personen)",
         activityAdminHintFallback:
           "Automatische Datenpflege hat Inkonsistenzen behoben.",
         landingTitle: "WG Landing Page",
@@ -312,7 +314,8 @@ export const resources = {
         stateImageUploadError: "Bild konnte nicht verarbeitet werden.",
         startDate: "Startdatum",
         gracePeriodLabel: "Kulanzzeit",
-        gracePeriodHint: "So viele Tage nach Fälligkeit zählt es noch nicht als verspätet.",
+        gracePeriodHint:
+          "So viele Tage nach Fälligkeit zählt es noch nicht als verspätet.",
         gracePeriodUnit: "Tage",
         gracePeriodPlaceholder: "1",
         frequencyDays: "Frequenz in Tagen",
@@ -333,8 +336,10 @@ export const resources = {
         rotationOrderPreviewTitle: "Reihenfolge-Varianten",
         rotationOrderPreviewTheoretical: "Theoretisch",
         rotationOrderPreviewFairness: "Mit Fairness",
-        rotationOrderPreviewFairnessProjection: "Mit Fairness + Theoretische Prognose",
-        rotationOrderPreviewFairnessExpected: "Mit Fairness + Erwartete Prognose",
+        rotationOrderPreviewFairnessProjection:
+          "Mit Fairness + Theoretische Prognose",
+        rotationOrderPreviewFairnessExpected:
+          "Mit Fairness + Erwartete Prognose",
         noMembers: "Keine Mitglieder verfügbar.",
         inRotation: "In Rotation",
         addToRotation: "Zur Rotation",
@@ -1009,8 +1014,7 @@ export const resources = {
         widgetFairnessHint:
           "Based on completed tasks (no laziness). 100 = evenly distributed.",
         widgetReliability: "Task reliability",
-        widgetReliabilityHint:
-          "Based on average delay. Lower delay = better.",
+        widgetReliabilityHint: "Based on average delay. Lower delay = better.",
         widgetExpensesByMonth: "Expenses per month and category",
         widgetFairnessByMember: "Fairness by member",
         widgetReliabilityByMember: "Reliability by member",
@@ -1019,6 +1023,7 @@ export const resources = {
         whiteboardIdle: "Auto-saved",
         whiteboardSaving: "Saving...",
         whiteboardSaved: "Saved",
+        whiteboardUnsaved:"Unsaved",
         whiteboardSaveError: "Save failed",
         whiteboardTooLarge: "Whiteboard is too large (max 10 MB).",
         whiteboardError: "Whiteboard could not be loaded.",
@@ -1217,8 +1222,10 @@ export const resources = {
         rotationOrderPreviewTitle: "Order variants",
         rotationOrderPreviewTheoretical: "Theoretical",
         rotationOrderPreviewFairness: "With fairness",
-        rotationOrderPreviewFairnessProjection: "With fairness + theoretical projection",
-        rotationOrderPreviewFairnessExpected: "With fairness + expected projection",
+        rotationOrderPreviewFairnessProjection:
+          "With fairness + theoretical projection",
+        rotationOrderPreviewFairnessExpected:
+          "With fairness + expected projection",
         noMembers: "No members available.",
         inRotation: "In rotation",
         addToRotation: "Add to rotation",
