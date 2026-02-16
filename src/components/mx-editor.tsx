@@ -14,7 +14,6 @@ import {
   currentListType$,
   iconComponentFor$,
   linkDialogState$,
-  onClickLinkCallback$,
   onWindowChange$,
   showLinkTitleField$,
   switchFromPreviewToLinkEdit$,
@@ -42,7 +41,6 @@ import {
 } from "@mdxeditor/editor";
 import { mergeRegister } from "@lexical/utils";
 import {
-  $createParagraphNode,
   CAN_REDO_COMMAND,
   CAN_UNDO_COMMAND,
   COMMAND_PRIORITY_CRITICAL,
@@ -51,6 +49,7 @@ import {
   UNDO_COMMAND
 } from "lexical";
 import { $createHeadingNode, $createQuoteNode } from "@lexical/rich-text";
+import { $createParagraphNode } from "lexical";
 import { Button } from "./ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "./ui/dialog";
 import { Input } from "./ui/input";
@@ -104,18 +103,18 @@ const DomoraUndoRedo = () => {
     return mergeRegister(
       activeEditor.registerCommand(
         CAN_UNDO_COMMAND,
-        (payload) => {
-          setCanUndo(payload);
-          return false;
-        },
+          (payload) => {
+            setCanUndo(payload === true);
+            return false;
+          },
         COMMAND_PRIORITY_CRITICAL
       ),
       activeEditor.registerCommand(
         CAN_REDO_COMMAND,
-        (payload) => {
-          setCanRedo(payload);
-          return false;
-        },
+          (payload) => {
+            setCanRedo(payload === true);
+            return false;
+          },
         COMMAND_PRIORITY_CRITICAL
       )
     );
@@ -181,12 +180,42 @@ const DomoraFormatToggles = () => {
   );
 };
 
+const DomoraListsToggle = () => {
+  const [currentListType, iconComponentFor] = useCellValues(currentListType$, iconComponentFor$);
+  const applyListType = usePublisher(applyListType$);
+  const t = useTranslation();
+
+  const items = [
+    { type: "bullet", title: t("toolbar.bulletedList", "Bulleted list"), icon: "format_list_bulleted" },
+    { type: "number", title: t("toolbar.numberedList", "Numbered list"), icon: "format_list_numbered" },
+    { type: "check", title: t("toolbar.checkList", "Check list"), icon: "format_list_checked" }
+  ] as const;
+
+  return (
+    <div className="inline-flex items-center gap-1">
+      {items.map((item) => {
+        const active = currentListType === item.type;
+        return (
+          <ToolbarIconButton
+            key={item.type}
+            label={item.title}
+            onClick={() => applyListType(active ? "" : item.type)}
+            active={active}
+          >
+            {iconComponentFor(item.icon)}
+          </ToolbarIconButton>
+        );
+      })}
+    </div>
+  );
+};
+
 const DomoraBlockTypeSelect = () => {
   const t = useTranslation();
   const currentBlockType = useCellValue(currentBlockType$);
   const activePlugins = useCellValue(activePlugins$);
   const allowedHeadingLevels = useCellValue(allowedHeadingLevels$);
-  const convertSelectionToNode = usePublisher(convertSelectionToNode$);
+  const convertSelectionToNode = usePublisher(convertSelectionToNode$) as (factory: () => unknown) => void;
   const hasQuote = activePlugins.includes("quote");
   const hasHeadings = activePlugins.includes("headings");
 
@@ -224,7 +253,7 @@ const DomoraBlockTypeSelect = () => {
                 break;
               default:
                 if (blockType.startsWith("h")) {
-                  convertSelectionToNode(() => $createHeadingNode(blockType));
+                  convertSelectionToNode(() => $createHeadingNode(blockType as "h1"));
                 }
             }
           }}
@@ -238,36 +267,6 @@ const DomoraBlockTypeSelect = () => {
       </TooltipTrigger>
       <TooltipContent>{t("toolbar.blockTypeSelect.selectBlockTypeTooltip", "Select block type")}</TooltipContent>
     </Tooltip>
-  );
-};
-
-const DomoraListsToggle = () => {
-  const [currentListType, iconComponentFor] = useCellValues(currentListType$, iconComponentFor$);
-  const applyListType = usePublisher(applyListType$);
-  const t = useTranslation();
-
-  const items = [
-    { type: "bullet", title: t("toolbar.bulletedList", "Bulleted list"), icon: "format_list_bulleted" },
-    { type: "number", title: t("toolbar.numberedList", "Numbered list"), icon: "format_list_numbered" },
-    { type: "check", title: t("toolbar.checkList", "Check list"), icon: "format_list_checked" }
-  ] as const;
-
-  return (
-    <div className="inline-flex items-center gap-1">
-      {items.map((item) => {
-        const active = currentListType === item.type;
-        return (
-          <ToolbarIconButton
-            key={item.type}
-            label={item.title}
-            onClick={() => applyListType(active ? "" : item.type)}
-            active={active}
-          >
-            {iconComponentFor(item.icon)}
-          </ToolbarIconButton>
-        );
-      })}
-    </div>
   );
 };
 
@@ -297,16 +296,8 @@ const DomoraToolbar = ({ children }: { children?: ReactNode }) => (
 );
 
 const DomoraLinkDialog = () => {
-  const [
-    linkDialogState,
-    iconComponentFor,
-    onClickLinkCallback,
-    showLinkTitleField,
-    activeEditor
-  ] = useCellValues(
+  const [linkDialogState, showLinkTitleField, activeEditor] = useCellValues(
     linkDialogState$,
-    iconComponentFor$,
-    onClickLinkCallback$,
     showLinkTitleField$,
     activeEditor$
   );
@@ -339,7 +330,7 @@ const DomoraLinkDialog = () => {
     };
   }, [publishWindowChange]);
 
-  if (linkDialogState.type === "inactive") return null;
+  if (linkDialogState.type === "inactive") return <></>;
 
   const closeDialog = () => {
     if (linkDialogState.type === "edit") {
@@ -424,12 +415,6 @@ const DomoraLinkDialog = () => {
               className="block rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
               target={linkDialogState.url.startsWith("http") ? "_blank" : undefined}
               rel={linkDialogState.url.startsWith("http") ? "noreferrer" : undefined}
-              onClick={(event) => {
-                if (onClickLinkCallback) {
-                  event.preventDefault();
-                  onClickLinkCallback(linkDialogState.url);
-                }
-              }}
             >
               <span className="break-all">{linkDialogState.url}</span>
             </a>
