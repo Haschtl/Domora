@@ -70,8 +70,8 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../../
 import { MemberAvatar } from "../../components/member-avatar";
 import { RecaptzCaptcha } from "../../components/recaptz-captcha";
 import { useSmartSuggestions } from "../../hooks/use-smart-suggestions";
-import { formatDateTime, formatShortDay, getLastMonthRange, isDueNow } from "../../lib/date";
-import { createDiceBearAvatarDataUri } from "../../lib/avatar";
+import { formatDateTime, formatShortDay, getLastMonthRange } from "../../lib/date";
+import { createDiceBearAvatarDataUri, getMemberAvatarSeed } from "../../lib/avatar";
 import { createMemberLabelGetter } from "../../lib/member-label";
 import { getMemberOfMonth } from "../../lib/task-leaderboard";
 import { supabase } from "../../lib/supabase";
@@ -498,6 +498,8 @@ export const TasksPage = ({
   const [pendingTaskAction, setPendingTaskAction] = useState<PendingTaskAction | null>(null);
   const [taskImageUploadError, setTaskImageUploadError] = useState<string | null>(null);
   const [editTaskImageUploadError, setEditTaskImageUploadError] = useState<string | null>(null);
+  const [taskDetailsOpen, setTaskDetailsOpen] = useState(false);
+  const [taskDetailsTask, setTaskDetailsTask] = useState<TaskItem | null>(null);
   const [frequencyMode, setFrequencyMode] = useState<"days" | "cron">("days");
   const [editFrequencyMode, setEditFrequencyMode] = useState<"days" | "cron">("days");
   const [complexFrequency, setComplexFrequency] = useState<ComplexFrequency>(() => createDefaultComplexFrequency());
@@ -1114,6 +1116,105 @@ export const TasksPage = ({
       })
       .filter((entry) => entry.scaled_pimpers !== null);
   }, [isLazinessEnabled, members, statsFilteredCompletions]);
+
+  const taskDetailsCompletions = useMemo(() => {
+    if (!taskDetailsTask) return [];
+    return completions
+      .filter((entry) => entry.task_id === taskDetailsTask.id)
+      .sort((a, b) => b.completed_at.localeCompare(a.completed_at));
+  }, [completions, taskDetailsTask]);
+  const taskDetailsStats = useMemo(() => {
+    if (!taskDetailsTask) return null;
+    const total = taskDetailsCompletions.length;
+    if (total === 0) {
+      return {
+        total,
+        avgDelayMinutes: 0,
+        onTimeRate: 0,
+        ratingCount: 0,
+        ratingAverage: null as number | null
+      };
+    }
+    let delaySum = 0;
+    let onTimeCount = 0;
+    let ratingCount = 0;
+    let ratingSum = 0;
+    taskDetailsCompletions.forEach((entry) => {
+      const delay = Math.max(0, entry.delay_minutes ?? 0);
+      delaySum += delay;
+      if (delay <= 0) onTimeCount += 1;
+      if (entry.rating_count && entry.rating_average != null) {
+        ratingCount += entry.rating_count;
+        ratingSum += entry.rating_average * entry.rating_count;
+      }
+    });
+    return {
+      total,
+      avgDelayMinutes: delaySum / total,
+      onTimeRate: onTimeCount / total,
+      ratingCount,
+      ratingAverage: ratingCount > 0 ? ratingSum / ratingCount : null
+    };
+  }, [taskDetailsCompletions, taskDetailsTask]);
+  const taskDetailsUserStats = useMemo(() => {
+    if (!taskDetailsTask) return [];
+    const byUser = new Map<
+      string,
+      {
+        userId: string;
+        totalPimpers: number;
+        totalCompletions: number;
+        onTimeCount: number;
+        delaySum: number;
+      }
+    >();
+    taskDetailsCompletions.forEach((entry) => {
+      const current =
+        byUser.get(entry.user_id) ??
+        {
+          userId: entry.user_id,
+          totalPimpers: 0,
+          totalCompletions: 0,
+          onTimeCount: 0,
+          delaySum: 0
+        };
+      const delay = Math.max(0, entry.delay_minutes ?? 0);
+      current.totalCompletions += 1;
+      current.totalPimpers += Math.max(0, entry.pimpers_earned ?? 0);
+      current.delaySum += delay;
+      if (delay <= 0) current.onTimeCount += 1;
+      byUser.set(entry.user_id, current);
+    });
+    return [...byUser.values()].map((entry) => ({
+      ...entry,
+      onTimeRate: entry.totalCompletions > 0 ? entry.onTimeCount / entry.totalCompletions : 0,
+      avgDelayMinutes: entry.totalCompletions > 0 ? entry.delaySum / entry.totalCompletions : 0
+    }));
+  }, [taskDetailsCompletions, taskDetailsTask]);
+  const taskDetailsKing = useMemo(() => {
+    if (taskDetailsUserStats.length === 0) return null;
+    return [...taskDetailsUserStats].sort((a, b) => {
+      if (b.totalPimpers !== a.totalPimpers) return b.totalPimpers - a.totalPimpers;
+      return a.avgDelayMinutes - b.avgDelayMinutes;
+    })[0];
+  }, [taskDetailsUserStats]);
+  const taskDetailsLoop = useMemo(() => {
+    if (!taskDetailsTask) return [];
+    const rotation = taskDetailsTask.rotation_user_ids ?? [];
+    if (rotation.length === 0) return [];
+    const intervalDays = Math.max(1, taskDetailsTask.frequency_days);
+    const startIndex = taskDetailsTask.assignee_id
+      ? rotation.indexOf(taskDetailsTask.assignee_id)
+      : 0;
+    const baseDue = new Date(taskDetailsTask.due_at);
+    const base = Number.isNaN(baseDue.getTime()) ? new Date() : baseDue;
+    return rotation.map((_, offset) => {
+      const index = startIndex >= 0 ? (startIndex + offset) % rotation.length : offset % rotation.length;
+      const memberId = rotation[index];
+      const date = new Date(base.getTime() + offset * intervalDays * 24 * 60 * 60 * 1000);
+      return { memberId, date };
+    });
+  }, [taskDetailsTask]);
   const sortedMemberRows = useMemo(
     () =>
       [...statsMemberRows].sort(
@@ -2812,10 +2913,18 @@ export const TasksPage = ({
 
             <div className="space-y-2">
               {visibleTasks.map((task) => {
-                const isDue =
-                  task.is_active && !task.done && isDueNow(task.due_at, task.grace_minutes);
-                const isAssignedToCurrentUser = task.assignee_id === userId;
+                const nowMs = Date.now();
                 const dueAtMs = new Date(task.due_at).getTime();
+                const graceMs = Math.max(0, task.grace_minutes ?? 0) * 60 * 1000;
+                const isWithinGrace =
+                  Number.isFinite(dueAtMs) && nowMs >= dueAtMs && nowMs <= dueAtMs + graceMs;
+                const isOverdue =
+                  Number.isFinite(dueAtMs) && nowMs > dueAtMs + graceMs;
+                const isDue =
+                  task.is_active &&
+                  !task.done &&
+                  (isWithinGrace || isOverdue);
+                const isAssignedToCurrentUser = task.assignee_id === userId;
                 const canCompleteEarly =
                   task.is_active &&
                   !task.done &&
@@ -2930,9 +3039,11 @@ export const TasksPage = ({
                             <TooltipTrigger asChild>
                               <Badge
                                 className={
-                                  isDue
+                                  isOverdue
                                     ? "whitespace-nowrap bg-rose-100 text-rose-800 dark:bg-rose-900 dark:text-rose-100"
-                                    : "whitespace-nowrap bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                                    : isWithinGrace
+                                      ? "whitespace-nowrap bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-100"
+                                      : "whitespace-nowrap bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200"
                                 }
                               >
                                 {dueChipText}
@@ -3097,6 +3208,14 @@ export const TasksPage = ({
                                 onClick={() => onStartEditTask(task)}
                               >
                                 {t("tasks.editTask")}
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() => {
+                                  setTaskDetailsTask(task);
+                                  setTaskDetailsOpen(true);
+                                }}
+                              >
+                                {t("tasks.details")}
                               </DropdownMenuItem>
                               <DropdownMenuItem
                                 onClick={() => onStartDeleteTask(task)}
@@ -4743,6 +4862,232 @@ export const TasksPage = ({
               >
                 {t("tasks.deleteTask")}
               </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog
+          open={taskDetailsOpen}
+          onOpenChange={(open) => {
+            setTaskDetailsOpen(open);
+            if (!open) setTaskDetailsTask(null);
+          }}
+        >
+          <DialogContent className="max-w-xl">
+            <DialogHeader>
+              <DialogTitle>
+                {t("tasks.detailsTitle", {
+                  title: taskDetailsTask?.title ?? t("tasks.fallbackTitle")
+                })}
+              </DialogTitle>
+              <DialogDescription>{t("tasks.detailsDescription")}</DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4">
+              <div className="rounded-xl border border-brand-100 bg-white/90 p-3 text-sm dark:border-slate-700 dark:bg-slate-900">
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                  {t("tasks.detailsNextLoop")}
+                </p>
+                {taskDetailsLoop.length > 0 ? (
+                  <ul className="space-y-1">
+                    {taskDetailsLoop.map((entry) => (
+                      <li key={`loop-${entry.memberId}-${entry.date.toISOString()}`} className="flex items-center justify-between gap-3">
+                        <div className="flex min-w-0 items-center gap-2">
+                          <MemberAvatar
+                            src={
+                              memberById.get(entry.memberId)?.avatar_url?.trim() ||
+                              createDiceBearAvatarDataUri(
+                                getMemberAvatarSeed(
+                                  entry.memberId,
+                                  memberById.get(entry.memberId)?.display_name
+                                ),
+                                memberById.get(entry.memberId)?.user_color
+                              )
+                            }
+                            alt={userLabel(entry.memberId)}
+                            isVacation={memberById.get(entry.memberId)?.vacation_mode ?? false}
+                            className="h-6 w-6 rounded-full border border-brand-200 dark:border-slate-700"
+                          />
+                          <span className="truncate text-slate-900 dark:text-slate-100">
+                            {userLabel(entry.memberId)}
+                          </span>
+                        </div>
+                        <span className="text-xs text-slate-500 dark:text-slate-400">
+                          {formatShortDay(entry.date.toISOString().slice(0, 10), language, entry.date.toISOString().slice(0, 10))}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    {t("tasks.detailsLoopEmpty")}
+                  </p>
+                )}
+              </div>
+
+              <div className="rounded-xl border border-brand-100 bg-white/90 p-3 text-sm dark:border-slate-700 dark:bg-slate-900">
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                  {t("tasks.detailsStats")}
+                </p>
+                {taskDetailsStats ? (
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <div className="rounded-lg border border-slate-100 bg-white p-2 text-xs text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
+                      <p className="font-semibold text-slate-900 dark:text-slate-100">
+                        {t("tasks.detailsStatsTotal")}
+                      </p>
+                      <p>{taskDetailsStats.total}</p>
+                    </div>
+                    <div className="rounded-lg border border-slate-100 bg-white p-2 text-xs text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
+                      <p className="font-semibold text-slate-900 dark:text-slate-100">
+                        {t("tasks.detailsStatsOnTime")}
+                      </p>
+                      <p>{Math.round(taskDetailsStats.onTimeRate * 100)}%</p>
+                    </div>
+                    <div className="rounded-lg border border-slate-100 bg-white p-2 text-xs text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
+                      <p className="font-semibold text-slate-900 dark:text-slate-100">
+                        {t("tasks.detailsStatsDelay")}
+                      </p>
+                      <p>{formatDelayLabel(taskDetailsStats.avgDelayMinutes)}</p>
+                    </div>
+                    <div className="rounded-lg border border-slate-100 bg-white p-2 text-xs text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
+                      <p className="font-semibold text-slate-900 dark:text-slate-100">
+                        {t("tasks.detailsStatsRating")}
+                      </p>
+                      <p>
+                        {taskDetailsStats.ratingAverage != null
+                          ? `${taskDetailsStats.ratingAverage.toFixed(2)} (${taskDetailsStats.ratingCount})`
+                          : "—"}
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-xs text-slate-500 dark:text-slate-400">{t("tasks.detailsStatsEmpty")}</p>
+                )}
+              </div>
+
+              <div className="rounded-xl border border-brand-100 bg-white/90 p-3 text-sm dark:border-slate-700 dark:bg-slate-900">
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                  {t("tasks.detailsHistory")}
+                </p>
+                {taskDetailsCompletions.length > 0 ? (
+                  <ul className="space-y-1">
+                    {taskDetailsCompletions.slice(0, 8).map((entry) => (
+                      <li key={`history-${entry.id}`} className="flex items-center justify-between gap-3 text-xs">
+                        <div className="min-w-0">
+                          <p className="truncate text-slate-900 dark:text-slate-100">
+                            {userLabel(entry.user_id)}
+                          </p>
+                          <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                            {formatDateTime(entry.completed_at, language, entry.completed_at)}
+                          </p>
+                        </div>
+                        <div className="shrink-0">
+                          <StarRating
+                            value={entry.my_rating ?? 0}
+                            displayValue={entry.rating_average ?? 0}
+                            disabled={
+                              busy ||
+                              !(
+                                entry.user_id !== userId &&
+                                taskDetailsCompletions[0]?.id === entry.id
+                              )
+                            }
+                            onChange={(rating) =>
+                              void onRateTaskCompletion(entry.id, rating)
+                            }
+                            getLabel={(rating) => t("tasks.rateAction", { rating })}
+                          />
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-xs text-slate-500 dark:text-slate-400">{t("tasks.detailsHistoryEmpty")}</p>
+                )}
+              </div>
+
+              <div className="rounded-xl border border-brand-100 bg-white/90 p-3 text-sm dark:border-slate-700 dark:bg-slate-900">
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                  {t("tasks.detailsKingTitle")}
+                </p>
+                {taskDetailsKing ? (
+                  <div className="flex items-center justify-between text-xs text-slate-600 dark:text-slate-300">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <MemberAvatar
+                        src={
+                          memberById.get(taskDetailsKing.userId)?.avatar_url?.trim() ||
+                          createDiceBearAvatarDataUri(
+                            getMemberAvatarSeed(
+                              taskDetailsKing.userId,
+                              memberById.get(taskDetailsKing.userId)?.display_name
+                            ),
+                            memberById.get(taskDetailsKing.userId)?.user_color
+                          )
+                        }
+                        alt={userLabel(taskDetailsKing.userId)}
+                        isVacation={memberById.get(taskDetailsKing.userId)?.vacation_mode ?? false}
+                        className="h-6 w-6 rounded-full border border-brand-200 dark:border-slate-700"
+                      />
+                      <span className="truncate font-semibold text-slate-900 dark:text-slate-100">
+                        {userLabel(taskDetailsKing.userId)}
+                      </span>
+                    </div>
+                    <span>
+                      {t("tasks.pimpersValue", { count: Number(taskDetailsKing.totalPimpers.toFixed(2)) })}
+                    </span>
+                  </div>
+                ) : (
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    {t("tasks.detailsKingEmpty")}
+                  </p>
+                )}
+              </div>
+
+              <div className="rounded-xl border border-brand-100 bg-white/90 p-3 text-sm dark:border-slate-700 dark:bg-slate-900">
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                  {t("tasks.detailsReliabilityTitle")}
+                </p>
+                {taskDetailsUserStats.length > 0 ? (
+                  <ul className="space-y-1 text-xs">
+                    {[...taskDetailsUserStats]
+                      .sort((a, b) => b.onTimeRate - a.onTimeRate || a.avgDelayMinutes - b.avgDelayMinutes)
+                      .map((entry) => (
+                        <li key={`reliability-${entry.userId}`} className="flex items-center justify-between gap-3">
+                          <div className="flex min-w-0 items-center gap-2">
+                            <MemberAvatar
+                              src={
+                                memberById.get(entry.userId)?.avatar_url?.trim() ||
+                                createDiceBearAvatarDataUri(
+                                  getMemberAvatarSeed(
+                                    entry.userId,
+                                    memberById.get(entry.userId)?.display_name
+                                  ),
+                                  memberById.get(entry.userId)?.user_color
+                                )
+                              }
+                              alt={userLabel(entry.userId)}
+                              isVacation={memberById.get(entry.userId)?.vacation_mode ?? false}
+                              className="h-5 w-5 rounded-full border border-brand-200 dark:border-slate-700"
+                            />
+                            <span className="truncate text-slate-900 dark:text-slate-100">
+                              {userLabel(entry.userId)}
+                            </span>
+                          </div>
+                          <span className="text-slate-500 dark:text-slate-400">
+                            {t("tasks.detailsReliabilityRate", {
+                              rate: Math.round(entry.onTimeRate * 100)
+                            })}{" "}
+                            · {t("tasks.detailsReliabilityDelay", { value: formatDelayLabel(entry.avgDelayMinutes) })}
+                          </span>
+                        </li>
+                      ))}
+                  </ul>
+                ) : (
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    {t("tasks.detailsReliabilityEmpty")}
+                  </p>
+                )}
+              </div>
             </div>
           </DialogContent>
         </Dialog>

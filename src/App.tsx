@@ -20,14 +20,13 @@ import { useTranslation } from "react-i18next";
 import { toast } from "react-toastify";
 import { isSupabaseConfigured } from "./lib/supabase";
 import { useForegroundPush } from "./hooks/useForegroundPush";
-import { isDueNow } from "./lib/date";
 import { getForegroundPushRoute } from "./lib/push-navigation";
 import type { AppTab } from "./lib/types";
 import { Button } from "./components/ui/button";
 import { Card, CardDescription, CardHeader, CardTitle } from "./components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "./components/ui/dialog";
 import { WorkspaceProvider } from "./context/workspace-context";
-import { useHouseholdEvents, useHouseholdTasks } from "./hooks/use-household-data";
+import { useHouseholdEvents, useHouseholdShoppingItems, useHouseholdTasks } from "./hooks/use-household-data";
 import { useTaskNotifications } from "./hooks/useTaskNotifications";
 import { useWorkspaceController } from "./hooks/useWorkspaceController";
 import { ensureHouseholdQueries } from "./lib/household-queries";
@@ -242,6 +241,8 @@ const AppLayout = () => {
     tab === "tasks" || tab === "home" || hasPrefetchedTasks || notificationPermission === "granted";
   const tasksQuery = useHouseholdTasks(activeHousehold?.id ?? null, shouldLoadTaskData);
   const tasks = tasksQuery.data ?? [];
+  const shoppingItemsQuery = useHouseholdShoppingItems(activeHousehold?.id ?? null);
+  const shoppingItems = shoppingItemsQuery.data ?? [];
   const eventsQuery = useHouseholdEvents(
     activeHousehold?.id ?? null,
     tab === "home" || notificationPermission === "granted"
@@ -292,7 +293,14 @@ const AppLayout = () => {
   }, [activeHousehold, queryClient, session]);
 
   const dueTasksBadge = useMemo(() => {
-    const dueTasks = tasks.filter((task) => task.is_active && !task.done && isDueNow(task.due_at, task.grace_minutes));
+    // eslint-disable-next-line react-hooks/purity
+    const nowMs = Date.now();
+    const dueTasks = tasks.filter((task) => {
+      if (!task.is_active || task.done) return false;
+      const dueAtMs = new Date(task.due_at).getTime();
+      if (!Number.isFinite(dueAtMs)) return false;
+      return nowMs >= dueAtMs;
+    });
     const allDue = dueTasks.length;
     const myDue = userId ? dueTasks.filter((task) => task.assignee_id === userId).length : 0;
     return {
@@ -301,6 +309,10 @@ const AppLayout = () => {
       label: `${myDue}/${allDue}`
     };
   }, [tasks, userId]);
+  const openShoppingCount = useMemo(
+    () => shoppingItems.filter((item) => !item.done).length,
+    [shoppingItems]
+  );
   const initialInviteCode = useMemo(() => {
     const params = new URLSearchParams(location.search);
     return (params.get("invite") ?? "").trim().toUpperCase();
@@ -785,6 +797,11 @@ const AppLayout = () => {
                               {dueTasksBadge.label}
                             </span>
                           ) : null}
+                          {item.id === "shopping" && openShoppingCount > 0 ? (
+                            <span className="absolute right-2 top-1 inline-flex min-h-5 items-center justify-center rounded-md border border-brand-200 bg-brand-500 px-1.5 text-[10px] font-semibold leading-none text-white dark:border-brand-700 dark:bg-brand-600">
+                              {openShoppingCount}
+                            </span>
+                          ) : null}
                         </button>
                       </li>
                     );
@@ -961,6 +978,11 @@ const AppLayout = () => {
                         {item.id === "tasks" && dueTasksBadge.allDue > 0 ? (
                           <span className="absolute right-1 top-1 inline-flex min-h-4 items-center justify-center rounded-md border border-brand-200 bg-brand-500 px-1 text-[9px] font-semibold leading-none text-white dark:border-brand-700 dark:bg-brand-600">
                             {dueTasksBadge.label}
+                          </span>
+                        ) : null}
+                        {item.id === "shopping" && openShoppingCount > 0 ? (
+                          <span className="absolute right-1 top-1 inline-flex min-h-4 items-center justify-center rounded-md border border-brand-200 bg-brand-500 px-1 text-[9px] font-semibold leading-none text-white dark:border-brand-700 dark:bg-brand-600">
+                            {openShoppingCount}
                           </span>
                         ) : null}
                       </button>
