@@ -57,7 +57,10 @@ serve(async (req) => {
     contentLength: req.headers.get("content-length") ?? null,
     userAgent: req.headers.get("user-agent") ?? null
   };
-  console.error(JSON.stringify(authDebug));
+  const debugEnabled = Deno.env.get("DEBUG_SEND_TASK_REMINDER") === "true";
+  if (debugEnabled) {
+    console.log(JSON.stringify(authDebug));
+  }
   if (!token) {
     console.error(
       JSON.stringify({
