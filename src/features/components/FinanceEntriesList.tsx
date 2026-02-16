@@ -1,10 +1,11 @@
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { FinanceEntry } from "../../lib/types";
 import { MoreHorizontal } from "lucide-react";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
+import { ReceiptPreviewDialog } from "../../components/receipt-preview-dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -64,6 +65,8 @@ export const FinanceEntriesList = ({
   virtualLayout = "absolute"
 }: FinanceEntriesListProps) => {
   const parentRef = useRef<HTMLDivElement>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewTitle, setPreviewTitle] = useState<string | null>(null);
   const virtualItemGap = 12;
   const virtualCount = header ? entries.length + 1 : entries.length;
   const rowVirtualizer = useVirtualizer({
@@ -136,14 +139,16 @@ export const FinanceEntriesList = ({
         <div className="min-w-0">
           <p className="text-xs text-slate-500 dark:text-slate-400">{paidByText(entry)}</p>
           {receiptImageUrl && receiptImageUrl(entry) ? (
-            <a
-              href={receiptImageUrl(entry) ?? "#"}
-              target="_blank"
-              rel="noreferrer"
+            <button
+              type="button"
               className="mt-1 inline-flex items-center text-xs text-brand-700 underline decoration-brand-300 underline-offset-2 hover:text-brand-600 dark:text-brand-300 dark:decoration-brand-700"
+              onClick={() => {
+                setPreviewUrl(receiptImageUrl(entry) ?? null);
+                setPreviewTitle(entry.description);
+              }}
             >
               {receiptLabel}
-            </a>
+            </button>
           ) : null}
         </div>
         {entryDateText ? (
@@ -163,6 +168,17 @@ export const FinanceEntriesList = ({
       <>
         {header ? <div className="mt-4">{header}</div> : null}
         <ul className="mt-4 list-none space-y-2">{entries.map((entry) => renderEntry(entry))}</ul>
+        <ReceiptPreviewDialog
+          open={Boolean(previewUrl)}
+          imageUrl={previewUrl}
+          title={previewTitle}
+          onOpenChange={(open) => {
+            if (!open) {
+              setPreviewUrl(null);
+              setPreviewTitle(null);
+            }
+          }}
+        />
       </>
     );
   }
@@ -220,6 +236,17 @@ export const FinanceEntriesList = ({
           );
         })}
       </div>
+      <ReceiptPreviewDialog
+        open={Boolean(previewUrl)}
+        imageUrl={previewUrl}
+        title={previewTitle}
+        onOpenChange={(open) => {
+          if (!open) {
+            setPreviewUrl(null);
+            setPreviewTitle(null);
+          }
+        }}
+      />
     </div>
   );
 };

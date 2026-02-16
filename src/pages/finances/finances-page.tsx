@@ -73,6 +73,7 @@ import { formatDateOnly, formatShortDay } from "../../lib/date";
 import { calculateBalancesByMember, calculateSettlementTransfers, splitAmountEvenly } from "../../lib/finance-math";
 import { createMemberLabelGetter, type MemberLabelCase } from "../../lib/member-label";
 import { MemberAvatar } from "../../components/member-avatar";
+import { ReceiptPreviewDialog } from "../../components/receipt-preview-dialog";
 import { FinanceEntriesList } from "../../features/components/FinanceEntriesList";
 import { FinanceHistoryCard } from "../../features/components/FinanceHistoryCard";
 import { useFinancesDerivedData } from "../../features/hooks/use-finances-derived-data";
@@ -384,6 +385,8 @@ export const FinancesPage = ({
   const [overviewEntrySearch, setOverviewEntrySearch] = useState("");
   const [savingOverviewMemberId, setSavingOverviewMemberId] = useState<string | null>(null);
   const [receiptUploadError, setReceiptUploadError] = useState<string | null>(null);
+  const [receiptPreviewUrl, setReceiptPreviewUrl] = useState<string | null>(null);
+  const [receiptPreviewTitle, setReceiptPreviewTitle] = useState<string | null>(null);
   const [previewDescription, setPreviewDescription] = useState("");
   const [previewAmountInput, setPreviewAmountInput] = useState("");
   const getDefaultFinanceSelectionIds = useCallback(() => {
@@ -1539,11 +1542,13 @@ export const FinancesPage = ({
             ) : null}
           </div>
           {field.state.value.trim().length > 0 ? (
-            <a
-              href={field.state.value}
-              target="_blank"
-              rel="noreferrer"
+            <button
+              type="button"
               className="inline-flex items-center gap-2 rounded-lg border border-brand-100 bg-white px-2 py-1 text-xs text-brand-700 hover:text-brand-600 dark:border-slate-700 dark:bg-slate-900 dark:text-brand-300"
+              onClick={() => {
+                setReceiptPreviewUrl(field.state.value);
+                setReceiptPreviewTitle(t("finances.receiptPreviewAlt"));
+              }}
             >
               <img
                 src={field.state.value}
@@ -1551,10 +1556,21 @@ export const FinancesPage = ({
                 className="h-8 w-8 rounded object-cover"
               />
               <span>{t("finances.receiptPreviewLink")}</span>
-            </a>
+            </button>
           ) : null}
         </div>
       )}
+    />
+    <ReceiptPreviewDialog
+      open={Boolean(receiptPreviewUrl)}
+      imageUrl={receiptPreviewUrl}
+      title={receiptPreviewTitle}
+      onOpenChange={(open) => {
+        if (!open) {
+          setReceiptPreviewUrl(null);
+          setReceiptPreviewTitle(null);
+        }
+      }}
     />
   );
   const onStartEditEntry = (entry: FinanceEntry) => {
