@@ -30,7 +30,7 @@ import { InputWithSuffix } from "../../components/ui/input-with-suffix";
 import { Label } from "../../components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
 import { Switch } from "../../components/ui/switch";
-import { getPushPreferences, upsertPushPreferences } from "../../lib/api";
+import { getPushPreferences, upsertHouseholdWhiteboard, upsertPushPreferences } from "../../lib/api";
 import { MemberAvatar } from "../../components/member-avatar";
 
 interface SettingsPageProps {
@@ -160,6 +160,10 @@ export const SettingsPage = ({
   const [formError, setFormError] = useState<string | null>(null);
   const [profileUploadError, setProfileUploadError] = useState<string | null>(null);
   const [householdUploadError, setHouseholdUploadError] = useState<string | null>(null);
+  const [whiteboardResetStatus, setWhiteboardResetStatus] = useState<string | null>(null);
+  const [whiteboardResetError, setWhiteboardResetError] = useState<string | null>(null);
+  const [whiteboardResetBusy, setWhiteboardResetBusy] = useState(false);
+  const [whiteboardResetOpen, setWhiteboardResetOpen] = useState(false);
   const [inviteCopied, setInviteCopied] = useState(false);
   const [vacationDialogOpen, setVacationDialogOpen] = useState(false);
   const [pendingVacationMode, setPendingVacationMode] = useState<boolean | null>(null);
@@ -608,6 +612,21 @@ export const SettingsPage = ({
   };
   const showMe = section === "me";
   const showHousehold = section === "household";
+  const handleClearWhiteboard = useCallback(async () => {
+    if (!isOwner || !household?.id || !userId) return;
+    setWhiteboardResetBusy(true);
+    setWhiteboardResetError(null);
+    setWhiteboardResetStatus(null);
+    try {
+      await upsertHouseholdWhiteboard(household.id, userId, "");
+      setWhiteboardResetStatus(t("settings.whiteboardClearSuccess"));
+      setWhiteboardResetOpen(false);
+    } catch {
+      setWhiteboardResetError(t("settings.whiteboardClearError"));
+    } finally {
+      setWhiteboardResetBusy(false);
+    }
+  }, [household.id, isOwner, t, userId]);
 
   useEffect(() => {
     if (!showHousehold || !isOwner) return;
@@ -1749,6 +1768,62 @@ export const SettingsPage = ({
                 {t("settings.householdSave")}
               </Button>
             </form>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {showHousehold ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>{t("settings.whiteboardTitle")}</CardTitle>
+            <CardDescription>
+              {isOwner
+                ? t("settings.whiteboardDescription")
+                : t("settings.householdOwnerOnlyHint")}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-sm text-slate-600 dark:text-slate-300">
+              {t("settings.whiteboardClearWarning")}
+            </p>
+            {whiteboardResetStatus ? (
+              <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-200">
+                {whiteboardResetStatus}
+              </p>
+            ) : null}
+            {whiteboardResetError ? (
+              <p className="rounded-lg border border-rose-300 bg-rose-50 px-3 py-2 text-xs text-rose-700 dark:border-rose-900 dark:bg-rose-950/60 dark:text-rose-200">
+                {whiteboardResetError}
+              </p>
+            ) : null}
+            <Dialog open={whiteboardResetOpen} onOpenChange={setWhiteboardResetOpen}>
+              <DialogTrigger asChild>
+                <Button type="button" variant="danger" disabled={!isOwner || whiteboardResetBusy}>
+                  {t("settings.whiteboardClearButton")}
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>{t("settings.whiteboardClearConfirmTitle")}</DialogTitle>
+                  <DialogDescription>{t("settings.whiteboardClearConfirmBody")}</DialogDescription>
+                </DialogHeader>
+                <div className="flex flex-wrap gap-2">
+                  <DialogClose asChild>
+                    <Button type="button" variant="ghost">
+                      {t("common.cancel")}
+                    </Button>
+                  </DialogClose>
+                  <Button
+                    type="button"
+                    variant="danger"
+                    disabled={whiteboardResetBusy}
+                    onClick={() => void handleClearWhiteboard()}
+                  >
+                    {t("settings.whiteboardClearConfirmAction")}
+                  </Button>
+                </div>
+              </DialogContent>
+            </Dialog>
           </CardContent>
         </Card>
       ) : null}

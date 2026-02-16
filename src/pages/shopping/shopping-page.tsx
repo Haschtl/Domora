@@ -29,6 +29,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { useSmartSuggestions } from "../../hooks/use-smart-suggestions";
 import { addRecurringIntervalToIso, formatDateTime, formatShortDay } from "../../lib/date";
 import { createMemberLabelGetter } from "../../lib/member-label";
+import { suggestCategoryLabel } from "../../lib/category-heuristics";
 import { useShoppingSuggestions, type ShoppingSuggestion } from "../../features/hooks/use-shopping-suggestions";
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarElement, Filler, Tooltip, Legend);
@@ -96,6 +97,7 @@ export const ShoppingPage = ({
   const [itemBeingEdited, setItemBeingEdited] = useState<ShoppingItem | null>(null);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [togglingItemIds, setTogglingItemIds] = useState<Set<string>>(() => new Set());
+  const [addItemTagsTouched, setAddItemTagsTouched] = useState(false);
   const [isMobileComposer, setIsMobileComposer] = useState(() =>
     typeof window !== "undefined" ? window.matchMedia("(max-width: 639px)").matches : false
   );
@@ -129,6 +131,7 @@ export const ShoppingPage = ({
       await onAdd(value.title, normalizeTags(value.tagsInput), recurrenceInterval);
       formApi.reset();
       setRecurrenceUnit("days");
+      setAddItemTagsTouched(false);
     }
   });
   const handleToggleItem = async (item: ShoppingItem) => {
@@ -218,6 +221,7 @@ export const ShoppingPage = ({
 
     const tagsToApply = matchedItem ? matchedItem.tags : suggestion.tags;
     form.setFieldValue("tagsInput", tagsToApply.join(", "));
+    setAddItemTagsTouched(false);
 
     if (matchedItem?.recurrence_interval_value && matchedItem.recurrence_interval_unit) {
       form.setFieldValue("recurrenceValue", String(matchedItem.recurrence_interval_value));
@@ -241,6 +245,14 @@ export const ShoppingPage = ({
     const matchedSuggestion = allSuggestions.find((entry) => entry.title.trim().toLocaleLowerCase() === normalizedTitle);
     if (matchedSuggestion && matchedSuggestion.tags.length > 0) {
       form.setFieldValue("tagsInput", matchedSuggestion.tags.join(", "));
+      return;
+    }
+
+    if (!addItemTagsTouched) {
+      const suggestion = suggestCategoryLabel(titleValue, language);
+      if (suggestion) {
+        form.setFieldValue("tagsInput", suggestion);
+      }
     }
   };
   const {
@@ -442,7 +454,10 @@ export const ShoppingPage = ({
                           <Label>{t("shopping.tagsLabel")}</Label>
                           <Input
                             value={tagField.state.value}
-                            onChange={(event) => tagField.handleChange(event.target.value)}
+                            onChange={(event) => {
+                              tagField.handleChange(event.target.value);
+                              setAddItemTagsTouched(true);
+                            }}
                             placeholder={t("shopping.tagsPlaceholder")}
                           />
                         </div>
@@ -904,7 +919,10 @@ export const ShoppingPage = ({
                   <Label>{t("shopping.tagsLabel")}</Label>
                   <Input
                     value={field.state.value}
-                    onChange={(event) => field.handleChange(event.target.value)}
+                    onChange={(event) => {
+                      field.handleChange(event.target.value);
+                      setAddItemTagsTouched(true);
+                    }}
                     placeholder={t("shopping.tagsPlaceholder")}
                   />
                 </div>

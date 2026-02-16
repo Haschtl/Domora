@@ -13,19 +13,19 @@ export const isSupabaseConfigured = Boolean(supabaseUrl && supabasePublishableKe
 
 if (import.meta.env.DEV) {
   const origin = typeof window !== "undefined" ? window.location.origin : "server";
-  const keyPreview =
-    supabasePublishableKey && supabasePublishableKey.length > 8
-      ? `${supabasePublishableKey.slice(0, 8)}…(${supabasePublishableKey.length})`
-      : supabasePublishableKey
-        ? `set(${supabasePublishableKey.length})`
-        : "missing";
+  // const keyPreview =
+  //   supabasePublishableKey && supabasePublishableKey.length > 8
+  //     ? `${supabasePublishableKey.slice(0, 8)}…(${supabasePublishableKey.length})`
+  //     : supabasePublishableKey
+  //       ? `set(${supabasePublishableKey.length})`
+  //       : "missing";
 
-  console.info("[Supabase Debug]", {
-    origin,
-    isConfigured: isSupabaseConfigured,
-    url: supabaseUrl ?? "missing",
-    key: keyPreview
-  });
+  // console.info("[Supabase Debug]", {
+  //   origin,
+  //   isConfigured: isSupabaseConfigured,
+  //   url: supabaseUrl ?? "missing",
+  //   key: keyPreview
+  // });
 
   if (typeof window !== "undefined") {
     Object.assign(window, {

@@ -1194,6 +1194,17 @@ export const TasksPage = ({
     if (minutes < 24 * 60) return t("tasks.delayHoursValue", { count: Number((minutes / 60).toFixed(1)) });
     return t("tasks.delayDaysValue", { count: Number((minutes / (24 * 60)).toFixed(1)) });
   };
+  const reliabilityRows = useMemo(() => {
+    const rows = [...backlogAndDelayStats.memberRows].sort(
+      (a, b) => a.averageDelayMinutes - b.averageDelayMinutes
+    );
+    const maxDelay = rows.reduce((max, row) => Math.max(max, row.averageDelayMinutes), 0);
+    return rows.map((row, index) => ({
+      ...row,
+      rank: index + 1,
+      score: maxDelay > 0 ? Math.round(100 * (1 - row.averageDelayMinutes / maxDelay)) : 100
+    }));
+  }, [backlogAndDelayStats.memberRows]);
 
   const visibleTasks = useMemo(() => {
     const active: TaskItem[] = [];
@@ -2762,6 +2773,61 @@ export const TasksPage = ({
           </Card>
         ) : null}
 
+        {showStats ? (
+          <Card className="rounded-xl border border-slate-300 bg-white/88 p-3 text-slate-800 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-100 mb-4">
+            <CardHeader>
+              <CardTitle>{t("tasks.reliabilityTitle")}</CardTitle>
+              <CardDescription>{t("tasks.reliabilityDescription")}</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {reliabilityRows.length > 0 ? (
+                <ul className="space-y-1">
+                  {reliabilityRows.map((row) => (
+                    <li
+                      key={`reliability-${row.userId}`}
+                      className="flex items-center justify-between gap-3 rounded-lg border border-brand-100 bg-white/90 p-2 text-sm dark:border-slate-700 dark:bg-slate-900"
+                    >
+                      <div className="flex min-w-0 items-center gap-2">
+                        <span className="w-6 text-xs font-semibold text-slate-500 dark:text-slate-400">
+                          #{row.rank}
+                        </span>
+                        <MemberAvatar
+                          src={
+                            memberById.get(row.userId)?.avatar_url?.trim() ||
+                            createDiceBearAvatarDataUri(
+                              userLabel(row.userId),
+                              memberById.get(row.userId)?.user_color
+                            )
+                          }
+                          alt={userLabel(row.userId)}
+                          isVacation={memberById.get(row.userId)?.vacation_mode ?? false}
+                          className="h-7 w-7 rounded-full border border-brand-200 dark:border-slate-700"
+                        />
+                        <span className="min-w-0 truncate text-slate-700 dark:text-slate-200">
+                          {userLabel(row.userId)}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-3 text-right text-xs">
+                        <span className="text-slate-500 dark:text-slate-400">
+                          {t("tasks.reliabilityAverageDelay", {
+                            value: formatDelayLabel(row.averageDelayMinutes)
+                          })}
+                        </span>
+                        <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-200">
+                          {t("tasks.reliabilityScore", { value: row.score })}
+                        </span>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-sm text-slate-500 dark:text-slate-400">
+                  {t("tasks.reliabilityNoData")}
+                </p>
+              )}
+            </CardContent>
+          </Card>
+        ) : null}
 
         {lazinessSettingsCard}
 

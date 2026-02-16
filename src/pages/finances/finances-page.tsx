@@ -60,6 +60,7 @@ import { SectionPanel } from "../../components/ui/section-panel";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
 import { Tooltip as RadixTooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../../components/ui/tooltip";
 import { useSmartSuggestions } from "../../hooks/use-smart-suggestions";
+import { suggestCategoryLabel } from "../../lib/category-heuristics";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -392,6 +393,7 @@ export const FinancesPage = ({
   }, [members]);
   const [previewPayerIds, setPreviewPayerIds] = useState<string[]>(() => getDefaultFinanceSelectionIds());
   const [previewBeneficiaryIds, setPreviewBeneficiaryIds] = useState<string[]>(() => getDefaultFinanceSelectionIds());
+  const [addEntryCategoryTouched, setAddEntryCategoryTouched] = useState(false);
   const addEntryComposerContainerRef = useRef<HTMLDivElement | null>(null);
   const addEntryRowRef = useRef<HTMLDivElement | null>(null);
   const ocrVideoRef = useRef<HTMLVideoElement | null>(null);
@@ -466,6 +468,7 @@ export const FinancesPage = ({
       setPreviewAmountInput("");
       setPreviewPayerIds(getDefaultFinanceSelectionIds());
       setPreviewBeneficiaryIds(getDefaultFinanceSelectionIds());
+      setAddEntryCategoryTouched(false);
     }
   });
   const archiveFilterForm = useForm({
@@ -1237,6 +1240,18 @@ export const FinancesPage = ({
     });
     return byKey;
   }, [entries, language]);
+  const applyCategorySuggestion = (descriptionValue: string, options?: { force?: boolean }) => {
+    const currentCategory = (addEntryForm.state.values.category ?? "").trim();
+    const shouldAutofillCategory =
+      options?.force === true ||
+      (!addEntryCategoryTouched &&
+        (currentCategory.length === 0 || currentCategory.toLocaleLowerCase(language) === "general"));
+    if (!shouldAutofillCategory) return;
+    const suggestion = suggestCategoryLabel(descriptionValue, language);
+    if (suggestion) {
+      addEntryForm.setFieldValue("category", suggestion);
+    }
+  };
   const tryAutofillNewEntryFromDescription = (
     descriptionValue: string,
     options?: { forceCategoryFromSuggestion?: boolean }
@@ -1244,7 +1259,10 @@ export const FinancesPage = ({
     const normalized = descriptionValue.trim().toLocaleLowerCase(language);
     if (!normalized) return;
     const matchedEntry = latestEntryByDescription.get(normalized);
-    if (!matchedEntry) return;
+    if (!matchedEntry) {
+      applyCategorySuggestion(descriptionValue);
+      return;
+    }
 
     const paidByUserIds = matchedEntry.paid_by_user_ids.length > 0 ? matchedEntry.paid_by_user_ids : [matchedEntry.paid_by];
     const beneficiaryUserIds =
@@ -1261,7 +1279,11 @@ export const FinancesPage = ({
       currentCategory.length === 0 ||
       currentCategory.toLocaleLowerCase(language) === "general";
     if (shouldAutofillCategory) {
-      addEntryForm.setFieldValue("category", matchedEntry.category || "general");
+      if (matchedEntry.category?.trim()) {
+        addEntryForm.setFieldValue("category", matchedEntry.category);
+      } else {
+        applyCategorySuggestion(descriptionValue, { force: true });
+      }
     }
     addEntryForm.setFieldValue("paidByUserIds", paidByUserIds);
     addEntryForm.setFieldValue("beneficiaryUserIds", beneficiaryUserIds);
@@ -1899,7 +1921,10 @@ export const FinancesPage = ({
                         <CategoryInputField
                           label={t("finances.subscriptionCategoryLabel")}
                           value={categoryField.state.value}
-                          onChange={categoryField.handleChange}
+                          onChange={(value) => {
+                            setAddEntryCategoryTouched(true);
+                            categoryField.handleChange(value);
+                          }}
                           placeholder={t("finances.categoryPlaceholder")}
                           suggestionsListId={categorySuggestionsListId}
                           hasSuggestions={categorySuggestions.length > 0}

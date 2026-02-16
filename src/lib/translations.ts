@@ -484,6 +484,12 @@ export const resources = {
         averageDelayOverall: "Ø Verzögerung gesamt",
         averageDelayByMember: "Ø Verzögerung pro Person",
         averageDelayByTask: "Ø Verzögerung pro Aufgabe",
+        reliabilityTitle: "Zuverlässigkeits-Ranking",
+        reliabilityDescription:
+          "Wer im Schnitt am pünktlichsten liefert (basierend auf der durchschnittlichen Verzögerung).",
+        reliabilityAverageDelay: "Ø {{value}}",
+        reliabilityScore: "{{value}} Punkte",
+        reliabilityNoData: "Noch keine erledigten Aufgaben vorhanden.",
         frequencyActualValue: "Tatsächlich sind's {{count}} Tage",
         forecastTitle: "Prognose bis nächster Turn",
         forecastDescription:
@@ -750,6 +756,18 @@ export const resources = {
         householdThemeTitle: "WG-Theme",
         householdThemeDescription:
           "Diese Einstellungen gelten für alle Mitglieder (Farben, Akzent, Radius, Schrift).",
+        whiteboardTitle: "WG-Whiteboard",
+        whiteboardDescription:
+          "Leere das gemeinsame Whiteboard für alle Mitglieder.",
+        whiteboardClearWarning:
+          "Das Whiteboard wird für alle Mitglieder geleert. Dieser Schritt kann nicht rückgängig gemacht werden.",
+        whiteboardClearButton: "Whiteboard leeren",
+        whiteboardClearConfirmTitle: "Whiteboard wirklich leeren?",
+        whiteboardClearConfirmBody:
+          "Alle Inhalte werden entfernt. Dieser Schritt kann nicht rückgängig gemacht werden.",
+        whiteboardClearConfirmAction: "Jetzt leeren",
+        whiteboardClearSuccess: "Whiteboard wurde geleert.",
+        whiteboardClearError: "Whiteboard konnte nicht geleert werden.",
         householdThemePresets: "Presets",
         householdThemePresetDefault: "Domora",
         householdThemePresetSunset: "Sonnenuntergang",
@@ -1346,6 +1364,12 @@ export const resources = {
         backlogOpen: "Open active tasks",
         averageDelayOverall: "Avg delay overall",
         averageDelayByMember: "Avg delay by member",
+        reliabilityTitle: "Reliability ranking",
+        reliabilityDescription:
+          "Who is most on time on average (based on average delay).",
+        reliabilityAverageDelay: "Avg {{value}}",
+        reliabilityScore: "{{value}} pts",
+        reliabilityNoData: "No completed tasks yet.",
         forecastTitle: "Projection until next turn",
         forecastDescription:
           "Expected pimpers per member until their next turn in the selected task.",
@@ -1606,6 +1630,18 @@ export const resources = {
         householdThemeTitle: "Household theme",
         householdThemeDescription:
           "These settings apply to all members (colors, accent, radius, font).",
+        whiteboardTitle: "Household whiteboard",
+        whiteboardDescription:
+          "Clear the shared whiteboard for everyone in the household.",
+        whiteboardClearWarning:
+          "This clears the whiteboard for all members. This action cannot be undone.",
+        whiteboardClearButton: "Clear whiteboard",
+        whiteboardClearConfirmTitle: "Clear the whiteboard?",
+        whiteboardClearConfirmBody:
+          "All whiteboard content will be removed and cannot be recovered.",
+        whiteboardClearConfirmAction: "Clear now",
+        whiteboardClearSuccess: "Whiteboard cleared.",
+        whiteboardClearError: "Could not clear the whiteboard.",
         householdThemePresets: "Presets",
         householdThemePresetDefault: "Domora",
         householdThemePresetSunset: "Sunset",
