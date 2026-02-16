@@ -1616,7 +1616,7 @@ begin
     raise exception 'Only the assigned person can complete this task';
   end if;
 
-  if v_task.due_at > now() then
+  if v_task.due_at > now() + interval '24 hours' then
     raise exception 'Task is not due yet';
   end if;
 

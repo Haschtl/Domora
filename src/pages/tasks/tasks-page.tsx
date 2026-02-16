@@ -2278,7 +2278,14 @@ export const TasksPage = ({
                 const isDue =
                   task.is_active && !task.done && isDueNow(task.due_at);
                 const isAssignedToCurrentUser = task.assignee_id === userId;
-                const canComplete = isDue && isAssignedToCurrentUser && !busy;
+                const dueAtMs = new Date(task.due_at).getTime();
+                const canCompleteEarly =
+                  task.is_active &&
+                  !task.done &&
+                  isAssignedToCurrentUser &&
+                  Number.isFinite(dueAtMs) &&
+                  dueAtMs - Date.now() <= 24 * 60 * 60 * 1000;
+                const canComplete = canCompleteEarly && !busy;
                 const canSkip = isDue && isAssignedToCurrentUser && !busy;
                 const canTakeover =
                   isDue &&
@@ -2337,14 +2344,14 @@ export const TasksPage = ({
                         ) : null}
                         <div
                           aria-hidden="true"
-                          className="absolute inset-0 bg-white/85 dark:bg-slate-900/80"
+                          className="absolute inset-0 bg-white/50 dark:bg-slate-900/50"
                         />
                       </>
                     ) : null}
                     <CardContent className="relative z-10">
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0 space-y-1">
-                          <div className="flex items-center gap-2">
+                          <div className="inline-flex max-w-full items-center gap-2 rounded-xl bg-white/70 px-2 py-1 backdrop-blur-md dark:bg-slate-900/60">
                             <MemberAvatar
                               src={assigneeAvatarSrc}
                               alt={assigneeText}
@@ -2368,14 +2375,14 @@ export const TasksPage = ({
                               >
                                 {task.title}
                               </p>
-                              <p className="text-xs text-slate-500 dark:text-slate-400">
+                              <p className="text-xs text-slate-600 dark:text-slate-300">
                                 {t("tasks.assignee", { value: assigneeText })}
                               </p>
                             </div>
                           </div>
 
                           {task.description ? (
-                            <p className="text-sm text-slate-600 dark:text-slate-300">
+                            <p className="rounded-lg bg-white/70 px-2 py-1 text-sm text-slate-700 backdrop-blur-md dark:bg-slate-900/60 dark:text-slate-200">
                               {task.description}
                             </p>
                           ) : null}
