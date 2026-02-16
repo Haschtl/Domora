@@ -135,7 +135,7 @@ const applyCompletionRating = (completion: TaskCompletion, rating: number) => {
   const currentCount = completion.rating_count ?? 0;
   const currentAverage = completion.rating_average ?? 0;
   let nextCount = currentCount;
-  let nextAverage = currentAverage;
+  let nextAverage:number;
 
   if (previousRating == null) {
     const total = currentAverage * currentCount;
@@ -352,7 +352,7 @@ export const useWorkspaceController = () => {
             ? [
                 {
                   queryKey: queryKeys.householdShoppingCompletions(activeHousehold.id),
-                  updater: (current) => {
+                  updater: (current:unknown) => {
                     const existing = (current as ShoppingItemCompletion[]) ?? [];
                     return [completion, ...existing];
                   }
