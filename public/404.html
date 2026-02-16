@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Domora</title>
+    <meta http-equiv="refresh" content="0; url=./" />
+    <script>
+      var pathname = location.pathname || "/";
+      var search = location.search || "";
+      var hash = location.hash || "";
+      var base = "/";
+      if (pathname.indexOf("/Domora/") === 0) {
+        base = "/Domora/";
+      }
+      var target = base + "index.html?redirect=" + encodeURIComponent(pathname + search + hash);
+      location.replace(target);
+    </script>
+  </head>
+  <body></body>
+</html>
