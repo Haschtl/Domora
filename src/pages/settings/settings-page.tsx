@@ -1051,18 +1051,6 @@ export const SettingsPage = ({
                     aria-label={t("settings.pushEnableAction")}
                   />
                 </div>
-                <div className="mt-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      void onReregisterPushToken();
-                    }}
-                    disabled={busy || firebaseMessagingSupport !== "supported"}
-                  >
-                    {t("settings.pushReregisterAction")}
-                  </Button>
-                </div>
                 <Accordion
                   type="single"
                   collapsible
@@ -1096,10 +1084,10 @@ export const SettingsPage = ({
                             </p>
                           ) : !isPushPreferencesReady ? (
                             <p className="text-slate-500 dark:text-slate-400">
-                              {t("settings.pushPreferencesLoading")}
-                            </p>
-                          ) : (
-                            <>
+                                  {t("settings.pushPreferencesLoading")}
+                                </p>
+                              ) : (
+                                <>
                               <div className="flex items-center justify-between">
                                 <div>
                                   <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
@@ -1253,8 +1241,23 @@ export const SettingsPage = ({
                                   {t("settings.pushPreferencesSave")}
                                 </Button>
                               </div>
-                            </>
-                          )}
+                                </>
+                              )}
+                        </div>
+                        <div className="flex items-center justify-between gap-2 border-t border-brand-100 pt-3 dark:border-slate-700">
+                          <p className="text-xs text-slate-500 dark:text-slate-400">
+                            {t("settings.pushReregisterAction")}
+                          </p>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              void onReregisterPushToken();
+                            }}
+                            disabled={busy || firebaseMessagingSupport !== "supported"}
+                          >
+                            {t("settings.pushReregisterAction")}
+                          </Button>
                         </div>
                       </div>
                     </AccordionContent>
