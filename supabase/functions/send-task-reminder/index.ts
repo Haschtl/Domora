@@ -5,6 +5,7 @@ type ReminderPayload = {
   taskId?: string;
   title?: string;
   body?: string;
+  accessToken?: string;
 };
 
 const corsHeaders = {
@@ -28,23 +29,55 @@ serve(async (req) => {
   }
 
   const supabase = createClient(supabaseUrl, supabaseServiceKey);
-  const authHeader = req.headers.get("Authorization") ?? "";
-  const token = authHeader.replace(/^Bearer\s+/i, "").trim();
-  if (!token) {
-    return new Response("Unauthorized", { status: 401, headers: corsHeaders });
-  }
-
-  const { data: authData } = await supabase.auth.getUser(token);
-  const user = authData?.user ?? null;
-  if (!user) {
-    return new Response("Unauthorized", { status: 401, headers: corsHeaders });
-  }
 
   let payload: ReminderPayload;
   try {
     payload = (await req.json()) as ReminderPayload;
   } catch {
     return new Response("Invalid payload", { status: 400, headers: corsHeaders });
+  }
+
+  const authHeader = req.headers.get("Authorization") ?? "";
+  const headerToken = authHeader.replace(/^Bearer\s+/i, "").trim();
+  const payloadToken = String(payload.accessToken ?? "").trim();
+  const token = headerToken || payloadToken;
+  const authDebug = {
+    tag: "send-task-reminder:auth-debug",
+    hasAuthHeader: Boolean(authHeader),
+    authHeaderPrefix: authHeader ? authHeader.slice(0, 12) : null,
+    hasHeaderToken: Boolean(headerToken),
+    hasPayloadToken: Boolean(payloadToken),
+    payloadKeys: Object.keys(payload ?? {}),
+    contentLength: req.headers.get("content-length") ?? null,
+    userAgent: req.headers.get("user-agent") ?? null
+  };
+  console.error(JSON.stringify(authDebug));
+  if (!token) {
+    console.error(
+      JSON.stringify({
+        tag: "send-task-reminder:unauthorized",
+        reason: "missing-token"
+      })
+    );
+    return new Response(JSON.stringify({ ok: false, error: "missing-token", debug: authDebug }), {
+      status: 401,
+      headers: { "content-type": "application/json", ...corsHeaders }
+    });
+  }
+
+  const { data: authData } = await supabase.auth.getUser(token);
+  const user = authData?.user ?? null;
+  if (!user) {
+    console.error(
+      JSON.stringify({
+        tag: "send-task-reminder:unauthorized",
+        reason: "invalid-user"
+      })
+    );
+    return new Response(JSON.stringify({ ok: false, error: "invalid-user", debug: authDebug }), {
+      status: 401,
+      headers: { "content-type": "application/json", ...corsHeaders }
+    });
   }
 
   const taskId = String(payload.taskId ?? "").trim();

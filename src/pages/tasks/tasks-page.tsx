@@ -890,7 +890,7 @@ export const TasksPage = ({
       const body = interpolateTemplate(rawBody, values);
 
       const { error } = await supabase.functions.invoke("send-task-reminder", {
-        body: { taskId: task.id, title, body },
+        body: { taskId: task.id, title, body, accessToken },
         headers: { Authorization: `Bearer ${accessToken}` }
       });
 
