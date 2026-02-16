@@ -314,6 +314,7 @@ const DomoraLinkDialog = () => {
 
   useEffect(() => {
     if (linkDialogState.type === "edit") {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setUrl(linkDialogState.url ?? "");
       setTitle(linkDialogState.title ?? "");
       setText(linkDialogState.text ?? "");
