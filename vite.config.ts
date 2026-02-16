@@ -1,6 +1,24 @@
+import { readFileSync } from "node:fs";
+import { execSync } from "node:child_process";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react-swc";
 import { VitePWA } from "vite-plugin-pwa";
+
+const packageJson = JSON.parse(
+  readFileSync(new URL("./package.json", import.meta.url), "utf-8")
+) as { version?: string };
+const resolveGitHash = () => {
+  try {
+    return execSync("git rev-parse --short HEAD", {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"]
+    }).trim();
+  } catch {
+    return "";
+  }
+};
+const gitHash = resolveGitHash();
+const appVersion = `${packageJson.version ?? "0.1.0"}${gitHash ? `+${gitHash}` : ""}`;
 
 const normalizeBasePath = (value: string) => {
   const withLeadingSlash = value.startsWith("/") ? value : `/${value}`;
@@ -24,6 +42,9 @@ const basePath = detectBasePath();
 
 export default defineConfig({
   base: basePath,
+  define: {
+    __APP_VERSION__: JSON.stringify(appVersion)
+  },
   build: {
     rollupOptions: {
       output: {

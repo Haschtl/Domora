@@ -967,6 +967,7 @@ export const resources = {
         inviteShareText: "Tritt meiner WG bei. Einladungscode: {{code}}",
         inviteQrAlt: "QR-Code zum Beitreten",
         inviteCopied: "Link kopiert",
+        appVersionLabel: "Version",
       },
       theme: {
         label: "Theme",
@@ -1928,6 +1929,7 @@ export const resources = {
         inviteShareText: "Join my household. Invite code: {{code}}",
         inviteQrAlt: "Join QR code",
         inviteCopied: "Link copied",
+        appVersionLabel: "Version",
       },
       theme: {
         label: "Theme",

@@ -158,6 +158,7 @@ export const SettingsPage = ({
   onDissolveHousehold
 }: SettingsPageProps) => {
   const { t } = useTranslation();
+  const appVersion = __APP_VERSION__;
   const isOwner = currentMember?.role === "owner";
 
   const [formError, setFormError] = useState<string | null>(null);
@@ -739,7 +740,9 @@ export const SettingsPage = ({
                               <Check className="h-4 w-4" />
                             </Button>
                           </TooltipTrigger>
-                          <TooltipContent>{t("settings.profileNameSave")}</TooltipContent>
+                          <TooltipContent>
+                            {t("settings.profileNameSave")}
+                          </TooltipContent>
                         </Tooltip>
                       </TooltipProvider>
                     </div>
@@ -807,7 +810,9 @@ export const SettingsPage = ({
                             <Check className="h-4 w-4" />
                           </Button>
                         </TooltipTrigger>
-                        <TooltipContent>{t("settings.profileColorSave")}</TooltipContent>
+                        <TooltipContent>
+                          {t("settings.profileColorSave")}
+                        </TooltipContent>
                       </Tooltip>
                     </TooltipProvider>
                   </div>
@@ -881,11 +886,15 @@ export const SettingsPage = ({
                                   <Camera className="h-3.5 w-3.5" />
                                 </button>
                               </TooltipTrigger>
-                              <TooltipContent>{t("tasks.stateImageCameraButton")}</TooltipContent>
+                              <TooltipContent>
+                                {t("tasks.stateImageCameraButton")}
+                              </TooltipContent>
                             </Tooltip>
                           </div>
                         </TooltipTrigger>
-                        <TooltipContent>{t("settings.profileImageUploadLabel")}</TooltipContent>
+                        <TooltipContent>
+                          {t("settings.profileImageUploadLabel")}
+                        </TooltipContent>
                       </Tooltip>
                     </TooltipProvider>
                     {profileImageUrl ? (
@@ -941,23 +950,25 @@ export const SettingsPage = ({
                   }
                 }}
               >
-                  <DialogContent>
-                    <DialogHeader>
-                      <DialogTitle>{t("settings.vacationModeConfirmTitle")}</DialogTitle>
-                      <DialogDescription>
-                        {pendingVacationMode
-                          ? t("settings.vacationModeConfirmEnable")
-                          : t("settings.vacationModeConfirmDisable")}
-                      </DialogDescription>
-                    </DialogHeader>
-                    {pendingVacationMode && dueTasksAssignedCount > 0 ? (
-                      <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-100">
-                        {t("settings.vacationModeOpenTasksWarning", {
-                          count: dueTasksAssignedCount
-                        })}
-                      </p>
-                    ) : null}
-                    <div className="mt-4 flex justify-end gap-2">
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>
+                      {t("settings.vacationModeConfirmTitle")}
+                    </DialogTitle>
+                    <DialogDescription>
+                      {pendingVacationMode
+                        ? t("settings.vacationModeConfirmEnable")
+                        : t("settings.vacationModeConfirmDisable")}
+                    </DialogDescription>
+                  </DialogHeader>
+                  {pendingVacationMode && dueTasksAssignedCount > 0 ? (
+                    <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-100">
+                      {t("settings.vacationModeOpenTasksWarning", {
+                        count: dueTasksAssignedCount,
+                      })}
+                    </p>
+                  ) : null}
+                  <div className="mt-4 flex justify-end gap-2">
                     <DialogClose asChild>
                       <Button variant="ghost">{t("common.cancel")}</Button>
                     </DialogClose>
@@ -1416,11 +1427,15 @@ export const SettingsPage = ({
                                 <Camera className="h-4 w-4" />
                               </button>
                             </TooltipTrigger>
-                            <TooltipContent>{t("tasks.stateImageCameraButton")}</TooltipContent>
+                            <TooltipContent>
+                              {t("tasks.stateImageCameraButton")}
+                            </TooltipContent>
                           </Tooltip>
                         </div>
                       </TooltipTrigger>
-                      <TooltipContent>{t("settings.householdImageUploadLabel")}</TooltipContent>
+                      <TooltipContent>
+                        {t("settings.householdImageUploadLabel")}
+                      </TooltipContent>
                     </Tooltip>
                   </TooltipProvider>
                   {householdImageUrl ? (
@@ -1578,15 +1593,27 @@ export const SettingsPage = ({
                         className="inline-flex items-center gap-2 rounded-full border border-brand-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-brand-50/60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
                         onClick={() => {
                           if (!isOwner || busy) return;
-                          householdForm.setFieldValue("themePrimaryColor", preset.primary);
-                          householdForm.setFieldValue("themeAccentColor", preset.accent);
-                          householdForm.setFieldValue("themeFontFamily", preset.font);
-                          householdForm.setFieldValue("themeRadiusScale", preset.radius);
+                          householdForm.setFieldValue(
+                            "themePrimaryColor",
+                            preset.primary,
+                          );
+                          householdForm.setFieldValue(
+                            "themeAccentColor",
+                            preset.accent,
+                          );
+                          householdForm.setFieldValue(
+                            "themeFontFamily",
+                            preset.font,
+                          );
+                          householdForm.setFieldValue(
+                            "themeRadiusScale",
+                            preset.radius,
+                          );
                           applyThemePreview({
                             themePrimaryColor: preset.primary,
                             themeAccentColor: preset.accent,
                             themeFontFamily: preset.font,
-                            themeRadiusScale: preset.radius
+                            themeRadiusScale: preset.radius,
                           });
                         }}
                         disabled={!isOwner || busy}
@@ -1612,7 +1639,9 @@ export const SettingsPage = ({
                       handleChange: (value: string) => void;
                     }) => (
                       <div className="space-y-1">
-                        <Label>{t("settings.householdThemePrimaryLabel")}</Label>
+                        <Label>
+                          {t("settings.householdThemePrimaryLabel")}
+                        </Label>
                         <div className="flex items-center gap-2">
                           <input
                             type="color"
@@ -1620,17 +1649,23 @@ export const SettingsPage = ({
                             disabled={busy || !isOwner}
                             onChange={(event) => {
                               field.handleChange(event.target.value);
-                              applyThemePreview({ themePrimaryColor: event.target.value });
+                              applyThemePreview({
+                                themePrimaryColor: event.target.value,
+                              });
                             }}
                             className="h-9 w-10 cursor-pointer rounded border border-brand-200 bg-white p-0 dark:border-slate-700 dark:bg-slate-900"
-                            aria-label={t("settings.householdThemePrimaryLabel")}
+                            aria-label={t(
+                              "settings.householdThemePrimaryLabel",
+                            )}
                           />
                           <Input
                             value={field.state.value}
                             disabled={busy || !isOwner}
                             onChange={(event) => {
                               field.handleChange(event.target.value);
-                              applyThemePreview({ themePrimaryColor: event.target.value });
+                              applyThemePreview({
+                                themePrimaryColor: event.target.value,
+                              });
                             }}
                             placeholder="#1f8a7f"
                           />
@@ -1653,7 +1688,9 @@ export const SettingsPage = ({
                             disabled={busy || !isOwner}
                             onChange={(event) => {
                               field.handleChange(event.target.value);
-                              applyThemePreview({ themeAccentColor: event.target.value });
+                              applyThemePreview({
+                                themeAccentColor: event.target.value,
+                              });
                             }}
                             className="h-9 w-10 cursor-pointer rounded border border-brand-200 bg-white p-0 dark:border-slate-700 dark:bg-slate-900"
                             aria-label={t("settings.householdThemeAccentLabel")}
@@ -1663,7 +1700,9 @@ export const SettingsPage = ({
                             disabled={busy || !isOwner}
                             onChange={(event) => {
                               field.handleChange(event.target.value);
-                              applyThemePreview({ themeAccentColor: event.target.value });
+                              applyThemePreview({
+                                themeAccentColor: event.target.value,
+                              });
                             }}
                             placeholder="#14b8a6"
                           />
@@ -1685,64 +1724,116 @@ export const SettingsPage = ({
                           value={field.state.value}
                           onChange={(event) => {
                             field.handleChange(event.target.value);
-                            applyThemePreview({ themeFontFamily: event.target.value });
+                            applyThemePreview({
+                              themeFontFamily: event.target.value,
+                            });
                           }}
                           disabled={busy || !isOwner}
                         >
                           <option
                             value='"Space Grotesk", "Segoe UI", sans-serif'
-                            style={{ fontFamily: '"Space Grotesk", "Segoe UI", sans-serif' }}
+                            style={{
+                              fontFamily:
+                                '"Space Grotesk", "Segoe UI", sans-serif',
+                            }}
                           >
                             Space Grotesk
                           </option>
-                          <option value='"Inter", "Segoe UI", sans-serif' style={{ fontFamily: '"Inter", "Segoe UI", sans-serif' }}>
+                          <option
+                            value='"Inter", "Segoe UI", sans-serif'
+                            style={{
+                              fontFamily: '"Inter", "Segoe UI", sans-serif',
+                            }}
+                          >
                             Inter
                           </option>
-                          <option value='"Manrope", "Segoe UI", sans-serif' style={{ fontFamily: '"Manrope", "Segoe UI", sans-serif' }}>
+                          <option
+                            value='"Manrope", "Segoe UI", sans-serif'
+                            style={{
+                              fontFamily: '"Manrope", "Segoe UI", sans-serif',
+                            }}
+                          >
                             Manrope
                           </option>
-                          <option value='"Sora", "Segoe UI", sans-serif' style={{ fontFamily: '"Sora", "Segoe UI", sans-serif' }}>
+                          <option
+                            value='"Sora", "Segoe UI", sans-serif'
+                            style={{
+                              fontFamily: '"Sora", "Segoe UI", sans-serif',
+                            }}
+                          >
                             Sora
                           </option>
                           <option
                             value='"Plus Jakarta Sans", "Segoe UI", sans-serif'
-                            style={{ fontFamily: '"Plus Jakarta Sans", "Segoe UI", sans-serif' }}
+                            style={{
+                              fontFamily:
+                                '"Plus Jakarta Sans", "Segoe UI", sans-serif',
+                            }}
                           >
                             Plus Jakarta Sans
                           </option>
                           <option
                             value='"IBM Plex Sans", "Segoe UI", sans-serif'
-                            style={{ fontFamily: '"IBM Plex Sans", "Segoe UI", sans-serif' }}
+                            style={{
+                              fontFamily:
+                                '"IBM Plex Sans", "Segoe UI", sans-serif',
+                            }}
                           >
                             IBM Plex Sans
                           </option>
-                          <option value='"Fira Sans", "Segoe UI", sans-serif' style={{ fontFamily: '"Fira Sans", "Segoe UI", sans-serif' }}>
+                          <option
+                            value='"Fira Sans", "Segoe UI", sans-serif'
+                            style={{
+                              fontFamily: '"Fira Sans", "Segoe UI", sans-serif',
+                            }}
+                          >
                             Fira Sans
                           </option>
-                          <option value='"Rubik", "Segoe UI", sans-serif' style={{ fontFamily: '"Rubik", "Segoe UI", sans-serif' }}>
+                          <option
+                            value='"Rubik", "Segoe UI", sans-serif'
+                            style={{
+                              fontFamily: '"Rubik", "Segoe UI", sans-serif',
+                            }}
+                          >
                             Rubik
                           </option>
-                          <option value='"Nunito", "Segoe UI", sans-serif' style={{ fontFamily: '"Nunito", "Segoe UI", sans-serif' }}>
+                          <option
+                            value='"Nunito", "Segoe UI", sans-serif'
+                            style={{
+                              fontFamily: '"Nunito", "Segoe UI", sans-serif',
+                            }}
+                          >
                             Nunito
                           </option>
                           <option
                             value='"Source Sans 3", "Segoe UI", sans-serif'
-                            style={{ fontFamily: '"Source Sans 3", "Segoe UI", sans-serif' }}
+                            style={{
+                              fontFamily:
+                                '"Source Sans 3", "Segoe UI", sans-serif',
+                            }}
                           >
                             Source Sans 3
                           </option>
                           <option
                             value='"Merriweather", "Georgia", serif'
-                            style={{ fontFamily: '"Merriweather", "Georgia", serif' }}
+                            style={{
+                              fontFamily: '"Merriweather", "Georgia", serif',
+                            }}
                           >
                             Merriweather
                           </option>
-                          <option value='"Lora", "Georgia", serif' style={{ fontFamily: '"Lora", "Georgia", serif' }}>
+                          <option
+                            value='"Lora", "Georgia", serif'
+                            style={{ fontFamily: '"Lora", "Georgia", serif' }}
+                          >
                             Lora
                           </option>
                           <option
                             value='"Playfair Display", "Georgia", serif'
-                            style={{ fontFamily: '"Playfair Display", "Georgia", serif' }}
+                            style={{
+                              fontFamily:
+                                '"Playfair Display", "Georgia", serif',
+                            }}
                           >
                             Playfair Display
                           </option>
@@ -1768,7 +1859,9 @@ export const SettingsPage = ({
                           value={field.state.value}
                           onChange={(event) => {
                             field.handleChange(event.target.value);
-                            applyThemePreview({ themeRadiusScale: event.target.value });
+                            applyThemePreview({
+                              themeRadiusScale: event.target.value,
+                            });
                           }}
                           placeholder="1.0"
                           disabled={busy || !isOwner}
@@ -1823,16 +1916,27 @@ export const SettingsPage = ({
                 {whiteboardResetError}
               </p>
             ) : null}
-            <Dialog open={whiteboardResetOpen} onOpenChange={setWhiteboardResetOpen}>
+            <Dialog
+              open={whiteboardResetOpen}
+              onOpenChange={setWhiteboardResetOpen}
+            >
               <DialogTrigger asChild>
-                <Button type="button" variant="danger" disabled={!isOwner || whiteboardResetBusy}>
+                <Button
+                  type="button"
+                  variant="danger"
+                  disabled={!isOwner || whiteboardResetBusy}
+                >
                   {t("settings.whiteboardClearButton")}
                 </Button>
               </DialogTrigger>
               <DialogContent>
                 <DialogHeader>
-                  <DialogTitle>{t("settings.whiteboardClearConfirmTitle")}</DialogTitle>
-                  <DialogDescription>{t("settings.whiteboardClearConfirmBody")}</DialogDescription>
+                  <DialogTitle>
+                    {t("settings.whiteboardClearConfirmTitle")}
+                  </DialogTitle>
+                  <DialogDescription>
+                    {t("settings.whiteboardClearConfirmBody")}
+                  </DialogDescription>
                 </DialogHeader>
                 <div className="flex flex-wrap gap-2">
                   <DialogClose asChild>
@@ -1882,12 +1986,14 @@ export const SettingsPage = ({
                     : t("settings.tenantsMakeOwner");
                   const displayLabel = memberLabel(member.user_id);
                   const commonAreaLabel =
-                    member.common_area_factor != null ? `${Math.round(member.common_area_factor * 100)}%` : "—";
+                    member.common_area_factor != null
+                      ? `${Math.round(member.common_area_factor * 100)}%`
+                      : "—";
                   const avatarUrl =
                     member.avatar_url?.trim() ||
                     createDiceBearAvatarDataUri(
                       getMemberAvatarSeed(member.user_id, member.display_name),
-                      member.user_color
+                      member.user_color,
                     );
 
                   return (
@@ -1929,9 +2035,14 @@ export const SettingsPage = ({
                                     ? "border-amber-300 bg-amber-100 text-amber-900 hover:bg-amber-200 dark:border-amber-700 dark:bg-amber-900/40 dark:text-amber-200 dark:hover:bg-amber-900/60"
                                     : undefined
                                 }
-                                disabled={busy || !isOwner || canDemoteLastOwner}
+                                disabled={
+                                  busy || !isOwner || canDemoteLastOwner
+                                }
                                 onClick={() => {
-                                  void onSetMemberRole(member.user_id, nextRole);
+                                  void onSetMemberRole(
+                                    member.user_id,
+                                    nextRole,
+                                  );
                                 }}
                                 aria-label={roleLabel}
                               >
@@ -1963,7 +2074,9 @@ export const SettingsPage = ({
                                 </span>
                               </Button>
                             </TooltipTrigger>
-                            <TooltipContent>{t("settings.tenantsKick")}</TooltipContent>
+                            <TooltipContent>
+                              {t("settings.tenantsKick")}
+                            </TooltipContent>
                           </Tooltip>
                         </TooltipProvider>
                       </div>
@@ -2010,7 +2123,9 @@ export const SettingsPage = ({
                             />
                           </div>
                         </TooltipTrigger>
-                        <TooltipContent>{t("settings.inviteQrAlt")}</TooltipContent>
+                        <TooltipContent>
+                          {t("settings.inviteQrAlt")}
+                        </TooltipContent>
                       </Tooltip>
                     </TooltipProvider>
 
@@ -2149,6 +2264,12 @@ export const SettingsPage = ({
             </div>
           </CardContent>
         </Card>
+      ) : null}
+
+      {showMe ? (
+        <span className="text-xs font-semibold w-full text-center flex justify-center text-slate-900/50 dark:text-slate-100/50">
+          {appVersion}
+        </span>
       ) : null}
     </div>
   );
