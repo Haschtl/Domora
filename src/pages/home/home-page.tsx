@@ -25,7 +25,9 @@ import { formatDateTime } from "../../lib/date";
 import { createMemberLabelGetter } from "../../lib/member-label";
 import { calculateBalancesByMember } from "../../lib/finance-math";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../../components/ui/tooltip";
-import { ExcalidrawBoard } from "../../components/excalidraw-board";
+const ExcalidrawBoardLazy = lazy(() =>
+  import("../../components/excalidraw-board").then((module) => ({ default: module.ExcalidrawBoard }))
+);
 import { ErrorBoundary } from "../../components/error-boundary";
 import type {
   BucketItem,
@@ -1770,14 +1772,22 @@ export const HomePage = ({
               </div>
             }
           >
-            <ExcalidrawBoard
-              sceneJson={whiteboardDraft}
-              onSceneChange={(nextValue) => {
-                setWhiteboardDraft(nextValue);
-              }}
-              className="rounded-xl border border-brand-100 bg-white dark:border-slate-700"
-              height={560}
-            />
+            <Suspense
+              fallback={
+                <div className="flex h-[560px] items-center justify-center rounded-xl border border-brand-100 bg-white/70 text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-300">
+                  {t("common.loading")}
+                </div>
+              }
+            >
+              <ExcalidrawBoardLazy
+                sceneJson={whiteboardDraft}
+                onSceneChange={(nextValue) => {
+                  setWhiteboardDraft(nextValue);
+                }}
+                className="rounded-xl border border-brand-100 bg-white dark:border-slate-700"
+                height={560}
+              />
+            </Suspense>
           </ErrorBoundary>
         </CardContent>
       </Card>
