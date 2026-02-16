@@ -7,6 +7,7 @@ import {
   getHouseholdEvents,
   getHouseholdMemberPimpers,
   getHouseholdMembers,
+  getHouseholdWhiteboard,
   getShoppingCompletions,
   getShoppingItems,
   getTaskCompletions,
@@ -58,6 +59,10 @@ export const householdQueryOptions = {
   householdEvents: (householdId: string) => ({
     queryKey: queryKeys.householdEvents(householdId),
     queryFn: () => getHouseholdEvents(householdId)
+  }),
+  householdWhiteboard: (householdId: string) => ({
+    queryKey: queryKeys.householdWhiteboard(householdId),
+    queryFn: () => getHouseholdWhiteboard(householdId)
   })
 };
 

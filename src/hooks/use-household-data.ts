@@ -6,6 +6,7 @@ import type {
   FinanceEntry,
   FinanceSubscription,
   HouseholdEvent,
+  HouseholdWhiteboard,
   HouseholdMemberPimpers,
   ShoppingItem,
   ShoppingItemCompletion,
@@ -94,5 +95,21 @@ export const useHouseholdEvents = (householdId: string | null, enabled = true) =
     ...(householdId
       ? householdQueryOptions.householdEvents(householdId)
       : { queryKey: ["household", "none", "events"], ...emptyArrayQuery<HouseholdEvent>() }),
+    enabled: Boolean(householdId) && enabled
+  });
+
+export const useHouseholdWhiteboard = (householdId: string | null, enabled = true) =>
+  useQuery<HouseholdWhiteboard>({
+    ...(householdId
+      ? householdQueryOptions.householdWhiteboard(householdId)
+      : {
+          queryKey: ["household", "none", "whiteboard"],
+          queryFn: async () => ({
+            household_id: "none",
+            scene_json: "",
+            updated_by: null,
+            updated_at: new Date(0).toISOString()
+          })
+        }),
     enabled: Boolean(householdId) && enabled
   });

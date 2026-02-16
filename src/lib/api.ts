@@ -16,6 +16,7 @@ import type {
   FinanceSubscription,
   FinanceSubscriptionRecurrence,
   HouseholdEvent,
+  HouseholdWhiteboard,
   Household,
   HouseholdMember,
   HouseholdMemberPimpers,
@@ -205,12 +206,20 @@ const householdEventSchema = z.object({
     "finance_created",
     "role_changed",
     "cash_audit_requested",
-    "admin_hint"
+    "admin_hint",
+    "pimpers_reset"
   ]),
   actor_user_id: z.string().uuid().nullable().optional().transform((value) => value ?? null),
   subject_user_id: z.string().uuid().nullable().optional().transform((value) => value ?? null),
   payload: z.record(z.string(), z.unknown()).default({}),
   created_at: z.string().min(1)
+});
+
+const householdWhiteboardSchema = z.object({
+  household_id: z.string().uuid(),
+  scene_json: z.string().max(10 * 1024 * 1024).default(""),
+  updated_by: z.string().uuid().nullable().optional().transform((value) => value ?? null),
+  updated_at: z.string().min(1)
 });
 
 const financeEntrySchema = z.object({
@@ -301,6 +310,10 @@ const normalizeTaskCompletion = (row: Record<string, unknown>): TaskCompletion =
 
 const normalizeHouseholdEvent = (row: Record<string, unknown>): HouseholdEvent => ({
   ...householdEventSchema.parse(row)
+});
+
+const normalizeHouseholdWhiteboard = (row: Record<string, unknown>): HouseholdWhiteboard => ({
+  ...householdWhiteboardSchema.parse(row)
 });
 
 const normalizeFinanceEntry = (row: Record<string, unknown>): FinanceEntry => ({
@@ -748,6 +761,49 @@ export const updateHouseholdLandingPage = async (
 
   if (error) throw error;
   return normalizeHousehold(data as Record<string, unknown>);
+};
+
+export const getHouseholdWhiteboard = async (householdId: string): Promise<HouseholdWhiteboard> => {
+  const validatedHouseholdId = z.string().uuid().parse(householdId);
+  const { data, error } = await supabase
+    .from("household_whiteboards")
+    .select("household_id,scene_json,updated_by,updated_at")
+    .eq("household_id", validatedHouseholdId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) {
+    return {
+      household_id: validatedHouseholdId,
+      scene_json: "",
+      updated_by: null,
+      updated_at: new Date(0).toISOString()
+    };
+  }
+  return normalizeHouseholdWhiteboard(data as Record<string, unknown>);
+};
+
+export const upsertHouseholdWhiteboard = async (
+  householdId: string,
+  userId: string,
+  sceneJson: string
+): Promise<HouseholdWhiteboard> => {
+  const parsedHouseholdId = z.string().uuid().parse(householdId);
+  const parsedUserId = z.string().uuid().parse(userId);
+  const parsedScene = z.string().max(10 * 1024 * 1024).parse(sceneJson);
+  const { data, error } = await supabase
+    .from("household_whiteboards")
+    .upsert(
+      {
+        household_id: parsedHouseholdId,
+        scene_json: parsedScene,
+        updated_by: parsedUserId
+      },
+      { onConflict: "household_id" }
+    )
+    .select("household_id,scene_json,updated_by,updated_at")
+    .single();
+  if (error) throw error;
+  return normalizeHouseholdWhiteboard(data as Record<string, unknown>);
 };
 
 export const updateMemberSettings = async (

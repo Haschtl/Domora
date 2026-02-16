@@ -197,6 +197,18 @@ export const useWorkspaceData = () => {
         {
           event: "*",
           schema: "public",
+          table: "household_whiteboards",
+          filter: `household_id=eq.${activeHouseholdId}`
+        },
+        () => {
+          void queryClient.invalidateQueries({ queryKey: queryKeys.householdWhiteboard(activeHouseholdId) });
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
           table: "households",
           filter: `id=eq.${activeHouseholdId}`
         },

@@ -174,6 +174,13 @@ export interface HouseholdEvent {
   created_at: string;
 }
 
+export interface HouseholdWhiteboard {
+  household_id: string;
+  scene_json: string;
+  updated_by: string | null;
+  updated_at: string;
+}
+
 export interface NewTaskInput {
   title: string;
   description: string;

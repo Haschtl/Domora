@@ -30,6 +30,7 @@ import {
   updateFinanceSubscription,
   updateHouseholdSettings,
   updateHouseholdLandingPage,
+  upsertHouseholdWhiteboard,
   updateTaskActiveState,
   updateTask,
   takeoverTask,
@@ -549,6 +550,18 @@ export const useWorkspaceController = () => {
     [activeHousehold, executeAction, invalidateWorkspace, queryClient, t, userId]
   );
 
+  const onUpdateHouseholdWhiteboard = useCallback(
+    async (sceneJson: string) => {
+      if (!activeHousehold || !userId) return;
+
+      await executeAction(async () => {
+        const updated = await upsertHouseholdWhiteboard(activeHousehold.id, userId, sceneJson);
+        queryClient.setQueryData(queryKeys.householdWhiteboard(activeHousehold.id), updated);
+      });
+    },
+    [activeHousehold, executeAction, queryClient, userId]
+  );
+
   const onUpdateMemberSettings = useCallback(
     async (input: { roomSizeSqm: number | null; commonAreaFactor: number }) => {
       if (!activeHousehold || !userId) return;
@@ -752,6 +765,7 @@ export const useWorkspaceController = () => {
     onRequestCashAudit,
     onEnableNotifications,
     onUpdateHomeMarkdown,
+    onUpdateHouseholdWhiteboard,
     onUpdateHousehold,
     onUpdateMemberSettings,
     onUpdateMemberTaskLaziness,

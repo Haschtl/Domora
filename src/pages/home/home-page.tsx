@@ -11,6 +11,8 @@ import { formatDateTime } from "../../lib/date";
 import { createMemberLabelGetter } from "../../lib/member-label";
 import { calculateBalancesByMember } from "../../lib/finance-math";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../../components/ui/tooltip";
+import { ExcalidrawBoard } from "../../components/excalidraw-board";
+import { ErrorBoundary } from "../../components/error-boundary";
 import type {
   BucketItem,
   CashAuditRequest,
@@ -62,11 +64,13 @@ interface HomePageProps {
   financeEntries: FinanceEntry[];
   cashAuditRequests: CashAuditRequest[];
   householdEvents: HouseholdEvent[];
+  whiteboardSceneJson: string;
   userLabel: string | undefined | null;
   busy: boolean;
   mobileTabBarVisible?: boolean;
   onSelectHousehold: (householdId: string) => void;
   onSaveLandingMarkdown: (markdown: string) => Promise<void>;
+  onSaveWhiteboard: (sceneJson: string) => Promise<void>;
   onAddBucketItem: (input: { title: string; descriptionMarkdown: string; suggestedDates: string[] }) => Promise<void>;
   onToggleBucketItem: (item: BucketItem) => Promise<void>;
   onUpdateBucketItem: (item: BucketItem, input: { title: string; descriptionMarkdown: string; suggestedDates: string[] }) => Promise<void>;
@@ -90,6 +94,8 @@ const LANDING_WIDGET_COMPONENTS: Array<{ key: LandingWidgetKey; tag: string }> =
   { key: "fairness-by-member", tag: "LandingWidgetFairnessByMember" },
   { key: "reliability-by-member", tag: "LandingWidgetReliabilityByMember" }
 ];
+
+const MAX_WHITEBOARD_BYTES = 10 * 1024 * 1024;
 const widgetTokenFromKey = (key: LandingWidgetKey) => `{{widget:${key}}}`;
 
 const convertLandingTokensToEditorJsx = (markdown: string) => {
@@ -304,11 +310,13 @@ export const HomePage = ({
   financeEntries,
   cashAuditRequests,
   householdEvents,
+  whiteboardSceneJson,
   userLabel,
   busy,
   mobileTabBarVisible = true,
   onSelectHousehold,
   onSaveLandingMarkdown,
+  onSaveWhiteboard,
   onAddBucketItem,
   onToggleBucketItem,
   onUpdateBucketItem,
@@ -385,6 +393,11 @@ export const HomePage = ({
   const savedMarkdown = getSavedLandingMarkdown(household.landing_page_markdown);
   const effectiveMarkdown = getEffectiveLandingMarkdown(savedMarkdown, defaultLandingMarkdown);
   const [markdownDraft, setMarkdownDraft] = useState(effectiveMarkdown);
+  const [whiteboardDraft, setWhiteboardDraft] = useState(whiteboardSceneJson);
+  const [whiteboardError, setWhiteboardError] = useState<string | null>(null);
+  const [whiteboardStatus, setWhiteboardStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const whiteboardSaveTimerRef = useRef<number | null>(null);
+  const lastSavedWhiteboardRef = useRef(whiteboardSceneJson);
   const canEdit = canEditLandingByRole(currentMember?.role ?? null);
   const prefetchEditor = useCallback(() => {
     void import("../../components/mx-editor");
@@ -1035,10 +1048,24 @@ export const HomePage = ({
     [renderLandingWidget, t]
   );
 
+  const whiteboardStatusLabel = useMemo(() => {
+    if (whiteboardError) return whiteboardError;
+    if (whiteboardStatus === "saving") return t("home.whiteboardSaving");
+    if (whiteboardStatus === "saved") return t("home.whiteboardSaved");
+    if (whiteboardStatus === "error") return t("home.whiteboardSaveError");
+    return t("home.whiteboardIdle");
+  }, [t, whiteboardError, whiteboardStatus]);
+
   useEffect(() => {
     setMarkdownDraft(getEffectiveLandingMarkdown(getSavedLandingMarkdown(household.landing_page_markdown), defaultLandingMarkdown));
     setIsEditingLanding(false);
   }, [defaultLandingMarkdown, household.id, household.landing_page_markdown]);
+  useEffect(() => {
+    setWhiteboardDraft(whiteboardSceneJson);
+    lastSavedWhiteboardRef.current = whiteboardSceneJson;
+    setWhiteboardStatus("idle");
+    setWhiteboardError(null);
+  }, [household.id, whiteboardSceneJson]);
   useEffect(() => {
     const updateWidth = () => {
       const next =
@@ -1052,6 +1079,43 @@ export const HomePage = ({
     window.addEventListener("resize", updateWidth);
     return () => window.removeEventListener("resize", updateWidth);
   }, [isMobileBucketComposer]);
+  useEffect(() => {
+    if (whiteboardSaveTimerRef.current) {
+      window.clearTimeout(whiteboardSaveTimerRef.current);
+      whiteboardSaveTimerRef.current = null;
+    }
+
+    if (whiteboardDraft === lastSavedWhiteboardRef.current) {
+      setWhiteboardStatus("idle");
+      return;
+    }
+
+    if (whiteboardDraft.length > MAX_WHITEBOARD_BYTES) {
+      setWhiteboardError(t("home.whiteboardTooLarge"));
+      setWhiteboardStatus("error");
+      return;
+    }
+
+    setWhiteboardError(null);
+    setWhiteboardStatus("saving");
+    whiteboardSaveTimerRef.current = window.setTimeout(() => {
+      void (async () => {
+        try {
+          await onSaveWhiteboard(whiteboardDraft);
+          lastSavedWhiteboardRef.current = whiteboardDraft;
+          setWhiteboardStatus("saved");
+        } catch {
+          setWhiteboardStatus("error");
+        }
+      })();
+    }, 1200);
+    return () => {
+      if (whiteboardSaveTimerRef.current) {
+        window.clearTimeout(whiteboardSaveTimerRef.current);
+        whiteboardSaveTimerRef.current = null;
+      }
+    };
+  }, [onSaveWhiteboard, t, whiteboardDraft]);
   useEffect(() => {
     if (typeof window === "undefined") return;
     const mediaQuery = window.matchMedia("(max-width: 639px)");
@@ -1225,26 +1289,34 @@ export const HomePage = ({
                   })();
                 }}
               >
-                <Suspense
+                <ErrorBoundary
                   fallback={
-                    <div className="rounded-xl border border-dashed border-brand-200 bg-brand-50/40 px-4 py-8 text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-300">
-                      {t("common.loading")}
+                    <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-6 text-sm text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-200">
+                      {t("home.editorError")}
                     </div>
                   }
                 >
-                  <MXEditorLazy
-                    value={convertLandingTokensToEditorJsx(markdownDraft)}
-                    onChange={(nextValue) =>
-                      setMarkdownDraft(convertEditorJsxToLandingTokens(nextValue))
+                  <Suspense
+                    fallback={
+                      <div className="rounded-xl border border-dashed border-brand-200 bg-brand-50/40 px-4 py-8 text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-300">
+                        {t("common.loading")}
+                      </div>
                     }
-                    placeholder={t("home.markdownPlaceholder")}
-                    chrome="flat"
-                    insertOptions={landingInsertOptionsForEditor}
-                    insertPlaceholder={t("home.insertWidgetPlaceholder")}
-                    insertButtonLabel={t("home.insertWidgetAction")}
-                    jsxComponentDescriptors={landingWidgetJsxDescriptors}
-                  />
-                </Suspense>
+                  >
+                    <MXEditorLazy
+                      value={convertLandingTokensToEditorJsx(markdownDraft)}
+                      onChange={(nextValue) =>
+                        setMarkdownDraft(convertEditorJsxToLandingTokens(nextValue))
+                      }
+                      placeholder={t("home.markdownPlaceholder")}
+                      chrome="flat"
+                      insertOptions={landingInsertOptionsForEditor}
+                      insertPlaceholder={t("home.insertWidgetPlaceholder")}
+                      insertButtonLabel={t("home.insertWidgetAction")}
+                      jsxComponentDescriptors={landingWidgetJsxDescriptors}
+                    />
+                  </Suspense>
+                </ErrorBoundary>
                 <div className="flex justify-end gap-2">
                   <Button
                     type="button"
@@ -1637,6 +1709,38 @@ export const HomePage = ({
           </CardContent>
         </Card>
       ) : null}
+
+      <Card className="mt-6 rounded-xl border border-slate-300 bg-white/90 p-3 text-slate-800 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-100">
+        <CardHeader className="gap-1">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <CardTitle>{t("home.whiteboardTitle")}</CardTitle>
+              <CardDescription>{t("home.whiteboardDescription")}</CardDescription>
+            </div>
+            <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
+              {whiteboardStatusLabel}
+            </span>
+          </div>
+        </CardHeader>
+        <CardContent className="pt-2">
+          <ErrorBoundary
+            fallback={
+              <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-6 text-sm text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-200">
+                {t("home.whiteboardError")}
+              </div>
+            }
+          >
+            <ExcalidrawBoard
+              sceneJson={whiteboardDraft}
+              onSceneChange={(nextValue) => {
+                setWhiteboardDraft(nextValue);
+              }}
+              className="rounded-xl border border-brand-100 bg-white dark:border-slate-700"
+              height={560}
+            />
+          </ErrorBoundary>
+        </CardContent>
+      </Card>
 
       <Dialog
         open={pendingCompleteTask !== null}

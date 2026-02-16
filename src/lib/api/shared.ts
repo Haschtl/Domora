@@ -4,6 +4,7 @@ import type {
   CashAuditRequest,
   FinanceEntry,
   HouseholdEvent,
+  HouseholdWhiteboard,
   Household,
   HouseholdMember,
   ShoppingItem,
@@ -162,12 +163,20 @@ const householdEventSchema = z.object({
     "finance_created",
     "role_changed",
     "cash_audit_requested",
-    "admin_hint"
+    "admin_hint",
+    "pimpers_reset"
   ]),
   actor_user_id: z.string().uuid().nullable().optional().transform((value) => value ?? null),
   subject_user_id: z.string().uuid().nullable().optional().transform((value) => value ?? null),
   payload: z.record(z.string(), z.unknown()).default({}),
   created_at: z.string().min(1)
+});
+
+const householdWhiteboardSchema = z.object({
+  household_id: z.string().uuid(),
+  scene_json: z.string().max(10 * 1024 * 1024).default(""),
+  updated_by: z.string().uuid().nullable().optional().transform((value) => value ?? null),
+  updated_at: z.string().min(1)
 });
 
 const financeEntrySchema = z.object({
@@ -232,6 +241,10 @@ export const normalizeTaskCompletion = (row: Record<string, unknown>): TaskCompl
 
 export const normalizeHouseholdEvent = (row: Record<string, unknown>): HouseholdEvent => ({
   ...householdEventSchema.parse(row)
+});
+
+export const normalizeHouseholdWhiteboard = (row: Record<string, unknown>): HouseholdWhiteboard => ({
+  ...householdWhiteboardSchema.parse(row)
 });
 
 export const normalizeFinanceEntry = (row: Record<string, unknown>): FinanceEntry => ({

@@ -175,6 +175,14 @@ create table if not exists household_events (
   created_at timestamptz not null default now()
 );
 
+create table if not exists household_whiteboards (
+  household_id uuid primary key references households(id) on delete cascade,
+  scene_json text not null default '',
+  updated_by uuid references auth.users(id) on delete set null,
+  updated_at timestamptz not null default now(),
+  check (char_length(scene_json) <= 10485760)
+);
+
 create table if not exists finance_entries (
   id uuid primary key default gen_random_uuid(),
   household_id uuid not null references households(id) on delete cascade,
@@ -338,6 +346,10 @@ alter column theme_radius_scale set not null;
 
 alter table tasks add column if not exists last_due_notification_at timestamptz;
 
+alter table household_whiteboards add column if not exists scene_json text not null default '';
+alter table household_whiteboards add column if not exists updated_by uuid references auth.users(id) on delete set null;
+alter table household_whiteboards add column if not exists updated_at timestamptz not null default now();
+
 create or replace function set_updated_at()
 returns trigger
 language plpgsql
@@ -361,6 +373,11 @@ for each row execute function set_updated_at();
 drop trigger if exists trg_push_preferences_updated_at on push_preferences;
 create trigger trg_push_preferences_updated_at
 before update on push_preferences
+for each row execute function set_updated_at();
+
+drop trigger if exists trg_household_whiteboards_updated_at on household_whiteboards;
+create trigger trg_household_whiteboards_updated_at
+before update on household_whiteboards
 for each row execute function set_updated_at();
 
 alter table push_tokens enable row level security;
@@ -1059,6 +1076,16 @@ begin
     alter table user_profiles
       add constraint user_profiles_user_color_format_check
       check (user_color is null or user_color ~ '^#[0-9a-f]{6}$');
+  end if;
+
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'household_whiteboards_scene_json_size_check'
+  ) then
+    alter table household_whiteboards
+      add constraint household_whiteboards_scene_json_size_check
+      check (char_length(scene_json) <= 10485760);
   end if;
 end;
 $$;
@@ -2129,6 +2156,7 @@ alter table household_member_pimpers enable row level security;
 alter table task_completions enable row level security;
 alter table task_completion_ratings enable row level security;
 alter table household_events enable row level security;
+alter table household_whiteboards enable row level security;
 alter table finance_entries enable row level security;
 alter table cash_audit_requests enable row level security;
 alter table finance_subscriptions enable row level security;
@@ -2352,6 +2380,25 @@ with check (
   is_household_member(household_id)
   and (actor_user_id is null or auth.uid() = actor_user_id)
 );
+
+drop policy if exists household_whiteboards_select on household_whiteboards;
+create policy household_whiteboards_select on household_whiteboards
+for select
+to authenticated
+using (is_household_member(household_id));
+
+drop policy if exists household_whiteboards_upsert on household_whiteboards;
+create policy household_whiteboards_upsert on household_whiteboards
+for insert
+to authenticated
+with check (is_household_member(household_id) and (updated_by is null or auth.uid() = updated_by));
+
+drop policy if exists household_whiteboards_update on household_whiteboards;
+create policy household_whiteboards_update on household_whiteboards
+for update
+to authenticated
+using (is_household_member(household_id))
+with check (is_household_member(household_id) and (updated_by is null or auth.uid() = updated_by));
 
 drop policy if exists finance_entries_all on finance_entries;
 drop policy if exists finance_entries_select on finance_entries;

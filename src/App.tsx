@@ -265,7 +265,8 @@ const AppLayout = () => {
         "cashAuditRequests",
         "financeSubscriptions",
         "memberPimpers",
-        "householdEvents"
+        "householdEvents",
+        "householdWhiteboard"
       ]);
     };
 

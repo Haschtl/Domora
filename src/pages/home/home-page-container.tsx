@@ -6,7 +6,8 @@ import {
   useHouseholdEvents,
   useHouseholdFinances,
   useHouseholdTaskCompletions,
-  useHouseholdTasks
+  useHouseholdTasks,
+  useHouseholdWhiteboard
 } from "../../hooks/use-household-data";
 
 interface HomePageContainerProps {
@@ -31,7 +32,8 @@ export const HomePageContainer = ({ section }: HomePageContainerProps) => {
     onUpdateBucketItem,
     onDeleteBucketItem,
     onToggleBucketDateVote,
-    onCompleteTask
+    onCompleteTask,
+    onUpdateHouseholdWhiteboard
   } = useWorkspace();
 
   const bucketQuery = useHouseholdBucketItems(activeHousehold?.id ?? null);
@@ -40,6 +42,7 @@ export const HomePageContainer = ({ section }: HomePageContainerProps) => {
   const financesQuery = useHouseholdFinances(activeHousehold?.id ?? null);
   const cashAuditQuery = useHouseholdCashAuditRequests(activeHousehold?.id ?? null);
   const eventsQuery = useHouseholdEvents(activeHousehold?.id ?? null);
+  const whiteboardQuery = useHouseholdWhiteboard(activeHousehold?.id ?? null);
 
   if (!activeHousehold || !userId) return null;
 
@@ -60,11 +63,13 @@ export const HomePageContainer = ({ section }: HomePageContainerProps) => {
       financeEntries={financesQuery.data ?? []}
       cashAuditRequests={cashAuditQuery.data ?? []}
       householdEvents={eventsQuery.data ?? []}
+      whiteboardSceneJson={whiteboardQuery.data?.scene_json ?? ""}
       onSelectHousehold={(householdId) => {
         const next = households.find((entry) => entry.id === householdId);
         if (next) setActiveHousehold(next);
       }}
       onSaveLandingMarkdown={onUpdateHomeMarkdown}
+      onSaveWhiteboard={onUpdateHouseholdWhiteboard}
       onAddBucketItem={onAddBucketItem}
       onToggleBucketItem={onToggleBucketItem}
       onUpdateBucketItem={onUpdateBucketItem}
