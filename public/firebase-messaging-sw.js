@@ -4,7 +4,8 @@ importScripts("https://www.gstatic.com/firebasejs/10.14.1/firebase-messaging-com
 
 const loadConfig = async () => {
   try {
-    const res = await fetch("/firebase-config.json", { cache: "no-store" });
+    const baseUrl = self.registration?.scope || "/";
+    const res = await fetch(new URL("firebase-config.json", baseUrl).toString(), { cache: "no-store" });
     if (!res.ok) return null;
     return await res.json();
   } catch {

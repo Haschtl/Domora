@@ -45,7 +45,8 @@ export const registerWebPushToken = async ({
   if (!(await isSupported())) return;
 
   ensureFirebaseApp();
-  const registration = await navigator.serviceWorker.register("/firebase-messaging-sw.js");
+  const baseUrl = import.meta.env.BASE_URL || "/";
+  const registration = await navigator.serviceWorker.register(`${baseUrl}firebase-messaging-sw.js`);
   const messaging = getMessaging();
 
   const token = await getToken(messaging, {
