@@ -70,7 +70,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../../
 import { MemberAvatar } from "../../components/member-avatar";
 import { RecaptzCaptcha } from "../../components/recaptz-captcha";
 import { useSmartSuggestions } from "../../hooks/use-smart-suggestions";
-import { formatDateTime, formatShortDay, getLastMonthRange } from "../../lib/date";
+import { formatDateTime, formatShortDay, getEffectiveIntervalDays, getLastMonthRange } from "../../lib/date";
 import { createDiceBearAvatarDataUri, getMemberAvatarSeed } from "../../lib/avatar";
 import { createMemberLabelGetter } from "../../lib/member-label";
 import { getMemberOfMonth } from "../../lib/task-leaderboard";
@@ -1059,7 +1059,7 @@ export const TasksPage = ({
         return;
       }
 
-      const intervalDays = Math.max(1, task.frequency_days);
+      const intervalDays = getEffectiveIntervalDays(task.frequency_days, task.grace_minutes, "mean");
       const assigneeIndex = task.assignee_id ? rotation.indexOf(task.assignee_id) : -1;
       const currentIndex = assigneeIndex >= 0 ? assigneeIndex : 0;
 
@@ -1070,7 +1070,11 @@ export const TasksPage = ({
           if (!otherTask.is_active || otherTask.id === task.id) return sum;
           if (!otherTask.rotation_user_ids.includes(rotationUserId) || otherTask.rotation_user_ids.length === 0) return sum;
 
-          const otherIntervalDays = Math.max(1, otherTask.frequency_days);
+          const otherIntervalDays = getEffectiveIntervalDays(
+            otherTask.frequency_days,
+            otherTask.grace_minutes,
+            "mean"
+          );
           const expectedOccurrences = Math.max(0, Math.floor(horizonDays / otherIntervalDays));
           const share = 1 / otherTask.rotation_user_ids.length;
           return sum + expectedOccurrences * Math.max(1, otherTask.effort_pimpers) * share;
@@ -1751,7 +1755,14 @@ export const TasksPage = ({
     const orderIndex = new Map(theoretical.map((memberId, index) => [memberId, index]));
     const editedTaskId = taskBeingEdited?.id ?? "";
     const parsedFrequency = Number(editTaskForm.state.values.frequencyDays);
-    const intervalDays = Number.isFinite(parsedFrequency) ? Math.max(1, Math.floor(parsedFrequency)) : Math.max(1, taskBeingEdited?.frequency_days ?? 7);
+    const parsedGraceDays = Number(editTaskForm.state.values.graceDays);
+    const graceMinutes = Number.isFinite(parsedGraceDays)
+      ? Math.max(0, Math.round(parsedGraceDays * 24 * 60))
+      : taskBeingEdited?.grace_minutes ?? 1440;
+    const rawFrequencyDays = Number.isFinite(parsedFrequency)
+      ? parsedFrequency
+      : taskBeingEdited?.frequency_days ?? 7;
+    const intervalDays = getEffectiveIntervalDays(rawFrequencyDays, graceMinutes, "mean");
     const assigneeIndex = taskBeingEdited?.assignee_id ? theoretical.indexOf(taskBeingEdited.assignee_id) : -1;
     const currentIndex = assigneeIndex >= 0 ? assigneeIndex : 0;
 
@@ -1766,7 +1777,11 @@ export const TasksPage = ({
         if (!otherTask.is_active || otherTask.id === editedTaskId) return sum;
         if (!otherTask.rotation_user_ids.includes(rotationUserId) || otherTask.rotation_user_ids.length === 0) return sum;
 
-        const otherIntervalDays = Math.max(1, otherTask.frequency_days);
+        const otherIntervalDays = getEffectiveIntervalDays(
+          otherTask.frequency_days,
+          otherTask.grace_minutes,
+          "mean"
+        );
         const expectedOccurrences = Math.max(0, Math.floor(horizonDays / otherIntervalDays));
         const share = 1 / otherTask.rotation_user_ids.length;
         return sum + expectedOccurrences * Math.max(1, otherTask.effort_pimpers) * share;
@@ -1775,7 +1790,11 @@ export const TasksPage = ({
         if (!otherTask.is_active || otherTask.id === editedTaskId) return sum;
         if (!otherTask.rotation_user_ids.includes(rotationUserId) || otherTask.rotation_user_ids.length === 0) return sum;
 
-        const otherIntervalDays = Math.max(1, otherTask.frequency_days);
+        const otherIntervalDays = getEffectiveIntervalDays(
+          otherTask.frequency_days,
+          otherTask.grace_minutes,
+          "mean"
+        );
         const expectedOccurrences = Math.max(0, Math.floor(expectedHorizonDays / otherIntervalDays));
         const share = 1 / otherTask.rotation_user_ids.length;
         return sum + expectedOccurrences * Math.max(1, otherTask.effort_pimpers) * share;
@@ -1846,10 +1865,15 @@ export const TasksPage = ({
             ? yourIndex - currentIndex
             : editRotationCandidates.length - currentIndex + yourIndex
           : yourIndex;
-    const intervalDays = Math.max(
-      1,
-      Math.floor(Number(editTaskForm.state.values.frequencyDays) || 1)
-    );
+    const parsedFrequency = Number(editTaskForm.state.values.frequencyDays);
+    const parsedGraceDays = Number(editTaskForm.state.values.graceDays);
+    const graceMinutes = Number.isFinite(parsedGraceDays)
+      ? Math.max(0, Math.round(parsedGraceDays * 24 * 60))
+      : taskBeingEdited?.grace_minutes ?? 1440;
+    const rawFrequencyDays = Number.isFinite(parsedFrequency)
+      ? parsedFrequency
+      : taskBeingEdited?.frequency_days ?? 7;
+    const intervalDays = getEffectiveIntervalDays(rawFrequencyDays, graceMinutes, "mean");
     return { nextAssigneeId, turnsUntilYou, intervalDays };
   }, [editRotationCandidates, editTaskForm.state.values.frequencyDays, taskBeingEdited, userId]);
   const renderRotationAvatarStack = (memberIds: string[], maxCount = 8) => (

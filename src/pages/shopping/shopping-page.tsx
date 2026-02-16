@@ -97,6 +97,7 @@ export const ShoppingPage = ({
   const [itemBeingEdited, setItemBeingEdited] = useState<ShoppingItem | null>(null);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [togglingItemIds, setTogglingItemIds] = useState<Set<string>>(() => new Set());
+  const [deletingItemIds, setDeletingItemIds] = useState<Set<string>>(() => new Set());
   const [addItemTagsTouched, setAddItemTagsTouched] = useState(false);
   const [titleQuery, setTitleQuery] = useState("");
   const [isMobileComposer, setIsMobileComposer] = useState(() =>
@@ -147,6 +148,23 @@ export const ShoppingPage = ({
       await onToggle(item);
     } finally {
       setTogglingItemIds((current) => {
+        const next = new Set(current);
+        next.delete(item.id);
+        return next;
+      });
+    }
+  };
+  const handleDeleteItem = async (item: ShoppingItem) => {
+    if (deletingItemIds.has(item.id)) return;
+    setDeletingItemIds((current) => {
+      const next = new Set(current);
+      next.add(item.id);
+      return next;
+    });
+    try {
+      await onDelete(item);
+    } finally {
+      setDeletingItemIds((current) => {
         const next = new Set(current);
         next.delete(item.id);
         return next;
@@ -650,6 +668,7 @@ export const ShoppingPage = ({
                   ? addRecurringIntervalToIso(item.done_at, item.recurrence_interval_value, item.recurrence_interval_unit)
                   : null;
               const isToggling = togglingItemIds.has(item.id);
+              const isDeleting = deletingItemIds.has(item.id);
 
               return (
                 <li
@@ -663,7 +682,7 @@ export const ShoppingPage = ({
                   <div className="flex items-center gap-2">
                     <Checkbox
                       checked={item.done}
-                      disabled={busy || isToggling}
+                      disabled={isToggling || isDeleting}
                       onCheckedChange={() => void handleToggleItem(item)}
                     />
                     {isToggling ? (
@@ -684,7 +703,7 @@ export const ShoppingPage = ({
                           size="sm"
                           variant="ghost"
                           aria-label={t("shopping.itemActions")}
-                          disabled={busy}
+                          disabled={isToggling || isDeleting}
                         >
                           <MoreHorizontal className="h-4 w-4" />
                         </Button>
@@ -762,7 +781,7 @@ export const ShoppingPage = ({
                   variant="danger"
                   onClick={() => {
                     if (!itemPendingDelete) return;
-                    void onDelete(itemPendingDelete);
+                    void handleDeleteItem(itemPendingDelete);
                     setItemPendingDelete(null);
                   }}
                 >
@@ -1050,6 +1069,7 @@ export const ShoppingPage = ({
                 ? addRecurringIntervalToIso(item.done_at, item.recurrence_interval_value, item.recurrence_interval_unit)
                 : null;
             const isToggling = togglingItemIds.has(item.id);
+            const isDeleting = deletingItemIds.has(item.id);
 
             return (
               <li
@@ -1061,7 +1081,7 @@ export const ShoppingPage = ({
                 <div className="flex items-center gap-2">
                   <Checkbox
                     checked={item.done}
-                    disabled={busy || isToggling}
+                    disabled={isToggling || isDeleting}
                     onCheckedChange={() => void handleToggleItem(item)}
                   />
                   {isToggling ? <Loader2 className="h-4 w-4 animate-spin text-amber-500" /> : null}
@@ -1072,7 +1092,13 @@ export const ShoppingPage = ({
                   >
                     {item.title}
                   </span>
-                  <Button size="sm" variant="ghost" onClick={() => onDelete(item)} aria-label={t("shopping.deleteItem")}>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => void handleDeleteItem(item)}
+                    aria-label={t("shopping.deleteItem")}
+                    disabled={isToggling || isDeleting}
+                  >
                     <MoreHorizontal className="h-4 w-4" />
                   </Button>
                 </div>

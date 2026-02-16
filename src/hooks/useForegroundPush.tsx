@@ -38,6 +38,26 @@ export const useForegroundPush = ({ enabled, onNavigate }: ForegroundPushOptions
                 onNavigate(data as Record<string, string>);
               }
             : undefined;
+        const shouldShowOsNotification =
+          typeof document !== "undefined" ? document.visibilityState !== "visible" : true;
+        if (shouldShowOsNotification && typeof Notification !== "undefined" && Notification.permission === "granted") {
+          try {
+            const notification = new Notification(title, {
+              body,
+              icon: "/icon-192.png",
+              badge: "/icon-192.png"
+            });
+            if (handleClick) {
+              notification.onclick = () => {
+                window.focus();
+                handleClick();
+                notification.close();
+              };
+            }
+          } catch {
+            // Ignore Notification errors (e.g. blocked by browser policy).
+          }
+        }
         toast.info(
           <div>
             <p className="text-sm font-semibold">{title}</p>
