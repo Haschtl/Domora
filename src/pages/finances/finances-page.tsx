@@ -1477,10 +1477,11 @@ export const FinancesPage = ({
     refs: { uploadInputRef: RefObject<HTMLInputElement | null>; cameraInputRef: RefObject<HTMLInputElement | null> },
     compactLabel: boolean
   ) => (
-    <form.Field
-      name="receiptImageUrl"
-      children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
-        <div className="space-y-2">
+    <>
+      <form.Field
+        name="receiptImageUrl"
+        children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
+          <div className="space-y-2">
           {compactLabel ? (
             <p className="text-xs font-medium text-slate-600 dark:text-slate-300">{t("finances.receiptLabel")}</p>
           ) : (
@@ -1558,20 +1559,21 @@ export const FinancesPage = ({
               <span>{t("finances.receiptPreviewLink")}</span>
             </button>
           ) : null}
-        </div>
-      )}
-    />
-    <ReceiptPreviewDialog
-      open={Boolean(receiptPreviewUrl)}
-      imageUrl={receiptPreviewUrl}
-      title={receiptPreviewTitle}
-      onOpenChange={(open) => {
-        if (!open) {
-          setReceiptPreviewUrl(null);
-          setReceiptPreviewTitle(null);
-        }
-      }}
-    />
+          </div>
+        )}
+      />
+      <ReceiptPreviewDialog
+        open={Boolean(receiptPreviewUrl)}
+        imageUrl={receiptPreviewUrl}
+        title={receiptPreviewTitle}
+        onOpenChange={(open) => {
+          if (!open) {
+            setReceiptPreviewUrl(null);
+            setReceiptPreviewTitle(null);
+          }
+        }}
+      />
+    </>
   );
   const onStartEditEntry = (entry: FinanceEntry) => {
     setEntryBeingEdited(entry);
