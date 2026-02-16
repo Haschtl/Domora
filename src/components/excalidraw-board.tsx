@@ -23,6 +23,7 @@ interface ExcalidrawBoardProps {
   readOnly?: boolean;
   className?: string;
   height?: number;
+  fullHeight?: boolean;
 }
 
 const getThemePreference = () =>
@@ -131,7 +132,8 @@ export const ExcalidrawBoard = ({
   onSceneChange,
   readOnly = false,
   className,
-  height = 520
+  height = 520,
+  fullHeight = false
 }: ExcalidrawBoardProps) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [viewportHeight, setViewportHeight] = useState<number | null>(null);
@@ -187,8 +189,12 @@ export const ExcalidrawBoard = ({
     return () => window.removeEventListener("resize", updateViewportHeight);
   }, []);
 
-  const heightCap = viewportHeight ? Math.floor(viewportHeight * 0.7) : 900;
-  const safeHeight = clampSize(height, 420, Math.min(900, heightCap));
+  const heightCap = viewportHeight
+    ? Math.floor(viewportHeight * (fullHeight ? 0.92 : 0.7))
+    : fullHeight
+      ? 1200
+      : 900;
+  const safeHeight = clampSize(height, 420, fullHeight ? heightCap : Math.min(900, heightCap));
 
   return (
     <div

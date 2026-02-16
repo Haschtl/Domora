@@ -3,9 +3,12 @@ import { useNavigate } from "@tanstack/react-router";
 import {
   CalendarCheck2,
   Check,
+  ChevronDown,
+  ChevronUp,
   GripVertical,
   CircleDot,
   Loader2,
+  Maximize2,
   MoreHorizontal,
   Pencil,
   Plus,
@@ -19,7 +22,12 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useTranslation } from "react-i18next";
 import type { Components } from "react-markdown";
-import { type JsxComponentDescriptor, type JsxEditorProps, useLexicalNodeRemove } from "@mdxeditor/editor";
+import {
+  type JsxComponentDescriptor,
+  type JsxEditorProps,
+  type MDXEditorMethods,
+  useLexicalNodeRemove
+} from "@mdxeditor/editor";
 import { createTrianglifyBannerBackground } from "../../lib/banner";
 import { formatDateTime, getLastMonthRange } from "../../lib/date";
 import { createMemberLabelGetter } from "../../lib/member-label";
@@ -224,17 +232,53 @@ const moveWidgetInMarkdown = (markdown: string, fromWidgetIndex: number, toWidge
     .join("");
 };
 
+const insertTextAroundWidget = (
+  markdown: string,
+  widgetIndex: number,
+  position: "before" | "after",
+  placeholder: string
+) => {
+  const segments = splitLandingContentSegments(markdown);
+  const widgetSegmentIndexes: number[] = [];
+  segments.forEach((segment, index) => {
+    if (segment.type === "widget") {
+      widgetSegmentIndexes.push(index);
+    }
+  });
+
+  const widgetSegmentIndex = widgetSegmentIndexes[widgetIndex];
+  if (widgetSegmentIndex === undefined) {
+    return markdown;
+  }
+
+  const insertAt = position === "before" ? widgetSegmentIndex : widgetSegmentIndex + 1;
+  const textContent = `\n\n${placeholder}\n\n`;
+  segments.splice(insertAt, 0, { type: "markdown", content: textContent });
+
+  return segments
+    .map((segment) => (segment.type === "markdown" ? segment.content : widgetTokenFromKey(segment.key)))
+    .join("");
+};
+
 const LandingWidgetEditorShell = ({
   children,
   onRemove,
   onMove,
+  onInsertTextBefore,
+  onInsertTextAfter,
   dragHandleLabel,
+  insertTextBeforeLabel,
+  insertTextAfterLabel,
   widgetIndex
 }: {
   children: React.ReactNode;
   onRemove: () => void;
   onMove: (sourceWidgetIndex: number, targetWidgetIndex: number) => void;
+  onInsertTextBefore: () => void;
+  onInsertTextAfter: () => void;
   dragHandleLabel: string;
+  insertTextBeforeLabel: string;
+  insertTextAfterLabel: string;
   widgetIndex: number;
 }) => (
   <div className="not-prose my-2">
@@ -289,6 +333,48 @@ const LandingWidgetEditorShell = ({
             </button>
           </TooltipTrigger>
           <TooltipContent>{dragHandleLabel}</TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              className="absolute left-2 top-10 z-20 inline-flex h-7 w-7 items-center justify-center rounded-full border border-slate-300 bg-white/95 text-slate-600 shadow-sm hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-900/95 dark:text-slate-300 dark:hover:bg-slate-800"
+              onMouseDown={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+              }}
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                onInsertTextBefore();
+              }}
+              aria-label={insertTextBeforeLabel}
+            >
+              <ChevronUp className="h-4 w-4" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent>{insertTextBeforeLabel}</TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              className="absolute left-2 top-[4.25rem] z-20 inline-flex h-7 w-7 items-center justify-center rounded-full border border-slate-300 bg-white/95 text-slate-600 shadow-sm hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-900/95 dark:text-slate-300 dark:hover:bg-slate-800"
+              onMouseDown={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+              }}
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                onInsertTextAfter();
+              }}
+              aria-label={insertTextAfterLabel}
+            >
+              <ChevronDown className="h-4 w-4" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent>{insertTextAfterLabel}</TooltipContent>
         </Tooltip>
         <Tooltip>
           <TooltipTrigger asChild>
@@ -407,6 +493,7 @@ export const HomePage = ({
   const [showCompletedBucketItems, setShowCompletedBucketItems] = useState(false);
   const bucketComposerContainerRef = useRef<HTMLDivElement | null>(null);
   const bucketComposerRowRef = useRef<HTMLDivElement | null>(null);
+  const landingEditorRef = useRef<MDXEditorMethods | null>(null);
   const [bucketPopoverWidth, setBucketPopoverWidth] = useState(320);
   const [isEditingLanding, setIsEditingLanding] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -417,6 +504,7 @@ export const HomePage = ({
   const [whiteboardDraft, setWhiteboardDraft] = useState(whiteboardSceneJson);
   const [whiteboardError, setWhiteboardError] = useState<string | null>(null);
   const [whiteboardStatus, setWhiteboardStatus] = useState<"idle" | "saving" | "saved" | "unsaved" | "error">("idle");
+  const [isWhiteboardFullscreenOpen, setIsWhiteboardFullscreenOpen] = useState(false);
   const whiteboardSaveTimerRef = useRef<number | null>(null);
   const lastSavedWhiteboardRef = useRef(whiteboardSceneJson);
   const canEdit = canEditLandingByRole(currentMember?.role ?? null);
@@ -430,6 +518,9 @@ export const HomePage = ({
     [household.name, householdImageUrl]
   );
   const language = i18n.resolvedLanguage ?? i18n.language;
+  const insertTextPlaceholder = t("home.widgetTextPlaceholder");
+  const insertTextBeforeLabel = t("home.widgetInsertTextBefore");
+  const insertTextAfterLabel = t("home.widgetInsertTextAfter");
   const memberLabel = useMemo(
     () =>
       createMemberLabelGetter({
@@ -1150,7 +1241,33 @@ export const HomePage = ({
               onMove={(sourceWidgetIndex, targetWidgetIndex) => {
                 setMarkdownDraft((previous) => moveWidgetInMarkdown(previous, sourceWidgetIndex, targetWidgetIndex));
               }}
+              onInsertTextBefore={() => {
+                setMarkdownDraft((previous) => {
+                  const nextValue = insertTextAroundWidget(
+                    previous,
+                    widgetOrder,
+                    "before",
+                    insertTextPlaceholder
+                  );
+                  landingEditorRef.current?.setMarkdown(convertLandingTokensToEditorJsx(nextValue));
+                  return nextValue;
+                });
+              }}
+              onInsertTextAfter={() => {
+                setMarkdownDraft((previous) => {
+                  const nextValue = insertTextAroundWidget(
+                    previous,
+                    widgetOrder,
+                    "after",
+                    insertTextPlaceholder
+                  );
+                  landingEditorRef.current?.setMarkdown(convertLandingTokensToEditorJsx(nextValue));
+                  return nextValue;
+                });
+              }}
               dragHandleLabel={t("tasks.dragHandle")}
+              insertTextBeforeLabel={insertTextBeforeLabel}
+              insertTextAfterLabel={insertTextAfterLabel}
               widgetIndex={widgetOrder}
             >
               {renderLandingWidget(key)}
@@ -1165,7 +1282,7 @@ export const HomePage = ({
           Editor: DescriptorEditor
         };
       }),
-    [renderLandingWidget, t]
+    [insertTextAfterLabel, insertTextBeforeLabel, insertTextPlaceholder, renderLandingWidget, t]
   );
 
   const whiteboardStatusLabel = useMemo(() => {
@@ -1446,6 +1563,7 @@ export const HomePage = ({
                     }
                   >
                     <MXEditorLazy
+                      editorRef={landingEditorRef}
                       value={convertLandingTokensToEditorJsx(markdownDraft)}
                       onChange={(nextValue) =>
                         setMarkdownDraft(convertEditorJsxToLandingTokens(nextValue))
@@ -1859,13 +1977,26 @@ export const HomePage = ({
               <CardTitle>{t("home.whiteboardTitle")}</CardTitle>
               <CardDescription>{t("home.whiteboardDescription")}</CardDescription>
             </div>
-            <span
-              className="inline-flex items-center gap-2 text-xs font-medium text-slate-500 dark:text-slate-400"
-              aria-live="polite"
-            >
-              {whiteboardStatusIndicator}
-              <span className="hidden sm:inline">{whiteboardStatusLabel}</span>
-            </span>
+            <div className="flex items-center gap-2">
+              <span
+                className="inline-flex items-center gap-2 text-xs font-medium text-slate-500 dark:text-slate-400"
+                aria-live="polite"
+              >
+                {whiteboardStatusIndicator}
+                <span className="hidden sm:inline">{whiteboardStatusLabel}</span>
+              </span>
+              <Button
+                type="button"
+                size="icon"
+                variant="ghost"
+                className="h-8 w-8"
+                onClick={() => setIsWhiteboardFullscreenOpen(true)}
+                aria-label={t("home.whiteboardFullscreen")}
+                title={t("home.whiteboardFullscreen")}
+              >
+                <Maximize2 className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
         </CardHeader>
         <CardContent className="pt-2">
@@ -1895,6 +2026,51 @@ export const HomePage = ({
           </ErrorBoundary>
         </CardContent>
       </Card>
+
+      <Dialog open={isWhiteboardFullscreenOpen} onOpenChange={setIsWhiteboardFullscreenOpen}>
+        <DialogContent className="flex h-[100vh] w-[100vw] max-w-[100vw] flex-col overflow-hidden rounded-none border-0 p-0">
+          <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 dark:border-slate-700">
+            <div>
+              <DialogTitle>{t("home.whiteboardTitle")}</DialogTitle>
+              <DialogDescription>{t("home.whiteboardDescription")}</DialogDescription>
+            </div>
+            <div className="flex items-center gap-3">
+              <span className="hidden text-xs font-medium text-slate-500 dark:text-slate-400 sm:inline">
+                {whiteboardStatusLabel}
+              </span>
+              <Button
+                type="button"
+                size="icon"
+                variant="ghost"
+                className="h-8 w-8"
+                onClick={() => setIsWhiteboardFullscreenOpen(false)}
+                aria-label={t("common.close")}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+          <div className="flex-1">
+            <Suspense
+              fallback={
+                <div className="flex h-full items-center justify-center border border-brand-100 bg-white/70 text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-300">
+                  {t("common.loading")}
+                </div>
+              }
+            >
+              <ExcalidrawBoardLazy
+                sceneJson={whiteboardDraft}
+                onSceneChange={(nextValue) => {
+                  setWhiteboardDraft(nextValue);
+                }}
+                className="border border-brand-100 bg-white dark:border-slate-700"
+                height={1600}
+                fullHeight
+              />
+            </Suspense>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={pendingCompleteTask !== null}

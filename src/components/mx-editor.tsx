@@ -30,6 +30,7 @@ interface MXEditorProps {
   insertPlaceholder?: string;
   insertButtonLabel?: string;
   jsxComponentDescriptors?: JsxComponentDescriptor[];
+  editorRef?: React.RefObject<MDXEditorMethods>;
 }
 
 export const MXEditor = ({
@@ -41,9 +42,11 @@ export const MXEditor = ({
   insertOptions = [],
   insertPlaceholder = "Baustein",
   insertButtonLabel = "Einfügen",
-  jsxComponentDescriptors = []
+  jsxComponentDescriptors = [],
+  editorRef: externalEditorRef
 }: MXEditorProps) => {
-  const editorRef = useRef<MDXEditorMethods>(null);
+  const localEditorRef = useRef<MDXEditorMethods>(null);
+  const editorRef = externalEditorRef ?? localEditorRef;
   const [selectedInsertValue, setSelectedInsertValue] = useState("");
   const hasInsertOptions = insertOptions.length > 0;
   const resolvedInsertValue = useMemo(() => {
