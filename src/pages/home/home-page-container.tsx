@@ -1,7 +1,12 @@
 import { useMemo } from "react";
 import { HomePage } from "./home-page";
 import { useWorkspace } from "../../context/workspace-context";
-import { useHouseholdEvents, useHouseholdFinances, useHouseholdHomeBatch } from "../../hooks/use-household-data";
+import {
+  useHouseholdEvents,
+  useHouseholdFinances,
+  useHouseholdHomeBatch,
+  useHouseholdWhiteboard
+} from "../../hooks/use-household-data";
 import type { BucketItem, CashAuditRequest, HouseholdWhiteboard, TaskCompletion, TaskItem } from "../../lib/types";
 
 interface HomePageContainerProps {
@@ -31,6 +36,7 @@ export const HomePageContainer = ({ section }: HomePageContainerProps) => {
   } = useWorkspace();
 
   const homeBatchQuery = useHouseholdHomeBatch(activeHousehold?.id ?? null);
+  const whiteboardQuery = useHouseholdWhiteboard(activeHousehold?.id ?? null);
   const financesQuery = useHouseholdFinances(activeHousehold?.id ?? null);
   const eventsQuery = useHouseholdEvents(activeHousehold?.id ?? null);
 
@@ -76,7 +82,9 @@ export const HomePageContainer = ({ section }: HomePageContainerProps) => {
       eventsHasMore={eventsQuery.hasNextPage ?? false}
       eventsLoadingMore={eventsQuery.isFetchingNextPage}
       onLoadMoreEvents={() => void eventsQuery.fetchNextPage()}
-      whiteboardSceneJson={homeData?.householdWhiteboard?.scene_json ?? ""}
+      whiteboardSceneJson={
+        whiteboardQuery.data?.scene_json ?? homeData?.householdWhiteboard?.scene_json ?? ""
+      }
       onSelectHousehold={(householdId) => {
         const next = households.find((entry) => entry.id === householdId);
         if (next) setActiveHousehold(next);
