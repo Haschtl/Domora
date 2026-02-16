@@ -80,6 +80,7 @@
     "tailwind-merge": "^3.4.1",
     "trianglify": "^4.1.1",
     "uuid": "^13.0.0",
+    "workbox-window": "^7.4.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {
