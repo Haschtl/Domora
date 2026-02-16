@@ -407,7 +407,9 @@ export const resources = {
         scoreboardTitle: "Pimpers Ranking",
         memberOfMonthTitle: "Mitbewohner des Monats",
         memberOfMonthHint: "Letzter Monat: {{month}}",
-        memberOfMonthDelay: "Ø Verspätung {{minutes}} min",
+        memberOfMonthDelay: "Ø Verspätung {{days}} Tage",
+        memberOfMonthInfo:
+          "Wer im letzten Monat die meisten Pimpers gesammelt hat (bei Gleichstand: weniger Verspätung), wird automatisch gekürt. Der Titel wird jeweils am 1. des Monats vergeben.",
         memberOfMonthEmpty: "Keine Abschlüsse im letzten Monat.",
         onTimeStreakTitle: "Aufgaben-Streak",
         onTimeStreakHint: "Wie viele Aufgaben am Stück ohne Verspätung erledigt wurden.",
@@ -1348,7 +1350,9 @@ export const resources = {
         scoreboardTitle: "Pimpers ranking",
         memberOfMonthTitle: "Housemate of the month",
         memberOfMonthHint: "Last month: {{month}}",
-        memberOfMonthDelay: "Avg delay {{minutes}} min",
+        memberOfMonthDelay: "Avg delay {{days}} days",
+        memberOfMonthInfo:
+          "Whoever earned the most pimpers last month (ties: less delay) is crowned automatically. The title is assigned on the 1st of each month.",
         memberOfMonthEmpty: "No completions last month.",
         onTimeStreakTitle: "Task streak",
         onTimeStreakHint: "How many tasks were completed on time in a row.",

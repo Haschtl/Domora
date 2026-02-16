@@ -98,6 +98,7 @@ export const ShoppingPage = ({
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [togglingItemIds, setTogglingItemIds] = useState<Set<string>>(() => new Set());
   const [addItemTagsTouched, setAddItemTagsTouched] = useState(false);
+  const [titleQuery, setTitleQuery] = useState("");
   const [isMobileComposer, setIsMobileComposer] = useState(() =>
     typeof window !== "undefined" ? window.matchMedia("(max-width: 639px)").matches : false
   );
@@ -130,6 +131,7 @@ export const ShoppingPage = ({
 
       await onAdd(value.title, normalizeTags(value.tagsInput), recurrenceInterval);
       formApi.reset();
+      setTitleQuery("");
       setRecurrenceUnit("days");
       setAddItemTagsTouched(false);
     }
@@ -186,8 +188,6 @@ export const ShoppingPage = ({
   });
 
   const language = i18n.resolvedLanguage ?? i18n.language;
-  const titleQuery = form.state.values.title.trim();
-
   const allSuggestions = useShoppingSuggestions(completions, language);
   const userLabel = useMemo(
     () =>
@@ -217,6 +217,7 @@ export const ShoppingPage = ({
 
   const applySuggestion = (suggestion: ShoppingSuggestion) => {
     form.setFieldValue("title", suggestion.title);
+    setTitleQuery(suggestion.title);
     const matchedItem = latestItemByTitle.get(suggestion.title.trim().toLocaleLowerCase());
 
     const tagsToApply = matchedItem ? matchedItem.tags : suggestion.tags;
@@ -255,6 +256,15 @@ export const ShoppingPage = ({
       }
     }
   };
+  const filteredSuggestionsSource = useMemo(() => {
+    const normalized = titleQuery.trim();
+    if (!normalized) return allSuggestions;
+    const normalizedQuery = normalized.toLocaleLowerCase(language);
+    return allSuggestions.filter((entry) => {
+      if (entry.title.toLocaleLowerCase(language).includes(normalizedQuery)) return true;
+      return entry.tags.some((tag) => tag.toLocaleLowerCase(language).includes(normalizedQuery));
+    });
+  }, [allSuggestions, language, titleQuery]);
   const {
     suggestions,
     focused: titleFocused,
@@ -264,7 +274,7 @@ export const ShoppingPage = ({
     onKeyDown: onTitleKeyDown,
     applySuggestion: onSelectSuggestion
   } = useSmartSuggestions<ShoppingSuggestion>({
-    items: allSuggestions,
+    items: filteredSuggestionsSource,
     query: titleQuery,
     getLabel: (entry) => entry.title,
     onApply: applySuggestion,
@@ -416,6 +426,7 @@ export const ShoppingPage = ({
                             onChange={(event) => {
                               const nextValue = event.target.value;
                               field.handleChange(nextValue);
+                              setTitleQuery(nextValue);
                               tryAutofillTagsFromTitle(nextValue);
                             }}
                             onFocus={onTitleFocus}
@@ -902,6 +913,7 @@ export const ShoppingPage = ({
                         onChange={(event) => {
                           const nextValue = event.target.value;
                           field.handleChange(nextValue);
+                          setTitleQuery(nextValue);
                           tryAutofillTagsFromTitle(nextValue);
                         }}
                         onFocus={onTitleFocus}

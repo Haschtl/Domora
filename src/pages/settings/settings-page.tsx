@@ -170,6 +170,17 @@ export const SettingsPage = ({
   const [inviteCopied, setInviteCopied] = useState(false);
   const [vacationDialogOpen, setVacationDialogOpen] = useState(false);
   const [pendingVacationMode, setPendingVacationMode] = useState<boolean | null>(null);
+  const dueTasksAssignedToYou = useMemo(() => {
+    if (!userId) return [];
+    return tasks.filter(
+      (task) =>
+        task.is_active &&
+        !task.done &&
+        task.assignee_id === userId &&
+        isDueNow(task.due_at)
+    );
+  }, [tasks, userId]);
+  const dueTasksAssignedCount = dueTasksAssignedToYou.length;
   const [pushPreferences, setPushPreferences] = useState<PushPreferences | null>(null);
   const [pushPreferencesSnapshot, setPushPreferencesSnapshot] = useState<string | null>(null);
   const [pushPreferencesBusy, setPushPreferencesBusy] = useState(false);
@@ -2140,14 +2151,3 @@ export const SettingsPage = ({
     </div>
   );
 };
-  const dueTasksAssignedToYou = useMemo(() => {
-    if (!userId) return [];
-    return tasks.filter(
-      (task) =>
-        task.is_active &&
-        !task.done &&
-        task.assignee_id === userId &&
-        isDueNow(task.due_at)
-    );
-  }, [tasks, userId]);
-  const dueTasksAssignedCount = dueTasksAssignedToYou.length;

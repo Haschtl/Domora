@@ -2381,15 +2381,22 @@ export const TasksPage = ({
                             handleChange: (value: string) => void;
                           }) => (
                             <div className="space-y-1">
-                              <Label className="sr-only">{t("tasks.frequencyDays")}</Label>
+                              <Label className="sr-only">
+                                {t("tasks.frequencyDays")}
+                              </Label>
                               <Select
                                 value={frequencyMode}
                                 onValueChange={(value) => {
-                                  const nextMode = value === "cron" ? "cron" : "days";
+                                  const nextMode =
+                                    value === "cron" ? "cron" : "days";
                                   setFrequencyMode(nextMode);
                                   if (nextMode === "days") {
                                     field.handleChange(
-                                      String(deriveFrequencyDaysFromComplex(complexFrequency))
+                                      String(
+                                        deriveFrequencyDaysFromComplex(
+                                          complexFrequency,
+                                        ),
+                                      ),
                                     );
                                   }
                                 }}
@@ -2398,8 +2405,12 @@ export const TasksPage = ({
                                   <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent>
-                                  <SelectItem value="days">{t("tasks.frequencyModeDays")}</SelectItem>
-                                  <SelectItem value="cron">{t("tasks.frequencyModeCron")}</SelectItem>
+                                  <SelectItem value="days">
+                                    {t("tasks.frequencyModeDays")}
+                                  </SelectItem>
+                                  <SelectItem value="cron">
+                                    {t("tasks.frequencyModeCron")}
+                                  </SelectItem>
                                 </SelectContent>
                               </Select>
                               {frequencyMode === "days" ? (
@@ -2418,7 +2429,7 @@ export const TasksPage = ({
                                 renderComplexFrequencyBuilder(
                                   frequencyMode,
                                   complexFrequency,
-                                  setComplexFrequency
+                                  setComplexFrequency,
                                 )
                               )}
                             </div>
@@ -2475,7 +2486,6 @@ export const TasksPage = ({
                         </p>
                       ) : null}
 
-
                       <Accordion
                         type="single"
                         collapsible
@@ -2525,12 +2535,16 @@ export const TasksPage = ({
                                           lang={language}
                                           value={field.state.value}
                                           onChange={(event) =>
-                                            field.handleChange(event.target.value)
+                                            field.handleChange(
+                                              event.target.value,
+                                            )
                                           }
                                           required
                                         />
                                       </TooltipTrigger>
-                                      <TooltipContent>{t("tasks.startDate")}</TooltipContent>
+                                      <TooltipContent>
+                                        {t("tasks.startDate")}
+                                      </TooltipContent>
                                     </Tooltip>
                                   </div>
                                 )}
@@ -2554,7 +2568,9 @@ export const TasksPage = ({
                                       onChange={(event) =>
                                         field.handleChange(event.target.value)
                                       }
-                                      placeholder={t("tasks.gracePeriodPlaceholder")}
+                                      placeholder={t(
+                                        "tasks.gracePeriodPlaceholder",
+                                      )}
                                     />
                                     <p className="text-xs text-slate-500 dark:text-slate-400">
                                       {t("tasks.gracePeriodHint")}
@@ -2570,7 +2586,9 @@ export const TasksPage = ({
                                   handleChange: (value: string) => void;
                                 }) => (
                                   <div className="space-y-1">
-                                    <Label>{t("tasks.delayPenaltyLabel")}</Label>
+                                    <Label>
+                                      {t("tasks.delayPenaltyLabel")}
+                                    </Label>
                                     <InputWithSuffix
                                       suffix={t("tasks.delayPenaltyUnit")}
                                       type="number"
@@ -2581,7 +2599,9 @@ export const TasksPage = ({
                                       onChange={(event) =>
                                         field.handleChange(event.target.value)
                                       }
-                                      placeholder={t("tasks.delayPenaltyPlaceholder")}
+                                      placeholder={t(
+                                        "tasks.delayPenaltyPlaceholder",
+                                      )}
                                     />
                                     <p className="text-xs text-slate-500 dark:text-slate-400">
                                       {t("tasks.delayPenaltyHint")}
@@ -2616,7 +2636,9 @@ export const TasksPage = ({
                               <taskForm.Field
                                 name="assigneeFairnessMode"
                                 children={(field: {
-                                  state: { value: "actual" | "projection" | "expected" };
+                                  state: {
+                                    value: "actual" | "projection" | "expected";
+                                  };
                                   handleChange: (
                                     value: "actual" | "projection" | "expected",
                                   ) => void;
@@ -2650,7 +2672,9 @@ export const TasksPage = ({
                                         )}
                                       </option>
                                       <option value="expected">
-                                        {t("tasks.assigneeFairnessModeExpected")}
+                                        {t(
+                                          "tasks.assigneeFairnessModeExpected",
+                                        )}
                                       </option>
                                     </select>
                                     <p className="text-xs text-slate-500 dark:text-slate-400">
@@ -2696,7 +2720,7 @@ export const TasksPage = ({
                                                 member?.display_name?.trim() ||
                                                   displayName ||
                                                   rotationUserId,
-                                                member?.user_color
+                                                member?.user_color,
                                               );
                                             return (
                                               <SortableRotationItem
@@ -2791,7 +2815,7 @@ export const TasksPage = ({
                         assigneeMember?.display_name?.trim() ||
                           assigneeText ||
                           task.assignee_id,
-                        assigneeMember?.user_color
+                        assigneeMember?.user_color,
                       )
                     : null;
 
@@ -2886,8 +2910,10 @@ export const TasksPage = ({
                               <p>
                                 {t("tasks.frequencyActualValue", {
                                   count: (() => {
-                                    const actual = actualFrequencyDaysByTaskId.get(task.id);
-                                    if (actual == null) return task.frequency_days;
+                                    const actual =
+                                      actualFrequencyDaysByTaskId.get(task.id);
+                                    if (actual == null)
+                                      return task.frequency_days;
                                     return Number(actual.toFixed(1));
                                   })(),
                                 })}
@@ -2902,32 +2928,48 @@ export const TasksPage = ({
                           {(() => {
                             const nowMs = Date.now();
                             const dueAt = new Date(task.due_at).getTime();
-                            const graceMs = Math.max(0, task.grace_minutes) * 60_000;
-                            const delayMinutes = Math.max(0, Math.floor((nowMs - (dueAt + graceMs)) / 60_000));
-                            const penaltyPerDay = Math.max(0, task.delay_penalty_per_day ?? 0);
-                            const penalty = penaltyPerDay * (delayMinutes / 1440);
-                            const earned = Math.max(task.effort_pimpers - penalty, 0);
+                            const graceMs =
+                              Math.max(0, task.grace_minutes) * 60_000;
+                            const delayMinutes = Math.max(
+                              0,
+                              Math.floor((nowMs - (dueAt + graceMs)) / 60_000),
+                            );
+                            const penaltyPerDay = Math.max(
+                              0,
+                              task.delay_penalty_per_day ?? 0,
+                            );
+                            const penalty =
+                              penaltyPerDay * (delayMinutes / 1440);
+                            const earned = Math.max(
+                              task.effort_pimpers - penalty,
+                              0,
+                            );
                             const iconCount = Math.min(task.effort_pimpers, 6);
                             return (
                               <Tooltip>
                                 <TooltipTrigger asChild>
-                                  <PimpersStack count={iconCount} earned={earned} />
+                                  <PimpersStack
+                                    count={iconCount}
+                                    earned={earned}
+                                  />
                                 </TooltipTrigger>
                                 <TooltipContent>
                                   <p className="text-xs">
                                     {t("tasks.delayPenaltyTooltipCurrent", {
                                       earned: earned.toFixed(2),
-                                      total: Number(task.effort_pimpers).toFixed(2)
+                                      total: Number(
+                                        task.effort_pimpers,
+                                      ).toFixed(2),
                                     })}
                                   </p>
                                   <p className="text-xs">
                                     {t("tasks.delayPenaltyTooltipDelay", {
-                                      days: (delayMinutes / 1440).toFixed(1)
+                                      days: (delayMinutes / 1440).toFixed(1),
                                     })}
                                   </p>
                                   <p className="text-xs">
                                     {t("tasks.delayPenaltyTooltipPenalty", {
-                                      penalty: penalty.toFixed(2)
+                                      penalty: penalty.toFixed(2),
                                     })}
                                   </p>
                                 </TooltipContent>
@@ -3124,7 +3166,7 @@ export const TasksPage = ({
                               member.avatar_url?.trim() ||
                               createDiceBearAvatarDataUri(
                                 userLabel(member.user_id),
-                                member.user_color
+                                member.user_color,
                               )
                             }
                             alt={userLabel(member.user_id)}
@@ -3184,19 +3226,31 @@ export const TasksPage = ({
           <Card className="rounded-xl border border-slate-300 bg-white/88 p-3 text-slate-800 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-100 mb-4">
             <CardHeader>
               <CardTitle>{t("tasks.memberOfMonthTitle")}</CardTitle>
-              <CardDescription>{t("tasks.memberOfMonthHint", { month: memberOfMonthLabel })}</CardDescription>
+              <CardDescription>
+                {t("tasks.memberOfMonthHint", { month: memberOfMonthLabel })}
+              </CardDescription>
             </CardHeader>
             <CardContent>
+              <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">
+                {t("tasks.memberOfMonthInfo")}
+              </p>
               {memberOfMonth ? (
                 <div className="flex items-center justify-between gap-3 rounded-lg border border-brand-100 bg-white/90 p-3 dark:border-slate-700 dark:bg-slate-900">
                   <div className="flex min-w-0 items-center gap-3">
                     <MemberAvatar
                       src={
-                        memberById.get(memberOfMonth.userId)?.avatar_url?.trim() ||
-                        createDiceBearAvatarDataUri(userLabel(memberOfMonth.userId))
+                        memberById
+                          .get(memberOfMonth.userId)
+                          ?.avatar_url?.trim() ||
+                        createDiceBearAvatarDataUri(
+                          userLabel(memberOfMonth.userId),
+                        )
                       }
                       alt={userLabel(memberOfMonth.userId)}
-                      isVacation={memberById.get(memberOfMonth.userId)?.vacation_mode ?? false}
+                      isVacation={
+                        memberById.get(memberOfMonth.userId)?.vacation_mode ??
+                        false
+                      }
                       isMemberOfMonth
                       className="h-9 w-9 rounded-full border border-brand-200 dark:border-slate-700"
                     />
@@ -3205,23 +3259,86 @@ export const TasksPage = ({
                         {userLabel(memberOfMonth.userId)}
                       </p>
                       <p className="text-xs text-slate-500 dark:text-slate-400">
-                        {t("tasks.pimpersValue", { count: memberOfMonth.totalPimpers })}
+                        {t("tasks.pimpersValue", {
+                          count: memberOfMonth.totalPimpers,
+                        })}
                       </p>
                     </div>
                   </div>
                   <p className="text-xs text-slate-500 dark:text-slate-400">
                     {t("tasks.memberOfMonthDelay", {
-                      minutes: Math.round(memberOfMonth.averageDelayMinutes)
+                      days: Number((memberOfMonth.averageDelayMinutes / 1440).toFixed(1)),
                     })}
                   </p>
                 </div>
               ) : (
-                <p className="text-sm text-slate-500 dark:text-slate-400">{t("tasks.memberOfMonthEmpty")}</p>
+                <p className="text-sm text-slate-500 dark:text-slate-400">
+                  {t("tasks.memberOfMonthEmpty")}
+                </p>
               )}
             </CardContent>
           </Card>
         ) : null}
 
+        {showStats ? (
+          <Card className="rounded-xl border border-slate-300 bg-white/88 p-3 text-slate-800 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-100 mb-4">
+            <CardHeader>
+              <CardTitle>{t("tasks.reliabilityTitle")}</CardTitle>
+              <CardDescription>
+                {t("tasks.reliabilityDescription")}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {reliabilityRows.length > 0 ? (
+                <ul className="space-y-1">
+                  {reliabilityRows.map((row) => (
+                    <li
+                      key={`reliability-${row.userId}`}
+                      className="flex items-center justify-between gap-3 rounded-lg border border-brand-100 bg-white/90 p-2 text-sm dark:border-slate-700 dark:bg-slate-900"
+                    >
+                      <div className="flex min-w-0 items-center gap-2">
+                        <span className="w-6 text-xs font-semibold text-slate-500 dark:text-slate-400">
+                          #{row.rank}
+                        </span>
+                        <MemberAvatar
+                          src={
+                            memberById.get(row.userId)?.avatar_url?.trim() ||
+                            createDiceBearAvatarDataUri(
+                              userLabel(row.userId),
+                              memberById.get(row.userId)?.user_color,
+                            )
+                          }
+                          alt={userLabel(row.userId)}
+                          isVacation={
+                            memberById.get(row.userId)?.vacation_mode ?? false
+                          }
+                          className="h-7 w-7 rounded-full border border-brand-200 dark:border-slate-700"
+                        />
+                        <span className="min-w-0 truncate text-slate-700 dark:text-slate-200">
+                          {userLabel(row.userId)}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-3 text-right text-xs">
+                        <span className="text-slate-500 dark:text-slate-400">
+                          {t("tasks.reliabilityAverageDelay", {
+                            value: formatDelayLabel(row.averageDelayMinutes),
+                          })}
+                        </span>
+                        <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-200">
+                          {t("tasks.reliabilityScore", { value: row.score })}
+                        </span>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-sm text-slate-500 dark:text-slate-400">
+                  {t("tasks.reliabilityNoData")}
+                </p>
+              )}
+            </CardContent>
+          </Card>
+        ) : null}
         {showStats ? (
           <Card className="rounded-xl border border-slate-300 bg-white/88 p-3 text-slate-800 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-100 mb-4">
             <CardHeader>
@@ -3232,8 +3349,13 @@ export const TasksPage = ({
               {onTimeStreaks.some((row) => row.streak > 0) ? (
                 <ul className="space-y-1 text-sm">
                   {onTimeStreaks.map((row) => (
-                    <li key={`streak-${row.userId}`} className="flex items-center justify-between gap-2">
-                      <span className="text-slate-700 dark:text-slate-300">{userLabel(row.userId)}</span>
+                    <li
+                      key={`streak-${row.userId}`}
+                      className="flex items-center justify-between gap-2"
+                    >
+                      <span className="text-slate-700 dark:text-slate-300">
+                        {userLabel(row.userId)}
+                      </span>
                       <span className="font-medium text-slate-900 dark:text-slate-100">
                         {t("tasks.onTimeStreakValue", { count: row.streak })}
                       </span>
@@ -3241,7 +3363,9 @@ export const TasksPage = ({
                   ))}
                 </ul>
               ) : (
-                <p className="text-sm text-slate-500 dark:text-slate-400">{t("tasks.onTimeStreakEmpty")}</p>
+                <p className="text-sm text-slate-500 dark:text-slate-400">
+                  {t("tasks.onTimeStreakEmpty")}
+                </p>
               )}
             </CardContent>
           </Card>
@@ -3328,62 +3452,6 @@ export const TasksPage = ({
           </Card>
         ) : null}
 
-        {showStats ? (
-          <Card className="rounded-xl border border-slate-300 bg-white/88 p-3 text-slate-800 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-100 mb-4">
-            <CardHeader>
-              <CardTitle>{t("tasks.reliabilityTitle")}</CardTitle>
-              <CardDescription>{t("tasks.reliabilityDescription")}</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              {reliabilityRows.length > 0 ? (
-                <ul className="space-y-1">
-                  {reliabilityRows.map((row) => (
-                    <li
-                      key={`reliability-${row.userId}`}
-                      className="flex items-center justify-between gap-3 rounded-lg border border-brand-100 bg-white/90 p-2 text-sm dark:border-slate-700 dark:bg-slate-900"
-                    >
-                      <div className="flex min-w-0 items-center gap-2">
-                        <span className="w-6 text-xs font-semibold text-slate-500 dark:text-slate-400">
-                          #{row.rank}
-                        </span>
-                        <MemberAvatar
-                          src={
-                            memberById.get(row.userId)?.avatar_url?.trim() ||
-                            createDiceBearAvatarDataUri(
-                              userLabel(row.userId),
-                              memberById.get(row.userId)?.user_color
-                            )
-                          }
-                          alt={userLabel(row.userId)}
-                          isVacation={memberById.get(row.userId)?.vacation_mode ?? false}
-                          className="h-7 w-7 rounded-full border border-brand-200 dark:border-slate-700"
-                        />
-                        <span className="min-w-0 truncate text-slate-700 dark:text-slate-200">
-                          {userLabel(row.userId)}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-3 text-right text-xs">
-                        <span className="text-slate-500 dark:text-slate-400">
-                          {t("tasks.reliabilityAverageDelay", {
-                            value: formatDelayLabel(row.averageDelayMinutes)
-                          })}
-                        </span>
-                        <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-200">
-                          {t("tasks.reliabilityScore", { value: row.score })}
-                        </span>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="text-sm text-slate-500 dark:text-slate-400">
-                  {t("tasks.reliabilityNoData")}
-                </p>
-              )}
-            </CardContent>
-          </Card>
-        ) : null}
-
         {lazinessSettingsCard}
 
         {showStats &&
@@ -3464,7 +3532,9 @@ export const TasksPage = ({
                     </TooltipTrigger>
                     <TooltipContent className="max-w-[320px] border border-slate-200 bg-white text-slate-900 shadow-lg dark:border-slate-700 dark:bg-slate-900 dark:text-slate-50">
                       <div className="space-y-2 text-xs leading-relaxed">
-                        <p className="font-semibold">{t("tasks.forecastTooltipTitle")}</p>
+                        <p className="font-semibold">
+                          {t("tasks.forecastTooltipTitle")}
+                        </p>
                         <p>{t("tasks.forecastTooltipBody")}</p>
                       </div>
                     </TooltipContent>
@@ -3627,7 +3697,9 @@ export const TasksPage = ({
                             </div>
                             <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
                               {t("tasks.historySkippedLine", {
-                                user: item.userId ? userLabel(item.userId) : t("common.memberFallback"),
+                                user: item.userId
+                                  ? userLabel(item.userId)
+                                  : t("common.memberFallback"),
                               })}
                             </p>
                           </li>
@@ -3697,7 +3769,9 @@ export const TasksPage = ({
                                     <p className="text-xs">
                                       {t("tasks.ratingTooltipAverage", {
                                         average: Number(
-                                          (entry.rating_average ?? 0).toFixed(1),
+                                          (entry.rating_average ?? 0).toFixed(
+                                            1,
+                                          ),
                                         ),
                                       })}
                                     </p>
@@ -4113,7 +4187,9 @@ export const TasksPage = ({
                           : editRotationForecast.turnsUntilYou === 0
                             ? t("tasks.rotationForecastYouNow")
                             : t("tasks.rotationForecastYouDays", {
-                                days: editRotationForecast.turnsUntilYou * editRotationForecast.intervalDays
+                                days:
+                                  editRotationForecast.turnsUntilYou *
+                                  editRotationForecast.intervalDays,
                               })}
                       </p>
                     </div>
@@ -4169,7 +4245,9 @@ export const TasksPage = ({
                     handleChange: (value: string) => void;
                   }) => (
                     <div className="space-y-1">
-                      <Label className="sr-only">{t("tasks.frequencyDays")}</Label>
+                      <Label className="sr-only">
+                        {t("tasks.frequencyDays")}
+                      </Label>
                       <Select
                         value={editFrequencyMode}
                         onValueChange={(value) => {
@@ -4177,7 +4255,11 @@ export const TasksPage = ({
                           setEditFrequencyMode(nextMode);
                           if (nextMode === "days") {
                             field.handleChange(
-                              String(deriveFrequencyDaysFromComplex(editComplexFrequency))
+                              String(
+                                deriveFrequencyDaysFromComplex(
+                                  editComplexFrequency,
+                                ),
+                              ),
                             );
                           }
                         }}
@@ -4186,8 +4268,12 @@ export const TasksPage = ({
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="days">{t("tasks.frequencyModeDays")}</SelectItem>
-                          <SelectItem value="cron">{t("tasks.frequencyModeCron")}</SelectItem>
+                          <SelectItem value="days">
+                            {t("tasks.frequencyModeDays")}
+                          </SelectItem>
+                          <SelectItem value="cron">
+                            {t("tasks.frequencyModeCron")}
+                          </SelectItem>
                         </SelectContent>
                       </Select>
                       {editFrequencyMode === "days" ? (
@@ -4206,7 +4292,7 @@ export const TasksPage = ({
                         renderComplexFrequencyBuilder(
                           editFrequencyMode,
                           editComplexFrequency,
-                          setEditComplexFrequency
+                          setEditComplexFrequency,
                         )
                       )}
                     </div>
@@ -4307,7 +4393,9 @@ export const TasksPage = ({
                                   required
                                 />
                               </TooltipTrigger>
-                              <TooltipContent>{t("tasks.startDate")}</TooltipContent>
+                              <TooltipContent>
+                                {t("tasks.startDate")}
+                              </TooltipContent>
                             </Tooltip>
                           </div>
                         )}
@@ -4390,14 +4478,16 @@ export const TasksPage = ({
                         )}
                       />
 
-                        <editTaskForm.Field
-                          name="assigneeFairnessMode"
-                          children={(field: {
-                            state: { value: "actual" | "projection" | "expected" };
-                            handleChange: (
-                              value: "actual" | "projection" | "expected",
-                            ) => void;
-                          }) => (
+                      <editTaskForm.Field
+                        name="assigneeFairnessMode"
+                        children={(field: {
+                          state: {
+                            value: "actual" | "projection" | "expected";
+                          };
+                          handleChange: (
+                            value: "actual" | "projection" | "expected",
+                          ) => void;
+                        }) => (
                           <div className="space-y-1">
                             <Label>
                               {t("tasks.assigneeFairnessModeLabel")}
@@ -4462,7 +4552,7 @@ export const TasksPage = ({
                                       member?.display_name?.trim() ||
                                         displayName ||
                                         rotationUserId,
-                                      member?.user_color
+                                      member?.user_color,
                                     );
                                   return (
                                     <SortableRotationItem
@@ -4529,7 +4619,10 @@ export const TasksPage = ({
                             </div>
                             <div className="flex items-center justify-between gap-2">
                               <span className="font-semibold">
-                                {t("tasks.rotationOrderPreviewFairnessExpected")}
+                                {t(
+                                  "tasks.rotationOrderPreviewFairnessExpected",
+                                
+                                )}
                                 :
                               </span>
                               {renderRotationAvatarStack(
