@@ -41,7 +41,7 @@ export const useSmartSuggestions = <T>({
     suggestions.length === 0
       ? -1
       : activeSuggestionIndex < 0
-        ? 0
+        ? -1
         : Math.min(activeSuggestionIndex, suggestions.length - 1);
 
   const applySuggestion = useCallback(
@@ -55,7 +55,7 @@ export const useSmartSuggestions = <T>({
 
   const onFocus = useCallback(() => {
     setFocused(true);
-    setActiveSuggestionIndex(suggestions.length > 0 ? 0 : -1);
+    setActiveSuggestionIndex(-1);
   }, [suggestions.length]);
 
   const onBlur = useCallback(() => {
@@ -68,13 +68,17 @@ export const useSmartSuggestions = <T>({
 
       if (event.key === "ArrowDown") {
         event.preventDefault();
-        setActiveSuggestionIndex((current) => (current + 1) % suggestions.length);
+        setActiveSuggestionIndex((current) =>
+          current < 0 ? 0 : (current + 1) % suggestions.length
+        );
         return;
       }
 
       if (event.key === "ArrowUp") {
         event.preventDefault();
-        setActiveSuggestionIndex((current) => (current <= 0 ? suggestions.length - 1 : current - 1));
+        setActiveSuggestionIndex((current) =>
+          current < 0 ? suggestions.length - 1 : current <= 0 ? suggestions.length - 1 : current - 1
+        );
         return;
       }
 

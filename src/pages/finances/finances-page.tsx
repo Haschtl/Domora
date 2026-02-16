@@ -1264,13 +1264,6 @@ export const FinancesPage = ({
       return;
     }
 
-    const paidByUserIds = matchedEntry.paid_by_user_ids.length > 0 ? matchedEntry.paid_by_user_ids : [matchedEntry.paid_by];
-    const beneficiaryUserIds =
-      matchedEntry.beneficiary_user_ids.length > 0
-        ? matchedEntry.beneficiary_user_ids
-        : members.map((member) => member.user_id);
-    const entryDate = matchedEntry.entry_date ?? matchedEntry.created_at.slice(0, 10);
-
     addEntryForm.setFieldValue("amount", String(matchedEntry.amount));
     setPreviewAmountInput(String(matchedEntry.amount));
     const currentCategory = (addEntryForm.state.values.category ?? "").trim();
@@ -1285,11 +1278,6 @@ export const FinancesPage = ({
         applyCategorySuggestion(descriptionValue, { force: true });
       }
     }
-    addEntryForm.setFieldValue("paidByUserIds", paidByUserIds);
-    addEntryForm.setFieldValue("beneficiaryUserIds", beneficiaryUserIds);
-    setPreviewPayerIds(paidByUserIds);
-    setPreviewBeneficiaryIds(beneficiaryUserIds);
-    addEntryForm.setFieldValue("entryDate", entryDate);
   };
   const {
     suggestions: entryDescriptionSuggestions,
@@ -1977,8 +1965,10 @@ export const FinancesPage = ({
                       <li key={suggestion.key}>
                         <button
                           type="button"
-                          className={`flex w-full items-center justify-between gap-2 rounded-lg px-2 py-2 text-left hover:bg-brand-50 dark:hover:bg-slate-800 ${
-                            index === activeEntryDescriptionSuggestionIndex ? "bg-brand-50 dark:bg-slate-800" : ""
+                          className={`flex w-full items-center justify-between gap-2 rounded-lg px-2 py-2 text-left hover:bg-brand-50/80 dark:hover:bg-slate-800/70 ${
+                            index === activeEntryDescriptionSuggestionIndex
+                              ? "bg-brand-100/20"
+                              : ""
                           }`}
                           onMouseDown={(event) => event.preventDefault()}
                           onClick={() => {

@@ -434,6 +434,8 @@ create policy "push_preferences_update_own"
 create or replace function queue_push_from_household_event()
 returns trigger
 language plpgsql
+security definer
+set search_path = public
 as $$
 declare
   dedupe text;
@@ -461,6 +463,8 @@ for each row execute function queue_push_from_household_event();
 create or replace function queue_push_on_shopping_add()
 returns trigger
 language plpgsql
+security definer
+set search_path = public
 as $$
 declare
   dedupe text;
@@ -488,6 +492,8 @@ for each row execute function queue_push_on_shopping_add();
 create or replace function queue_push_on_bucket_add()
 returns trigger
 language plpgsql
+security definer
+set search_path = public
 as $$
 declare
   dedupe text;
@@ -515,6 +521,8 @@ for each row execute function queue_push_on_bucket_add();
 create or replace function queue_push_on_task_takeover()
 returns trigger
 language plpgsql
+security definer
+set search_path = public
 as $$
 declare
   dedupe text;

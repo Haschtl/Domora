@@ -394,10 +394,15 @@ export const ShoppingPage = ({
       <div className="flex items-end">
         <form.Field
           name="title"
-          children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
+          children={(field: {
+            state: { value: string };
+            handleChange: (value: string) => void;
+          }) => (
             <Popover open={titleFocused && suggestions.length > 0}>
               <div className="relative flex-1 space-y-1">
-                <Label className={mobile ? "sr-only" : ""}>{t("shopping.itemLabel")}</Label>
+                <Label className={mobile ? "sr-only" : ""}>
+                  {t("shopping.itemLabel")}
+                </Label>
                 <PopoverAnchor asChild>
                   <div>
                     <Popover>
@@ -434,9 +439,15 @@ export const ShoppingPage = ({
                               <MoreHorizontal className="h-4 w-4" />
                             </Button>
                           </PopoverTrigger>
-                          <Button type="submit" disabled={busy} className="h-full shrink-0 rounded-none border-l border-brand-200 px-3 dark:border-slate-700">
+                          <Button
+                            type="submit"
+                            disabled={busy}
+                            className="h-full shrink-0 rounded-none border-l border-brand-200 px-3 dark:border-slate-700"
+                          >
                             <Plus className="h-4 w-4 sm:hidden" />
-                            <span className="hidden sm:inline">{t("common.add")}</span>
+                            <span className="hidden sm:inline">
+                              {t("common.add")}
+                            </span>
                           </Button>
                         </div>
                       </PopoverAnchor>
@@ -447,108 +458,139 @@ export const ShoppingPage = ({
                         className="w-auto -translate-x-1.5 space-y-3 rounded-xl border-brand-100 shadow-lg duration-200 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 dark:border-slate-700"
                         style={{ width: `${addItemPopoverWidth}px` }}
                       >
-                    <form.Field
-                      name="tagsInput"
-                      children={(tagField: { state: { value: string }; handleChange: (value: string) => void }) => (
+                        <form.Field
+                          name="tagsInput"
+                          children={(tagField: {
+                            state: { value: string };
+                            handleChange: (value: string) => void;
+                          }) => (
+                            <div className="space-y-1">
+                              <Label>{t("shopping.tagsLabel")}</Label>
+                              <Input
+                                value={tagField.state.value}
+                                onChange={(event) => {
+                                  tagField.handleChange(event.target.value);
+                                  setAddItemTagsTouched(true);
+                                }}
+                                placeholder={t("shopping.tagsPlaceholder")}
+                              />
+                            </div>
+                          )}
+                        />
                         <div className="space-y-1">
-                          <Label>{t("shopping.tagsLabel")}</Label>
-                          <Input
-                            value={tagField.state.value}
-                            onChange={(event) => {
-                              tagField.handleChange(event.target.value);
-                              setAddItemTagsTouched(true);
-                            }}
-                            placeholder={t("shopping.tagsPlaceholder")}
+                          <form.Field
+                            name="recurrenceValue"
+                            children={(recurrenceField: {
+                              state: { value: string };
+                              handleChange: (value: string) => void;
+                            }) => (
+                              <div className="space-y-1">
+                                <Label>
+                                  {t("shopping.recurrenceValueLabel")}
+                                </Label>
+                                <InputWithSuffix
+                                  suffix={
+                                    <Select
+                                      value={recurrenceUnit}
+                                      onValueChange={(value: string) =>
+                                        setRecurrenceUnit(
+                                          value as ShoppingRecurrenceUnit,
+                                        )
+                                      }
+                                    >
+                                      <SelectTrigger className="h-7 w-[110px] border-brand-200 bg-white/95 px-2 text-xs dark:border-slate-700 dark:bg-slate-900">
+                                        <SelectValue />
+                                      </SelectTrigger>
+                                      <SelectContent
+                                        side={mobile ? "top" : "bottom"}
+                                      >
+                                        {unitOptions.map((option) => (
+                                          <SelectItem
+                                            key={option.id}
+                                            value={option.id}
+                                          >
+                                            {option.label}
+                                          </SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
+                                  }
+                                  type="number"
+                                  min="1"
+                                  inputMode="numeric"
+                                  value={recurrenceField.state.value}
+                                  onChange={(event) =>
+                                    recurrenceField.handleChange(
+                                      event.target.value,
+                                    )
+                                  }
+                                  placeholder={t(
+                                    "shopping.recurrenceValuePlaceholder",
+                                  )}
+                                  interactiveSuffix
+                                  suffixContainerClassName="right-1"
+                                  inputClassName="pr-[7.75rem]"
+                                />
+                              </div>
+                            )}
                           />
                         </div>
-                      )}
-                    />
-                    <div className="space-y-1">
-                      <form.Field
-                        name="recurrenceValue"
-                        children={(recurrenceField: { state: { value: string }; handleChange: (value: string) => void }) => (
-                          <div className="space-y-1">
-                            <Label>{t("shopping.recurrenceValueLabel")}</Label>
-                            <InputWithSuffix
-                              suffix={
-                                <Select
-                                  value={recurrenceUnit}
-                                  onValueChange={(value: string) => setRecurrenceUnit(value as ShoppingRecurrenceUnit)}
-                                >
-                                  <SelectTrigger className="h-7 w-[110px] border-brand-200 bg-white/95 px-2 text-xs dark:border-slate-700 dark:bg-slate-900">
-                                    <SelectValue />
-                                  </SelectTrigger>
-                                  <SelectContent side={mobile ? "top" : "bottom"}>
-                                    {unitOptions.map((option) => (
-                                      <SelectItem key={option.id} value={option.id}>
-                                        {option.label}
-                                      </SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
-                              }
-                              type="number"
-                              min="1"
-                              inputMode="numeric"
-                              value={recurrenceField.state.value}
-                              onChange={(event) => recurrenceField.handleChange(event.target.value)}
-                              placeholder={t("shopping.recurrenceValuePlaceholder")}
-                              interactiveSuffix
-                              suffixContainerClassName="right-1"
-                              inputClassName="pr-[7.75rem]"
-                            />
-                          </div>
-                        )}
-                      />
-                    </div>
                       </PopoverContent>
                     </Popover>
                   </div>
                 </PopoverAnchor>
-                    <PopoverContent
-                      align="start"
-                      side={mobile ? "top" : "bottom"}
-                      sideOffset={10}
-                      onOpenAutoFocus={(event) => event.preventDefault()}
-                      onCloseAutoFocus={(event) => event.preventDefault()}
-                      className="w-[var(--radix-popover-trigger-width)] rounded-xl border border-brand-100 bg-white p-1 shadow-lg duration-150 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0 dark:border-slate-700 dark:bg-slate-900"
-                    >
+                <PopoverContent
+                  align="start"
+                  side={mobile ? "top" : "bottom"}
+                  sideOffset={10}
+                  onOpenAutoFocus={(event) => event.preventDefault()}
+                  onCloseAutoFocus={(event) => event.preventDefault()}
+                  className="w-[var(--radix-popover-trigger-width)] rounded-xl border border-brand-100 bg-white p-1 shadow-lg duration-150 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0 dark:border-slate-700 dark:bg-slate-900"
+                >
                   <p className="px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
                     {t("shopping.suggestionsTitle")}
                   </p>
                   <ul className="max-h-56 overflow-y-auto">
-                    {suggestions.map((suggestion: ShoppingSuggestion, index: number) => (
-                      <li key={suggestion.key}>
-                        <button
-                          type="button"
-                          className={`flex w-full items-center justify-between gap-2 rounded-lg px-2 py-2 text-left hover:bg-brand-50 dark:hover:bg-slate-800 ${
-                            index === activeSuggestionIndex ? "bg-brand-50 dark:bg-slate-800" : ""
-                          }`}
-                          onMouseDown={(event) => event.preventDefault()}
-                          onClick={() => {
-                            onSelectSuggestion(suggestion);
-                          }}
-                        >
-                          <div className="min-w-0">
-                            <p className="truncate text-sm font-medium text-slate-900 dark:text-slate-100">
-                              {suggestion.title}
-                            </p>
-                            {suggestion.tags.length > 0 ? (
-                              <p className="truncate text-[11px] text-slate-500 dark:text-slate-400">
-                                #{suggestion.tags.join(" #")}
+                    {suggestions.map(
+                      (suggestion: ShoppingSuggestion, index: number) => (
+                        <li key={suggestion.key}>
+                          <button
+                            type="button"
+                            className={`flex w-full items-center justify-between gap-2 rounded-lg px-2 py-2 text-left hover:bg-brand-50/80 dark:hover:bg-slate-800/70 ${
+                              index === activeSuggestionIndex
+                                ? "bg-brand-100/20"
+                                : ""
+                            }`}
+                            onMouseDown={(event) => event.preventDefault()}
+                            onClick={() => {
+                              onSelectSuggestion(suggestion);
+                            }}
+                          >
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-medium text-slate-900 dark:text-slate-100">
+                                {suggestion.title}
                               </p>
-                            ) : null}
-                          </div>
-                          {suggestion.source === "history" ? (
-                            <Badge className="text-[10px]">
-                              {t("shopping.suggestionBoughtCount", { count: suggestion.count })}
-                            </Badge>
-                          ) : (
-                            <Badge className="text-[10px]">{t("shopping.suggestionLibraryBadge")}</Badge>
-                          )}
-                        </button>
-                      </li>
-                    ))}
+                              {suggestion.tags.length > 0 ? (
+                                <p className="truncate text-[11px] text-slate-500 dark:text-slate-400">
+                                  #{suggestion.tags.join(" #")}
+                                </p>
+                              ) : null}
+                            </div>
+                            {suggestion.source === "history" ? (
+                              <Badge className="text-[10px]">
+                                {t("shopping.suggestionBoughtCount", {
+                                  count: suggestion.count,
+                                })}
+                              </Badge>
+                            ) : (
+                              <Badge className="text-[10px]">
+                                {t("shopping.suggestionLibraryBadge")}
+                              </Badge>
+                            )}
+                          </button>
+                        </li>
+                      ),
+                    )}
                   </ul>
                 </PopoverContent>
               </div>
@@ -886,14 +928,16 @@ export const ShoppingPage = ({
                       <ul className="max-h-56 overflow-y-auto">
                         {suggestions.map((suggestion: ShoppingSuggestion, index: number) => (
                           <li key={suggestion.key}>
-                            <button
-                              type="button"
-                              className={`flex w-full items-center justify-between gap-2 rounded-lg px-2 py-2 text-left hover:bg-brand-50 dark:hover:bg-slate-800 ${
-                                index === activeSuggestionIndex ? "bg-brand-50 dark:bg-slate-800" : ""
-                              }`}
-                              onMouseDown={(event) => event.preventDefault()}
-                              onClick={() => {
-                                onSelectSuggestion(suggestion);
+                        <button
+                          type="button"
+                          className={`flex w-full items-center justify-between gap-2 rounded-lg px-2 py-2 text-left hover:bg-brand-50/80 dark:hover:bg-slate-800/70 ${
+                            index === activeSuggestionIndex
+                              ? "bg-brand-100/70 dark:bg-slate-700/70"
+                              : ""
+                          }`}
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={() => {
+                            onSelectSuggestion(suggestion);
                               }}
                             >
                               <div className="min-w-0">
