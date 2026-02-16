@@ -199,7 +199,7 @@ Wichtig:
 
 ### Supabase Edge Functions (Push)
 
-Die Push-Pipeline laeuft ueber Supabase Edge Functions (`dispatch-push-jobs`, `schedule-task-due`) und benoetigt eigene Secrets.
+Die Push-Pipeline laeuft ueber Supabase Edge Functions (`dispatch-push-jobs`, `schedule-task-due`, `schedule-member-of-month`) und benoetigt eigene Secrets.
 
 In Supabase **Project Settings → Functions → Secrets** setzen:
 
@@ -208,6 +208,7 @@ In Supabase **Project Settings → Functions → Secrets** setzen:
 - `SUPABASE_ANON_KEY`
 - `FCM_PROJECT_ID`
 - `FCM_SERVICE_ACCOUNT_JSON` (voller JSON-String des Firebase Service Accounts)
+- `CRON_SECRET` (muss dem DB-Cron-Secret entsprechen, siehe unten)
 
 Optional fuer lokale Tests via CLI:
 
@@ -217,7 +218,8 @@ supabase secrets set \
   SUPABASE_SERVICE_ROLE_KEY=... \
   SUPABASE_PUBLISHABLE_KEY=... \
   FCM_PROJECT_ID=... \
-  FCM_SERVICE_ACCOUNT_JSON='{"type":"service_account",...}'
+  FCM_SERVICE_ACCOUNT_JSON='{"type":"service_account",...}' \
+  CRON_SECRET=...
 ```
 
 Deployment:
@@ -226,14 +228,22 @@ Deployment:
 supabase functions deploy dispatch-push-jobs
 supabase functions deploy schedule-task-due
 supabase functions deploy register-push-token
+supabase functions deploy schedule-member-of-month
 ```
 
 Scheduler/Cron:
 
-- In `supabase/schema.sql` ist ein Cron-Block enthalten (Placeholder-URL ersetzen).
-- Der Scheduler ruft `dispatch-push-jobs` regelmaessig und `schedule-task-due` taeglich auf.
+- In `supabase/schema.sql` ist ein Cron-Block enthalten (pg_cron + pg_net erforderlich).
+- Der Scheduler ruft `dispatch-push-jobs` regelmaessig, `schedule-task-due` taeglich und `schedule-member-of-month` monatlich auf.
+- Das Cron-Secret kommt bevorzugt aus Vault `domora_cron_secret`, alternativ aus `app.supabase_cron_secret`.
+- Edge Functions pruefen `x-cron-secret` gegen `CRON_SECRET`.
+- Wichtig: `net.http_post(url, body, params, headers, timeout)` (Headers sind der 4. Parameter).
 
 Hinweis: Fuer Web-Client (FCM) wird zusaetzlich `public/firebase-config.json` benoetigt (siehe `public/firebase-config.example.json`) sowie `VITE_FIREBASE_*` Variablen in der `.env`.
+
+Edge Functions Auth:
+
+- `dispatch-push-jobs` wird per Cron ohne JWT aufgerufen, daher in der Function-Konfiguration `verify_jwt = false` setzen.
 
 ## Datenbank und Security
 
@@ -403,3 +413,6 @@ GitHub Actions (siehe `.github/workflows/`):
 - Browser-/Device-Permissions prüfen
 - HTTPS/secure context verwenden
 - nicht jeder Browser unterstuetzt alle Kamera/OCR-Pfade identisch
+- Wenn `dispatch-push-jobs` 401 liefert: `x-cron-secret` Header und `CRON_SECRET`/Vault `domora_cron_secret` pruefen, Function muss `verify_jwt = false` haben.
+- Wenn `net._http_response` Timeouts zeigt, aber `push_jobs.pending` sinkt: Timeout erhoehen (z. B. 20000–30000 ms) oder Batch groesse in der Function reduzieren.
+- `push_log` bleibt leer, wenn es keine aktiven Tokens gibt: `push_tokens` mit `status='active'` pruefen oder ob Empfaenger durch `push_preferences` (topics/quiet_hours/disabled) gefiltert werden.

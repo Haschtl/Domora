@@ -123,15 +123,18 @@ const buildMessage = (job: PushJob) => {
   return base;
 };
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-serve(async (_req) => {
+serve(async (req) => {
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   const fcmServiceAccount = Deno.env.get("FCM_SERVICE_ACCOUNT_JSON");
   const fcmProjectId = Deno.env.get("FCM_PROJECT_ID");
+  const cronSecret = Deno.env.get("CRON_SECRET");
 
-  if (!supabaseUrl || !supabaseServiceKey || !fcmServiceAccount || !fcmProjectId) {
+  if (!supabaseUrl || !supabaseServiceKey || !fcmServiceAccount || !fcmProjectId || !cronSecret) {
     return new Response("Missing env", { status: 500 });
+  }
+  if (req.headers.get("x-cron-secret") !== cronSecret) {
+    return new Response("Unauthorized", { status: 401 });
   }
 
   const supabase = createClient(supabaseUrl, supabaseServiceKey);

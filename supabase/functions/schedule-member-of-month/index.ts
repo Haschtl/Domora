@@ -42,11 +42,15 @@ const pickVariant = (name: string, pimpers: number, monthLabel: string) => {
   return variants[Math.floor(Math.random() * variants.length)];
 };
 
-serve(async () => {
+serve(async (req) => {
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  if (!supabaseUrl || !supabaseServiceKey) {
+  const cronSecret = Deno.env.get("CRON_SECRET");
+  if (!supabaseUrl || !supabaseServiceKey || !cronSecret) {
     return new Response("Missing env", { status: 500 });
+  }
+  if (req.headers.get("x-cron-secret") !== cronSecret) {
+    return new Response("Unauthorized", { status: 401 });
   }
 
   const supabase = createClient(supabaseUrl, supabaseServiceKey);

@@ -576,45 +576,90 @@ after update of assignee_id on tasks
 for each row execute function queue_push_on_task_takeover();
 
 do $$
+declare
+  cron_secret text;
 begin
   if exists (
     select 1
     from pg_extension
     where extname = 'pg_cron'
   ) and to_regnamespace('cron') is not null then
-    if to_regprocedure('net.http_post(jsonb)') is not null then
+    if to_regprocedure('net.http_post(text,jsonb,jsonb,jsonb,integer)') is not null then
+      -- pg_net does not forward Authorization headers; use a custom cron secret header instead.
+      -- Prefer Vault secret `domora_cron_secret`, fallback to app setting.
+      if to_regclass('vault.decrypted_secrets') is not null then
+        select ds.decrypted_secret
+        into cron_secret
+        from vault.decrypted_secrets ds
+        where ds.name = 'domora_cron_secret'
+        order by ds.updated_at desc
+        limit 1;
+      else
+        cron_secret := current_setting('app.supabase_cron_secret', true);
+      end if;
+      if coalesce(cron_secret, '') = '' then
+        raise notice 'Missing cron secret (vault domora_cron_secret or app.supabase_cron_secret); cron jobs not scheduled';
+        return;
+      end if;
       perform cron.schedule(
         'dispatch-push-jobs',
         '*/2 * * * *',
-        $cron$
-        select
-          net.http_post(
-            url:='https://YOUR_PROJECT_REF.functions.supabase.co/dispatch-push-jobs',
-            headers:='{"Content-Type": "application/json"}'::jsonb
-          );
-        $cron$
+        format(
+          $cron$
+          select
+            net.http_post(
+              'https://yaupeuhvmrucyvlyzvun.functions.supabase.co/dispatch-push-jobs',
+              '{}'::jsonb,
+              null,
+              jsonb_build_object(
+                'Content-Type', 'application/json',
+                'x-cron-secret', %s
+              ),
+              10000
+            );
+          $cron$,
+          quote_literal(cron_secret)
+        )
       );
       perform cron.schedule(
         'schedule-task-due',
         '0 9 * * *',
-        $cron$
-        select
-          net.http_post(
-            url:='https://YOUR_PROJECT_REF.functions.supabase.co/schedule-task-due',
-            headers:='{"Content-Type": "application/json"}'::jsonb
-          );
-        $cron$
+        format(
+          $cron$
+          select
+            net.http_post(
+              'https://yaupeuhvmrucyvlyzvun.functions.supabase.co/schedule-task-due',
+              '{}'::jsonb,
+              null,
+              jsonb_build_object(
+                'Content-Type', 'application/json',
+                'x-cron-secret', %s
+              ),
+              10000
+            );
+          $cron$,
+          quote_literal(cron_secret)
+        )
       );
       perform cron.schedule(
         'schedule-member-of-month',
         '5 8 1 * *',
-        $cron$
-        select
-          net.http_post(
-            url:='https://YOUR_PROJECT_REF.functions.supabase.co/schedule-member-of-month',
-            headers:='{"Content-Type": "application/json"}'::jsonb
-          );
-        $cron$
+        format(
+          $cron$
+          select
+            net.http_post(
+              'https://yaupeuhvmrucyvlyzvun.functions.supabase.co/schedule-member-of-month',
+              '{}'::jsonb,
+              null,
+              jsonb_build_object(
+                'Content-Type', 'application/json',
+                'x-cron-secret', %s
+              ),
+              10000
+            );
+          $cron$,
+          quote_literal(cron_secret)
+        )
       );
     else
       raise notice 'net.http_post not available';
@@ -2046,7 +2091,7 @@ begin
   -- For authenticated users, owner enforcement is always required, even if
   -- p_enforce_owner=false is passed by the caller.
   if (
-    coalesce(auth.role(), 'authenticated') <> 'service_role'
+    (auth.role() is not null and auth.role() <> 'service_role')
     or p_enforce_owner
   ) and not is_household_owner(p_household_id) then
     raise exception 'Only household owners can run maintenance';

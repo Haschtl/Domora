@@ -20,7 +20,7 @@
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "test": "pnpm test:unit && pnpm test:e2e",
-    "supabase:functions:deploy:all": "node scripts/deploy-functions.mjs"
+    "supabase:functions:deploy:all": "export SUPABASE_PROJECT_REF=yaupeuhvmrucyvlyzvun; node scripts/deploy-functions.mjs --no-verify-jwt"
   },
   "dependencies": {
     "@capacitor/android": "^8.1.0",
