@@ -1985,17 +1985,15 @@ export const HomePage = ({
                 {whiteboardStatusIndicator}
                 <span className="hidden sm:inline">{whiteboardStatusLabel}</span>
               </span>
-              <Button
+              <button
                 type="button"
-                size="icon"
-                variant="ghost"
-                className="h-8 w-8"
+                className="inline-flex h-8 w-8 items-center justify-center rounded-xl text-slate-700 hover:bg-slate-200/80 dark:text-brand-100 dark:hover:bg-slate-800"
                 onClick={() => setIsWhiteboardFullscreenOpen(true)}
                 aria-label={t("home.whiteboardFullscreen")}
                 title={t("home.whiteboardFullscreen")}
               >
                 <Maximize2 className="h-4 w-4" />
-              </Button>
+              </button>
             </div>
           </div>
         </CardHeader>
@@ -2038,16 +2036,14 @@ export const HomePage = ({
               <span className="hidden text-xs font-medium text-slate-500 dark:text-slate-400 sm:inline">
                 {whiteboardStatusLabel}
               </span>
-              <Button
+              <button
                 type="button"
-                size="icon"
-                variant="ghost"
-                className="h-8 w-8"
+                className="inline-flex h-8 w-8 items-center justify-center rounded-xl text-slate-700 hover:bg-slate-200/80 dark:text-brand-100 dark:hover:bg-slate-800"
                 onClick={() => setIsWhiteboardFullscreenOpen(false)}
                 aria-label={t("common.close")}
               >
                 <X className="h-4 w-4" />
-              </Button>
+              </button>
             </div>
           </div>
           <div className="flex-1">
