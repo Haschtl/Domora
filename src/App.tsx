@@ -346,9 +346,7 @@ const AppLayout = () => {
           "bucketItems",
           "tasks",
           "taskCompletions",
-          "finances",
-          "cashAuditRequests",
-          "householdEvents"
+          "cashAuditRequests"
         ]);
         return;
       }
@@ -366,7 +364,6 @@ const AppLayout = () => {
 
       if (path.startsWith("/finances")) {
         void ensureHouseholdQueries(queryClient, householdId, [
-          "finances",
           "financeSubscriptions",
           "cashAuditRequests"
         ]);

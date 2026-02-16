@@ -13,6 +13,7 @@ import {
   type FinanceEntriesPage,
   type HouseholdEventsPage
 } from "../lib/api";
+import { queryKeys } from "../lib/query-keys";
 import type {
   BucketItem,
   CashAuditRequest,
@@ -147,7 +148,7 @@ export const useHouseholdFinances = (
     QueryKey,
     string | null
   >({
-    queryKey: householdId ? householdQueryOptions.finances(householdId).queryKey : ["household", "none", "finances"],
+    queryKey: householdId ? queryKeys.householdFinances(householdId) : ["household", "none", "finances"],
     queryFn: ({ pageParam }) => getFinanceEntriesPage(householdId!, { cursor: pageParam as string | null | undefined }),
     enabled: Boolean(householdId) && enabled,
     initialPageParam: null as string | null,
@@ -189,7 +190,7 @@ export const useHouseholdEvents = (
     QueryKey,
     string | null
   >({
-    queryKey: householdId ? householdQueryOptions.householdEvents(householdId).queryKey : ["household", "none", "events"],
+    queryKey: householdId ? queryKeys.householdEvents(householdId) : ["household", "none", "events"],
     queryFn: ({ pageParam }) => getHouseholdEventsPage(householdId!, { cursor: pageParam as string | null | undefined }),
     enabled: Boolean(householdId) && enabled,
     initialPageParam: null as string | null,

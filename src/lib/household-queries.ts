@@ -2,9 +2,7 @@ import type { QueryClient } from "@tanstack/react-query";
 import {
   getBucketItems,
   getCashAuditRequests,
-  getFinanceEntries,
   getFinanceSubscriptions,
-  getHouseholdEvents,
   getHouseholdMemberPimpers,
   getHouseholdMembers,
   getHouseholdWhiteboard,
@@ -36,10 +34,6 @@ export const householdQueryOptions = {
     queryKey: queryKeys.householdTaskCompletions(householdId),
     queryFn: () => getTaskCompletions(householdId)
   }),
-  finances: (householdId: string) => ({
-    queryKey: queryKeys.householdFinances(householdId),
-    queryFn: () => getFinanceEntries(householdId)
-  }),
   cashAuditRequests: (householdId: string) => ({
     queryKey: queryKeys.householdCashAuditRequests(householdId),
     queryFn: () => getCashAuditRequests(householdId)
@@ -55,10 +49,6 @@ export const householdQueryOptions = {
   memberPimpers: (householdId: string) => ({
     queryKey: queryKeys.householdMemberPimpers(householdId),
     queryFn: () => getHouseholdMemberPimpers(householdId)
-  }),
-  householdEvents: (householdId: string) => ({
-    queryKey: queryKeys.householdEvents(householdId),
-    queryFn: () => getHouseholdEvents(householdId)
   }),
   householdWhiteboard: (householdId: string) => ({
     queryKey: queryKeys.householdWhiteboard(householdId),

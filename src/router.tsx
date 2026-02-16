@@ -66,9 +66,7 @@ const homeSummaryRoute = createRoute({
       "bucketItems",
       "tasks",
       "taskCompletions",
-      "finances",
-      "cashAuditRequests",
-      "householdEvents"
+      "cashAuditRequests"
     ]),
   component: () => null
 });
@@ -81,9 +79,7 @@ const homeBucketRoute = createRoute({
       "bucketItems",
       "tasks",
       "taskCompletions",
-      "finances",
-      "cashAuditRequests",
-      "householdEvents"
+      "cashAuditRequests"
     ]),
   component: () => null
 });
@@ -96,9 +92,7 @@ const homeFeedRoute = createRoute({
       "bucketItems",
       "tasks",
       "taskCompletions",
-      "finances",
-      "cashAuditRequests",
-      "householdEvents"
+      "cashAuditRequests"
     ]),
   component: () => null
 });
@@ -175,28 +169,28 @@ const tasksSettingsRoute = createRoute({
 const financesOverviewRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "finances/overview",
-  loader: () => prefetchHouseholdData(["finances", "financeSubscriptions", "cashAuditRequests"]),
+  loader: () => prefetchHouseholdData(["financeSubscriptions", "cashAuditRequests"]),
   component: () => null
 });
 
 const financesStatsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "finances/stats",
-  loader: () => prefetchHouseholdData(["finances", "financeSubscriptions", "cashAuditRequests"]),
+  loader: () => prefetchHouseholdData(["financeSubscriptions", "cashAuditRequests"]),
   component: () => null
 });
 
 const financesArchiveRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "finances/archive",
-  loader: () => prefetchHouseholdData(["finances", "financeSubscriptions", "cashAuditRequests"]),
+  loader: () => prefetchHouseholdData(["financeSubscriptions", "cashAuditRequests"]),
   component: () => null
 });
 
 const financesSubscriptionsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "finances/subscriptions",
-  loader: () => prefetchHouseholdData(["finances", "financeSubscriptions", "cashAuditRequests"]),
+  loader: () => prefetchHouseholdData(["financeSubscriptions", "cashAuditRequests"]),
   component: () => null
 });
 
