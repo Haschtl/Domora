@@ -8,6 +8,11 @@ interface UseWorkspaceActionsOptions {
   executeAction: (action: () => Promise<void>) => Promise<void>;
 }
 
+interface OptimisticUpdate<TData = unknown> {
+  queryKey: readonly unknown[];
+  updater: (current: TData | undefined) => TData | undefined;
+}
+
 export const useWorkspaceActions = ({ queryClient, activeHouseholdId, executeAction }: UseWorkspaceActionsOptions) => {
   const invalidateWorkspace = useCallback(async () => {
     if (!activeHouseholdId) return;
@@ -24,8 +29,42 @@ export const useWorkspaceActions = ({ queryClient, activeHouseholdId, executeAct
     [executeAction, invalidateWorkspace]
   );
 
+  const runWithOptimisticUpdate = useCallback(
+    async (options: {
+      updates: OptimisticUpdate<unknown>[];
+      action: () => Promise<void>;
+      invalidate?: boolean;
+    }) => {
+      await executeAction(async () => {
+        const snapshots = options.updates.map(({ queryKey }) => ({
+          queryKey,
+          data: queryClient.getQueryData(queryKey)
+        }));
+
+        options.updates.forEach(({ queryKey, updater }) => {
+          queryClient.setQueryData(queryKey, (current) => updater(current as any));
+        });
+
+        try {
+          await options.action();
+        } catch (error) {
+          snapshots.forEach(({ queryKey, data }) => {
+            queryClient.setQueryData(queryKey, data);
+          });
+          throw error;
+        } finally {
+          if (options.invalidate !== false) {
+            await invalidateWorkspace();
+          }
+        }
+      });
+    },
+    [executeAction, invalidateWorkspace, queryClient]
+  );
+
   return {
     invalidateWorkspace,
-    runWithWorkspaceInvalidation
+    runWithWorkspaceInvalidation,
+    runWithOptimisticUpdate
   };
 };
