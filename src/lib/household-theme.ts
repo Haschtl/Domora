@@ -118,6 +118,8 @@ export const applyHouseholdTheme = (theme: HouseholdThemeConfig) => {
   });
   Object.entries(accentPalette).forEach(([shade, value]) => {
     root.style.setProperty(`--accent-${shade}`, value);
+    const { r, g, b } = hexToRgb(value);
+    root.style.setProperty(`--accent-${shade}-rgb`, `${r} ${g} ${b}`);
   });
 
   root.style.setProperty("--theme-font", normalized.fontFamily);
