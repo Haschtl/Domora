@@ -871,6 +871,12 @@ export const TasksPage = ({
   const sendTaskReminder = useCallback(
     async (task: TaskItem, assigneeName: string) => {
       if (!task.assignee_id) return;
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData.session?.access_token;
+      if (!accessToken) {
+        toast.error(t("tasks.reminderError"));
+        return;
+      }
       const late = reminderLateLabel(task.due_at, task.grace_minutes, t);
       const taskTitle = task.title || t("tasks.confirmCompleteTitle");
       const fallbackTitle = `Erinnerung: ${taskTitle}`;
@@ -884,7 +890,8 @@ export const TasksPage = ({
       const body = interpolateTemplate(rawBody, values);
 
       const { error } = await supabase.functions.invoke("send-task-reminder", {
-        body: { taskId: task.id, title, body }
+        body: { taskId: task.id, title, body },
+        headers: { Authorization: `Bearer ${accessToken}` }
       });
 
       if (error) {

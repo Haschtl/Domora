@@ -16,7 +16,8 @@ Domora ist ein WG-Organizer als Web-App (PWA) mit Supabase-Backend.
     - [Shopping](#shopping)
     - [Tasks](#tasks)
     - [Finanzen](#finanzen)
-    - [Settings](#settings)
+  - [Settings](#settings)
+  - [Screenshots](#screenshots)
   - [Tech Stack](#tech-stack)
   - [Projektstruktur](#projektstruktur)
   - [Voraussetzungen](#voraussetzungen)
@@ -96,6 +97,59 @@ Domora ist ein WG-Organizer als Web-App (PWA) mit Supabase-Backend.
 - Payment Handles (PayPal, Revolut, Wero)
 - Haushaltseinstellungen (Adresse, Waehrung, Miete, Flaechen)
 - Mieterverwaltung inkl. Rollen
+
+## Screenshots
+
+Home – Summary  
+![Home Summary](screenshots/Home:Summary.png)
+
+Home – Feed  
+![Home Feed](screenshots/Home:Feed.png)
+
+Home – Bucket  
+![Home Bucket](screenshots/Home:Bucket.png)
+
+Tasks – Overview  
+![Tasks Overview](screenshots/Tasks:Overview.png)
+
+Task – Details  
+![Task Details](screenshots/Task:Details.png)
+
+Task – Stats 1  
+![Task Stats 1](screenshots/Task:Stats1.png)
+
+Task – Stats 2  
+![Task Stats 2](screenshots/Task:Stats2.png)
+
+Shopping – List  
+![Shopping List](screenshots/Shopping:List.png)
+
+Shopping – History  
+![Shopping History](screenshots/Shopping:History.png)
+
+Finanzen – Overview  
+![Finanzen Overview](screenshots/Finance:Overview.png)
+
+Finanzen – Rent  
+![Finanzen Rent](screenshots/Finance:Rent.png)
+
+Finanzen – Contracts  
+![Finanzen Contracts](screenshots/Finance:Contracts.png)
+
+Finanzen – Archive  
+![Finanzen Archive](screenshots/Finance:Archive.png)
+
+Finanzen – Stats 1  
+![Finanzen Stats 1](screenshots/Finance:Stats1.png)
+
+Finanzen – Stats 2  
+![Finanzen Stats 2](screenshots/Finance:Stats2.png)
+
+Settings – Me  
+![Settings Me](screenshots/Settings:Me.png)
+
+Settings – WG  
+![Settings WG](screenshots/Settings:WG.png)
 
 ## Tech Stack
 
