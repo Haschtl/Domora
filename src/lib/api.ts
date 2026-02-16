@@ -1510,6 +1510,7 @@ export const addTask = async (
     targetStateImageUrl: z.string().trim().max(5_000_000).nullable().optional(),
     startDate: z.string().min(1),
     frequencyDays: z.coerce.number().int().positive(),
+    cronPattern: z.string().trim().min(1).nullable().optional(),
     effortPimpers: z.coerce.number().int().positive(),
     graceMinutes: z.coerce.number().int().nonnegative().default(1440),
     prioritizeLowPimpers: z.coerce.boolean(),
@@ -1524,6 +1525,7 @@ export const addTask = async (
     targetStateImageUrl: input.targetStateImageUrl ?? null,
     startDate: input.startDate,
     frequencyDays: input.frequencyDays,
+    cronPattern: input.cronPattern ?? null,
     effortPimpers: input.effortPimpers,
     graceMinutes: input.graceMinutes,
     prioritizeLowPimpers: input.prioritizeLowPimpers,
@@ -1535,7 +1537,7 @@ export const addTask = async (
 
   const taskId = uuid();
   const dueAt = getDueAtFromStartDate(parsedInput.startDate);
-  const cronPattern = taskFrequencyDaysToCronPattern(parsedInput.frequencyDays);
+  const cronPattern = parsedInput.cronPattern?.trim() || taskFrequencyDaysToCronPattern(parsedInput.frequencyDays);
 
   const { data, error } = await supabase
     .from("tasks")
@@ -1587,6 +1589,7 @@ export const updateTask = async (taskId: string, input: NewTaskInput): Promise<v
     targetStateImageUrl: z.string().trim().max(5_000_000).nullable().optional(),
     startDate: z.string().min(1),
     frequencyDays: z.coerce.number().int().positive(),
+    cronPattern: z.string().trim().min(1).nullable().optional(),
     effortPimpers: z.coerce.number().int().positive(),
     graceMinutes: z.coerce.number().int().nonnegative().default(1440),
     prioritizeLowPimpers: z.coerce.boolean(),
@@ -1600,6 +1603,7 @@ export const updateTask = async (taskId: string, input: NewTaskInput): Promise<v
     targetStateImageUrl: input.targetStateImageUrl ?? null,
     startDate: input.startDate,
     frequencyDays: input.frequencyDays,
+    cronPattern: input.cronPattern ?? null,
     effortPimpers: input.effortPimpers,
     graceMinutes: input.graceMinutes,
     prioritizeLowPimpers: input.prioritizeLowPimpers,
@@ -1608,7 +1612,7 @@ export const updateTask = async (taskId: string, input: NewTaskInput): Promise<v
   });
 
   const dueAt = getDueAtFromStartDate(parsedInput.startDate);
-  const cronPattern = taskFrequencyDaysToCronPattern(parsedInput.frequencyDays);
+  const cronPattern = parsedInput.cronPattern?.trim() || taskFrequencyDaysToCronPattern(parsedInput.frequencyDays);
   const assigneeId = parsedInput.rotationUserIds[0];
 
   const { error: taskError } = await supabase

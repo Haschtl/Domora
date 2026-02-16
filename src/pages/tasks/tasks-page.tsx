@@ -62,6 +62,7 @@ import { Label } from "../../components/ui/label";
 import { MobileSubpageDialog } from "../../components/ui/mobile-subpage-dialog";
 import { PimpersIcon } from "../../components/pimpers-icon";
 import { PersonSelect } from "../../components/person-select";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
 import { StarRating } from "../../components/ui/star-rating";
 import { Switch } from "../../components/ui/switch";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../../components/ui/tooltip";
@@ -150,6 +151,131 @@ const createDefaultTaskFormValues = (): TaskFormValues => ({
 const MAX_TASK_IMAGE_DIMENSION = 1600;
 const MAX_TASK_IMAGE_SIZE_MB = 0.9;
 const TASK_IMAGE_QUALITY = 0.78;
+const DEFAULT_WEEKDAY = new Date().getDay();
+const WEEKDAY_OPTIONS = [
+  { value: 1, label: "Mo" },
+  { value: 2, label: "Di" },
+  { value: 3, label: "Mi" },
+  { value: 4, label: "Do" },
+  { value: 5, label: "Fr" },
+  { value: 6, label: "Sa" },
+  { value: 0, label: "So" }
+];
+
+type ComplexFrequency = {
+  type: "weekly" | "monthly";
+  weekdays: number[];
+  intervalWeeks: number;
+  monthDay: number;
+  intervalMonths: number;
+};
+
+const createDefaultComplexFrequency = (): ComplexFrequency => ({
+  type: "weekly",
+  weekdays: [DEFAULT_WEEKDAY],
+  intervalWeeks: 1,
+  monthDay: 1,
+  intervalMonths: 1
+});
+
+const clampNumber = (value: number, min: number, max: number) =>
+  Number.isFinite(value) ? Math.min(Math.max(value, min), max) : min;
+
+const buildCronPatternFromComplex = (config: ComplexFrequency) => {
+  if (config.type === "monthly") {
+    const day = clampNumber(Math.floor(config.monthDay), 1, 31);
+    const monthPart = config.intervalMonths > 1 ? `*/${config.intervalMonths}` : "*";
+    return `0 9 ${day} ${monthPart} *`;
+  }
+
+  const weekdays = config.weekdays.length > 0 ? [...new Set(config.weekdays)] : [DEFAULT_WEEKDAY];
+  if (config.intervalWeeks <= 1) {
+    return `0 9 * * ${weekdays.sort((a, b) => a - b).join(",")}`;
+  }
+  const intervalDays = Math.max(1, Math.floor(config.intervalWeeks) * 7);
+  return `0 9 */${intervalDays} * *`;
+};
+
+const deriveFrequencyDaysFromComplex = (config: ComplexFrequency) => {
+  if (config.type === "monthly") {
+    return Math.max(1, Math.floor(config.intervalMonths) * 30);
+  }
+  return Math.max(1, Math.floor(config.intervalWeeks) * 7);
+};
+
+const parseComplexFromCron = (pattern: string): { mode: "days" | "cron"; config: ComplexFrequency } => {
+  const fallback = createDefaultComplexFrequency();
+  if (!pattern) return { mode: "days", config: fallback };
+  const parts = pattern.trim().split(/\s+/);
+  if (parts.length < 5) return { mode: "days", config: fallback };
+  const dayPart = parts[2] ?? "";
+  const monthPart = parts[3] ?? "";
+  const weekPart = parts[4] ?? "";
+
+  if (dayPart.startsWith("*/")) {
+    return { mode: "days", config: fallback };
+  }
+
+  if (weekPart !== "*") {
+    const weekdays = weekPart
+      .split(",")
+      .map((value) => Number(value))
+      .filter((value) => Number.isFinite(value));
+    return {
+      mode: "cron",
+      config: {
+        type: "weekly",
+        weekdays: weekdays.length > 0 ? weekdays : [DEFAULT_WEEKDAY],
+        intervalWeeks: 1,
+        monthDay: 1,
+        intervalMonths: 1
+      }
+    };
+  }
+
+  if (dayPart !== "*" && dayPart !== "?") {
+    const day = Number(dayPart);
+    const intervalMonths = monthPart.startsWith("*/") ? Number(monthPart.slice(2)) : 1;
+    return {
+      mode: "cron",
+      config: {
+        type: "monthly",
+        weekdays: [DEFAULT_WEEKDAY],
+        intervalWeeks: 1,
+        monthDay: Number.isFinite(day) ? day : 1,
+        intervalMonths: Number.isFinite(intervalMonths) && intervalMonths > 0 ? intervalMonths : 1
+      }
+    };
+  }
+
+  return { mode: "days", config: fallback };
+};
+
+const formatComplexFrequencyPreview = (config: ComplexFrequency, t: (key: string, options?: Record<string, unknown>) => string) => {
+  if (config.type === "monthly") {
+    if (config.intervalMonths > 1) {
+      return t("tasks.frequencyPreviewMonthlyInterval", {
+        count: config.intervalMonths,
+        day: clampNumber(config.monthDay, 1, 31)
+      });
+    }
+    return t("tasks.frequencyPreviewMonthly", {
+      day: clampNumber(config.monthDay, 1, 31)
+    });
+  }
+
+  const weekdays = [...new Set(config.weekdays.length > 0 ? config.weekdays : [DEFAULT_WEEKDAY])]
+    .sort((a, b) => a - b)
+    .map((weekday) => t(`tasks.weekdayShort.${weekday}` as const));
+
+  if (config.intervalWeeks > 1) {
+    return t("tasks.frequencyPreviewWeeklyInterval", {
+      count: config.intervalWeeks,
+      days: weekdays.join(", ")
+    });
+  }
+  return t("tasks.frequencyPreviewWeekly", { days: weekdays.join(", ") });
+};
 
 const readBlobAsDataUrl = (blob: Blob) =>
   new Promise<string>((resolve, reject) => {
@@ -350,6 +476,10 @@ export const TasksPage = ({
   const [pendingTaskAction, setPendingTaskAction] = useState<PendingTaskAction | null>(null);
   const [taskImageUploadError, setTaskImageUploadError] = useState<string | null>(null);
   const [editTaskImageUploadError, setEditTaskImageUploadError] = useState<string | null>(null);
+  const [frequencyMode, setFrequencyMode] = useState<"days" | "cron">("days");
+  const [editFrequencyMode, setEditFrequencyMode] = useState<"days" | "cron">("days");
+  const [complexFrequency, setComplexFrequency] = useState<ComplexFrequency>(() => createDefaultComplexFrequency());
+  const [editComplexFrequency, setEditComplexFrequency] = useState<ComplexFrequency>(() => createDefaultComplexFrequency());
   const [isResetPimpersDialogOpen, setIsResetPimpersDialogOpen] = useState(false);
   const [statsForecastTaskId, setStatsForecastTaskId] = useState<string>("");
   const [statsTaskFilterId, setStatsTaskFilterId] = useState<string>("all");
@@ -413,6 +543,16 @@ export const TasksPage = ({
       const graceMinutes = Number.isFinite(parsedGraceDays)
         ? Math.max(0, Math.round(parsedGraceDays * 24 * 60))
         : 1440;
+      const effectiveFrequencyDays =
+        frequencyMode === "cron"
+          ? deriveFrequencyDaysFromComplex(complexFrequency)
+          : Number.isFinite(parsedFrequencyDays)
+            ? Math.max(1, Math.floor(parsedFrequencyDays))
+            : 7;
+      const cronPattern =
+        frequencyMode === "cron"
+          ? buildCronPatternFromComplex(complexFrequency)
+          : `0 9 */${Math.max(1, Math.floor(effectiveFrequencyDays))} * *`;
 
       const input: NewTaskInput = {
         title: trimmedTitle,
@@ -420,7 +560,8 @@ export const TasksPage = ({
         currentStateImageUrl: value.currentStateImageUrl.trim() || null,
         targetStateImageUrl: value.targetStateImageUrl.trim() || null,
         startDate: value.startDate,
-        frequencyDays: Number.isFinite(parsedFrequencyDays) ? Math.max(1, Math.floor(parsedFrequencyDays)) : 7,
+        frequencyDays: effectiveFrequencyDays,
+        cronPattern,
         effortPimpers: Number.isFinite(parsedEffort) ? Math.max(1, Math.floor(parsedEffort)) : 1,
         graceMinutes,
         prioritizeLowPimpers: value.prioritizeLowPimpers,
@@ -432,6 +573,8 @@ export const TasksPage = ({
       setTaskImageUploadError(null);
       await onAdd(input);
       formApi.reset();
+      setFrequencyMode("days");
+      setComplexFrequency(createDefaultComplexFrequency());
       setIsCreateDialogOpen(false);
     }
   });
@@ -464,6 +607,16 @@ export const TasksPage = ({
       const graceMinutes = Number.isFinite(parsedGraceDays)
         ? Math.max(0, Math.round(parsedGraceDays * 24 * 60))
         : 1440;
+      const effectiveFrequencyDays =
+        editFrequencyMode === "cron"
+          ? deriveFrequencyDaysFromComplex(editComplexFrequency)
+          : Number.isFinite(parsedFrequencyDays)
+            ? Math.max(1, Math.floor(parsedFrequencyDays))
+            : 7;
+      const cronPattern =
+        editFrequencyMode === "cron"
+          ? buildCronPatternFromComplex(editComplexFrequency)
+          : `0 9 */${Math.max(1, Math.floor(effectiveFrequencyDays))} * *`;
 
       const input: NewTaskInput = {
         title: trimmedTitle,
@@ -471,7 +624,8 @@ export const TasksPage = ({
         currentStateImageUrl: value.currentStateImageUrl.trim() || null,
         targetStateImageUrl: value.targetStateImageUrl.trim() || null,
         startDate: value.startDate,
-        frequencyDays: Number.isFinite(parsedFrequencyDays) ? Math.max(1, Math.floor(parsedFrequencyDays)) : 7,
+        frequencyDays: effectiveFrequencyDays,
+        cronPattern,
         effortPimpers: Number.isFinite(parsedEffort) ? Math.max(1, Math.floor(parsedEffort)) : 1,
         graceMinutes,
         prioritizeLowPimpers: value.prioritizeLowPimpers,
@@ -1503,6 +1657,9 @@ export const TasksPage = ({
   const onStartEditTask = (task: TaskItem) => {
     setTaskBeingEdited(task);
     setEditTaskImageUploadError(null);
+    const parsedCron = parseComplexFromCron(task.cron_pattern);
+    setEditFrequencyMode(parsedCron.mode);
+    setEditComplexFrequency(parsedCron.config);
     editTaskForm.setFieldValue("title", task.title);
     editTaskForm.setFieldValue("description", task.description ?? "");
     editTaskForm.setFieldValue("currentStateImageUrl", task.current_state_image_url ?? "");
@@ -1525,6 +1682,138 @@ export const TasksPage = ({
     setEditRotationUserIds(nextRotation);
     setEditFormError(null);
     setIsEditDialogOpen(true);
+  };
+
+  const renderComplexFrequencyBuilder = (
+    mode: "days" | "cron",
+    config: ComplexFrequency,
+    onConfigChange: (next: ComplexFrequency) => void
+  ) => {
+    if (mode !== "cron") return null;
+
+    return (
+      <div className="space-y-3 rounded-xl border border-brand-200 bg-white p-3 text-sm dark:border-slate-700 dark:bg-slate-900">
+        <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            size="sm"
+            variant={config.type === "weekly" ? "default" : "outline"}
+            onClick={() => onConfigChange({ ...config, type: "weekly" })}
+          >
+            {t("tasks.frequencyWeekly")}
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant={config.type === "monthly" ? "default" : "outline"}
+            onClick={() => onConfigChange({ ...config, type: "monthly" })}
+          >
+            {t("tasks.frequencyMonthly")}
+          </Button>
+        </div>
+
+        {config.type === "weekly" ? (
+          <>
+            <div className="space-y-1">
+              <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                {t("tasks.frequencyWeekdaysLabel")}
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {WEEKDAY_OPTIONS.map((day) => {
+                  const selected = config.weekdays.includes(day.value);
+                  return (
+                    <Button
+                      key={`weekday-${day.value}`}
+                      type="button"
+                      size="sm"
+                      variant={selected ? "default" : "outline"}
+                      onClick={() => {
+                        const next = selected
+                          ? config.weekdays.filter((value) => value !== day.value)
+                          : [...config.weekdays, day.value];
+                        onConfigChange({
+                          ...config,
+                          weekdays: next.length > 0 ? next : [day.value]
+                        });
+                      }}
+                    >
+                      {day.label}
+                    </Button>
+                  );
+                })}
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                {t("tasks.frequencyIntervalLabel")}
+              </span>
+              <Select
+                value={String(config.intervalWeeks)}
+                onValueChange={(value) =>
+                  onConfigChange({ ...config, intervalWeeks: Math.max(1, Number(value)) })
+                }
+              >
+                <SelectTrigger className="h-8 w-40">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="1">{t("tasks.frequencyEveryWeek")}</SelectItem>
+                  <SelectItem value="2">{t("tasks.frequencyEveryWeeks", { count: 2 })}</SelectItem>
+                  <SelectItem value="3">{t("tasks.frequencyEveryWeeks", { count: 3 })}</SelectItem>
+                  <SelectItem value="4">{t("tasks.frequencyEveryWeeks", { count: 4 })}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                {t("tasks.frequencyMonthDayLabel")}
+              </span>
+              <Input
+                type="number"
+                min="1"
+                max="31"
+                inputMode="numeric"
+                className="h-8 w-24"
+                value={String(config.monthDay)}
+                onChange={(event) =>
+                  onConfigChange({
+                    ...config,
+                    monthDay: clampNumber(Number(event.target.value), 1, 31)
+                  })
+                }
+              />
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                {t("tasks.frequencyIntervalLabel")}
+              </span>
+              <Select
+                value={String(config.intervalMonths)}
+                onValueChange={(value) =>
+                  onConfigChange({ ...config, intervalMonths: Math.max(1, Number(value)) })
+                }
+              >
+                <SelectTrigger className="h-8 w-40">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="1">{t("tasks.frequencyEveryMonth")}</SelectItem>
+                  <SelectItem value="2">{t("tasks.frequencyEveryMonths", { count: 2 })}</SelectItem>
+                  <SelectItem value="3">{t("tasks.frequencyEveryMonths", { count: 3 })}</SelectItem>
+                  <SelectItem value="6">{t("tasks.frequencyEveryMonths", { count: 6 })}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </>
+        )}
+        <p className="text-xs text-slate-500 dark:text-slate-400">
+          {formatComplexFrequencyPreview(config, t)}
+        </p>
+      </div>
+    );
   };
 
   const onStartDeleteTask = (task: TaskItem) => {
@@ -1970,18 +2259,46 @@ export const TasksPage = ({
                             handleChange: (value: string) => void;
                           }) => (
                             <div className="space-y-1">
-                              <Label>{t("tasks.frequencyDays")}</Label>
-                              <InputWithSuffix
-                                suffix="d"
-                                type="number"
-                                min="1"
-                                inputMode="numeric"
-                                value={field.state.value}
-                                onChange={(event) =>
-                                  field.handleChange(event.target.value)
-                                }
-                                placeholder={t("tasks.frequencyDays")}
-                              />
+                              <Label className="sr-only">{t("tasks.frequencyDays")}</Label>
+                              <Select
+                                value={frequencyMode}
+                                onValueChange={(value) => {
+                                  const nextMode = value === "cron" ? "cron" : "days";
+                                  setFrequencyMode(nextMode);
+                                  if (nextMode === "days") {
+                                    field.handleChange(
+                                      String(deriveFrequencyDaysFromComplex(complexFrequency))
+                                    );
+                                  }
+                                }}
+                              >
+                                <SelectTrigger className="h-auto justify-start border-none p-0 text-sm font-medium text-slate-900 shadow-none hover:bg-transparent dark:text-slate-100">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="days">{t("tasks.frequencyModeDays")}</SelectItem>
+                                  <SelectItem value="cron">{t("tasks.frequencyModeCron")}</SelectItem>
+                                </SelectContent>
+                              </Select>
+                              {frequencyMode === "days" ? (
+                                <InputWithSuffix
+                                  suffix="d"
+                                  type="number"
+                                  min="1"
+                                  inputMode="numeric"
+                                  value={field.state.value}
+                                  onChange={(event) =>
+                                    field.handleChange(event.target.value)
+                                  }
+                                  placeholder={t("tasks.frequencyDays")}
+                                />
+                              ) : (
+                                renderComplexFrequencyBuilder(
+                                  frequencyMode,
+                                  complexFrequency,
+                                  setComplexFrequency
+                                )
+                              )}
                             </div>
                           )}
                         />
@@ -2008,7 +2325,6 @@ export const TasksPage = ({
                           )}
                         />
                       </div>
-
                       <Label>{t("tasks.rotationSelectionTitle")}</Label>
                       <PersonSelect
                         mode="multiple"
@@ -3568,18 +3884,46 @@ export const TasksPage = ({
                     handleChange: (value: string) => void;
                   }) => (
                     <div className="space-y-1">
-                      <Label>{t("tasks.frequencyDays")}</Label>
-                      <InputWithSuffix
-                        suffix="d"
-                        type="number"
-                        min="1"
-                        inputMode="numeric"
-                        value={field.state.value}
-                        onChange={(event) =>
-                          field.handleChange(event.target.value)
-                        }
-                        placeholder={t("tasks.frequencyDays")}
-                      />
+                      <Label className="sr-only">{t("tasks.frequencyDays")}</Label>
+                      <Select
+                        value={editFrequencyMode}
+                        onValueChange={(value) => {
+                          const nextMode = value === "cron" ? "cron" : "days";
+                          setEditFrequencyMode(nextMode);
+                          if (nextMode === "days") {
+                            field.handleChange(
+                              String(deriveFrequencyDaysFromComplex(editComplexFrequency))
+                            );
+                          }
+                        }}
+                      >
+                        <SelectTrigger className="h-auto justify-start border-none p-0 text-sm font-medium text-slate-900 shadow-none hover:bg-transparent dark:text-slate-100">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="days">{t("tasks.frequencyModeDays")}</SelectItem>
+                          <SelectItem value="cron">{t("tasks.frequencyModeCron")}</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      {editFrequencyMode === "days" ? (
+                        <InputWithSuffix
+                          suffix="d"
+                          type="number"
+                          min="1"
+                          inputMode="numeric"
+                          value={field.state.value}
+                          onChange={(event) =>
+                            field.handleChange(event.target.value)
+                          }
+                          placeholder={t("tasks.frequencyDays")}
+                        />
+                      ) : (
+                        renderComplexFrequencyBuilder(
+                          editFrequencyMode,
+                          editComplexFrequency,
+                          setEditComplexFrequency
+                        )
+                      )}
                     </div>
                   )}
                 />

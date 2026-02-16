@@ -188,6 +188,7 @@ export interface NewTaskInput {
   targetStateImageUrl?: string | null;
   startDate: string;
   frequencyDays: number;
+  cronPattern?: string | null;
   effortPimpers: number;
   prioritizeLowPimpers: boolean;
   assigneeFairnessMode: "actual" | "projection" | "expected";
