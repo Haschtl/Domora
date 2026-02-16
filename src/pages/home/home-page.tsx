@@ -5,7 +5,6 @@ import {
   Check,
   GripVertical,
   CircleDot,
-  Info,
   Loader2,
   MoreHorizontal,
   Pencil,
@@ -825,14 +824,14 @@ export const HomePage = ({
 
     if (key === "tasks-for-you") {
       return (
-        <div className="rounded-xl border border-brand-100 bg-brand-50/60 p-3 dark:border-slate-700 dark:bg-slate-800/60">
+        <div className="rounded-xl border border-brand-100 p-3 dark:border-slate-700 dark:bg-slate-900/70">
           <p className="text-xs text-slate-500 dark:text-slate-400">{t("home.widgetTasksForYou")}</p>
           <p className="mt-1 text-lg font-semibold text-slate-900 dark:text-slate-100">{dueTasksForYou.length}</p>
           <p className="text-xs text-slate-500 dark:text-slate-400">{t("home.widgetTasksForYouHint")}</p>
           {dueTasksForYou.length > 0 ? (
             <ul className="mt-2 space-y-1">
               {dueTasksForYou.slice(0, 3).map((task) => (
-                <li key={task.id} className="flex items-center justify-between gap-2 rounded-lg bg-white/60 px-2 py-1 dark:bg-slate-900/50">
+                <li key={task.id} className="flex items-center justify-between gap-2 rounded-lg bg-white/70 px-2 py-1 dark:bg-slate-950/60">
                   <span className="truncate text-xs text-slate-600 dark:text-slate-300">{task.title}</span>
                   <Button
                     type="button"
@@ -924,7 +923,7 @@ export const HomePage = ({
 
     if (key === "fairness-score") {
       return (
-        <div className="rounded-xl border border-brand-100 bg-brand-50/60 p-3 dark:border-slate-700 dark:bg-slate-800/60">
+        <div className="rounded-xl border border-brand-100 p-3 dark:border-slate-700 dark:bg-slate-800/60">
           <p className="text-xs text-slate-500 dark:text-slate-400">{t("home.widgetFairness")}</p>
           <p className="mt-1 text-lg font-semibold text-slate-900 dark:text-slate-100">{taskFairness.overallScore} / 100</p>
           <p className="text-xs text-slate-500 dark:text-slate-400">{t("home.widgetFairnessHint")}</p>
