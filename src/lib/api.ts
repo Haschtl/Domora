@@ -1912,6 +1912,61 @@ export const getHouseholdEvents = async (householdId: string): Promise<Household
   return (data ?? []).map((entry) => normalizeHouseholdEvent(entry as Record<string, unknown>));
 };
 
+type HouseholdEventsPage = {
+  rows: HouseholdEvent[];
+  nextCursor: string | null;
+};
+
+const buildEventCursor = (row: { created_at: string; id: string }) => `${row.created_at}::${row.id}`;
+
+const parseEventCursor = (cursor?: string | null) => {
+  if (!cursor) return null;
+  const [createdAt, id] = cursor.split("::");
+  if (!createdAt || !id) return null;
+  return { createdAt, id };
+};
+
+export const getHouseholdEventsPage = async (
+  householdId: string,
+  {
+    limit = 60,
+    cursor
+  }: {
+    limit?: number;
+    cursor?: string | null;
+  } = {}
+): Promise<HouseholdEventsPage> => {
+  const parsedCursor = parseEventCursor(cursor);
+  let query = supabase
+    .from("household_events")
+    .select("*")
+    .eq("household_id", householdId)
+    .order("created_at", { ascending: false })
+    .order("id", { ascending: false })
+    .limit(limit + 1);
+
+  if (parsedCursor) {
+    query = query.or(
+      `created_at.lt.${parsedCursor.createdAt},and(created_at.eq.${parsedCursor.createdAt},id.lt.${parsedCursor.id})`
+    );
+  }
+
+  const { data, error } = await query;
+  if (error) throw error;
+
+  const rows = (data ?? []).map((entry) => normalizeHouseholdEvent(entry as Record<string, unknown>));
+  if (rows.length <= limit) {
+    return { rows, nextCursor: null };
+  }
+
+  const nextRows = rows.slice(0, limit);
+  const lastRow = nextRows[nextRows.length - 1];
+  return {
+    rows: nextRows,
+    nextCursor: lastRow ? buildEventCursor(lastRow) : null
+  };
+};
+
 const DEFAULT_PUSH_TOPICS = [
   "task_due",
   "task_completed",

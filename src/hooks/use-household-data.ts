@@ -1,5 +1,6 @@
-import { useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { householdQueryOptions } from "../lib/household-queries";
+import { getHouseholdEventsPage } from "../lib/api";
 import type {
   BucketItem,
   CashAuditRequest,
@@ -91,11 +92,12 @@ export const useHouseholdMemberPimpers = (householdId: string | null, enabled = 
   });
 
 export const useHouseholdEvents = (householdId: string | null, enabled = true) =>
-  useQuery<HouseholdEvent[]>({
-    ...(householdId
-      ? householdQueryOptions.householdEvents(householdId)
-      : { queryKey: ["household", "none", "events"], ...emptyArrayQuery<HouseholdEvent>() }),
-    enabled: Boolean(householdId) && enabled
+  useInfiniteQuery({
+    queryKey: householdId ? householdQueryOptions.householdEvents(householdId).queryKey : ["household", "none", "events"],
+    queryFn: ({ pageParam }) => getHouseholdEventsPage(householdId!, { cursor: pageParam as string | null | undefined }),
+    enabled: Boolean(householdId) && enabled,
+    initialPageParam: null,
+    getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined
   });
 
 export const useHouseholdWhiteboard = (householdId: string | null, enabled = true) =>

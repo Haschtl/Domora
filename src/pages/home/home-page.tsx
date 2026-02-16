@@ -91,6 +91,9 @@ interface HomePageProps {
   financeEntries: FinanceEntry[];
   cashAuditRequests: CashAuditRequest[];
   householdEvents: HouseholdEvent[];
+  eventsHasMore?: boolean;
+  eventsLoadingMore?: boolean;
+  onLoadMoreEvents?: () => void;
   whiteboardSceneJson: string;
   userLabel: string | undefined | null;
   busy: boolean;
@@ -416,6 +419,9 @@ export const HomePage = ({
   financeEntries,
   cashAuditRequests,
   householdEvents,
+  eventsHasMore = false,
+  eventsLoadingMore = false,
+  onLoadMoreEvents,
   whiteboardSceneJson,
   userLabel,
   busy,
@@ -821,8 +827,7 @@ export const HomePage = ({
           })
         };
       })
-      .sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
-      .slice(0, 12);
+      .sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
   }, [householdEvents, labelForUserId, t]);
   const markdownComponents = useMemo<Components>(
     () => ({
@@ -1966,6 +1971,17 @@ export const HomePage = ({
                 {t("home.activityEmpty")}
               </p>
             )}
+            {eventsHasMore ? (
+              <div className="mt-3 flex justify-center">
+                <Button
+                  variant="outline"
+                  onClick={() => onLoadMoreEvents?.()}
+                  disabled={eventsLoadingMore}
+                >
+                  {t("common.loadMore")}
+                </Button>
+              </div>
+            ) : null}
           </CardContent>
         </Card>
       ) : null}

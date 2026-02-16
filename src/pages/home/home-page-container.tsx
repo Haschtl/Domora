@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { HomePage } from "./home-page";
 import { useWorkspace } from "../../context/workspace-context";
 import {
@@ -44,6 +45,11 @@ export const HomePageContainer = ({ section }: HomePageContainerProps) => {
   const eventsQuery = useHouseholdEvents(activeHousehold?.id ?? null);
   const whiteboardQuery = useHouseholdWhiteboard(activeHousehold?.id ?? null);
 
+  const events = useMemo(
+    () => eventsQuery.data?.pages.flatMap((page) => page.rows) ?? [],
+    [eventsQuery.data]
+  );
+
   if (!activeHousehold || !userId) return null;
 
   return (
@@ -62,7 +68,10 @@ export const HomePageContainer = ({ section }: HomePageContainerProps) => {
       taskCompletions={completionsQuery.data ?? []}
       financeEntries={financesQuery.data ?? []}
       cashAuditRequests={cashAuditQuery.data ?? []}
-      householdEvents={eventsQuery.data ?? []}
+      householdEvents={events}
+      eventsHasMore={eventsQuery.hasNextPage ?? false}
+      eventsLoadingMore={eventsQuery.isFetchingNextPage}
+      onLoadMoreEvents={() => void eventsQuery.fetchNextPage()}
       whiteboardSceneJson={whiteboardQuery.data?.scene_json ?? ""}
       onSelectHousehold={(householdId) => {
         const next = households.find((entry) => entry.id === householdId);
