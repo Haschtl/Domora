@@ -855,6 +855,9 @@ export const useWorkspaceController = () => {
     async (task: TaskItem, input: NewTaskInput) => {
       if (!activeHousehold || !userId) return;
 
+      const nextDueAt =
+        input.startDate === task.start_date ? task.due_at : getDueAtFromStartDate(input.startDate);
+
       await runWithOptimisticUpdate({
         updates: [
           {
@@ -870,7 +873,7 @@ export const useWorkspaceController = () => {
                       current_state_image_url: input.currentStateImageUrl ?? null,
                       target_state_image_url: input.targetStateImageUrl ?? null,
                       start_date: input.startDate,
-                      due_at: getDueAtFromStartDate(input.startDate),
+                      due_at: nextDueAt,
                       cron_pattern: input.cronPattern?.trim() || taskFrequencyDaysToCronPattern(input.frequencyDays),
                       frequency_days: input.frequencyDays,
                       effort_pimpers: input.effortPimpers,
@@ -888,7 +891,7 @@ export const useWorkspaceController = () => {
           }
         ],
         action: async () => {
-          await updateTask(task.id, input);
+          await updateTask(task, input);
         }
       });
     },

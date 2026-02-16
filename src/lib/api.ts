@@ -1601,7 +1601,7 @@ export const addTask = async (
   return normalizeTask(data as Record<string, unknown>, rotationUserIds);
 };
 
-export const updateTask = async (taskId: string, input: NewTaskInput): Promise<void> => {
+export const updateTask = async (task: TaskItem, input: NewTaskInput): Promise<void> => {
   const parsedInput = z.object({
     taskId: z.string().uuid(),
     title: z.string().trim().min(1).max(200),
@@ -1618,7 +1618,7 @@ export const updateTask = async (taskId: string, input: NewTaskInput): Promise<v
     assigneeFairnessMode: z.enum(["actual", "projection", "expected"]).default("expected"),
     rotationUserIds: z.array(z.string().uuid()).min(1)
   }).parse({
-    taskId,
+    taskId: task.id,
     title: input.title,
     description: input.description,
     currentStateImageUrl: input.currentStateImageUrl ?? null,
@@ -1634,7 +1634,8 @@ export const updateTask = async (taskId: string, input: NewTaskInput): Promise<v
     rotationUserIds: input.rotationUserIds.filter((entry, index, all) => all.indexOf(entry) === index)
   });
 
-  const dueAt = getDueAtFromStartDate(parsedInput.startDate);
+  const dueAt =
+    input.startDate === task.start_date ? task.due_at : getDueAtFromStartDate(parsedInput.startDate);
   const cronPattern = parsedInput.cronPattern?.trim() || taskFrequencyDaysToCronPattern(parsedInput.frequencyDays);
   const assigneeId = parsedInput.rotationUserIds[0];
 
