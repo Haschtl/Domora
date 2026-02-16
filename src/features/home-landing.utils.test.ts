@@ -44,6 +44,7 @@ describe("home landing utils", () => {
       "household-balance",
       "recent-activity",
       "bucket-short-list",
+      "member-of-month",
       "fairness-score",
       "reliability-score",
       "expenses-by-month",

@@ -1,5 +1,5 @@
-import { getTaskLibrarySuggestions } from "../../../lib/task-suggestions";
-import type { TaskCompletion, TaskItem } from "../../../lib/types";
+import { getTaskLibrarySuggestions } from "../../lib/task-suggestions";
+import type { TaskCompletion, TaskItem } from "../../lib/types";
 import { buildTaskSuggestions } from "./use-task-suggestions";
 
 const task = (partial: Partial<TaskItem>): TaskItem => ({
