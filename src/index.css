@@ -419,6 +419,10 @@ input[type="number"] {
   background: var(--brand-50);
   --theme-font: "Space Grotesk", "Segoe UI", sans-serif;
   font-family: var(--theme-font);
+  --safe-area-top: env(safe-area-inset-top, 0px);
+  --safe-area-right: env(safe-area-inset-right, 0px);
+  --safe-area-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-area-left: env(safe-area-inset-left, 0px);
   --toastify-color-light: #f8fcfb;
   --toastify-text-color-light: #0f172a;
   --toastify-color-success: #059669;

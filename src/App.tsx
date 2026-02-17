@@ -766,7 +766,11 @@ const AppLayout = () => {
       ) : null}
 
       {!loadingSession && session && activeHousehold ? (
-        <section className={isMobileKeyboardOpen ? "pb-0 sm:pb-0" : "pb-24 sm:pb-0"}>
+        <section
+          className={
+            isMobileKeyboardOpen ? "pb-0 sm:pb-0" : "pb-[calc(6rem+var(--safe-area-bottom))] sm:pb-0"
+          }
+        >
           <div className="sm:grid sm:grid-cols-[230px_minmax(0,1fr)] sm:gap-6">
             <aside className="hidden sm:block">
               <div className="sticky top-6 rounded-2xl border border-brand-100 bg-white/90 p-3 shadow-card dark:border-slate-700 dark:bg-slate-900/80">
@@ -840,9 +844,9 @@ const AppLayout = () => {
               </div>
             </aside>
 
-            <div className="pt-24 sm:pt-0 lg:pt-0">
+            <div className="pt-[calc(6rem+var(--safe-area-top))] sm:pt-0 lg:pt-0">
               {mobileSubItems.length > 0 ? (
-                <div className="fixed inset-x-0 top-0 z-40 border-b border-brand-200 bg-white/95 px-3 py-2 backdrop-blur dark:border-slate-700 dark:bg-slate-900/95 sm:hidden">
+                <div className="fixed inset-x-0 top-0 z-40 border-b border-brand-200 bg-white/95 px-3 pb-2 pt-[calc(var(--safe-area-top)+0.5rem)] backdrop-blur dark:border-slate-700 dark:bg-slate-900/95 sm:hidden">
                   <div className="mx-auto max-w-7xl">
                     <div className="mb-2 px-1">
                       <p className="text-base font-semibold text-slate-900 dark:text-slate-100">
@@ -951,7 +955,7 @@ const AppLayout = () => {
           </div>
 
           {!isMobileKeyboardOpen ? (
-            <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-brand-200 bg-white/95 px-2 py-2 shadow-[0_-8px_18px_rgba(15,23,42,0.08)] backdrop-blur dark:border-slate-700 dark:bg-slate-900/95 dark:shadow-[0_-8px_18px_rgba(2,6,23,0.45)] sm:hidden">
+            <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-brand-200 bg-white/95 px-2 pb-[calc(var(--safe-area-bottom)+0.5rem)] pt-2 shadow-[0_-8px_18px_rgba(15,23,42,0.08)] backdrop-blur dark:border-slate-700 dark:bg-slate-900/95 dark:shadow-[0_-8px_18px_rgba(2,6,23,0.45)] sm:hidden">
               <ul className="grid grid-cols-5 gap-1">
                 {tabItems.map((item) => {
                   const Icon = item.icon;
