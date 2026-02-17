@@ -885,6 +885,14 @@ export const FinancesPage = ({
   };
   const settlementReferenceDate = lastCashAuditAt?.slice(0, 10) ?? new Date().toISOString().slice(0, 10);
   const reimbursementPreviewSummary = useMemo(() => {
+    const andWord = t("common.and");
+    const joinMemberNames = (names: string[]) => {
+      if (names.length <= 1) return names[0] ?? "";
+      if (names.length === 2) return `${names[0]} ${andWord} ${names[1]}`;
+      const leading = names.slice(0, -1).join(", ");
+      const trailing = names[names.length - 1];
+      return `${leading} ${andWord} ${trailing}`;
+    };
     const positiveEntries = reimbursementPreview.filter((entry) => entry.value > 0.004);
     if (positiveEntries.length === 0) return null;
 
@@ -895,6 +903,22 @@ export const FinancesPage = ({
     if (memberIds.length === 1) {
       const memberId = memberIds[0];
       if (memberId === userId) {
+        const previewAmount = Number(previewAmountInput);
+        const paidShares = splitAmountEvenly(previewAmount, previewPayerIdsEffective);
+        const consumedShares = splitAmountEvenly(previewAmount, previewBeneficiaryIdsEffective);
+        const unionMemberIds = [...new Set([...previewPayerIdsEffective, ...previewBeneficiaryIdsEffective])];
+        const debtorNames = unionMemberIds
+          .map((memberIdInner) => ({
+            memberId: memberIdInner,
+            value: (paidShares.get(memberIdInner) ?? 0) - (consumedShares.get(memberIdInner) ?? 0)
+          }))
+          .filter((entry) => entry.value < -0.004)
+          .map((entry) => memberLabel(entry.memberId, "dative"))
+          .filter((name) => name.length > 0);
+        const membersLabel = joinMemberNames(debtorNames);
+        if (membersLabel) {
+          return t("finances.reimbursementYouFrom", { amount: amountLabel, members: membersLabel });
+        }
         return t("finances.reimbursementYou", { amount: amountLabel });
       }
       return t("finances.reimbursementSingle", {
@@ -907,7 +931,7 @@ export const FinancesPage = ({
       members: memberIds.map((memberId) => memberLabel(memberId)).join(", "),
       amount: amountLabel
     });
-  }, [locale, memberLabel, reimbursementPreview, t, userId]);
+  }, [locale, memberLabel, previewAmountInput, previewBeneficiaryIdsEffective, previewPayerIdsEffective, reimbursementPreview, t, userId]);
   const hasNewEntryDraftForPreview = useMemo(() => {
     const description = previewDescription.trim();
     const amount = Number(previewAmountInput);
