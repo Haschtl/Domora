@@ -1986,103 +1986,107 @@ export const HomePage = ({
         </Card>
       ) : null}
 
-      <Card className="mt-6 rounded-xl border border-slate-300 bg-white/90 p-3 text-slate-800 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-100">
-        <CardHeader className="gap-1">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <CardTitle>{t("home.whiteboardTitle")}</CardTitle>
-              <CardDescription>{t("home.whiteboardDescription")}</CardDescription>
-            </div>
-            <div className="flex items-center gap-2">
-              <span
-                className="inline-flex items-center gap-2 text-xs font-medium text-slate-500 dark:text-slate-400"
-                aria-live="polite"
-              >
-                {whiteboardStatusIndicator}
-                <span className="hidden sm:inline">{whiteboardStatusLabel}</span>
-              </span>
-              <button
-                type="button"
-                className="inline-flex h-8 w-8 items-center justify-center rounded-xl text-slate-700 hover:bg-slate-200/80 dark:text-brand-100 dark:hover:bg-slate-800"
-                onClick={() => setIsWhiteboardFullscreenOpen(true)}
-                aria-label={t("home.whiteboardFullscreen")}
-                title={t("home.whiteboardFullscreen")}
-              >
-                <Maximize2 className="h-4 w-4" />
-              </button>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent className="pt-2">
-          <ErrorBoundary
-            fallback={
-              <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-6 text-sm text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-200">
-                {t("home.whiteboardError")}
+      {showSummary ? (
+        <>
+          <Card className="mt-6 rounded-xl border border-slate-300 bg-white/90 p-3 text-slate-800 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-100">
+            <CardHeader className="gap-1">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <CardTitle>{t("home.whiteboardTitle")}</CardTitle>
+                  <CardDescription>{t("home.whiteboardDescription")}</CardDescription>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span
+                    className="inline-flex items-center gap-2 text-xs font-medium text-slate-500 dark:text-slate-400"
+                    aria-live="polite"
+                  >
+                    {whiteboardStatusIndicator}
+                    <span className="hidden sm:inline">{whiteboardStatusLabel}</span>
+                  </span>
+                  <button
+                    type="button"
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-xl text-slate-700 hover:bg-slate-200/80 dark:text-brand-100 dark:hover:bg-slate-800"
+                    onClick={() => setIsWhiteboardFullscreenOpen(true)}
+                    aria-label={t("home.whiteboardFullscreen")}
+                    title={t("home.whiteboardFullscreen")}
+                  >
+                    <Maximize2 className="h-4 w-4" />
+                  </button>
+                </div>
               </div>
-            }
-          >
-            <Suspense
-              fallback={
-                <div className="flex h-[560px] items-center justify-center rounded-xl border border-brand-100 bg-white/70 text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-300">
-                  {t("common.loading")}
-                </div>
-              }
-            >
-              <ExcalidrawBoardLazy
-                sceneJson={whiteboardDraft}
-                onSceneChange={(nextValue) => {
-                  setWhiteboardDraft(nextValue);
-                }}
-                className="rounded-xl border border-brand-100 bg-white dark:border-slate-700"
-                height={560}
-              />
-            </Suspense>
-          </ErrorBoundary>
-        </CardContent>
-      </Card>
-
-      <Dialog open={isWhiteboardFullscreenOpen} onOpenChange={setIsWhiteboardFullscreenOpen}>
-        <DialogContent className="flex h-[100vh] w-[100vw] max-w-[100vw] flex-col overflow-hidden rounded-none border-0 p-0">
-          <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 dark:border-slate-700">
-            <div>
-              <DialogTitle>{t("home.whiteboardTitle")}</DialogTitle>
-              <DialogDescription>{t("home.whiteboardDescription")}</DialogDescription>
-            </div>
-            <div className="flex items-center gap-3">
-              <span className="hidden text-xs font-medium text-slate-500 dark:text-slate-400 sm:inline">
-                {whiteboardStatusLabel}
-              </span>
-              <button
-                type="button"
-                className="inline-flex h-8 w-8 items-center justify-center rounded-xl text-slate-700 hover:bg-slate-200/80 dark:text-brand-100 dark:hover:bg-slate-800"
-                onClick={() => setIsWhiteboardFullscreenOpen(false)}
-                aria-label={t("common.close")}
+            </CardHeader>
+            <CardContent className="pt-2">
+              <ErrorBoundary
+                fallback={
+                  <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-6 text-sm text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-200">
+                    {t("home.whiteboardError")}
+                  </div>
+                }
               >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-          </div>
-          <div className="flex-1">
-            <Suspense
-              fallback={
-                <div className="flex h-full items-center justify-center border border-brand-100 bg-white/70 text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-300">
-                  {t("common.loading")}
+                <Suspense
+                  fallback={
+                    <div className="flex h-[560px] items-center justify-center rounded-xl border border-brand-100 bg-white/70 text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-300">
+                      {t("common.loading")}
+                    </div>
+                  }
+                >
+                  <ExcalidrawBoardLazy
+                    sceneJson={whiteboardDraft}
+                    onSceneChange={(nextValue) => {
+                      setWhiteboardDraft(nextValue);
+                    }}
+                    className="rounded-xl border border-brand-100 bg-white dark:border-slate-700"
+                    height={560}
+                  />
+                </Suspense>
+              </ErrorBoundary>
+            </CardContent>
+          </Card>
+
+          <Dialog open={isWhiteboardFullscreenOpen} onOpenChange={setIsWhiteboardFullscreenOpen}>
+            <DialogContent className="flex h-[100vh] w-[100vw] max-w-[100vw] flex-col overflow-hidden rounded-none border-0 p-0">
+              <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 dark:border-slate-700">
+                <div>
+                  <DialogTitle>{t("home.whiteboardTitle")}</DialogTitle>
+                  <DialogDescription>{t("home.whiteboardDescription")}</DialogDescription>
                 </div>
-              }
-            >
-              <ExcalidrawBoardLazy
-                sceneJson={whiteboardDraft}
-                onSceneChange={(nextValue) => {
-                  setWhiteboardDraft(nextValue);
-                }}
-                className="border border-brand-100 bg-white dark:border-slate-700"
-                height={1600}
-                fullHeight
-              />
-            </Suspense>
-          </div>
-        </DialogContent>
-      </Dialog>
+                <div className="flex items-center gap-3">
+                  <span className="hidden text-xs font-medium text-slate-500 dark:text-slate-400 sm:inline">
+                    {whiteboardStatusLabel}
+                  </span>
+                  <button
+                    type="button"
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-xl text-slate-700 hover:bg-slate-200/80 dark:text-brand-100 dark:hover:bg-slate-800"
+                    onClick={() => setIsWhiteboardFullscreenOpen(false)}
+                    aria-label={t("common.close")}
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+              <div className="flex-1">
+                <Suspense
+                  fallback={
+                    <div className="flex h-full items-center justify-center border border-brand-100 bg-white/70 text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-300">
+                      {t("common.loading")}
+                    </div>
+                  }
+                >
+                  <ExcalidrawBoardLazy
+                    sceneJson={whiteboardDraft}
+                    onSceneChange={(nextValue) => {
+                      setWhiteboardDraft(nextValue);
+                    }}
+                    className="border border-brand-100 bg-white dark:border-slate-700"
+                    height={1600}
+                    fullHeight
+                  />
+                </Suspense>
+              </div>
+            </DialogContent>
+          </Dialog>
+        </>
+      ) : null}
 
       <Dialog
         open={pendingCompleteTask !== null}
