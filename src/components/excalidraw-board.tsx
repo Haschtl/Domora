@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Excalidraw, type ExcalidrawImperativeAPI } from "@excalidraw/excalidraw";
+import { Excalidraw } from "@excalidraw/excalidraw";
+import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
+import { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 
 type Theme = "light" | "dark";
 type AppState = {
@@ -38,7 +40,7 @@ const safeParseScene = (sceneJson: string) => {
   if (!sceneJson) return null;
   try {
     const parsed = JSON.parse(sceneJson) as {
-      elements?: unknown[];
+      elements?: ExcalidrawElement[];
       appState?: Partial<AppState>;
       files?: Record<string, unknown>;
     };
@@ -65,9 +67,9 @@ const sanitizePoints = (points: unknown) => {
   });
 };
 
-const sanitizeElements = (elements?: readonly unknown[]) => {
+const sanitizeElements = (elements?: readonly ExcalidrawElement[]) => {
   if (!Array.isArray(elements)) return [];
-  const sanitized: unknown[] = [];
+  const sanitized: ExcalidrawElement[] = [];
   for (const element of elements) {
     if (!element || typeof element !== "object") continue;
     const entry = { ...(element as Record<string, unknown>) };
@@ -79,7 +81,7 @@ const sanitizeElements = (elements?: readonly unknown[]) => {
     if ("lastCommittedPoint" in entry) {
       entry.lastCommittedPoint = sanitizePoints(entry.lastCommittedPoint);
     }
-    sanitized.push(entry);
+    sanitized.push(entry as ExcalidrawElement);
   }
   return sanitized;
 };
@@ -183,16 +185,21 @@ export const ExcalidrawBoard = ({
     excalidrawApi.updateScene({
       elements: initialElements,
       files: initialFiles,
+      // @ts-expect-error zoom type wrong
       appState: {
         ...baseAppState,
         collaborators: new Map(),
         theme,
-        viewBackgroundColor: (parsed?.appState?.viewBackgroundColor as string) ?? themeColors.background,
+        viewBackgroundColor:
+          (parsed?.appState?.viewBackgroundColor as string) ??
+          themeColors.background,
         currentItemStrokeColor:
-          (parsed?.appState?.currentItemStrokeColor as string) ?? themeColors.primary,
+          (parsed?.appState?.currentItemStrokeColor as string) ??
+          themeColors.primary,
         currentItemBackgroundColor:
-          (parsed?.appState?.currentItemBackgroundColor as string) ?? themeColors.accent
-      }
+          (parsed?.appState?.currentItemBackgroundColor as string) ??
+          themeColors.accent,
+      },
     });
   }, [excalidrawApi, sceneJson, theme, themeColors]);
 
