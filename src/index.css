@@ -132,11 +132,88 @@ input[type="number"] {
   font-display: swap;
 }
 
+.excalidraw {
+  --editor-container-padding: 4px;
+  /* --space-factor: 0px; */
+}
+
 .excalidraw-embed {
   position: relative;
   max-width: 100%;
   overflow: hidden;
   contain: layout paint size;
+  --island-bg-color: #ffffff;
+  --popup-bg-color: #ffffff;
+  --color-surface-lowest: #ffffff;
+  --color-surface-low: #f8fafc;
+  --color-surface-mid: #f1f5f4;
+  --color-surface-high: #e9f0ee;
+  --text-primary-color: #0f172a;
+  --icon-fill-color: #1f2937;
+  --default-border-color: rgba(15, 23, 42, 0.12);
+  --button-gray-1: rgba(15, 23, 42, 0.06);
+  --button-gray-2: rgba(15, 23, 42, 0.12);
+  --button-gray-3: rgba(15, 23, 42, 0.18);
+  --color-primary: var(--brand-600);
+  --color-primary-darker: var(--brand-700);
+  --color-on-primary-container: #0b2f2b;
+  --color-surface-primary-container: rgb(var(--brand-100-rgb) / 0.7);
+  --shadow-island: 0 10px 24px rgba(15, 23, 42, 0.12);
+}
+
+.dark .excalidraw-embed {
+  --island-bg-color: #0f172a;
+  --popup-bg-color: #0f172a;
+  --color-surface-lowest: #0b1220;
+  --color-surface-low: #0f172a;
+  --color-surface-mid: #111f33;
+  --color-surface-high: #16243a;
+  --text-primary-color: #e2e8f0;
+  --icon-fill-color: #e2e8f0;
+  --default-border-color: rgba(148, 163, 184, 0.22);
+  --button-gray-1: rgba(148, 163, 184, 0.12);
+  --button-gray-2: rgba(148, 163, 184, 0.2);
+  --button-gray-3: rgba(148, 163, 184, 0.32);
+  --color-primary: var(--accent-500);
+  --color-primary-darker: var(--accent-700);
+  --color-on-primary-container: #081217;
+  --color-surface-primary-container: rgb(var(--accent-800-rgb, 17 94 89) / 0.65);
+  --shadow-island: 0 12px 28px rgba(2, 6, 23, 0.5);
+}
+
+.excalidraw-embed .App-top-bar,
+.excalidraw-embed .App-bottom-bar > .Island,
+.excalidraw-embed .App-menu__left,
+.excalidraw-embed .App-mobile-menu {
+  background-color: var(--island-bg-color);
+  border: 1px solid var(--default-border-color);
+  box-shadow: var(--shadow-island);
+}
+
+.excalidraw-embed .App-top-bar {
+  border-radius: 1rem;
+  margin: 0rem auto;
+  padding: 0rem;
+  width: fit-content;
+  height: fit-content;
+  max-width: calc(100% - 1rem);
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.excalidraw-embed .App-top-bar::-webkit-scrollbar {
+  display: none;
+}
+
+.excalidraw-embed .App-top-bar .App-menu_top {
+  flex-wrap: nowrap;
+  min-width: max-content;
+}
+
+.excalidraw-embed .App-bottom-bar > .Island {
+  border-radius: 1rem 1rem 0 0;
 }
 
 .excalidraw-embed .excalidraw,

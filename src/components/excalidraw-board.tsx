@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Excalidraw } from "@excalidraw/excalidraw";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Excalidraw, type ExcalidrawImperativeAPI } from "@excalidraw/excalidraw";
 
 type Theme = "light" | "dark";
 type AppState = {
@@ -136,15 +136,19 @@ export const ExcalidrawBoard = ({
   fullHeight = false
 }: ExcalidrawBoardProps) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const [excalidrawApi, setExcalidrawApi] = useState<ExcalidrawImperativeAPI | null>(null);
   const [viewportHeight, setViewportHeight] = useState<number | null>(null);
   const [theme, setTheme] = useState<Theme>(getThemePreference() as Theme);
   const lastSceneSignatureRef = useRef<string | null>(null);
 
-  const themeColors = {
-    primary: readCssColor("--brand-500", "#1f8a7f"),
-    accent: readCssColor("--accent-500", "#14b8a6"),
-    background: readCssColor("--brand-50", "#f0fdf4")
-  };
+  const themeColors = useMemo(
+    () => ({
+      primary: readCssColor("--brand-500", "#1f8a7f"),
+      accent: readCssColor("--accent-500", "#14b8a6"),
+      background: readCssColor(theme === "dark" ? "--brand-900" : "--brand-50", theme === "dark" ? "#0b1220" : "#f0fdf4")
+    }),
+    [theme]
+  );
 
   const initialData = useMemo<ExcalidrawInitialDataState>(() => {
     const parsed = safeParseScene(sceneJson);
@@ -171,8 +175,26 @@ export const ExcalidrawBoard = ({
     const parsed = safeParseScene(sceneJson);
     const initialElements = sanitizeElements(parsed?.elements);
     const initialFiles = parsed?.files ?? {};
-    lastSceneSignatureRef.current = buildSceneSignature(initialElements, initialFiles);
-  }, [sceneJson]);
+    const signature = buildSceneSignature(initialElements, initialFiles);
+    if (lastSceneSignatureRef.current === signature) return;
+    lastSceneSignatureRef.current = signature;
+    if (!excalidrawApi) return;
+    const baseAppState = normalizeAppState(parsed?.appState);
+    excalidrawApi.updateScene({
+      elements: initialElements,
+      files: initialFiles,
+      appState: {
+        ...baseAppState,
+        collaborators: new Map(),
+        theme,
+        viewBackgroundColor: (parsed?.appState?.viewBackgroundColor as string) ?? themeColors.background,
+        currentItemStrokeColor:
+          (parsed?.appState?.currentItemStrokeColor as string) ?? themeColors.primary,
+        currentItemBackgroundColor:
+          (parsed?.appState?.currentItemBackgroundColor as string) ?? themeColors.accent
+      }
+    });
+  }, [excalidrawApi, sceneJson, theme, themeColors]);
 
   useEffect(() => {
     const observer = new MutationObserver(() => setTheme(getThemePreference()));
@@ -196,6 +218,10 @@ export const ExcalidrawBoard = ({
       : 900;
   const safeHeight = clampSize(height, 420, fullHeight ? heightCap : Math.min(900, heightCap));
 
+  const handleApi = useCallback((api: ExcalidrawImperativeAPI) => {
+    setExcalidrawApi(api);
+  }, []);
+
   return (
     <div
       ref={containerRef}
@@ -217,6 +243,17 @@ export const ExcalidrawBoard = ({
           initialData={initialData as unknown}
           viewModeEnabled={readOnly}
           theme={theme}
+          excalidrawAPI={handleApi}
+          UIOptions={{
+            canvasActions: {
+              export: {"saveFileToDisk":true},
+              loadScene: false,
+              saveToActiveFile: false,
+              saveAsImage: true,
+              "changeViewBackgroundColor":false,
+              toggleTheme: false
+            }
+          }}
           onChange={(elements, appState, files) => {
             if (!onSceneChange) return;
             const sanitizedElements = sanitizeElements(elements);
