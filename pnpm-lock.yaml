@@ -11,6 +11,12 @@ importers:
       '@capacitor/android':
         specifier: ^8.1.0
         version: 8.1.0(@capacitor/core@8.1.0)
+      '@capacitor/app':
+        specifier: ^8.0.1
+        version: 8.0.1(@capacitor/core@8.1.0)
+      '@capacitor/browser':
+        specifier: ^8.0.1
+        version: 8.0.1(@capacitor/core@8.1.0)
       '@capacitor/core':
         specifier: ^8.1.0
         version: 8.1.0
@@ -771,10 +777,20 @@ packages:
     peerDependencies:
       '@capacitor/core': ^8.1.0
 
+  '@capacitor/app@8.0.1':
+    resolution: {integrity: sha512-yeG3yyA0ETKqvgqexwHMBlmVOF13A1hRXzv/km0Ptv5TrNIZvZJK4MTI3uiqvnbHrzoJGP5DwWAjEXEfi90v3Q==}
+    peerDependencies:
+      '@capacitor/core': '>=8.0.0'
+
   '@capacitor/assets@3.0.5':
     resolution: {integrity: sha512-ohz/OUq61Y1Fc6aVSt0uDrUdeOA7oTH4pkWDbv/8I3UrPjH7oPkzYhShuDRUjekNp9RBi198VSFdt0CetpEOzw==}
     engines: {node: '>=10.3.0'}
     hasBin: true
+
+  '@capacitor/browser@8.0.1':
+    resolution: {integrity: sha512-cCEYK9DGJvamfCKOh95QP+VafApblySDR/eodOcl1Qt+d/Y+NNPzc8NYm/dztQlRf3aMLJ7ne1HrRCfu2UOMnw==}
+    peerDependencies:
+      '@capacitor/core': '>=8.0.0'
 
   '@capacitor/cli@5.7.8':
     resolution: {integrity: sha512-qN8LDlREMhrYhOvVXahoJVNkP8LP55/YPRJrzTAFrMqlNJC18L3CzgWYIblFPnuwfbH/RxbfoZT/ydkwgVpMrw==}
@@ -8396,6 +8412,10 @@ snapshots:
     dependencies:
       '@capacitor/core': 8.1.0
 
+  '@capacitor/app@8.0.1(@capacitor/core@8.1.0)':
+    dependencies:
+      '@capacitor/core': 8.1.0
+
   '@capacitor/assets@3.0.5(@swc/core@1.15.11(@swc/helpers@0.5.18))(@types/node@25.2.3)(typescript@5.9.3)':
     dependencies:
       '@capacitor/cli': 5.7.8
@@ -8420,6 +8440,10 @@ snapshots:
       - react-native-b4a
       - supports-color
       - typescript
+
+  '@capacitor/browser@8.0.1(@capacitor/core@8.1.0)':
+    dependencies:
+      '@capacitor/core': 8.1.0
 
   '@capacitor/cli@5.7.8':
     dependencies:

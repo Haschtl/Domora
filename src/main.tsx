@@ -9,9 +9,12 @@ import "react-toastify/dist/ReactToastify.css";
 import { toast } from "react-toastify";
 import { registerSW } from "virtual:pwa-register";
 import { ThemedToastContainer } from "./components/themed-toast-container";
+import { setupNativeOAuthListener } from "./lib/native-oauth";
 import { queryClient } from "./lib/query-client";
 import { ThemeProvider } from "./lib/theme";
 import { router } from "./router";
+
+void setupNativeOAuthListener();
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

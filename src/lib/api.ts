@@ -8,6 +8,7 @@ import {
   assertCanLeaveWithBalance,
   assertCanRemoveOwner
 } from "./household-guards";
+import { getOAuthRedirectTo, isNativePlatform, signInWithGoogleViaCapacitor } from "./native-oauth";
 import { supabase } from "./supabase";
 import type {
   BucketItem,
@@ -396,10 +397,12 @@ export const signUp = async (email: string, password: string) => {
 };
 
 export const signInWithGoogle = async () => {
-  const redirectTo =
-    typeof window !== "undefined"
-      ? new URL(import.meta.env.BASE_URL || "/", window.location.origin).toString()
-      : undefined;
+  if (isNativePlatform()) {
+    await signInWithGoogleViaCapacitor();
+    return;
+  }
+
+  const redirectTo = getOAuthRedirectTo();
 
   const { error } = await supabase.auth.signInWithOAuth({
     provider: "google",
