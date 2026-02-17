@@ -122,6 +122,17 @@ export const applyHouseholdTheme = (theme: HouseholdThemeConfig) => {
     root.style.setProperty(`--accent-${shade}-rgb`, `${r} ${g} ${b}`);
   });
 
+  root.style.setProperty("--app-bg-light-1", primaryPalette[50]);
+  root.style.setProperty("--app-bg-light-2", primaryPalette[100]);
+  root.style.setProperty("--app-bg-light-3", primaryPalette[200]);
+  root.style.setProperty("--app-bg-light-glow-1", `rgb(${hexToRgb(primaryPalette[500]).r} ${hexToRgb(primaryPalette[500]).g} ${hexToRgb(primaryPalette[500]).b} / 0.18)`);
+  root.style.setProperty("--app-bg-light-glow-2", `rgb(${hexToRgb(primaryPalette[600]).r} ${hexToRgb(primaryPalette[600]).g} ${hexToRgb(primaryPalette[600]).b} / 0.16)`);
+  root.style.setProperty("--app-bg-dark-1", "#060b10");
+  root.style.setProperty("--app-bg-dark-2", "#0a151c");
+  root.style.setProperty("--app-bg-dark-3", "#0f1f27");
+  root.style.setProperty("--app-bg-dark-glow-1", `rgb(${hexToRgb(accentPalette[500]).r} ${hexToRgb(accentPalette[500]).g} ${hexToRgb(accentPalette[500]).b} / 0.16)`);
+  root.style.setProperty("--app-bg-dark-glow-2", `rgb(${hexToRgb(accentPalette[700]).r} ${hexToRgb(accentPalette[700]).g} ${hexToRgb(accentPalette[700]).b} / 0.18)`);
+
   root.style.setProperty("--theme-font", normalized.fontFamily);
 
   const radiusScale = normalized.radiusScale;

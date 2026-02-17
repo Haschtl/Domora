@@ -545,6 +545,16 @@ input[type="number"] {
   --accent-800-rgb: 17 94 89;
   --accent-900: #134e4a;
   --accent-900-rgb: 19 78 74;
+  --app-bg-light-1: var(--brand-50);
+  --app-bg-light-2: var(--brand-100);
+  --app-bg-light-3: var(--brand-200);
+  --app-bg-light-glow-1: rgb(var(--brand-500-rgb) / 0.18);
+  --app-bg-light-glow-2: rgb(var(--brand-600-rgb) / 0.16);
+  --app-bg-dark-1: #060b10;
+  --app-bg-dark-2: #0a151c;
+  --app-bg-dark-3: #0f1f27;
+  --app-bg-dark-glow-1: rgb(var(--accent-500-rgb, 20 184 166) / 0.16);
+  --app-bg-dark-glow-2: rgb(var(--accent-700-rgb, 14 118 109) / 0.18);
   --radius-sm: 0.25rem;
   --radius-md: 0.375rem;
   --radius-lg: 0.5rem;
@@ -605,17 +615,17 @@ body {
     background-color 220ms ease,
     color 220ms ease;
   background:
-    radial-gradient(circle at 8% 0%, rgb(var(--brand-500-rgb) / 0.18), transparent 38%),
-    radial-gradient(circle at 92% 4%, rgb(var(--brand-600-rgb) / 0.16), transparent 30%),
-    linear-gradient(160deg, var(--brand-50) 0%, var(--brand-100) 58%, var(--brand-200) 100%);
+    radial-gradient(circle at 8% 0%, var(--app-bg-light-glow-1), transparent 38%),
+    radial-gradient(circle at 92% 4%, var(--app-bg-light-glow-2), transparent 30%),
+    linear-gradient(160deg, var(--app-bg-light-1) 0%, var(--app-bg-light-2) 58%, var(--app-bg-light-3) 100%);
 }
 
 .dark body {
   color: #e2e8f0;
   background:
-    radial-gradient(circle at 8% 0%, rgb(var(--accent-500-rgb, 20 184 166) / 0.16), transparent 35%),
-    radial-gradient(circle at 92% 4%, rgb(var(--accent-700-rgb, 14 118 109) / 0.18), transparent 26%),
-    linear-gradient(160deg, #081217 0%, #0b1b22 50%, #111827 100%);
+    radial-gradient(circle at 8% 0%, var(--app-bg-dark-glow-1), transparent 35%),
+    radial-gradient(circle at 92% 4%, var(--app-bg-dark-glow-2), transparent 26%),
+    linear-gradient(160deg, var(--app-bg-dark-1) 0%, var(--app-bg-dark-2) 50%, var(--app-bg-dark-3) 100%);
 }
 
 .dark {
