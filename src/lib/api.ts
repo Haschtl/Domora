@@ -644,6 +644,29 @@ export const getHouseholdMemberPimpers = async (householdId: string): Promise<Ho
 export const createHousehold = async (name: string, userId: string): Promise<Household> => {
   const validatedName = z.string().trim().min(1).max(120).parse(name);
   const validatedUserId = z.string().uuid().parse(userId);
+  const requesterUserId = await requireAuthenticatedUserId();
+  if (requesterUserId !== validatedUserId) {
+    throw new Error("Authenticated user does not match provided userId");
+  }
+
+  const { data: rpcData, error: rpcError } = await supabase.rpc("create_household", {
+    p_name: validatedName
+  });
+  if (!rpcError && rpcData) {
+    const row = Array.isArray(rpcData) ? rpcData[0] : rpcData;
+    if (row) {
+      return normalizeHousehold(row as Record<string, unknown>);
+    }
+  }
+
+  const rpcFunctionMissing =
+    rpcError &&
+    typeof rpcError.message === "string" &&
+    /Could not find the function|create_household/i.test(rpcError.message);
+
+  if (rpcError && !rpcFunctionMissing) {
+    throw rpcError;
+  }
 
   const { data, error } = await supabase
     .from("households")
@@ -651,7 +674,7 @@ export const createHousehold = async (name: string, userId: string): Promise<Hou
       id: uuid(),
       name: validatedName,
       invite_code: buildInviteCode(),
-      created_by: validatedUserId
+      created_by: requesterUserId
     })
     .select(SELECT_HOUSEHOLD_FIELDS)
     .single();
@@ -660,7 +683,7 @@ export const createHousehold = async (name: string, userId: string): Promise<Hou
 
   const { error: membershipError } = await supabase.from("household_members").insert({
     household_id: data.id,
-    user_id: userId,
+    user_id: requesterUserId,
     role: "owner"
   });
 

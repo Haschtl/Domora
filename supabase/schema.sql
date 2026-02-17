@@ -1470,6 +1470,73 @@ begin
 end;
 $$;
 
+create or replace function create_household(p_name text)
+returns households
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  requester_user_id uuid;
+  normalized_name text;
+  generated_invite_code text;
+  created_household households%rowtype;
+begin
+  requester_user_id := auth.uid();
+  if requester_user_id is null then
+    raise exception 'Not authenticated';
+  end if;
+
+  normalized_name := trim(coalesce(p_name, ''));
+  if char_length(normalized_name) = 0 then
+    raise exception 'Household name is required';
+  end if;
+
+  if char_length(normalized_name) > 120 then
+    raise exception 'Household name is too long';
+  end if;
+
+  loop
+    generated_invite_code := upper(substr(md5(gen_random_uuid()::text), 1, 6));
+
+    begin
+      insert into households (
+        name,
+        invite_code,
+        created_by
+      )
+      values (
+        normalized_name,
+        generated_invite_code,
+        requester_user_id
+      )
+      returning *
+      into created_household;
+      exit;
+    exception
+      when unique_violation then
+        null;
+    end;
+  end loop;
+
+  insert into household_members (
+    household_id,
+    user_id,
+    role
+  )
+  values (
+    created_household.id,
+    requester_user_id,
+    'owner'
+  )
+  on conflict (household_id, user_id)
+  do update
+  set role = household_members.role;
+
+  return created_household;
+end;
+$$;
+
 create or replace function guard_household_member_role_change()
 returns trigger
 language plpgsql
@@ -2386,6 +2453,9 @@ grant execute on function is_household_owner(uuid) to authenticated, service_rol
 revoke all on function join_household_by_invite(text) from public;
 grant execute on function join_household_by_invite(text) to authenticated, service_role;
 
+revoke all on function create_household(text) from public;
+grant execute on function create_household(text) to authenticated, service_role;
+
 revoke all on function rate_task_completion(uuid, integer) from public;
 grant execute on function rate_task_completion(uuid, integer) to authenticated, service_role;
 
@@ -2499,7 +2569,15 @@ for insert
 to authenticated
 with check (
   (select auth.uid()) = user_id
-  and is_household_owner(household_members.household_id)
+  and (
+    is_household_owner(household_members.household_id)
+    or exists (
+      select 1
+      from households h
+      where h.id = household_members.household_id
+        and h.created_by = (select auth.uid())
+    )
+  )
 );
 
 drop policy if exists household_members_delete on household_members;
