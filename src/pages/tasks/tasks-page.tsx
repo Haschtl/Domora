@@ -916,6 +916,16 @@ export const TasksPage = ({
       await onSkip(task);
     } else if (kind === "takeover") {
       await onTakeover(task);
+      const dueAtMs = new Date(task.due_at).getTime();
+      const nowMs = Date.now();
+      const canComplete = Number.isFinite(dueAtMs) && dueAtMs <= nowMs + 24 * 60 * 60 * 1000;
+      if (canComplete) {
+        await onComplete({
+          ...task,
+          assignee_id: userId,
+          ignore_delay_penalty_once: true
+        });
+      }
     } else {
       await onComplete(task);
     }
@@ -927,7 +937,8 @@ export const TasksPage = ({
     onComplete,
     onSkip,
     onTakeover,
-    pendingTaskAction
+    pendingTaskAction,
+    userId
   ]);
 
   useEffect(() => {
@@ -4068,6 +4079,24 @@ export const TasksPage = ({
                       })}
               </DialogDescription>
             </DialogHeader>
+            {pendingTaskAction?.kind === "takeover" ? (
+              (() => {
+                const nowMs = Date.now();
+                const dueAtMs = new Date(pendingTaskAction.task.due_at).getTime();
+                const graceMs = Math.max(0, pendingTaskAction.task.grace_minutes) * 60_000;
+                const delayMinutes = Math.max(0, Math.floor((nowMs - (dueAtMs + graceMs)) / 60_000));
+                const penaltyPerDay = Math.max(0, pendingTaskAction.task.delay_penalty_per_day ?? 0);
+                const penalty = penaltyPerDay * (delayMinutes / 1440);
+                if (delayMinutes <= 0 || penalty <= 0) return null;
+                return (
+                  <p className="mt-2 text-sm text-emerald-700 dark:text-emerald-300">
+                    {t("tasks.takeoverFullPimpersHint", {
+                      count: pendingTaskAction.task.effort_pimpers
+                    })}
+                  </p>
+                );
+              })()
+            ) : null}
 
             {pendingTaskAction?.kind === "skip" ? (
               <div className="rounded-xl border-2 border-rose-300 bg-rose-50 p-5 text-center dark:border-rose-800 dark:bg-rose-950/40">
