@@ -400,7 +400,7 @@ export const FinancesPage = ({
     if (nonVacationMemberIds.length > 0) return nonVacationMemberIds;
     return members.map((member) => member.user_id);
   }, [members]);
-  const [previewPayerIds, setPreviewPayerIds] = useState<string[]>(() => getDefaultFinanceSelectionIds());
+  const [previewPayerIds, setPreviewPayerIds] = useState<string[]>(() => [userId]);
   const [previewBeneficiaryIds, setPreviewBeneficiaryIds] = useState<string[]>(() => getDefaultFinanceSelectionIds());
   const [addEntryCategoryTouched, setAddEntryCategoryTouched] = useState(false);
   const addEntryComposerContainerRef = useRef<HTMLDivElement | null>(null);
@@ -433,7 +433,7 @@ export const FinancesPage = ({
       amount: "",
       receiptImageUrl: "",
       entryDate: "",
-      paidByUserIds: getDefaultFinanceSelectionIds(),
+      paidByUserIds: [userId],
       beneficiaryUserIds: getDefaultFinanceSelectionIds()
     },
     onSubmit: async ({
@@ -475,7 +475,7 @@ export const FinancesPage = ({
       setReceiptUploadError(null);
       setPreviewDescription("");
       setPreviewAmountInput("");
-      setPreviewPayerIds(getDefaultFinanceSelectionIds());
+      setPreviewPayerIds([userId]);
       setPreviewBeneficiaryIds(getDefaultFinanceSelectionIds());
       setAddEntryCategoryTouched(false);
     }
@@ -734,8 +734,8 @@ export const FinancesPage = ({
     const currentBeneficiaries = addEntryBeneficiaries;
 
     const defaultSelectionIds = getDefaultFinanceSelectionIds();
-    if (currentPayers.length === 0 && defaultSelectionIds.length > 0) {
-      addEntryForm.setFieldValue("paidByUserIds", defaultSelectionIds);
+    if (currentPayers.length === 0) {
+      addEntryForm.setFieldValue("paidByUserIds", [userId]);
     }
     if (currentBeneficiaries.length === 0 && defaultSelectionIds.length > 0) {
       addEntryForm.setFieldValue("beneficiaryUserIds", defaultSelectionIds);
