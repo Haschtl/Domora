@@ -132,6 +132,14 @@ export const applyHouseholdTheme = (theme: HouseholdThemeConfig) => {
   root.style.setProperty("--app-bg-dark-3", "#0f1f27");
   root.style.setProperty("--app-bg-dark-glow-1", `rgb(${hexToRgb(accentPalette[500]).r} ${hexToRgb(accentPalette[500]).g} ${hexToRgb(accentPalette[500]).b} / 0.16)`);
   root.style.setProperty("--app-bg-dark-glow-2", `rgb(${hexToRgb(accentPalette[700]).r} ${hexToRgb(accentPalette[700]).g} ${hexToRgb(accentPalette[700]).b} / 0.18)`);
+  root.style.setProperty("--toastify-color-light", primaryPalette[50]);
+  root.style.setProperty("--toastify-text-color-light", "#0f172a");
+  root.style.setProperty("--toastify-color-dark", "#0f172a");
+  root.style.setProperty("--toastify-text-color-dark", "#e2e8f0");
+  root.style.setProperty("--toastify-domora-bg", `rgb(${hexToRgb(primaryPalette[50]).r} ${hexToRgb(primaryPalette[50]).g} ${hexToRgb(primaryPalette[50]).b} / 0.96)`);
+  root.style.setProperty("--toastify-domora-border", `rgb(${hexToRgb(primaryPalette[300]).r} ${hexToRgb(primaryPalette[300]).g} ${hexToRgb(primaryPalette[300]).b} / 0.7)`);
+  root.style.setProperty("--toastify-domora-bg-dark", "rgb(15 23 42 / 0.95)");
+  root.style.setProperty("--toastify-domora-border-dark", `rgb(${hexToRgb(accentPalette[700]).r} ${hexToRgb(accentPalette[700]).g} ${hexToRgb(accentPalette[700]).b} / 0.7)`);
 
   root.style.setProperty("--theme-font", normalized.fontFamily);
 

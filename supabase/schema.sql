@@ -1134,6 +1134,24 @@ begin
       drop constraint household_events_event_type_check;
   end if;
 
+  if exists (
+    select 1
+    from pg_constraint
+    where conname = 'household-events_event_type_allowed_check'
+  ) then
+    alter table household_events
+      drop constraint "household-events_event_type_allowed_check";
+  end if;
+
+  if exists (
+    select 1
+    from pg_constraint
+    where conname = 'household_events_event_type_allowed_check'
+  ) then
+    alter table household_events
+      drop constraint household_events_event_type_allowed_check;
+  end if;
+
   if not exists (
     select 1
     from pg_constraint
@@ -2595,13 +2613,8 @@ with check (
   is_household_owner(household_id)
   or (
     (select auth.uid()) = user_id
-    and exists (
-      select 1
-      from household_members hm
-      where hm.household_id = household_members.household_id
-        and hm.user_id = (select auth.uid())
-        and hm.role = household_members.role
-    )
+    and is_household_member(household_id)
+    and role <> 'owner'
   )
 );
 
