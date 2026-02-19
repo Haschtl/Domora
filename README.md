@@ -109,6 +109,39 @@ Domora ist ein WG-Organizer als Web-App (PWA) mit Supabase-Backend.
 | ![Finanzen Archive](screenshots/Finance:Archive.png) | ![Finanzen Stats 1](screenshots/Finance:Stats1.png) | ![Finanzen Stats 2](screenshots/Finance:Stats2.png) | ![Settings Me](screenshots/Settings:Me.png) |
 | ![Settings WG](screenshots/Settings:WG.png) |  |  |  |
 
+### Google Play Screenshot Automation
+
+Der komplette Play-Store-Screenshot-Flow ist automatisiert (inkl. voller Screen-Palette):
+
+- Home: Summary, Feed, Bucket
+- Tasks: Overview, Details, Stats 1, Stats 2
+- Shopping: List, History
+- Finances: Overview, Rent, Contracts, Archive, Stats 1, Stats 2
+- Settings: Me, Household
+
+Generierte Formate:
+
+- `phone`: `1080x1920`
+- `tablet-7`: `1200x1920`
+- `tablet-10`: `1600x2560`
+
+Die Auflösungen liegen innerhalb der Google-Play-Grenzen (min. 320 px, max. 3840 px pro Seite, Seitenverhältnis <= 2:1).
+
+Ausgabeordner:
+
+- Standard: `screenshots/google-play/`
+- Optional anpassbar über `PLAYSTORE_SCREENSHOT_DIR`
+
+Direkt mit vorhandenen Login-Daten:
+
+```bash
+PLAYSTORE_SCREENSHOT_EMAIL=... PLAYSTORE_SCREENSHOT_PASSWORD=... pnpm screenshots:playstore
+```
+
+Alternativ in `.env`/`.env.local` setzen und dann normal `pnpm screenshots:playstore` starten.
+
+Das Screenshot-Skript verändert keine Daten in Supabase und führt keinen Seed aus.
+
 ## Tech Stack
 
 - React 19

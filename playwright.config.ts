@@ -2,6 +2,8 @@ import { defineConfig, devices } from "@playwright/test";
 
 const PORT = Number(process.env.E2E_PORT ?? 4173);
 const BASE_URL = process.env.E2E_BASE_URL ?? `http://127.0.0.1:${PORT}`;
+const WEB_SERVER_COMMAND =
+  process.env.E2E_WEB_SERVER_COMMAND ?? `pnpm dev --host 127.0.0.1 --port ${PORT}`;
 
 export default defineConfig({
   testDir: "tests/e2e",
@@ -18,7 +20,7 @@ export default defineConfig({
     trace: "on-first-retry"
   },
   webServer: {
-    command: `pnpm dev --host 127.0.0.1 --port ${PORT}`,
+    command: WEB_SERVER_COMMAND,
     url: BASE_URL,
     reuseExistingServer: !process.env.CI,
     timeout: 60_000

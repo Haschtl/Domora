@@ -1,0 +1,120 @@
+{
+  "generatedAt": "2026-02-19T15:53:48.572Z",
+  "outputRoot": "screenshots/google-play",
+  "targets": [
+    {
+      "id": "phone",
+      "viewportWidth": 360,
+      "viewportHeight": 640,
+      "deviceScaleFactor": 3,
+      "outputWidth": 1080,
+      "outputHeight": 1920,
+      "label": "Phone portrait (1080x1920)"
+    },
+    {
+      "id": "tablet-7",
+      "viewportWidth": 1200,
+      "viewportHeight": 1920,
+      "deviceScaleFactor": 1,
+      "outputWidth": 1200,
+      "outputHeight": 1920,
+      "label": "7-inch tablet portrait (1200x1920)"
+    },
+    {
+      "id": "tablet-10",
+      "viewportWidth": 1600,
+      "viewportHeight": 2560,
+      "deviceScaleFactor": 1,
+      "outputWidth": 1600,
+      "outputHeight": 2560,
+      "label": "10-inch tablet portrait (1600x2560)"
+    }
+  ],
+  "scenes": [
+    {
+      "id": "01-home-summary",
+      "label": "Home Summary",
+      "path": "/home/summary"
+    },
+    {
+      "id": "02-home-feed",
+      "label": "Home Feed",
+      "path": "/home/feed"
+    },
+    {
+      "id": "03-home-bucket",
+      "label": "Home Bucket",
+      "path": "/home/bucket"
+    },
+    {
+      "id": "04-tasks-overview",
+      "label": "Tasks Overview",
+      "path": "/tasks/overview"
+    },
+    {
+      "id": "05-task-details",
+      "label": "Task Details",
+      "path": "/tasks/overview"
+    },
+    {
+      "id": "06-task-stats-1",
+      "label": "Task Stats 1",
+      "path": "/tasks/stats"
+    },
+    {
+      "id": "07-task-stats-2",
+      "label": "Task Stats 2",
+      "path": "/tasks/stats"
+    },
+    {
+      "id": "08-shopping-list",
+      "label": "Shopping List",
+      "path": "/shopping/list"
+    },
+    {
+      "id": "09-shopping-history",
+      "label": "Shopping History",
+      "path": "/shopping/history"
+    },
+    {
+      "id": "10-finance-overview",
+      "label": "Finance Overview",
+      "path": "/finances/overview"
+    },
+    {
+      "id": "11-finance-rent",
+      "label": "Finance Rent",
+      "path": "/finances/subscriptions"
+    },
+    {
+      "id": "12-finance-contracts",
+      "label": "Finance Contracts",
+      "path": "/finances/subscriptions"
+    },
+    {
+      "id": "13-finance-archive",
+      "label": "Finance Archive",
+      "path": "/finances/archive"
+    },
+    {
+      "id": "14-finance-stats-1",
+      "label": "Finance Stats 1",
+      "path": "/finances/stats"
+    },
+    {
+      "id": "15-finance-stats-2",
+      "label": "Finance Stats 2",
+      "path": "/finances/stats"
+    },
+    {
+      "id": "16-settings-me",
+      "label": "Settings Me",
+      "path": "/settings/me"
+    },
+    {
+      "id": "17-settings-household",
+      "label": "Settings Household",
+      "path": "/settings/household"
+    }
+  ]
+}
