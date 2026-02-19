@@ -34,7 +34,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { Switch } from "../../components/ui/switch";
 import { getPushPreferences, upsertHouseholdWhiteboard, upsertPushPreferences } from "../../lib/api";
 import { MemberAvatar } from "../../components/member-avatar";
-import { isFirebaseConfigured } from "../../lib/firebase-config";
+import { getFirebaseRuntimeConfig } from "../../lib/firebase-config";
 
 interface SettingsPageProps {
   section?: "me" | "household";
@@ -556,7 +556,8 @@ export const SettingsPage = ({
   useEffect(() => {
     let active = true;
     const checkSupport = async () => {
-      if (!isFirebaseConfigured) {
+      const runtimeConfig = await getFirebaseRuntimeConfig();
+      if (!runtimeConfig) {
         if (active) setFirebaseMessagingSupport("missing_config");
         return;
       }

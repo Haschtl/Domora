@@ -2,18 +2,23 @@
 importScripts("https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js");
 importScripts("https://www.gstatic.com/firebasejs/10.14.1/firebase-messaging-compat.js");
 
-const loadConfig = async () => {
+const decodeBase64Url = (value) => {
+  const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
+  const padding = (4 - (normalized.length % 4)) % 4;
+  const padded = normalized + "=".repeat(padding);
+  return atob(padded);
+};
+
+const readConfigFromQuery = () => {
   try {
-    const baseUrl = self.registration?.scope || "/";
-    const res = await fetch(new URL("../firebase-config.json", baseUrl).toString(), { cache: "no-store" });
-    if (!res.ok) return null;
-    return await res.json();
+    const workerUrl = new URL(self.location.href);
+    const encodedConfig = workerUrl.searchParams.get("config");
+    if (!encodedConfig) return null;
+    return JSON.parse(decodeBase64Url(encodedConfig));
   } catch {
     return null;
   }
 };
-
-const configPromise = loadConfig();
 
 self.addEventListener("install", () => {
   self.skipWaiting();
@@ -23,8 +28,8 @@ self.addEventListener("activate", (event) => {
   event.waitUntil(self.clients.claim());
 });
 
-configPromise.then((firebaseConfig) => {
-  if (!firebaseConfig) return;
+const firebaseConfig = readConfigFromQuery();
+if (firebaseConfig) {
   firebase.initializeApp(firebaseConfig);
   const messaging = firebase.messaging();
   messaging.onBackgroundMessage((payload) => {
@@ -36,4 +41,4 @@ configPromise.then((firebaseConfig) => {
     };
     self.registration.showNotification(title, options);
   });
-});
+}

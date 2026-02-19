@@ -1,15 +1,13 @@
 import { createClient } from "@supabase/supabase-js";
+import { resolveSupabaseBackendConfig } from "./backend-config";
 
-const normalizeEnv = (value: unknown) => {
-  if (typeof value !== "string") return null;
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : null;
-};
+const resolvedBackend = resolveSupabaseBackendConfig();
+export const activeSupabaseUrl = resolvedBackend.url;
+export const activeSupabasePublishableKey = resolvedBackend.publishableKey;
+export const supabaseConfigSource = resolvedBackend.source;
+export const queryCacheStorageKey = resolvedBackend.queryCacheStorageKey;
 
-const supabaseUrl = normalizeEnv(import.meta.env.VITE_SUPABASE_URL);
-const supabasePublishableKey = normalizeEnv(import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY);
-
-export const isSupabaseConfigured = Boolean(supabaseUrl && supabasePublishableKey);
+export const isSupabaseConfigured = supabaseConfigSource !== "fallback";
 
 if (import.meta.env.DEV) {
   const origin = typeof window !== "undefined" ? window.location.origin : "server";
@@ -32,14 +30,15 @@ if (import.meta.env.DEV) {
       __DOMORA_SUPABASE_DEBUG__: {
         origin,
         isConfigured: isSupabaseConfigured,
-        url: supabaseUrl ?? null,
-        keyIsSet: Boolean(supabasePublishableKey)
+        source: supabaseConfigSource,
+        url: activeSupabaseUrl,
+        keyIsSet: Boolean(activeSupabasePublishableKey)
       }
     });
   }
 }
 
 export const supabase = createClient(
-  supabaseUrl || "https://example.supabase.co",
-  supabasePublishableKey || "public-publishable-key"
+  activeSupabaseUrl,
+  activeSupabasePublishableKey
 );

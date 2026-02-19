@@ -1,7 +1,7 @@
 import type { DehydratedState, QueryClient } from "@tanstack/react-query";
 import { dehydrate, hydrate } from "@tanstack/react-query";
+import { queryCacheStorageKey } from "./supabase";
 
-const STORAGE_KEY = "domora-query-cache:v1";
 const MAX_AGE_MS = 6 * 60 * 60 * 1000;
 const WRITE_DEBOUNCE_MS = 700;
 
@@ -20,7 +20,7 @@ const shouldPersistKey = (queryKey: readonly unknown[]) => {
 const tryReadPersistedCache = (): PersistedQueryCache | null => {
   if (!canUseLocalStorage()) return null;
 
-  const rawValue = window.localStorage.getItem(STORAGE_KEY);
+  const rawValue = window.localStorage.getItem(queryCacheStorageKey);
   if (!rawValue) return null;
 
   try {
@@ -41,7 +41,7 @@ const tryReadPersistedCache = (): PersistedQueryCache | null => {
 const removePersistedCache = () => {
   if (!canUseLocalStorage()) return;
   try {
-    window.localStorage.removeItem(STORAGE_KEY);
+    window.localStorage.removeItem(queryCacheStorageKey);
   } catch {
     // Ignore storage failures.
   }
@@ -60,7 +60,7 @@ const writePersistedCache = (queryClient: QueryClient) => {
       clientState
     } satisfies PersistedQueryCache;
 
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+    window.localStorage.setItem(queryCacheStorageKey, JSON.stringify(payload));
   } catch {
     // Ignore storage failures.
   }

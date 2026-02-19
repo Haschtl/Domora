@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { getApps, initializeApp } from "firebase/app";
 import { getMessaging, isSupported, onMessage } from "firebase/messaging";
 import { toast } from "react-toastify";
-import { firebaseConfig, isFirebaseConfigured } from "../lib/firebase-config";
+import { getFirebaseRuntimeConfig } from "../lib/firebase-config";
 
 type ForegroundPushOptions = {
   enabled: boolean;
@@ -12,19 +12,22 @@ type ForegroundPushOptions = {
 export const useForegroundPush = ({ enabled, onNavigate }: ForegroundPushOptions) => {
   useEffect(() => {
     if (!enabled) return;
-    if (!isFirebaseConfigured) return;
     if (typeof window === "undefined") return;
     let unsubscribe: (() => void) | null = null;
 
     const init = async () => {
+      const runtimeConfig = await getFirebaseRuntimeConfig();
+      if (!runtimeConfig) return;
       if (!(await isSupported())) return;
       if (getApps().length === 0) {
         initializeApp({
-          apiKey: firebaseConfig.apiKey ?? "",
-          authDomain: firebaseConfig.authDomain ?? "",
-          projectId: firebaseConfig.projectId ?? "",
-          messagingSenderId: firebaseConfig.messagingSenderId ?? "",
-          appId: firebaseConfig.appId ?? ""
+          apiKey: runtimeConfig.firebase.apiKey,
+          authDomain: runtimeConfig.firebase.authDomain,
+          projectId: runtimeConfig.firebase.projectId,
+          messagingSenderId: runtimeConfig.firebase.messagingSenderId,
+          appId: runtimeConfig.firebase.appId,
+          storageBucket: runtimeConfig.firebase.storageBucket,
+          measurementId: runtimeConfig.firebase.measurementId
         });
       }
       const messaging = getMessaging();
@@ -75,5 +78,5 @@ export const useForegroundPush = ({ enabled, onNavigate }: ForegroundPushOptions
     return () => {
       if (unsubscribe) unsubscribe();
     };
-  }, [enabled]);
+  }, [enabled, onNavigate]);
 };

@@ -24,6 +24,7 @@ Domora ist ein WG-Organizer als Web-App (PWA) mit Supabase-Backend.
   - [Quickstart](#quickstart)
   - [Konfiguration](#konfiguration)
     - [`.env` Variablen](#env-variablen)
+    - [Supabase Setup (separat)](#supabase-setup-separat)
     - [Supabase Edge Functions (Push)](#supabase-edge-functions-push)
   - [Datenbank und Security](#datenbank-und-security)
     - [Wichtige Security-Mechanismen](#wichtige-security-mechanismen)
@@ -197,9 +198,16 @@ Wichtig:
 
 - `SUPABASE_SECRET_KEY` niemals als `VITE_*` exponieren.
 
+### Supabase Setup (separat)
+
+Ausfuehrliche Schritt-fuer-Schritt Anleitung inkl. kompletter `supabase secrets set` Befehle:
+
+- [`supabase/README.md`](supabase/README.md)
+
 ### Supabase Edge Functions (Push)
 
 Die Push-Pipeline laeuft ueber Supabase Edge Functions (`dispatch-push-jobs`, `schedule-task-due`, `schedule-member-of-month`) und benoetigt eigene Secrets.
+Der Web-Client laedt die Firebase-Clientkonfiguration zur Laufzeit ueber `firebase-public-config` vom jeweils aktiven Supabase-Backend.
 
 In Supabase **Project Settings → Functions → Secrets** setzen:
 
@@ -209,26 +217,46 @@ In Supabase **Project Settings → Functions → Secrets** setzen:
 - `FCM_PROJECT_ID`
 - `FCM_SERVICE_ACCOUNT_JSON` (voller JSON-String des Firebase Service Accounts)
 - `CRON_SECRET` (muss dem DB-Cron-Secret entsprechen, siehe unten)
+- `FIREBASE_WEB_CONFIG_JSON` (empfohlen: kompletter JSON-Block inkl. `firebase` + `vapidKey`)
+
+Alternativ statt `FIREBASE_WEB_CONFIG_JSON`:
+
+- `FIREBASE_WEB_API_KEY`
+- `FIREBASE_WEB_AUTH_DOMAIN`
+- `FIREBASE_WEB_PROJECT_ID`
+- `FIREBASE_WEB_MESSAGING_SENDER_ID`
+- `FIREBASE_WEB_APP_ID`
+- `FIREBASE_WEB_VAPID_KEY`
+- optional: `FIREBASE_WEB_STORAGE_BUCKET`, `FIREBASE_WEB_MEASUREMENT_ID`
 
 Optional fuer lokale Tests via CLI:
 
 ```bash
 supabase secrets set \
+  --project-ref <YOUR_PROJECT_REF> \
   SUPABASE_URL=... \
   SUPABASE_SERVICE_ROLE_KEY=... \
-  SUPABASE_PUBLISHABLE_KEY=... \
+  SUPABASE_ANON_KEY=... \
   FCM_PROJECT_ID=... \
   FCM_SERVICE_ACCOUNT_JSON='{"type":"service_account",...}' \
-  CRON_SECRET=...
+  CRON_SECRET=... \
+  FIREBASE_WEB_CONFIG_JSON='{"firebase":{"apiKey":"...","authDomain":"...","projectId":"...","messagingSenderId":"...","appId":"..."},"vapidKey":"..."}'
 ```
 
 Deployment:
 
 ```bash
-supabase functions deploy dispatch-push-jobs
-supabase functions deploy schedule-task-due
-supabase functions deploy register-push-token
-supabase functions deploy schedule-member-of-month
+supabase functions deploy dispatch-push-jobs --project-ref <YOUR_PROJECT_REF>
+supabase functions deploy schedule-task-due --project-ref <YOUR_PROJECT_REF>
+supabase functions deploy register-push-token --project-ref <YOUR_PROJECT_REF>
+supabase functions deploy schedule-member-of-month --project-ref <YOUR_PROJECT_REF>
+supabase functions deploy firebase-public-config --project-ref <YOUR_PROJECT_REF>
+```
+
+Alle Functions auf einmal (über das Projekt-Skript):
+
+```bash
+SUPABASE_PROJECT_REF=<YOUR_PROJECT_REF> pnpm supabase:functions:deploy:all
 ```
 
 Scheduler/Cron:
@@ -239,7 +267,7 @@ Scheduler/Cron:
 - Edge Functions pruefen `x-cron-secret` gegen `CRON_SECRET`.
 - Wichtig: `net.http_post(url, body, params, headers, timeout)` (Headers sind der 4. Parameter).
 
-Hinweis: Fuer Web-Client (FCM) wird zusaetzlich `public/firebase-config.json` benoetigt (siehe `public/firebase-config.example.json`) sowie `VITE_FIREBASE_*` Variablen in der `.env`.
+Hinweis: Der Web-Client benoetigt keine `VITE_FIREBASE_*` Variablen mehr. Die Firebase-Clientkonfiguration kommt vom aktiven Backend ueber die Edge Function `firebase-public-config`.
 
 Edge Functions Auth:
 
@@ -413,6 +441,7 @@ GitHub Actions (siehe `.github/workflows/`):
 - Browser-/Device-Permissions prüfen
 - HTTPS/secure context verwenden
 - nicht jeder Browser unterstuetzt alle Kamera/OCR-Pfade identisch
+- Wenn im Client bei Push-Support `nicht konfiguriert` steht: `firebase-public-config` deployen und `FIREBASE_WEB_CONFIG_JSON` (oder `FIREBASE_WEB_*`) Secrets setzen.
 - Wenn `dispatch-push-jobs` 401 liefert: `x-cron-secret` Header und `CRON_SECRET`/Vault `domora_cron_secret` pruefen, Function muss `verify_jwt = false` haben.
 - Wenn `net._http_response` Timeouts zeigt, aber `push_jobs.pending` sinkt: Timeout erhoehen (z. B. 20000–30000 ms) oder Batch groesse in der Function reduzieren.
 - `push_log` bleibt leer, wenn es keine aktiven Tokens gibt: `push_tokens` mit `status='active'` pruefen oder ob Empfaenger durch `push_preferences` (topics/quiet_hours/disabled) gefiltert werden.

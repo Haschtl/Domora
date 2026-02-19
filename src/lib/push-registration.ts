@@ -1,16 +1,22 @@
 import { initializeApp, getApps } from "firebase/app";
 import { getMessaging, getToken, isSupported } from "firebase/messaging";
 import { supabase } from "./supabase";
-import { firebaseConfig, isFirebaseConfigured, vapidKey } from "./firebase-config";
+import {
+  getFirebaseRuntimeConfig,
+  serializeFirebaseConfigForServiceWorker,
+  type FirebaseClientConfig
+} from "./firebase-config";
 
-const ensureFirebaseApp = () => {
+const ensureFirebaseApp = (config: FirebaseClientConfig) => {
   if (getApps().length === 0) {
     initializeApp({
-      apiKey: firebaseConfig.apiKey ?? "",
-      authDomain: firebaseConfig.authDomain ?? "",
-      projectId: firebaseConfig.projectId ?? "",
-      messagingSenderId: firebaseConfig.messagingSenderId ?? "",
-      appId: firebaseConfig.appId ?? ""
+      apiKey: config.apiKey,
+      authDomain: config.authDomain,
+      projectId: config.projectId,
+      messagingSenderId: config.messagingSenderId,
+      appId: config.appId,
+      storageBucket: config.storageBucket,
+      measurementId: config.measurementId
     });
   }
 };
@@ -36,28 +42,29 @@ export const registerWebPushToken = async ({
   timezone?: string;
   appVersion?: string;
 }) => {
-  if (!isFirebaseConfigured) {
-    return;
-  }
-
   if (typeof window === "undefined") return;
   if (Notification.permission !== "granted") return;
   if (!(await isSupported())) return;
 
-  ensureFirebaseApp();
+  const runtimeConfig = await getFirebaseRuntimeConfig({ forceRefresh: true });
+  if (!runtimeConfig) return;
+
+  ensureFirebaseApp(runtimeConfig.firebase);
   const baseUrl = import.meta.env.BASE_URL || "/";
-  const existingRegistration = await navigator.serviceWorker.getRegistration(baseUrl);
+  const normalizedBaseUrl = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
+  const existingRegistration = await navigator.serviceWorker.getRegistration(`${normalizedBaseUrl}firebase/`);
   if (existingRegistration?.active?.scriptURL?.includes("firebase-messaging-sw.js")) {
     await existingRegistration.unregister();
   }
-  const swUrl = `${baseUrl}firebase/firebase-messaging-sw.js`;
-  const registration = await navigator.serviceWorker.register(swUrl, {
-    scope: `${baseUrl}firebase/`
+  const swUrl = new URL(`${normalizedBaseUrl}firebase/firebase-messaging-sw.js`, window.location.origin);
+  swUrl.searchParams.set("config", serializeFirebaseConfigForServiceWorker(runtimeConfig.firebase));
+  const registration = await navigator.serviceWorker.register(swUrl.toString(), {
+    scope: `${normalizedBaseUrl}firebase/`
   });
   const messaging = getMessaging();
 
   const token = await getToken(messaging, {
-    vapidKey: vapidKey ?? undefined,
+    vapidKey: runtimeConfig.vapidKey,
     serviceWorkerRegistration: registration
   });
 
