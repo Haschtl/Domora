@@ -21,6 +21,7 @@
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "screenshots:playstore": "node scripts/playstore-screenshots.mjs",
+    "screenshots:playstore:feature": "node scripts/playstore-feature-graphic.mjs",
     "test": "pnpm test:unit && pnpm test:e2e",
     "supabase:functions:deploy:all": "export SUPABASE_PROJECT_REF=yaupeuhvmrucyvlyzvun; node scripts/deploy-functions.mjs --no-verify-jwt"
   },
