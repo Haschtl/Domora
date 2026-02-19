@@ -9,12 +9,37 @@ import "react-toastify/dist/ReactToastify.css";
 import { toast } from "react-toastify";
 import { registerSW } from "virtual:pwa-register";
 import { ThemedToastContainer } from "./components/themed-toast-container";
+import { hideNativeLaunchScreen } from "./lib/launch-screen";
 import { setupNativeOAuthListener } from "./lib/native-oauth";
+import { restorePersistedQueryCache, setupPersistedQueryCache } from "./lib/query-cache-persistence";
 import { queryClient } from "./lib/query-client";
 import { ThemeProvider } from "./lib/theme";
 import { router } from "./router";
 
 void setupNativeOAuthListener();
+restorePersistedQueryCache(queryClient);
+
+const stopPersistedQueryCache = setupPersistedQueryCache(queryClient);
+if (import.meta.hot) {
+  import.meta.hot.dispose(() => {
+    stopPersistedQueryCache();
+  });
+}
+
+const hideBootstrapOverlay = () => {
+  if (typeof document === "undefined") return;
+  const overlay = document.getElementById("bootstrap-overlay");
+  if (!overlay) return;
+  overlay.classList.add("bootstrap-overlay--hide");
+  window.setTimeout(() => {
+    overlay.remove();
+  }, 260);
+};
+
+const revealAfterFirstRender = () => {
+  hideBootstrapOverlay();
+  void hideNativeLaunchScreen();
+};
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
@@ -26,6 +51,19 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
     </QueryClientProvider>
   </React.StrictMode>
 );
+
+if (typeof window !== "undefined") {
+  const fallbackTimer = window.setTimeout(() => {
+    revealAfterFirstRender();
+  }, 2500);
+
+  window.requestAnimationFrame(() => {
+    window.setTimeout(() => {
+      window.clearTimeout(fallbackTimer);
+      revealAfterFirstRender();
+    }, 40);
+  });
+}
 
 if ("serviceWorker" in navigator) {
   let hadController = Boolean(navigator.serviceWorker.controller);

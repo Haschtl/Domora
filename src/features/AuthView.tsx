@@ -1,4 +1,5 @@
 import { FormEvent, useState } from "react";
+import { Link } from "@tanstack/react-router";
 import { FcGoogle } from "react-icons/fc";
 import { useTranslation } from "react-i18next";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card";
@@ -82,6 +83,15 @@ export const AuthView = ({ busy, onSignIn, onSignUp, onGoogleSignIn }: AuthViewP
           >
             {t("auth.signUp")}
           </Button>
+
+          <p className="pt-2 text-center text-xs text-slate-500 dark:text-slate-400">
+            <Link
+              to="/privacy-policy"
+              className="underline decoration-brand-300 underline-offset-2 hover:text-brand-700 dark:hover:text-brand-300"
+            >
+              Datenschutzerklärung
+            </Link>
+          </p>
         </form>
       </CardContent>
     </Card>

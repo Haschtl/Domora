@@ -63,6 +63,9 @@ const SettingsMePage = lazy(() => import("./pages/settings/me").then((module) =>
 const SettingsHouseholdPage = lazy(() =>
   import("./pages/settings/household").then((module) => ({ default: module.SettingsHouseholdPage }))
 );
+const PrivacyPolicyPage = lazy(() =>
+  import("./pages/legal/privacy-policy").then((module) => ({ default: module.PrivacyPolicyPage }))
+);
 const AppParticlesBackground = lazy(() =>
   import("./components/app-particles-background").then((module) => ({ default: module.AppParticlesBackground }))
 );
@@ -220,6 +223,8 @@ const AppLayout = () => {
     if (location.pathname.startsWith("/redirect-payment/cancel")) return "cancel";
     return null;
   }, [location.pathname]);
+  const isPrivacyPolicyRoute = useMemo(() => location.pathname.startsWith("/privacy-policy"), [location.pathname]);
+  const isStandaloneRoute = paymentRedirectStatus !== null || isPrivacyPolicyRoute;
   const homeSubTab = useMemo(() => resolveHomeSubTabFromPathname(location.pathname), [location.pathname]);
   const shoppingSubTab = useMemo(() => resolveShoppingSubTabFromPathname(location.pathname), [location.pathname]);
   const taskSubTab = useMemo(() => resolveTaskSubTabFromPathname(location.pathname), [location.pathname]);
@@ -238,14 +243,14 @@ const AppLayout = () => {
   const loadingOverlayHideTimerRef = useRef<number | null>(null);
   const delayedPrefetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const shouldLoadTaskData =
-    tab === "tasks" || tab === "home" || hasPrefetchedTasks || notificationPermission === "granted";
+    !isStandaloneRoute && (tab === "tasks" || tab === "home" || hasPrefetchedTasks || notificationPermission === "granted");
   const tasksQuery = useHouseholdTasks(activeHousehold?.id ?? null, shouldLoadTaskData);
   const tasks = tasksQuery.data ?? [];
   const shoppingItemsQuery = useHouseholdShoppingItems(activeHousehold?.id ?? null);
   const shoppingItems = shoppingItemsQuery.data ?? [];
   const eventsQuery = useHouseholdEvents(
     activeHousehold?.id ?? null,
-    tab === "home" || notificationPermission === "granted"
+    !isStandaloneRoute && (tab === "home" || notificationPermission === "granted")
   );
   const householdEvents = useMemo(
     () => eventsQuery.data?.pages.flatMap((page) => page.rows) ?? [],
@@ -254,6 +259,7 @@ const AppLayout = () => {
   useTaskNotifications(tasks, householdEvents, userId, notificationPermission);
 
   useEffect(() => {
+    if (isStandaloneRoute) return;
     if (!session || !activeHousehold) return;
 
     const householdId = activeHousehold.id;
@@ -291,7 +297,7 @@ const AppLayout = () => {
     return () => {
       cleanup?.();
     };
-  }, [activeHousehold, queryClient, session]);
+  }, [activeHousehold, isStandaloneRoute, queryClient, session]);
 
   const dueTasksBadge = useMemo(() => {
     // eslint-disable-next-line react-hooks/purity
@@ -697,6 +703,21 @@ const AppLayout = () => {
               </div>
             </CardHeader>
           </Card>
+        </div>
+      </div>
+    );
+  }
+
+  if (isPrivacyPolicyRoute) {
+    return (
+      <div className="relative min-h-screen">
+        <Suspense fallback={null}>
+          <AppParticlesBackground />
+        </Suspense>
+        <div className="relative z-10 mx-auto min-h-screen w-full max-w-5xl p-4 text-slate-900 dark:text-slate-100 sm:p-6">
+          <Suspense fallback={null}>
+            <PrivacyPolicyPage />
+          </Suspense>
         </div>
       </div>
     );

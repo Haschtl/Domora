@@ -9,9 +9,75 @@
     <link rel="icon" href="/favicon.png" type="image/png" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="manifest" href="/manifest.webmanifest" />
+    <style>
+      html,
+      body {
+        margin: 0;
+        min-height: 100%;
+        background: #f0f5f4;
+      }
+
+      #root {
+        min-height: 100vh;
+      }
+
+      #bootstrap-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+        display: grid;
+        place-items: center;
+        background:
+          radial-gradient(circle at 8% 0%, rgb(31 138 127 / 0.16), transparent 38%),
+          radial-gradient(circle at 92% 4%, rgb(23 116 104 / 0.14), transparent 30%),
+          linear-gradient(160deg, #f0f5f4 0%, #d7e8e5 58%, #b2d5cf 100%);
+        opacity: 1;
+        transition: opacity 220ms ease;
+      }
+
+      #bootstrap-overlay.bootstrap-overlay--hide {
+        opacity: 0;
+        pointer-events: none;
+      }
+
+      .bootstrap-overlay__card {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.75rem;
+        border: 1px solid rgb(134 191 182 / 0.65);
+        border-radius: 1rem;
+        background: rgb(255 255 255 / 0.9);
+        box-shadow: 0 12px 32px rgb(15 23 42 / 0.12);
+        padding: 1rem 1.25rem;
+        color: #334155;
+        font: 500 0.875rem/1.2 "Inter", "Segoe UI", Roboto, sans-serif;
+      }
+
+      .bootstrap-overlay__spinner {
+        width: 2rem;
+        height: 2rem;
+        border-radius: 9999px;
+        border: 2px solid rgb(178 213 207);
+        border-top-color: #177468;
+        animation: bootstrap-spin 0.8s linear infinite;
+      }
+
+      @keyframes bootstrap-spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+    </style>
     <title>Domora</title>
   </head>
   <body>
+    <div id="bootstrap-overlay" role="status" aria-live="polite">
+      <div class="bootstrap-overlay__card">
+        <span class="bootstrap-overlay__spinner" aria-hidden="true"></span>
+        <span>Domora wird geladen...</span>
+      </div>
+    </div>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

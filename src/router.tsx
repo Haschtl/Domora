@@ -227,8 +227,15 @@ const redirectPaymentCancelRoute = createRoute({
   component: () => null
 });
 
+const privacyPolicyRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "privacy-policy",
+  component: () => null
+});
+
 const routeTree = rootRoute.addChildren([
   indexRoute,
+  privacyPolicyRoute,
   homeRoute,
   homeSummaryRoute,
   homeBucketRoute,
