@@ -2314,7 +2314,9 @@ export const HomePage = ({
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <CardTitle>{t("home.calendarTitle")}</CardTitle>
-                  <CardDescription>{t("home.calendarDescription")}</CardDescription>
+                  <CardDescription>
+                    {t("home.calendarDescription")}
+                  </CardDescription>
                 </div>
                 <div className="flex items-center gap-2">
                   <Button
@@ -2323,7 +2325,14 @@ export const HomePage = ({
                     variant="outline"
                     className="h-8 w-8 p-0"
                     onClick={() => {
-                      setCalendarMonthDate((current) => new Date(current.getFullYear(), current.getMonth() - 1, 1));
+                      setCalendarMonthDate(
+                        (current) =>
+                          new Date(
+                            current.getFullYear(),
+                            current.getMonth() - 1,
+                            1,
+                          ),
+                      );
                     }}
                     aria-label={t("home.calendarPrevMonth")}
                   >
@@ -2338,7 +2347,14 @@ export const HomePage = ({
                     variant="outline"
                     className="h-8 w-8 p-0"
                     onClick={() => {
-                      setCalendarMonthDate((current) => new Date(current.getFullYear(), current.getMonth() + 1, 1));
+                      setCalendarMonthDate(
+                        (current) =>
+                          new Date(
+                            current.getFullYear(),
+                            current.getMonth() + 1,
+                            1,
+                          ),
+                      );
                     }}
                     aria-label={t("home.calendarNextMonth")}
                   >
@@ -2354,15 +2370,22 @@ export const HomePage = ({
                         aria-label={t("home.calendarFilterAction")}
                       >
                         <SlidersHorizontal className="h-4 w-4" />
-                        <span className="hidden sm:inline">{t("home.calendarFilterAction")}</span>
+                        <span className="hidden sm:inline">
+                          {t("home.calendarFilterAction")}
+                        </span>
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" className="min-w-[220px]">
-                      <DropdownMenuLabel>{t("home.calendarFilterTitle")}</DropdownMenuLabel>
+                      <DropdownMenuLabel>
+                        {t("home.calendarFilterTitle")}
+                      </DropdownMenuLabel>
                       <DropdownMenuCheckboxItem
                         checked={calendarFilters.cleaning && featureFlags.tasks}
                         onCheckedChange={(checked) =>
-                          setCalendarFilters((prev) => ({ ...prev, cleaning: Boolean(checked) }))
+                          setCalendarFilters((prev) => ({
+                            ...prev,
+                            cleaning: Boolean(checked),
+                          }))
                         }
                         disabled={!featureFlags.tasks}
                       >
@@ -2372,9 +2395,14 @@ export const HomePage = ({
                         </span>
                       </DropdownMenuCheckboxItem>
                       <DropdownMenuCheckboxItem
-                        checked={calendarFilters.tasksCompleted && featureFlags.tasks}
+                        checked={
+                          calendarFilters.tasksCompleted && featureFlags.tasks
+                        }
                         onCheckedChange={(checked) =>
-                          setCalendarFilters((prev) => ({ ...prev, tasksCompleted: Boolean(checked) }))
+                          setCalendarFilters((prev) => ({
+                            ...prev,
+                            tasksCompleted: Boolean(checked),
+                          }))
                         }
                         disabled={!featureFlags.tasks}
                       >
@@ -2385,9 +2413,14 @@ export const HomePage = ({
                       </DropdownMenuCheckboxItem>
                       <DropdownMenuSeparator />
                       <DropdownMenuCheckboxItem
-                        checked={calendarFilters.finances && featureFlags.finances}
+                        checked={
+                          calendarFilters.finances && featureFlags.finances
+                        }
                         onCheckedChange={(checked) =>
-                          setCalendarFilters((prev) => ({ ...prev, finances: Boolean(checked) }))
+                          setCalendarFilters((prev) => ({
+                            ...prev,
+                            finances: Boolean(checked),
+                          }))
                         }
                         disabled={!featureFlags.finances}
                       >
@@ -2397,9 +2430,14 @@ export const HomePage = ({
                         </span>
                       </DropdownMenuCheckboxItem>
                       <DropdownMenuCheckboxItem
-                        checked={calendarFilters.cashAudits && featureFlags.finances}
+                        checked={
+                          calendarFilters.cashAudits && featureFlags.finances
+                        }
                         onCheckedChange={(checked) =>
-                          setCalendarFilters((prev) => ({ ...prev, cashAudits: Boolean(checked) }))
+                          setCalendarFilters((prev) => ({
+                            ...prev,
+                            cashAudits: Boolean(checked),
+                          }))
                         }
                         disabled={!featureFlags.finances}
                       >
@@ -2412,7 +2450,10 @@ export const HomePage = ({
                       <DropdownMenuCheckboxItem
                         checked={calendarFilters.bucket && featureFlags.bucket}
                         onCheckedChange={(checked) =>
-                          setCalendarFilters((prev) => ({ ...prev, bucket: Boolean(checked) }))
+                          setCalendarFilters((prev) => ({
+                            ...prev,
+                            bucket: Boolean(checked),
+                          }))
                         }
                         disabled={!featureFlags.bucket}
                       >
@@ -2422,9 +2463,14 @@ export const HomePage = ({
                         </span>
                       </DropdownMenuCheckboxItem>
                       <DropdownMenuCheckboxItem
-                        checked={calendarFilters.shopping && featureFlags.shopping}
+                        checked={
+                          calendarFilters.shopping && featureFlags.shopping
+                        }
                         onCheckedChange={(checked) =>
-                          setCalendarFilters((prev) => ({ ...prev, shopping: Boolean(checked) }))
+                          setCalendarFilters((prev) => ({
+                            ...prev,
+                            shopping: Boolean(checked),
+                          }))
                         }
                         disabled={!featureFlags.shopping}
                       >
@@ -2463,15 +2509,21 @@ export const HomePage = ({
                       cashAuditCount,
                       bucketCount,
                       shoppingCount,
-                      totalCount
+                      totalCount,
                     } = getCalendarCounts(entry);
                     const hasEntries = totalCount > 0;
-                    const cellHeightClass = isCalendarDense ? "min-h-[52px]" : "min-h-[70px]";
+                    const cellHeightClass = isCalendarDense
+                      ? "min-h-[52px]"
+                      : "min-h-[70px]";
 
                     return (
                       <Tooltip
                         key={cellDayKey}
-                        open={isCalendarCoarsePointer ? openCalendarTooltipDay === cellDayKey : undefined}
+                        open={
+                          isCalendarCoarsePointer
+                            ? openCalendarTooltipDay === cellDayKey
+                            : undefined
+                        }
                         onOpenChange={(open) => {
                           if (!isCalendarCoarsePointer) return;
                           setOpenCalendarTooltipDay(open ? cellDayKey : null);
@@ -2482,19 +2534,25 @@ export const HomePage = ({
                             type="button"
                             onClick={() => {
                               if (!isCalendarCoarsePointer) return;
-                              setOpenCalendarTooltipDay((current) => (current === cellDayKey ? null : cellDayKey));
+                              setOpenCalendarTooltipDay((current) =>
+                                current === cellDayKey ? null : cellDayKey,
+                              );
                             }}
                             className={`${cellHeightClass} rounded-lg border px-1.5 py-1 text-left transition ${
                               cell.inCurrentMonth
                                 ? `border-brand-100 bg-white/90 hover:bg-brand-50/60 dark:border-slate-700 dark:bg-slate-900 ${
-                                    isToday ? "ring-2 ring-brand-400/60 ring-offset-1 ring-offset-white dark:ring-brand-500/50 dark:ring-offset-slate-900" : ""
+                                    isToday
+                                      ? "ring-2 ring-brand-400/60 ring-offset-1 ring-offset-white dark:ring-brand-500/50 dark:ring-offset-slate-900"
+                                      : ""
                                   }`
                                 : "border-brand-50 bg-white/40 opacity-65 dark:border-slate-800 dark:bg-slate-900/40"
                             }`}
                           >
                             <p
                               className={`text-xs font-medium ${
-                                isToday ? "text-brand-700 dark:text-brand-300" : "text-slate-700 dark:text-slate-300"
+                                isToday
+                                  ? "text-brand-700 dark:text-brand-300"
+                                  : "text-slate-700 dark:text-slate-300"
                               }`}
                             >
                               {cell.date.getDate()}
@@ -2504,13 +2562,30 @@ export const HomePage = ({
                                 <div className="mt-1 flex flex-wrap gap-1">
                                   {renderDenseStack(
                                     cleaningCount,
-                                    criticalCleaningCount > 0 ? "bg-rose-500" : "bg-emerald-500"
+                                    criticalCleaningCount > 0
+                                      ? "bg-rose-500"
+                                      : "bg-emerald-500",
                                   )}
-                                  {renderDenseStack(completionCount, "bg-brand-500")}
-                                  {renderDenseStack(financeCount, "bg-amber-500")}
-                                  {renderDenseStack(cashAuditCount, "bg-slate-500")}
-                                  {renderDenseStack(bucketCount, "bg-indigo-500")}
-                                  {renderDenseStack(shoppingCount, "bg-cyan-500")}
+                                  {renderDenseStack(
+                                    completionCount,
+                                    "bg-brand-500",
+                                  )}
+                                  {renderDenseStack(
+                                    financeCount,
+                                    "bg-amber-500",
+                                  )}
+                                  {renderDenseStack(
+                                    cashAuditCount,
+                                    "bg-slate-500",
+                                  )}
+                                  {renderDenseStack(
+                                    bucketCount,
+                                    "bg-indigo-500",
+                                  )}
+                                  {renderDenseStack(
+                                    shoppingCount,
+                                    "bg-cyan-500",
+                                  )}
                                 </div>
                               ) : (
                                 <div className="mt-1 flex flex-wrap gap-1 text-[10px] text-slate-600 dark:text-slate-300">
@@ -2524,7 +2599,9 @@ export const HomePage = ({
                                     >
                                       <span
                                         className={`h-1.5 w-1.5 rounded-full ${
-                                          criticalCleaningCount > 0 ? "bg-rose-500" : "bg-emerald-500"
+                                          criticalCleaningCount > 0
+                                            ? "bg-rose-500"
+                                            : "bg-emerald-500"
                                         }`}
                                       />
                                       {cleaningCount}
@@ -2568,7 +2645,11 @@ export const HomePage = ({
                         <TooltipContent className="max-w-[320px] border border-slate-200 bg-white text-slate-900 shadow-lg dark:border-slate-700 dark:bg-slate-900 dark:text-slate-50">
                           <p className="mb-2 font-semibold">
                             {t("home.calendarTooltipTitle", {
-                              date: formatShortDay(cellDayKey, language, cellDayKey)
+                              date: formatShortDay(
+                                cellDayKey,
+                                language,
+                                cellDayKey,
+                              ),
                             })}
                           </p>
                           <div className="space-y-2">
@@ -2578,30 +2659,42 @@ export const HomePage = ({
                                   {t("home.calendarCleaningTitle")}
                                 </p>
                                 <ul className="mt-1 space-y-1">
-                                  {entry?.cleaningDueTasks.slice(0, MAX_CALENDAR_TOOLTIP_ITEMS).map((taskEntry) => (
-                                    <li key={`cleaning-${cellDayKey}-${taskEntry.task.id}`} className="text-xs">
-                                      <span
-                                        className={`mr-1 inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
-                                          taskEntry.status === "overdue"
-                                            ? "bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-200"
-                                            : taskEntry.status === "due"
-                                              ? "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200"
-                                              : "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200"
-                                        }`}
+                                  {entry?.cleaningDueTasks
+                                    .slice(0, MAX_CALENDAR_TOOLTIP_ITEMS)
+                                    .map((taskEntry) => (
+                                      <li
+                                        key={`cleaning-${cellDayKey}-${taskEntry.task.id}`}
+                                        className="text-xs"
                                       >
-                                        {taskEntry.status === "overdue"
-                                          ? t("home.calendarOverdueLabel")
-                                          : taskEntry.status === "due"
-                                            ? t("home.calendarDueLabel")
-                                            : t("home.calendarUpcomingLabel")}
-                                      </span>
-                                      {taskEntry.task.title} · {labelForUserId(taskEntry.task.assignee_id)}
-                                    </li>
-                                  ))}
+                                        <span
+                                          className={`mr-1 inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+                                            taskEntry.status === "overdue"
+                                              ? "bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-200"
+                                              : taskEntry.status === "due"
+                                                ? "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200"
+                                                : "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200"
+                                          }`}
+                                        >
+                                          {taskEntry.status === "overdue"
+                                            ? t("home.calendarOverdueLabel")
+                                            : taskEntry.status === "due"
+                                              ? t("home.calendarDueLabel")
+                                              : t("home.calendarUpcomingLabel")}
+                                        </span>
+                                        {taskEntry.task.title} ·{" "}
+                                        {labelForUserId(
+                                          taskEntry.task.assignee_id,
+                                        )}
+                                      </li>
+                                    ))}
                                 </ul>
                                 {cleaningCount > MAX_CALENDAR_TOOLTIP_ITEMS ? (
                                   <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                                    {t("home.calendarMore", { count: cleaningCount - MAX_CALENDAR_TOOLTIP_ITEMS })}
+                                    {t("home.calendarMore", {
+                                      count:
+                                        cleaningCount -
+                                        MAX_CALENDAR_TOOLTIP_ITEMS,
+                                    })}
                                   </p>
                                 ) : null}
                               </div>
@@ -2612,16 +2705,27 @@ export const HomePage = ({
                                   {t("home.calendarTasksCompletedTitle")}
                                 </p>
                                 <ul className="mt-1 space-y-1">
-                                  {entry?.taskCompletions.slice(0, MAX_CALENDAR_TOOLTIP_ITEMS).map((completion) => (
-                                    <li key={`completed-${cellDayKey}-${completion.id}`} className="text-xs">
-                                      {(completion.task_title_snapshot || t("tasks.fallbackTitle"))} ·{" "}
-                                      {labelForUserId(completion.user_id)}
-                                    </li>
-                                  ))}
+                                  {entry?.taskCompletions
+                                    .slice(0, MAX_CALENDAR_TOOLTIP_ITEMS)
+                                    .map((completion) => (
+                                      <li
+                                        key={`completed-${cellDayKey}-${completion.id}`}
+                                        className="text-xs"
+                                      >
+                                        {completion.task_title_snapshot ||
+                                          t("tasks.fallbackTitle")}{" "}
+                                        · {labelForUserId(completion.user_id)}
+                                      </li>
+                                    ))}
                                 </ul>
-                                {completionCount > MAX_CALENDAR_TOOLTIP_ITEMS ? (
+                                {completionCount >
+                                MAX_CALENDAR_TOOLTIP_ITEMS ? (
                                   <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                                    {t("home.calendarMore", { count: completionCount - MAX_CALENDAR_TOOLTIP_ITEMS })}
+                                    {t("home.calendarMore", {
+                                      count:
+                                        completionCount -
+                                        MAX_CALENDAR_TOOLTIP_ITEMS,
+                                    })}
                                   </p>
                                 ) : null}
                               </div>
@@ -2632,15 +2736,25 @@ export const HomePage = ({
                                   {t("home.calendarFinanceTitle")}
                                 </p>
                                 <ul className="mt-1 space-y-1">
-                                  {entry?.financeEntries.slice(0, MAX_CALENDAR_TOOLTIP_ITEMS).map((finance) => (
-                                    <li key={`finance-${cellDayKey}-${finance.id}`} className="text-xs">
-                                      {finance.description} · {formatMoney(finance.amount)}
-                                    </li>
-                                  ))}
+                                  {entry?.financeEntries
+                                    .slice(0, MAX_CALENDAR_TOOLTIP_ITEMS)
+                                    .map((finance) => (
+                                      <li
+                                        key={`finance-${cellDayKey}-${finance.id}`}
+                                        className="text-xs"
+                                      >
+                                        {finance.description} ·{" "}
+                                        {formatMoney(finance.amount)}
+                                      </li>
+                                    ))}
                                 </ul>
                                 {financeCount > MAX_CALENDAR_TOOLTIP_ITEMS ? (
                                   <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                                    {t("home.calendarMore", { count: financeCount - MAX_CALENDAR_TOOLTIP_ITEMS })}
+                                    {t("home.calendarMore", {
+                                      count:
+                                        financeCount -
+                                        MAX_CALENDAR_TOOLTIP_ITEMS,
+                                    })}
                                   </p>
                                 ) : null}
                               </div>
@@ -2651,17 +2765,28 @@ export const HomePage = ({
                                   {t("home.calendarCashAuditTitle")}
                                 </p>
                                 <ul className="mt-1 space-y-1">
-                                  {entry?.cashAudits.slice(0, MAX_CALENDAR_TOOLTIP_ITEMS).map((audit) => (
-                                    <li key={`audit-${cellDayKey}-${audit.id}`} className="text-xs">
-                                      {t("home.calendarCashAuditEntry", {
-                                        user: labelForUserId(audit.requested_by)
-                                      })}
-                                    </li>
-                                  ))}
+                                  {entry?.cashAudits
+                                    .slice(0, MAX_CALENDAR_TOOLTIP_ITEMS)
+                                    .map((audit) => (
+                                      <li
+                                        key={`audit-${cellDayKey}-${audit.id}`}
+                                        className="text-xs"
+                                      >
+                                        {t("home.calendarCashAuditEntry", {
+                                          user: labelForUserId(
+                                            audit.requested_by,
+                                          ),
+                                        })}
+                                      </li>
+                                    ))}
                                 </ul>
                                 {cashAuditCount > MAX_CALENDAR_TOOLTIP_ITEMS ? (
                                   <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                                    {t("home.calendarMore", { count: cashAuditCount - MAX_CALENDAR_TOOLTIP_ITEMS })}
+                                    {t("home.calendarMore", {
+                                      count:
+                                        cashAuditCount -
+                                        MAX_CALENDAR_TOOLTIP_ITEMS,
+                                    })}
                                   </p>
                                 ) : null}
                               </div>
@@ -2672,15 +2797,25 @@ export const HomePage = ({
                                   {t("home.calendarShoppingTitle")}
                                 </p>
                                 <ul className="mt-1 space-y-1">
-                                  {entry?.shoppingEntries.slice(0, MAX_CALENDAR_TOOLTIP_ITEMS).map((shopping) => (
-                                    <li key={`shopping-${cellDayKey}-${shopping.id}`} className="text-xs">
-                                      {shopping.title} · {labelForUserId(shopping.userId)}
-                                    </li>
-                                  ))}
+                                  {entry?.shoppingEntries
+                                    .slice(0, MAX_CALENDAR_TOOLTIP_ITEMS)
+                                    .map((shopping) => (
+                                      <li
+                                        key={`shopping-${cellDayKey}-${shopping.id}`}
+                                        className="text-xs"
+                                      >
+                                        {shopping.title} ·{" "}
+                                        {labelForUserId(shopping.userId)}
+                                      </li>
+                                    ))}
                                 </ul>
                                 {shoppingCount > MAX_CALENDAR_TOOLTIP_ITEMS ? (
                                   <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                                    {t("home.calendarMore", { count: shoppingCount - MAX_CALENDAR_TOOLTIP_ITEMS })}
+                                    {t("home.calendarMore", {
+                                      count:
+                                        shoppingCount -
+                                        MAX_CALENDAR_TOOLTIP_ITEMS,
+                                    })}
                                   </p>
                                 ) : null}
                               </div>
@@ -2691,15 +2826,27 @@ export const HomePage = ({
                                   {t("home.calendarBucketVotesTitle")}
                                 </p>
                                 <ul className="mt-1 space-y-1">
-                                  {entry?.bucketVotes.slice(0, MAX_CALENDAR_TOOLTIP_ITEMS).map((vote) => (
-                                    <li key={`bucket-${cellDayKey}-${vote.item.id}-${vote.date}`} className="text-xs">
-                                      {vote.item.title} · {t("home.bucketVotes", { count: vote.voters.length })}
-                                    </li>
-                                  ))}
+                                  {entry?.bucketVotes
+                                    .slice(0, MAX_CALENDAR_TOOLTIP_ITEMS)
+                                    .map((vote) => (
+                                      <li
+                                        key={`bucket-${cellDayKey}-${vote.item.id}-${vote.date}`}
+                                        className="text-xs"
+                                      >
+                                        {vote.item.title} ·{" "}
+                                        {t("home.bucketVotes", {
+                                          count: vote.voters.length,
+                                        })}
+                                      </li>
+                                    ))}
                                 </ul>
                                 {bucketCount > MAX_CALENDAR_TOOLTIP_ITEMS ? (
                                   <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                                    {t("home.calendarMore", { count: bucketCount - MAX_CALENDAR_TOOLTIP_ITEMS })}
+                                    {t("home.calendarMore", {
+                                      count:
+                                        bucketCount -
+                                        MAX_CALENDAR_TOOLTIP_ITEMS,
+                                    })}
                                   </p>
                                 ) : null}
                               </div>
@@ -2729,7 +2876,7 @@ export const HomePage = ({
                   </CardDescription>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span
+                  {/* <span
                     className="inline-flex items-center gap-2 text-xs font-medium text-slate-500 dark:text-slate-400"
                     aria-live="polite"
                   >
@@ -2737,7 +2884,7 @@ export const HomePage = ({
                     <span className="hidden sm:inline">
                       {whiteboardStatusLabel}
                     </span>
-                  </span>
+                  </span> */}
                   {/* {isWhiteboardFullscreenOpen && (
                     <button
                       type="button"
@@ -2803,6 +2950,7 @@ export const HomePage = ({
                   </DialogDescription>
                 </div>
                 <div className="flex items-center gap-3">
+                  {whiteboardStatusIndicator}
                   <span className="hidden text-xs font-medium text-slate-500 dark:text-slate-400 sm:inline">
                     {whiteboardStatusLabel}
                   </span>

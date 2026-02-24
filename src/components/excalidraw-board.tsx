@@ -112,7 +112,11 @@ const normalizeAppState = (appState?: Partial<AppState>) => {
   return sanitized;
 };
 
-const buildSceneSignature = (elements: readonly unknown[], files: Record<string, unknown>) => {
+const buildSceneSignature = (
+  elements: readonly unknown[],
+  files: Record<string, unknown>,
+  appState?: Partial<AppState>
+) => {
   const elementParts = elements.map((entry) => {
     if (!entry || typeof entry !== "object") return "x";
     const element = entry as Record<string, unknown>;
@@ -122,7 +126,9 @@ const buildSceneSignature = (elements: readonly unknown[], files: Record<string,
     return `${id}:${version}:${updated}`;
   });
   const fileKeys = Object.keys(files ?? {}).sort();
-  return `${elementParts.join("|")}::${fileKeys.join(",")}`;
+  const background =
+    typeof appState?.viewBackgroundColor === "string" ? appState.viewBackgroundColor : "";
+  return `${elementParts.join("|")}::${fileKeys.join(",")}::bg:${background}`;
 };
 
 const clampSize = (value: number, fallback: number, max: number) => {
@@ -149,7 +155,10 @@ export const ExcalidrawBoard = ({
     () => ({
       primary: readCssColor("--brand-500", "#1f8a7f"),
       accent: readCssColor("--accent-500", "#14b8a6"),
-      background: readCssColor(theme === "dark" ? "--brand-900" : "--brand-50", theme === "dark" ? "#0b1220" : "#f0fdf4")
+      background: readCssColor(
+        theme === "dark" ? "--app-bg-dark-1" : "--app-bg-light-1",
+        theme === "dark" ? "#0b1220" : "#f0f5f4"
+      )
     }),
     [theme]
   );
@@ -179,7 +188,7 @@ export const ExcalidrawBoard = ({
     const parsed = safeParseScene(sceneJson);
     const initialElements = sanitizeElements(parsed?.elements);
     const initialFiles = parsed?.files ?? {};
-    const signature = buildSceneSignature(initialElements, initialFiles);
+    const signature = buildSceneSignature(initialElements, initialFiles, parsed?.appState);
     if (lastSceneSignatureRef.current === signature) return;
     lastSceneSignatureRef.current = signature;
     if (!excalidrawApi) return;
@@ -284,10 +293,7 @@ export const ExcalidrawBoard = ({
             if (!onSceneChange || isReadOnly) return;
             const sanitizedElements = sanitizeElements(elements);
             const sanitizedFiles = files ?? {};
-            const signature = buildSceneSignature(
-              sanitizedElements,
-              sanitizedFiles,
-            );
+            const signature = buildSceneSignature(sanitizedElements, sanitizedFiles, appState);
             if (lastSceneSignatureRef.current === signature) return;
             lastSceneSignatureRef.current = signature;
             const sanitizedAppState = normalizeAppState(appState);
