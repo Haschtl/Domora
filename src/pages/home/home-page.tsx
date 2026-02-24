@@ -14,6 +14,7 @@ import {
   Pencil,
   Plus,
   Receipt,
+  SlidersHorizontal,
   ShoppingCart,
   Trash2,
   Wallet,
@@ -58,8 +59,11 @@ import { Checkbox } from "../../components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../../components/ui/dialog";
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger
 } from "../../components/ui/dropdown-menu";
 import { Input } from "../../components/ui/input";
@@ -118,6 +122,12 @@ type HomeCalendarBucketVote = {
   date: string;
   voters: string[];
 };
+type HomeCalendarShoppingEntry = {
+  id: string;
+  title: string;
+  userId: string | null;
+  at: string;
+};
 type HomeCalendarDueTask = {
   task: TaskItem;
   status: "overdue" | "due" | "upcoming";
@@ -127,6 +137,8 @@ type HomeCalendarEntry = {
   taskCompletions: TaskCompletion[];
   financeEntries: FinanceEntry[];
   bucketVotes: HomeCalendarBucketVote[];
+  shoppingEntries: HomeCalendarShoppingEntry[];
+  cashAudits: CashAuditRequest[];
 };
 
 const LANDING_WIDGET_COMPONENTS: Array<{ key: LandingWidgetKey; tag: string }> = [
@@ -532,6 +544,14 @@ export const HomePage = ({
   const [calendarMonthDate, setCalendarMonthDate] = useState(() => startOfMonth(new Date()));
   const [openCalendarTooltipDay, setOpenCalendarTooltipDay] = useState<string | null>(null);
   const [isCalendarCoarsePointer, setIsCalendarCoarsePointer] = useState(false);
+  const [calendarFilters, setCalendarFilters] = useState(() => ({
+    cleaning: true,
+    tasksCompleted: true,
+    finances: false,
+    bucket: true,
+    shopping: false,
+    cashAudits: true
+  }));
   const [isMobileBucketComposer, setIsMobileBucketComposer] = useState(() =>
     typeof window !== "undefined" ? window.matchMedia("(max-width: 639px)").matches : false
   );
@@ -681,7 +701,9 @@ export const HomePage = ({
         cleaningDueTasks: [],
         taskCompletions: [],
         financeEntries: [],
-        bucketVotes: []
+        bucketVotes: [],
+        shoppingEntries: [],
+        cashAudits: []
       };
       map.set(key, next);
       return next;
@@ -746,6 +768,13 @@ export const HomePage = ({
         const key = dayKey(parsed);
         ensureEntry(key).financeEntries.push(entry);
       });
+
+      cashAuditRequests.forEach((entry) => {
+        const parsed = new Date(entry.created_at);
+        if (Number.isNaN(parsed.getTime())) return;
+        const key = dayKey(parsed);
+        ensureEntry(key).cashAudits.push(entry);
+      });
     }
 
     if (featureFlags.bucket) {
@@ -763,8 +792,25 @@ export const HomePage = ({
       });
     }
 
+    if (featureFlags.shopping) {
+      householdEvents.forEach((entry) => {
+        if (entry.event_type !== "shopping_completed") return;
+        const createdAt = new Date(entry.created_at);
+        if (Number.isNaN(createdAt.getTime())) return;
+        const payload = entry.payload ?? {};
+        const title = String(payload.title ?? "").trim();
+        const key = dayKey(createdAt);
+        ensureEntry(key).shoppingEntries.push({
+          id: entry.id,
+          title: title || t("shopping.title"),
+          userId: entry.actor_user_id,
+          at: entry.created_at
+        });
+      });
+    }
+
     return map;
-  }, [bucketItems, featureFlags, financeEntries, language, taskCompletions, tasks]);
+  }, [bucketItems, cashAuditRequests, featureFlags, financeEntries, householdEvents, language, taskCompletions, tasks, t]);
   const taskFairness = useMemo(() => {
     const memberIds = [...new Set(members.map((entry) => entry.user_id))];
     if (memberIds.length === 0) {
@@ -2199,6 +2245,79 @@ export const HomePage = ({
                   >
                     <ChevronRight className="h-4 w-4" />
                   </Button>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="h-8 gap-2 px-2.5"
+                        aria-label={t("home.calendarFilterAction")}
+                      >
+                        <SlidersHorizontal className="h-4 w-4" />
+                        <span className="hidden sm:inline">{t("home.calendarFilterAction")}</span>
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="min-w-[220px]">
+                      <DropdownMenuLabel>{t("home.calendarFilterTitle")}</DropdownMenuLabel>
+                      <DropdownMenuCheckboxItem
+                        checked={calendarFilters.cleaning && featureFlags.tasks}
+                        onCheckedChange={(checked) =>
+                          setCalendarFilters((prev) => ({ ...prev, cleaning: Boolean(checked) }))
+                        }
+                        disabled={!featureFlags.tasks}
+                      >
+                        {t("home.calendarFilterCleaning")}
+                      </DropdownMenuCheckboxItem>
+                      <DropdownMenuCheckboxItem
+                        checked={calendarFilters.tasksCompleted && featureFlags.tasks}
+                        onCheckedChange={(checked) =>
+                          setCalendarFilters((prev) => ({ ...prev, tasksCompleted: Boolean(checked) }))
+                        }
+                        disabled={!featureFlags.tasks}
+                      >
+                        {t("home.calendarFilterTasksCompleted")}
+                      </DropdownMenuCheckboxItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuCheckboxItem
+                        checked={calendarFilters.finances && featureFlags.finances}
+                        onCheckedChange={(checked) =>
+                          setCalendarFilters((prev) => ({ ...prev, finances: Boolean(checked) }))
+                        }
+                        disabled={!featureFlags.finances}
+                      >
+                        {t("home.calendarFilterFinances")}
+                      </DropdownMenuCheckboxItem>
+                      <DropdownMenuCheckboxItem
+                        checked={calendarFilters.cashAudits && featureFlags.finances}
+                        onCheckedChange={(checked) =>
+                          setCalendarFilters((prev) => ({ ...prev, cashAudits: Boolean(checked) }))
+                        }
+                        disabled={!featureFlags.finances}
+                      >
+                        {t("home.calendarFilterCashAudits")}
+                      </DropdownMenuCheckboxItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuCheckboxItem
+                        checked={calendarFilters.bucket && featureFlags.bucket}
+                        onCheckedChange={(checked) =>
+                          setCalendarFilters((prev) => ({ ...prev, bucket: Boolean(checked) }))
+                        }
+                        disabled={!featureFlags.bucket}
+                      >
+                        {t("home.calendarFilterBucketVotes")}
+                      </DropdownMenuCheckboxItem>
+                      <DropdownMenuCheckboxItem
+                        checked={calendarFilters.shopping && featureFlags.shopping}
+                        onCheckedChange={(checked) =>
+                          setCalendarFilters((prev) => ({ ...prev, shopping: Boolean(checked) }))
+                        }
+                        disabled={!featureFlags.shopping}
+                      >
+                        {t("home.calendarFilterShopping")}
+                      </DropdownMenuCheckboxItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </div>
               </div>
             </CardHeader>
@@ -2219,13 +2338,23 @@ export const HomePage = ({
                     const cellDayKey = dayKey(cell.date);
                     const isToday = cellDayKey === dayKey(new Date());
                     const entry = homeCalendarEntries.get(cellDayKey);
-                    const cleaningDueTasks = entry?.cleaningDueTasks ?? [];
+                    const showCleaning = calendarFilters.cleaning && featureFlags.tasks;
+                    const showTasksCompleted = calendarFilters.tasksCompleted && featureFlags.tasks;
+                    const showFinances = calendarFilters.finances && featureFlags.finances;
+                    const showCashAudits = calendarFilters.cashAudits && featureFlags.finances;
+                    const showBucketVotes = calendarFilters.bucket && featureFlags.bucket;
+                    const showShopping = calendarFilters.shopping && featureFlags.shopping;
+
+                    const cleaningDueTasks = showCleaning ? entry?.cleaningDueTasks ?? [] : [];
                     const cleaningCount = cleaningDueTasks.length;
                     const criticalCleaningCount = cleaningDueTasks.filter((taskEntry) => taskEntry.status !== "upcoming").length;
-                    const completionCount = entry?.taskCompletions.length ?? 0;
-                    const financeCount = entry?.financeEntries.length ?? 0;
-                    const bucketCount = entry?.bucketVotes.length ?? 0;
-                    const hasEntries = cleaningCount + completionCount + financeCount + bucketCount > 0;
+                    const completionCount = showTasksCompleted ? entry?.taskCompletions.length ?? 0 : 0;
+                    const financeCount = showFinances ? entry?.financeEntries.length ?? 0 : 0;
+                    const cashAuditCount = showCashAudits ? entry?.cashAudits.length ?? 0 : 0;
+                    const bucketCount = showBucketVotes ? entry?.bucketVotes.length ?? 0 : 0;
+                    const shoppingCount = showShopping ? entry?.shoppingEntries.length ?? 0 : 0;
+                    const hasEntries =
+                      cleaningCount + completionCount + financeCount + cashAuditCount + bucketCount + shoppingCount > 0;
 
                     return (
                       <Tooltip
@@ -2286,10 +2415,22 @@ export const HomePage = ({
                                     {financeCount}
                                   </span>
                                 ) : null}
+                                {cashAuditCount > 0 ? (
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-slate-200 px-1.5 py-0.5 text-slate-700 dark:bg-slate-700 dark:text-slate-200">
+                                    <span className="h-1.5 w-1.5 rounded-full bg-slate-500" />
+                                    {cashAuditCount}
+                                  </span>
+                                ) : null}
                                 {bucketCount > 0 ? (
                                   <span className="inline-flex items-center gap-1 rounded-full bg-indigo-100 px-1.5 py-0.5 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-200">
                                     <span className="h-1.5 w-1.5 rounded-full bg-indigo-500" />
                                     {bucketCount}
+                                  </span>
+                                ) : null}
+                                {shoppingCount > 0 ? (
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-cyan-100 px-1.5 py-0.5 text-cyan-800 dark:bg-cyan-900/30 dark:text-cyan-200">
+                                    <span className="h-1.5 w-1.5 rounded-full bg-cyan-500" />
+                                    {shoppingCount}
                                   </span>
                                 ) : null}
                               </div>
@@ -2372,6 +2513,46 @@ export const HomePage = ({
                                 {financeCount > MAX_CALENDAR_TOOLTIP_ITEMS ? (
                                   <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
                                     {t("home.calendarMore", { count: financeCount - MAX_CALENDAR_TOOLTIP_ITEMS })}
+                                  </p>
+                                ) : null}
+                              </div>
+                            ) : null}
+                            {cashAuditCount > 0 ? (
+                              <div>
+                                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                                  {t("home.calendarCashAuditTitle")}
+                                </p>
+                                <ul className="mt-1 space-y-1">
+                                  {entry?.cashAudits.slice(0, MAX_CALENDAR_TOOLTIP_ITEMS).map((audit) => (
+                                    <li key={`audit-${cellDayKey}-${audit.id}`} className="text-xs">
+                                      {t("home.calendarCashAuditEntry", {
+                                        user: labelForUserId(audit.requested_by)
+                                      })}
+                                    </li>
+                                  ))}
+                                </ul>
+                                {cashAuditCount > MAX_CALENDAR_TOOLTIP_ITEMS ? (
+                                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                                    {t("home.calendarMore", { count: cashAuditCount - MAX_CALENDAR_TOOLTIP_ITEMS })}
+                                  </p>
+                                ) : null}
+                              </div>
+                            ) : null}
+                            {shoppingCount > 0 ? (
+                              <div>
+                                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                                  {t("home.calendarShoppingTitle")}
+                                </p>
+                                <ul className="mt-1 space-y-1">
+                                  {entry?.shoppingEntries.slice(0, MAX_CALENDAR_TOOLTIP_ITEMS).map((shopping) => (
+                                    <li key={`shopping-${cellDayKey}-${shopping.id}`} className="text-xs">
+                                      {shopping.title} · {labelForUserId(shopping.userId)}
+                                    </li>
+                                  ))}
+                                </ul>
+                                {shoppingCount > MAX_CALENDAR_TOOLTIP_ITEMS ? (
+                                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                                    {t("home.calendarMore", { count: shoppingCount - MAX_CALENDAR_TOOLTIP_ITEMS })}
                                   </p>
                                 ) : null}
                               </div>
