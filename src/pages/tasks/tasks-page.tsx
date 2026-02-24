@@ -50,6 +50,7 @@ import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../../components/ui/dialog";
+import { FullscreenDialog } from "../../components/ui/fullscreen-dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -4374,7 +4375,7 @@ export const TasksPage = ({
           </DialogContent>
         </Dialog>
 
-        <Dialog
+        <FullscreenDialog
           open={isEditDialogOpen}
           onOpenChange={(open) => {
             setIsEditDialogOpen(open);
@@ -4383,23 +4384,36 @@ export const TasksPage = ({
               setEditTaskImageUploadError(null);
             }
           }}
+          title={t("tasks.editTaskTitle")}
+          description={t("tasks.editTaskDescription")}
+          onSubmit={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            void editTaskForm.handleSubmit();
+          }}
+          maxWidthClassName="sm:max-w-3xl"
+          footer={
+            <div className="flex justify-end gap-2">
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => {
+                  setIsEditDialogOpen(false);
+                  setTaskBeingEdited(null);
+                  setEditFormError(null);
+                  setEditRotationUserIds([]);
+                }}
+              >
+                {t("tasks.discardChanges")}
+              </Button>
+              <Button type="submit" disabled={busy}>
+                {t("tasks.saveTask")}
+              </Button>
+            </div>
+          }
         >
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>{t("tasks.editTaskTitle")}</DialogTitle>
-              <DialogDescription>
-                {t("tasks.editTaskDescription")}
-              </DialogDescription>
-            </DialogHeader>
-            <form
-              className="space-y-3"
-              onSubmit={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                void editTaskForm.handleSubmit();
-              }}
-            >
-              {editRotationForecast ? (
+          <div className="space-y-3">
+            {editRotationForecast ? (
                 <div className="rounded-xl border border-brand-100 bg-brand-50/20 p-3 text-sm text-slate-700 dark:bg-slate-800/50 dark:text-slate-200">
                   <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
                     {t("tasks.rotationForecastTitle")}
@@ -4887,27 +4901,8 @@ export const TasksPage = ({
                   {editTaskImageUploadError}
                 </p>
               ) : null}
-
-              <div className="flex justify-end gap-2">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  onClick={() => {
-                    setIsEditDialogOpen(false);
-                    setTaskBeingEdited(null);
-                    setEditFormError(null);
-                    setEditRotationUserIds([]);
-                  }}
-                >
-                  {t("tasks.discardChanges")}
-                </Button>
-                <Button type="submit" disabled={busy}>
-                  {t("tasks.saveTask")}
-                </Button>
-              </div>
-            </form>
-          </DialogContent>
-        </Dialog>
+          </div>
+        </FullscreenDialog>
 
         <Dialog
           open={isDeleteDialogOpen}
@@ -4948,28 +4943,34 @@ export const TasksPage = ({
           </DialogContent>
         </Dialog>
 
-        <Dialog
+        <FullscreenDialog
           open={taskDetailsOpen}
           onOpenChange={(open) => {
             setTaskDetailsOpen(open);
             if (!open) setTaskDetailsTask(null);
           }}
+          title={t("tasks.detailsTitle", {
+            title: taskDetailsTask?.title ?? t("tasks.fallbackTitle")
+          })}
+          description={t("tasks.detailsDescription")}
+          maxWidthClassName="sm:max-w-3xl"
+          footer={
+            <div className="flex justify-end gap-2">
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => setTaskDetailsOpen(false)}
+              >
+                {t("common.close")}
+              </Button>
+            </div>
+          }
         >
-          <DialogContent className="max-w-xl">
-            <DialogHeader>
-              <DialogTitle>
-                {t("tasks.detailsTitle", {
-                  title: taskDetailsTask?.title ?? t("tasks.fallbackTitle")
-                })}
-              </DialogTitle>
-              <DialogDescription>{t("tasks.detailsDescription")}</DialogDescription>
-            </DialogHeader>
-
-            <div className="space-y-4">
-              <div className="rounded-xl border border-brand-100 bg-white/90 p-3 text-sm dark:border-slate-700 dark:bg-slate-900">
-                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                  {t("tasks.detailsNextLoop")}
-                </p>
+          <div className="space-y-4">
+                  <div className="rounded-xl border border-brand-100 bg-white/90 p-3 text-sm dark:border-slate-700 dark:bg-slate-900">
+                    <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                      {t("tasks.detailsNextLoop")}
+                    </p>
                 {taskDetailsLoop.length > 0 ? (
                   <ul className="space-y-1">
                     {taskDetailsLoop.map((entry) => (
@@ -5170,9 +5171,8 @@ export const TasksPage = ({
                   </p>
                 )}
               </div>
-            </div>
-          </DialogContent>
-        </Dialog>
+          </div>
+        </FullscreenDialog>
         <Dialog
           open={taskPendingToggleActive !== null}
           onOpenChange={(open) => {

@@ -216,6 +216,15 @@ input[type="number"] {
   border-radius: 1rem 1rem 0 0;
 }
 
+@media (max-width: 639px) {
+  .excalidraw-embed .App-bottom-bar {
+    margin-bottom: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+  }
+}
+
 .excalidraw-embed.excalidraw-embed--preview .App-top-bar,
 .excalidraw-embed.excalidraw-embed--preview .App-bottom-bar,
 .excalidraw-embed.excalidraw-embed--preview .App-toolbar,

@@ -1085,10 +1085,10 @@ export const SettingsPage = ({
                             </p>
                           ) : !isPushPreferencesReady ? (
                             <p className="text-slate-500 dark:text-slate-400">
-                                  {t("settings.pushPreferencesLoading")}
-                                </p>
-                              ) : (
-                                <>
+                              {t("settings.pushPreferencesLoading")}
+                            </p>
+                          ) : (
+                            <>
                               <div className="flex items-center justify-between">
                                 <div>
                                   <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
@@ -1242,8 +1242,8 @@ export const SettingsPage = ({
                                   {t("settings.pushPreferencesSave")}
                                 </Button>
                               </div>
-                                </>
-                              )}
+                            </>
+                          )}
                         </div>
                         <div className="flex items-center justify-between gap-2 border-t border-brand-100 pt-3 dark:border-slate-700">
                           <p className="text-xs text-slate-500 dark:text-slate-400">
@@ -1255,7 +1255,9 @@ export const SettingsPage = ({
                             onClick={() => {
                               void onReregisterPushToken();
                             }}
-                            disabled={busy || firebaseMessagingSupport !== "supported"}
+                            disabled={
+                              busy || firebaseMessagingSupport !== "supported"
+                            }
                           >
                             {t("settings.pushReregisterAction")}
                           </Button>
@@ -1544,73 +1546,6 @@ export const SettingsPage = ({
       {showHousehold ? (
         <Card>
           <CardHeader>
-            <CardTitle>{t("settings.whiteboardTitle")}</CardTitle>
-            <CardDescription>
-              {isOwner
-                ? t("settings.whiteboardDescription")
-                : t("settings.householdOwnerOnlyHint")}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <p className="text-sm text-slate-600 dark:text-slate-300">
-              {t("settings.whiteboardClearWarning")}
-            </p>
-            {whiteboardResetStatus ? (
-              <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-200">
-                {whiteboardResetStatus}
-              </p>
-            ) : null}
-            {whiteboardResetError ? (
-              <p className="rounded-lg border border-rose-300 bg-rose-50 px-3 py-2 text-xs text-rose-700 dark:border-rose-900 dark:bg-rose-950/60 dark:text-rose-200">
-                {whiteboardResetError}
-              </p>
-            ) : null}
-            <Dialog
-              open={whiteboardResetOpen}
-              onOpenChange={setWhiteboardResetOpen}
-            >
-              <DialogTrigger asChild>
-                <Button
-                  type="button"
-                  variant="danger"
-                  disabled={!isOwner || whiteboardResetBusy}
-                >
-                  {t("settings.whiteboardClearButton")}
-                </Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>
-                    {t("settings.whiteboardClearConfirmTitle")}
-                  </DialogTitle>
-                  <DialogDescription>
-                    {t("settings.whiteboardClearConfirmBody")}
-                  </DialogDescription>
-                </DialogHeader>
-                <div className="flex flex-wrap gap-2">
-                  <DialogClose asChild>
-                    <Button type="button" variant="ghost">
-                      {t("common.cancel")}
-                    </Button>
-                  </DialogClose>
-                  <Button
-                    type="button"
-                    variant="danger"
-                    disabled={whiteboardResetBusy}
-                    onClick={() => void handleClearWhiteboard()}
-                  >
-                    {t("settings.whiteboardClearConfirmAction")}
-                  </Button>
-                </div>
-              </DialogContent>
-            </Dialog>
-          </CardContent>
-        </Card>
-      ) : null}
-
-      {showHousehold ? (
-        <Card>
-          <CardHeader>
             <CardTitle>{t("settings.tenantsTitle")}</CardTitle>
             <CardDescription>
               {isOwner
@@ -1819,8 +1754,77 @@ export const SettingsPage = ({
       {showHousehold ? (
         <Card>
           <CardHeader>
+            <CardTitle>{t("settings.whiteboardTitle")}</CardTitle>
+            <CardDescription>
+              {isOwner
+                ? t("settings.whiteboardDescription")
+                : t("settings.householdOwnerOnlyHint")}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-sm text-slate-600 dark:text-slate-300">
+              {t("settings.whiteboardClearWarning")}
+            </p>
+            {whiteboardResetStatus ? (
+              <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-200">
+                {whiteboardResetStatus}
+              </p>
+            ) : null}
+            {whiteboardResetError ? (
+              <p className="rounded-lg border border-rose-300 bg-rose-50 px-3 py-2 text-xs text-rose-700 dark:border-rose-900 dark:bg-rose-950/60 dark:text-rose-200">
+                {whiteboardResetError}
+              </p>
+            ) : null}
+            <Dialog
+              open={whiteboardResetOpen}
+              onOpenChange={setWhiteboardResetOpen}
+            >
+              <DialogTrigger asChild>
+                <Button
+                  type="button"
+                  variant="danger"
+                  disabled={!isOwner || whiteboardResetBusy}
+                >
+                  {t("settings.whiteboardClearButton")}
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>
+                    {t("settings.whiteboardClearConfirmTitle")}
+                  </DialogTitle>
+                  <DialogDescription>
+                    {t("settings.whiteboardClearConfirmBody")}
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="flex flex-wrap gap-2">
+                  <DialogClose asChild>
+                    <Button type="button" variant="ghost">
+                      {t("common.cancel")}
+                    </Button>
+                  </DialogClose>
+                  <Button
+                    type="button"
+                    variant="danger"
+                    disabled={whiteboardResetBusy}
+                    onClick={() => void handleClearWhiteboard()}
+                  >
+                    {t("settings.whiteboardClearConfirmAction")}
+                  </Button>
+                </div>
+              </DialogContent>
+            </Dialog>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {showHousehold ? (
+        <Card>
+          <CardHeader>
             <CardTitle>{t("settings.householdThemeTitle")}</CardTitle>
-            <CardDescription>{t("settings.householdThemeDescription")}</CardDescription>
+            <CardDescription>
+              {t("settings.householdThemeDescription")}
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-1">
@@ -1985,9 +1989,7 @@ export const SettingsPage = ({
                   handleChange: (value: string) => void;
                 }) => (
                   <div className="space-y-1">
-                    <Label>
-                      {t("settings.householdThemePrimaryLabel")}
-                    </Label>
+                    <Label>{t("settings.householdThemePrimaryLabel")}</Label>
                     <div className="flex items-center gap-2">
                       <input
                         type="color"
@@ -2000,9 +2002,7 @@ export const SettingsPage = ({
                           });
                         }}
                         className="h-9 w-10 cursor-pointer rounded border border-brand-200 bg-white p-0 dark:border-slate-700 dark:bg-slate-900"
-                        aria-label={t(
-                          "settings.householdThemePrimaryLabel",
-                        )}
+                        aria-label={t("settings.householdThemePrimaryLabel")}
                       />
                       <Input
                         value={field.state.value}
@@ -2079,8 +2079,7 @@ export const SettingsPage = ({
                       <option
                         value='"Space Grotesk", "Segoe UI", sans-serif'
                         style={{
-                          fontFamily:
-                            '"Space Grotesk", "Segoe UI", sans-serif',
+                          fontFamily: '"Space Grotesk", "Segoe UI", sans-serif',
                         }}
                       >
                         Space Grotesk
@@ -2121,8 +2120,7 @@ export const SettingsPage = ({
                       <option
                         value='"IBM Plex Sans", "Segoe UI", sans-serif'
                         style={{
-                          fontFamily:
-                            '"IBM Plex Sans", "Segoe UI", sans-serif',
+                          fontFamily: '"IBM Plex Sans", "Segoe UI", sans-serif',
                         }}
                       >
                         IBM Plex Sans
@@ -2154,8 +2152,7 @@ export const SettingsPage = ({
                       <option
                         value='"Source Sans 3", "Segoe UI", sans-serif'
                         style={{
-                          fontFamily:
-                            '"Source Sans 3", "Segoe UI", sans-serif',
+                          fontFamily: '"Source Sans 3", "Segoe UI", sans-serif',
                         }}
                       >
                         Source Sans 3
@@ -2177,8 +2174,7 @@ export const SettingsPage = ({
                       <option
                         value='"Playfair Display", "Georgia", serif'
                         style={{
-                          fontFamily:
-                            '"Playfair Display", "Georgia", serif',
+                          fontFamily: '"Playfair Display", "Georgia", serif',
                         }}
                       >
                         Playfair Display

@@ -221,11 +221,12 @@ export const ExcalidrawBoard = ({
   }, []);
 
   const heightCap = viewportHeight
-    ? Math.floor(viewportHeight * (fullHeight ? 0.92 : 0.7))
+    ? Math.floor(viewportHeight * (fullHeight ? 1 : 0.7))
     : fullHeight
       ? 1200
       : 900;
-  const safeHeight = clampSize(height, 420, fullHeight ? heightCap : Math.min(900, heightCap));
+  const baseHeight = fullHeight ? heightCap : height;
+  const safeHeight = clampSize(baseHeight, 420, fullHeight ? heightCap : Math.min(900, heightCap));
 
   const handleApi = useCallback((api: ExcalidrawImperativeAPI) => {
     setExcalidrawApi(api);
@@ -236,7 +237,7 @@ export const ExcalidrawBoard = ({
     () => ({
       canvasActions: previewMode
         ? {
-            export: false,
+            export: {"?":false,"saveFileToDisk":false},
             loadScene: false,
             saveToActiveFile: false,
             saveAsImage: false,
@@ -260,7 +261,7 @@ export const ExcalidrawBoard = ({
       ref={containerRef}
       className={`excalidraw-embed ${previewMode ? "excalidraw-embed--preview" : ""} ${className ?? ""}`.trim()}
       style={{
-        height: safeHeight,
+        height: "100%",
         maxHeight: safeHeight,
         width: "100%",
         maxWidth: "100%",
@@ -300,7 +301,7 @@ export const ExcalidrawBoard = ({
                 currentItemStrokeColor:
                   appState.currentItemStrokeColor ?? themeColors.primary,
                 currentItemBackgroundColor:
-                  appState.currentItemBackgroundColor ?? themeColors.accent,
+                  appState.currentItemBackgroundColor ?? themeColors.background,
               },
               files: sanitizedFiles,
             });

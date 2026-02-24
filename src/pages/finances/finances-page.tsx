@@ -52,6 +52,7 @@ import {
   DialogHeader,
   DialogTitle
 } from "../../components/ui/dialog";
+import { FullscreenDialog } from "../../components/ui/fullscreen-dialog";
 import { Input } from "../../components/ui/input";
 import { InputWithSuffix } from "../../components/ui/input-with-suffix";
 import { Label } from "../../components/ui/label";
@@ -3738,74 +3739,60 @@ export const FinancesPage = ({
         </>
       ) : null}
 
-      <Dialog
+      <FullscreenDialog
         open={subscriptionDialogOpen}
         onOpenChange={setSubscriptionDialogOpen}
+        title={t("finances.addSubscriptionAction")}
+        description={t("finances.subscriptionsDescription")}
+        onSubmit={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          void subscriptionForm.handleSubmit();
+        }}
+        maxWidthClassName="sm:max-w-2xl"
+        footer={
+          <div className="flex justify-end gap-2">
+            <DialogClose asChild>
+              <Button variant="ghost">{t("common.cancel")}</Button>
+            </DialogClose>
+            <Button type="submit" disabled={busy}>
+              {t("finances.addSubscriptionAction")}
+            </Button>
+          </div>
+        }
       >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{t("finances.addSubscriptionAction")}</DialogTitle>
-            <DialogDescription>
-              {t("finances.subscriptionsDescription")}
-            </DialogDescription>
-          </DialogHeader>
-          <form
-            className="space-y-3"
-            onSubmit={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              void subscriptionForm.handleSubmit();
-            }}
-          >
-            {renderSubscriptionFormFields(subscriptionForm)}
-            <div className="flex justify-end gap-2">
-              <DialogClose asChild>
-                <Button variant="ghost">{t("common.cancel")}</Button>
-              </DialogClose>
-              <Button type="submit" disabled={busy}>
-                {t("finances.addSubscriptionAction")}
-              </Button>
-            </div>
-          </form>
-        </DialogContent>
-      </Dialog>
+        <div className="space-y-3">{renderSubscriptionFormFields(subscriptionForm)}</div>
+      </FullscreenDialog>
 
-      <Dialog
+      <FullscreenDialog
         open={editSubscriptionDialogOpen}
         onOpenChange={(open) => {
           setEditSubscriptionDialogOpen(open);
           if (!open) setSubscriptionBeingEdited(null);
         }}
+        title={t("finances.editSubscriptionTitle")}
+        description={t("finances.editSubscriptionDescription")}
+        onSubmit={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          void editSubscriptionForm.handleSubmit();
+        }}
+        maxWidthClassName="sm:max-w-2xl"
+        footer={
+          <div className="flex justify-end gap-2">
+            <DialogClose asChild>
+              <Button variant="ghost">{t("common.cancel")}</Button>
+            </DialogClose>
+            <Button type="submit" disabled={busy}>
+              {t("finances.saveSubscriptionAction")}
+            </Button>
+          </div>
+        }
       >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{t("finances.editSubscriptionTitle")}</DialogTitle>
-            <DialogDescription>
-              {t("finances.editSubscriptionDescription")}
-            </DialogDescription>
-          </DialogHeader>
-          <form
-            className="space-y-3"
-            onSubmit={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              void editSubscriptionForm.handleSubmit();
-            }}
-          >
-            {renderSubscriptionFormFields(editSubscriptionForm)}
-            <div className="flex justify-end gap-2">
-              <DialogClose asChild>
-                <Button variant="ghost">{t("common.cancel")}</Button>
-              </DialogClose>
-              <Button type="submit" disabled={busy}>
-                {t("finances.saveSubscriptionAction")}
-              </Button>
-            </div>
-          </form>
-        </DialogContent>
-      </Dialog>
+        <div className="space-y-3">{renderSubscriptionFormFields(editSubscriptionForm)}</div>
+      </FullscreenDialog>
 
-      <Dialog
+      <FullscreenDialog
         open={editEntryDialogOpen}
         onOpenChange={(open) => {
           setEditEntryDialogOpen(open);
@@ -3814,132 +3801,127 @@ export const FinancesPage = ({
             setReceiptUploadError(null);
           }
         }}
+        title={t("finances.editEntryTitle")}
+        description={t("finances.editEntryDescription")}
+        onSubmit={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          void editEntryForm.handleSubmit();
+        }}
+        maxWidthClassName="sm:max-w-2xl"
+        footer={
+          <div className="flex justify-end gap-2">
+            <DialogClose asChild>
+              <Button variant="ghost">{t("common.cancel")}</Button>
+            </DialogClose>
+            <Button type="submit" disabled={busy}>
+              {t("finances.saveEntry")}
+            </Button>
+          </div>
+        }
       >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{t("finances.editEntryTitle")}</DialogTitle>
-            <DialogDescription>
-              {t("finances.editEntryDescription")}
-            </DialogDescription>
-          </DialogHeader>
-          <form
-            className="space-y-3"
-            onSubmit={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              void editEntryForm.handleSubmit();
-            }}
-          >
-            <editEntryForm.Field
-              name="description"
-              children={(field: {
-                state: { value: string };
-                handleChange: (value: string) => void;
-              }) => (
-                <div className="space-y-1">
-                  <Label>{t("finances.entryNameLabel")}</Label>
-                  <Input
-                    value={field.state.value}
-                    onChange={(event) => field.handleChange(event.target.value)}
-                    placeholder={t("finances.descriptionPlaceholder")}
-                    list={
-                      entryNameSuggestions.length > 0
-                        ? entryNameSuggestionsListId
-                        : undefined
-                    }
-                    required
-                  />
-                </div>
-              )}
-            />
-            <editEntryForm.Field
-              name="amount"
-              children={(field: {
-                state: { value: string };
-                handleChange: (value: string) => void;
-              }) => (
-                <div className="space-y-1">
-                  <Label>{t("finances.entryAmountLabel")}</Label>
-                  <InputWithSuffix
-                    suffix="€"
-                    type="number"
-                    inputMode="decimal"
-                    step="0.01"
-                    min="0"
-                    value={field.state.value}
-                    onChange={(event) => field.handleChange(event.target.value)}
-                    placeholder={t("finances.amountPlaceholder")}
-                    required
-                    inputClassName="pr-7"
-                  />
-                </div>
-              )}
-            />
-            <editEntryForm.Field
-              name="category"
-              children={(field: {
-                state: { value: string };
-                handleChange: (value: string) => void;
-              }) => (
-                <CategoryInputField
-                  label={t("finances.subscriptionCategoryLabel")}
+        <div className="space-y-3">
+          <editEntryForm.Field
+            name="description"
+            children={(field: {
+              state: { value: string };
+              handleChange: (value: string) => void;
+            }) => (
+              <div className="space-y-1">
+                <Label>{t("finances.entryNameLabel")}</Label>
+                <Input
                   value={field.state.value}
-                  onChange={field.handleChange}
-                  placeholder={t("finances.categoryPlaceholder")}
-                  suggestionsListId={categorySuggestionsListId}
-                  hasSuggestions={categorySuggestions.length > 0}
+                  onChange={(event) => field.handleChange(event.target.value)}
+                  placeholder={t("finances.descriptionPlaceholder")}
+                  list={
+                    entryNameSuggestions.length > 0
+                      ? entryNameSuggestionsListId
+                      : undefined
+                  }
+                  required
                 />
-              )}
-            />
-            <editEntryForm.Field
-              name="entryDate"
-              children={(field: {
-                state: { value: string };
-                handleChange: (value: string) => void;
-              }) => (
-                <div className="space-y-1">
-                  <Label>{t("finances.entryDate")}</Label>
-                  <TooltipProvider>
-                    <RadixTooltip>
-                      <TooltipTrigger asChild>
-                        <Input
-                          type="date"
-                          lang={locale}
-                          value={field.state.value}
-                          onChange={(event) => field.handleChange(event.target.value)}
-                        />
-                      </TooltipTrigger>
-                      <TooltipContent>{t("finances.entryDate")}</TooltipContent>
-                    </RadixTooltip>
-                  </TooltipProvider>
-                </div>
-              )}
-            />
-            {renderReceiptFields(
-              editEntryForm,
-              {
-                uploadInputRef: editReceiptUploadInputRef,
-                cameraInputRef: editReceiptCameraInputRef,
-              },
-              false,
+              </div>
             )}
-            {renderEntryMemberFields(editEntryForm, false)}
-            {receiptUploadError ? (
-              <p className="text-xs text-rose-600 dark:text-rose-300">
-                {receiptUploadError}
-              </p>
-            ) : null}
-            <div className="flex justify-end gap-2">
-              <DialogClose asChild>
-                <Button variant="ghost">{t("common.cancel")}</Button>
-              </DialogClose>
-              <Button type="submit" disabled={busy}>
-                {t("finances.saveEntry")}
-              </Button>
-            </div>
-          </form>
-        </DialogContent>
-      </Dialog>
+          />
+          <editEntryForm.Field
+            name="amount"
+            children={(field: {
+              state: { value: string };
+              handleChange: (value: string) => void;
+            }) => (
+              <div className="space-y-1">
+                <Label>{t("finances.entryAmountLabel")}</Label>
+                <InputWithSuffix
+                  suffix="€"
+                  type="number"
+                  inputMode="decimal"
+                  step="0.01"
+                  min="0"
+                  value={field.state.value}
+                  onChange={(event) => field.handleChange(event.target.value)}
+                  placeholder={t("finances.amountPlaceholder")}
+                  required
+                  inputClassName="pr-7"
+                />
+              </div>
+            )}
+          />
+          <editEntryForm.Field
+            name="category"
+            children={(field: {
+              state: { value: string };
+              handleChange: (value: string) => void;
+            }) => (
+              <CategoryInputField
+                label={t("finances.subscriptionCategoryLabel")}
+                value={field.state.value}
+                onChange={field.handleChange}
+                placeholder={t("finances.categoryPlaceholder")}
+                suggestionsListId={categorySuggestionsListId}
+                hasSuggestions={categorySuggestions.length > 0}
+              />
+            )}
+          />
+          <editEntryForm.Field
+            name="entryDate"
+            children={(field: {
+              state: { value: string };
+              handleChange: (value: string) => void;
+            }) => (
+              <div className="space-y-1">
+                <Label>{t("finances.entryDate")}</Label>
+                <TooltipProvider>
+                  <RadixTooltip>
+                    <TooltipTrigger asChild>
+                      <Input
+                        type="date"
+                        lang={locale}
+                        value={field.state.value}
+                        onChange={(event) => field.handleChange(event.target.value)}
+                      />
+                    </TooltipTrigger>
+                    <TooltipContent>{t("finances.entryDate")}</TooltipContent>
+                  </RadixTooltip>
+                </TooltipProvider>
+              </div>
+            )}
+          />
+          {renderReceiptFields(
+            editEntryForm,
+            {
+              uploadInputRef: editReceiptUploadInputRef,
+              cameraInputRef: editReceiptCameraInputRef,
+            },
+            false,
+          )}
+          {renderEntryMemberFields(editEntryForm, false)}
+          {receiptUploadError ? (
+            <p className="text-xs text-rose-600 dark:text-rose-300">
+              {receiptUploadError}
+            </p>
+          ) : null}
+        </div>
+      </FullscreenDialog>
       <Dialog
         open={ocrCameraDialogOpen}
         onOpenChange={(open) => {
