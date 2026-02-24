@@ -887,16 +887,7 @@ export const HomePage = ({
     },
     [calendarFilters, featureFlags]
   );
-  const isCalendarDense = useMemo(() => {
-    if (isCalendarMobile) return true;
-    let maxEntries = 0;
-    calendarMonthCells.forEach((cell) => {
-      const entry = homeCalendarEntries.get(dayKey(cell.date));
-      const counts = getCalendarCounts(entry);
-      maxEntries = Math.max(maxEntries, counts.totalCount);
-    });
-    return maxEntries >= 5;
-  }, [calendarMonthCells, getCalendarCounts, homeCalendarEntries, isCalendarMobile]);
+  const isCalendarDense = useMemo(() => isCalendarMobile, [isCalendarMobile]);
   const renderDenseStack = useCallback((count: number, colorClass: string) => {
     if (count <= 0) return null;
     const stackCount = Math.min(count, 5);
@@ -2496,7 +2487,9 @@ export const HomePage = ({
                             }}
                             className={`${cellHeightClass} rounded-lg border px-1.5 py-1 text-left transition ${
                               cell.inCurrentMonth
-                                ? "border-brand-100 bg-white/90 hover:bg-brand-50/60 dark:border-slate-700 dark:bg-slate-900"
+                                ? `border-brand-100 bg-white/90 hover:bg-brand-50/60 dark:border-slate-700 dark:bg-slate-900 ${
+                                    isToday ? "ring-2 ring-brand-400/60 ring-offset-1 ring-offset-white dark:ring-brand-500/50 dark:ring-offset-slate-900" : ""
+                                  }`
                                 : "border-brand-50 bg-white/40 opacity-65 dark:border-slate-800 dark:bg-slate-900/40"
                             }`}
                           >
