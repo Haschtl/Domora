@@ -217,6 +217,35 @@ const AppLayout = () => {
     onNavigate: handleForegroundPush
   });
 
+  const scrollPositionsRef = useRef<Record<string, number>>({});
+  const lastPathRef = useRef<string | null>(null);
+  const scrollRestoreTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const lastPath = lastPathRef.current;
+    if (lastPath) {
+      scrollPositionsRef.current[lastPath] = window.scrollY;
+    }
+    if (scrollRestoreTimerRef.current) {
+      window.clearTimeout(scrollRestoreTimerRef.current);
+      scrollRestoreTimerRef.current = null;
+    }
+    const nextY = scrollPositionsRef.current[location.pathname] ?? 0;
+    // Delay until mid page-transition to avoid visible jump.
+    scrollRestoreTimerRef.current = setTimeout(() => {
+      window.scrollTo({ top: nextY, left: 0, behavior: "auto" });
+      scrollRestoreTimerRef.current = null;
+    }, 100);
+    lastPathRef.current = location.pathname;
+    return () => {
+      if (scrollRestoreTimerRef.current) {
+        window.clearTimeout(scrollRestoreTimerRef.current);
+        scrollRestoreTimerRef.current = null;
+      }
+    };
+  }, [location.pathname]);
+
   const tab = useMemo(() => resolveTabFromPathname(location.pathname), [location.pathname]);
   const paymentRedirectStatus = useMemo<"success" | "cancel" | null>(() => {
     if (location.pathname.startsWith("/redirect-payment/success")) return "success";
