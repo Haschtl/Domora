@@ -190,6 +190,16 @@ input[type="number"] {
   box-shadow: var(--shadow-island);
 }
 
+.excalidraw-embed .Library,
+.excalidraw-embed .library,
+.excalidraw-embed [data-testid="library-button"],
+.excalidraw-embed [data-testid="library-toggle"],
+.excalidraw-embed .ToolIcon_type_checkbox[aria-label="Library"],
+.excalidraw-embed .ToolIcon_type_checkbox[aria-label="Library"] + .sidebar-trigger,
+.excalidraw-embed .sidebar-trigger__label {
+  display: none !important;
+}
+
 .excalidraw-embed .App-top-bar {
   border-radius: 1rem;
   margin: 0rem auto;

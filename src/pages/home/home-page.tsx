@@ -2456,7 +2456,6 @@ export const HomePage = ({
                     const isToday = cellDayKey === dayKey(new Date());
                     const entry = homeCalendarEntries.get(cellDayKey);
                     const {
-                      cleaningDueTasks,
                       cleaningCount,
                       criticalCleaningCount,
                       completionCount,
