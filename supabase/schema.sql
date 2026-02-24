@@ -13,6 +13,13 @@ create table if not exists households (
   utilities_on_room_sqm_percent numeric(5, 2) not null default 0
     check (utilities_on_room_sqm_percent >= 0 and utilities_on_room_sqm_percent <= 100),
   task_laziness_enabled boolean not null default false,
+  vacation_tasks_exclude_enabled boolean not null default true,
+  vacation_finances_exclude_enabled boolean not null default true,
+  task_skip_enabled boolean not null default true,
+  feature_bucket_enabled boolean not null default true,
+  feature_shopping_enabled boolean not null default true,
+  feature_tasks_enabled boolean not null default true,
+  feature_finances_enabled boolean not null default true,
   theme_primary_color text not null default '#1f8a7f',
   theme_accent_color text not null default '#14b8a6',
   theme_font_family text not null default '"Space Grotesk", "Segoe UI", sans-serif',
@@ -310,6 +317,13 @@ alter table households add column if not exists cold_rent_monthly numeric(12, 2)
 alter table households add column if not exists utilities_monthly numeric(12, 2);
 alter table households add column if not exists utilities_on_room_sqm_percent numeric(5, 2) not null default 0;
 alter table households add column if not exists task_laziness_enabled boolean not null default false;
+alter table households add column if not exists vacation_tasks_exclude_enabled boolean not null default true;
+alter table households add column if not exists vacation_finances_exclude_enabled boolean not null default true;
+alter table households add column if not exists task_skip_enabled boolean not null default true;
+alter table households add column if not exists feature_bucket_enabled boolean not null default true;
+alter table households add column if not exists feature_shopping_enabled boolean not null default true;
+alter table households add column if not exists feature_tasks_enabled boolean not null default true;
+alter table households add column if not exists feature_finances_enabled boolean not null default true;
 alter table households add column if not exists theme_primary_color text not null default '#1f8a7f';
 alter table households add column if not exists theme_accent_color text not null default '#14b8a6';
 alter table households add column if not exists theme_font_family text not null default '"Space Grotesk", "Segoe UI", sans-serif';

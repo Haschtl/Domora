@@ -278,6 +278,13 @@ export const SettingsPage = ({
       address: household.address ?? "",
       currency: household.currency ?? "EUR",
       taskLazinessEnabled: household.task_laziness_enabled ?? false,
+      vacationTasksExcludeEnabled: household.vacation_tasks_exclude_enabled ?? true,
+      vacationFinancesExcludeEnabled: household.vacation_finances_exclude_enabled ?? true,
+      taskSkipEnabled: household.task_skip_enabled ?? true,
+      featureBucketEnabled: household.feature_bucket_enabled ?? true,
+      featureShoppingEnabled: household.feature_shopping_enabled ?? true,
+      featureTasksEnabled: household.feature_tasks_enabled ?? true,
+      featureFinancesEnabled: household.feature_finances_enabled ?? true,
       themePrimaryColor: household.theme_primary_color ?? "#1f8a7f",
       themeAccentColor: household.theme_accent_color ?? "#14b8a6",
       themeFontFamily: household.theme_font_family ?? '"Space Grotesk", "Segoe UI", sans-serif',
@@ -290,6 +297,13 @@ export const SettingsPage = ({
         address: string;
         currency: string;
         taskLazinessEnabled: boolean;
+        vacationTasksExcludeEnabled: boolean;
+        vacationFinancesExcludeEnabled: boolean;
+        taskSkipEnabled: boolean;
+        featureBucketEnabled: boolean;
+        featureShoppingEnabled: boolean;
+        featureTasksEnabled: boolean;
+        featureFinancesEnabled: boolean;
         themePrimaryColor: string;
         themeAccentColor: string;
         themeFontFamily: string;
@@ -324,6 +338,13 @@ export const SettingsPage = ({
         utilitiesMonthly: household.utilities_monthly,
         utilitiesOnRoomSqmPercent: household.utilities_on_room_sqm_percent,
         taskLazinessEnabled: value.taskLazinessEnabled,
+        vacationTasksExcludeEnabled: value.vacationTasksExcludeEnabled,
+        vacationFinancesExcludeEnabled: value.vacationFinancesExcludeEnabled,
+        taskSkipEnabled: value.taskSkipEnabled,
+        featureBucketEnabled: value.featureBucketEnabled,
+        featureShoppingEnabled: value.featureShoppingEnabled,
+        featureTasksEnabled: value.featureTasksEnabled,
+        featureFinancesEnabled: value.featureFinancesEnabled,
         themePrimaryColor: value.themePrimaryColor,
         themeAccentColor: value.themeAccentColor,
         themeFontFamily: value.themeFontFamily,
@@ -363,6 +384,13 @@ export const SettingsPage = ({
     householdForm.setFieldValue("address", household.address ?? "");
     householdForm.setFieldValue("currency", household.currency ?? "EUR");
     householdForm.setFieldValue("taskLazinessEnabled", household.task_laziness_enabled ?? false);
+    householdForm.setFieldValue("vacationTasksExcludeEnabled", household.vacation_tasks_exclude_enabled ?? true);
+    householdForm.setFieldValue("vacationFinancesExcludeEnabled", household.vacation_finances_exclude_enabled ?? true);
+    householdForm.setFieldValue("taskSkipEnabled", household.task_skip_enabled ?? true);
+    householdForm.setFieldValue("featureBucketEnabled", household.feature_bucket_enabled ?? true);
+    householdForm.setFieldValue("featureShoppingEnabled", household.feature_shopping_enabled ?? true);
+    householdForm.setFieldValue("featureTasksEnabled", household.feature_tasks_enabled ?? true);
+    householdForm.setFieldValue("featureFinancesEnabled", household.feature_finances_enabled ?? true);
     householdForm.setFieldValue("themePrimaryColor", household.theme_primary_color ?? "#1f8a7f");
     householdForm.setFieldValue("themeAccentColor", household.theme_accent_color ?? "#14b8a6");
     householdForm.setFieldValue(
@@ -377,6 +405,13 @@ export const SettingsPage = ({
     household.image_url,
     household.name,
     household.task_laziness_enabled,
+    household.vacation_tasks_exclude_enabled,
+    household.vacation_finances_exclude_enabled,
+    household.task_skip_enabled,
+    household.feature_bucket_enabled,
+    household.feature_shopping_enabled,
+    household.feature_tasks_enabled,
+    household.feature_finances_enabled,
     household.theme_primary_color,
     household.theme_accent_color,
     household.theme_font_family,
@@ -457,6 +492,13 @@ export const SettingsPage = ({
         utilitiesMonthly: household.utilities_monthly,
         utilitiesOnRoomSqmPercent: household.utilities_on_room_sqm_percent,
         taskLazinessEnabled: householdForm.state.values.taskLazinessEnabled,
+        vacationTasksExcludeEnabled: householdForm.state.values.vacationTasksExcludeEnabled,
+        vacationFinancesExcludeEnabled: householdForm.state.values.vacationFinancesExcludeEnabled,
+        taskSkipEnabled: householdForm.state.values.taskSkipEnabled,
+        featureBucketEnabled: householdForm.state.values.featureBucketEnabled,
+        featureShoppingEnabled: householdForm.state.values.featureShoppingEnabled,
+        featureTasksEnabled: householdForm.state.values.featureTasksEnabled,
+        featureFinancesEnabled: householdForm.state.values.featureFinancesEnabled,
         themePrimaryColor: householdForm.state.values.themePrimaryColor,
         themeAccentColor: householdForm.state.values.themeAccentColor,
         themeFontFamily: householdForm.state.values.themeFontFamily,
@@ -482,6 +524,13 @@ export const SettingsPage = ({
         utilitiesMonthly: household.utilities_monthly,
         utilitiesOnRoomSqmPercent: household.utilities_on_room_sqm_percent,
         taskLazinessEnabled: householdForm.state.values.taskLazinessEnabled,
+        vacationTasksExcludeEnabled: householdForm.state.values.vacationTasksExcludeEnabled,
+        vacationFinancesExcludeEnabled: householdForm.state.values.vacationFinancesExcludeEnabled,
+        taskSkipEnabled: householdForm.state.values.taskSkipEnabled,
+        featureBucketEnabled: householdForm.state.values.featureBucketEnabled,
+        featureShoppingEnabled: householdForm.state.values.featureShoppingEnabled,
+        featureTasksEnabled: householdForm.state.values.featureTasksEnabled,
+        featureFinancesEnabled: householdForm.state.values.featureFinancesEnabled,
         themePrimaryColor: householdForm.state.values.themePrimaryColor,
         themeAccentColor: householdForm.state.values.themeAccentColor,
         themeFontFamily: householdForm.state.values.themeFontFamily,
@@ -512,6 +561,86 @@ export const SettingsPage = ({
   );
   const householdPreviewBackgroundImage = householdImageUrl ? `url("${householdImageUrl}")` : generatedHouseholdBannerUrl;
   const ownerCount = useMemo(() => members.filter((member) => member.role === "owner").length, [members]);
+  const isTasksFeatureEnabled = household.feature_tasks_enabled ?? true;
+  const isFinancesFeatureEnabled = household.feature_finances_enabled ?? true;
+  const isVacationTaskExclusionEnabled = household.vacation_tasks_exclude_enabled ?? true;
+  const isVacationFinanceExclusionEnabled = household.vacation_finances_exclude_enabled ?? true;
+  const vacationModeDescription = useMemo(() => {
+    if (!isTasksFeatureEnabled && !isFinancesFeatureEnabled) {
+      return t("settings.vacationModeDescriptionNone");
+    }
+    if (isTasksFeatureEnabled && !isVacationTaskExclusionEnabled && !isFinancesFeatureEnabled) {
+      return t("settings.vacationModeDescriptionTasksOff");
+    }
+    if (isFinancesFeatureEnabled && !isVacationFinanceExclusionEnabled && !isTasksFeatureEnabled) {
+      return t("settings.vacationModeDescriptionFinancesOff");
+    }
+    if (isTasksFeatureEnabled && !isVacationTaskExclusionEnabled && isFinancesFeatureEnabled && isVacationFinanceExclusionEnabled) {
+      return t("settings.vacationModeDescriptionTasksPartial");
+    }
+    if (isFinancesFeatureEnabled && !isVacationFinanceExclusionEnabled && isTasksFeatureEnabled && isVacationTaskExclusionEnabled) {
+      return t("settings.vacationModeDescriptionFinancesPartial");
+    }
+    if (!isTasksFeatureEnabled && isFinancesFeatureEnabled && isVacationFinanceExclusionEnabled) {
+      return t("settings.vacationModeDescriptionFinancesOnly");
+    }
+    if (!isFinancesFeatureEnabled && isTasksFeatureEnabled && isVacationTaskExclusionEnabled) {
+      return t("settings.vacationModeDescriptionTasksOnly");
+    }
+    return t("settings.vacationModeDescription");
+  }, [
+    isTasksFeatureEnabled,
+    isFinancesFeatureEnabled,
+    isVacationTaskExclusionEnabled,
+    isVacationFinanceExclusionEnabled,
+    t
+  ]);
+  const vacationModeConfirmText = useMemo(() => {
+    const enabling = Boolean(pendingVacationMode);
+    if (!isTasksFeatureEnabled && !isFinancesFeatureEnabled) {
+      return enabling
+        ? t("settings.vacationModeConfirmEnableNone")
+        : t("settings.vacationModeConfirmDisableNone");
+    }
+    if (isTasksFeatureEnabled && !isVacationTaskExclusionEnabled && !isFinancesFeatureEnabled) {
+      return enabling
+        ? t("settings.vacationModeConfirmEnableTasksOff")
+        : t("settings.vacationModeConfirmDisableTasksOff");
+    }
+    if (isFinancesFeatureEnabled && !isVacationFinanceExclusionEnabled && !isTasksFeatureEnabled) {
+      return enabling
+        ? t("settings.vacationModeConfirmEnableFinancesOff")
+        : t("settings.vacationModeConfirmDisableFinancesOff");
+    }
+    if (isTasksFeatureEnabled && !isVacationTaskExclusionEnabled && isFinancesFeatureEnabled && isVacationFinanceExclusionEnabled) {
+      return enabling
+        ? t("settings.vacationModeConfirmEnableTasksPartial")
+        : t("settings.vacationModeConfirmDisableTasksPartial");
+    }
+    if (isFinancesFeatureEnabled && !isVacationFinanceExclusionEnabled && isTasksFeatureEnabled && isVacationTaskExclusionEnabled) {
+      return enabling
+        ? t("settings.vacationModeConfirmEnableFinancesPartial")
+        : t("settings.vacationModeConfirmDisableFinancesPartial");
+    }
+    if (!isTasksFeatureEnabled && isFinancesFeatureEnabled && isVacationFinanceExclusionEnabled) {
+      return enabling
+        ? t("settings.vacationModeConfirmEnableFinancesOnly")
+        : t("settings.vacationModeConfirmDisableFinancesOnly");
+    }
+    if (!isFinancesFeatureEnabled && isTasksFeatureEnabled && isVacationTaskExclusionEnabled) {
+      return enabling
+        ? t("settings.vacationModeConfirmEnableTasksOnly")
+        : t("settings.vacationModeConfirmDisableTasksOnly");
+    }
+    return enabling ? t("settings.vacationModeConfirmEnable") : t("settings.vacationModeConfirmDisable");
+  }, [
+    isTasksFeatureEnabled,
+    isFinancesFeatureEnabled,
+    isVacationTaskExclusionEnabled,
+    isVacationFinanceExclusionEnabled,
+    pendingVacationMode,
+    t
+  ]);
   const uniqueMembers = useMemo(() => {
     const map = new Map<string, HouseholdMember>();
     members.forEach((member) => map.set(member.user_id, member));
@@ -961,7 +1090,7 @@ export const SettingsPage = ({
                     {t("settings.vacationModeLabel")}
                   </p>
                   <p className="text-xs text-slate-500 dark:text-slate-400">
-                    {t("settings.vacationModeDescription")}
+                    {vacationModeDescription}
                   </p>
                 </div>
                 <Switch
@@ -989,12 +1118,10 @@ export const SettingsPage = ({
                       {t("settings.vacationModeConfirmTitle")}
                     </DialogTitle>
                     <DialogDescription>
-                      {pendingVacationMode
-                        ? t("settings.vacationModeConfirmEnable")
-                        : t("settings.vacationModeConfirmDisable")}
+                      {vacationModeConfirmText}
                     </DialogDescription>
                   </DialogHeader>
-                  {pendingVacationMode && dueTasksAssignedCount > 0 ? (
+                  {pendingVacationMode && isTasksFeatureEnabled && isVacationTaskExclusionEnabled && dueTasksAssignedCount > 0 ? (
                     <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-100">
                       {t("settings.vacationModeOpenTasksWarning", {
                         count: dueTasksAssignedCount,
@@ -1498,31 +1625,6 @@ export const SettingsPage = ({
                 />
               </div>
 
-              <div className="flex items-center justify-between rounded-xl border border-brand-200 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900">
-                <div>
-                  <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
-                    {t("settings.householdLazinessTitle")}
-                  </p>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">
-                    {t("settings.householdLazinessDescription")}
-                  </p>
-                </div>
-                <householdForm.Field
-                  name="taskLazinessEnabled"
-                  children={(field: {
-                    state: { value: boolean };
-                    handleChange: (value: boolean) => void;
-                  }) => (
-                    <Switch
-                      checked={field.state.value}
-                      disabled={busy || !isOwner}
-                      onCheckedChange={field.handleChange}
-                      aria-label={t("settings.householdLazinessTitle")}
-                    />
-                  )}
-                />
-              </div>
-
               {householdUploadError ? (
                 <p className="rounded-lg border border-rose-300 bg-rose-50 px-3 py-2 text-xs text-rose-700 dark:border-rose-900 dark:bg-rose-950/60 dark:text-rose-200">
                   {householdUploadError}
@@ -1746,6 +1848,225 @@ export const SettingsPage = ({
                   </div>
                 </DialogContent>
               </Dialog>
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {showHousehold ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>{t("settings.householdRulesTitle")}</CardTitle>
+            <CardDescription>{t("settings.householdRulesDescription")}</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex items-center justify-between rounded-xl border border-brand-200 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900">
+              <div>
+                <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
+                  {t("settings.householdLazinessTitle")}
+                </p>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  {t("settings.householdLazinessDescription")}
+                </p>
+              </div>
+              <householdForm.Field
+                name="taskLazinessEnabled"
+                children={(field: {
+                  state: { value: boolean };
+                  handleChange: (value: boolean) => void;
+                }) => (
+                  <Switch
+                    checked={field.state.value}
+                    disabled={busy || !isOwner}
+                    onCheckedChange={field.handleChange}
+                    aria-label={t("settings.householdLazinessTitle")}
+                  />
+                )}
+              />
+            </div>
+
+            <div className="space-y-3">
+              <div className="flex items-center justify-between gap-3 rounded-xl border border-brand-100 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900">
+                <div>
+                  <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
+                    {t("settings.vacationExcludeTasksTitle")}
+                  </p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    {t("settings.vacationExcludeTasksDescription")}
+                  </p>
+                </div>
+                <householdForm.Field
+                  name="vacationTasksExcludeEnabled"
+                  children={(field: {
+                    state: { value: boolean };
+                    handleChange: (value: boolean) => void;
+                  }) => (
+                    <Switch
+                      checked={field.state.value}
+                      disabled={busy || !isOwner}
+                      onCheckedChange={field.handleChange}
+                      aria-label={t("settings.vacationExcludeTasksTitle")}
+                    />
+                  )}
+                />
+              </div>
+
+              <div className="flex items-center justify-between gap-3 rounded-xl border border-brand-100 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900">
+                <div>
+                  <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
+                    {t("settings.vacationExcludeFinancesTitle")}
+                  </p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    {t("settings.vacationExcludeFinancesDescription")}
+                  </p>
+                </div>
+                <householdForm.Field
+                  name="vacationFinancesExcludeEnabled"
+                  children={(field: {
+                    state: { value: boolean };
+                    handleChange: (value: boolean) => void;
+                  }) => (
+                    <Switch
+                      checked={field.state.value}
+                      disabled={busy || !isOwner}
+                      onCheckedChange={field.handleChange}
+                      aria-label={t("settings.vacationExcludeFinancesTitle")}
+                    />
+                  )}
+                />
+              </div>
+
+              <div className="flex items-center justify-between gap-3 rounded-xl border border-brand-100 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900">
+                <div>
+                  <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
+                    {t("settings.taskSkipTitle")}
+                  </p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    {t("settings.taskSkipDescription")}
+                  </p>
+                </div>
+                <householdForm.Field
+                  name="taskSkipEnabled"
+                  children={(field: {
+                    state: { value: boolean };
+                    handleChange: (value: boolean) => void;
+                  }) => (
+                    <Switch
+                      checked={field.state.value}
+                      disabled={busy || !isOwner}
+                      onCheckedChange={field.handleChange}
+                      aria-label={t("settings.taskSkipTitle")}
+                    />
+                  )}
+                />
+              </div>
+            </div>
+            <div className="flex justify-end">
+              <Button
+                type="button"
+                disabled={busy || !isOwner}
+                onClick={() => void householdForm.handleSubmit()}
+              >
+                {t("settings.householdSave")}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {showHousehold ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>{t("settings.householdFeaturesTitle")}</CardTitle>
+            <CardDescription>{t("settings.householdFeaturesDescription")}</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-3">
+              <div className="flex items-center justify-between gap-3 rounded-xl border border-brand-100 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900">
+                <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
+                  {t("settings.featureBucketTitle")}
+                </p>
+                <householdForm.Field
+                  name="featureBucketEnabled"
+                  children={(field: {
+                    state: { value: boolean };
+                    handleChange: (value: boolean) => void;
+                  }) => (
+                    <Switch
+                      checked={field.state.value}
+                      disabled={busy || !isOwner}
+                      onCheckedChange={field.handleChange}
+                      aria-label={t("settings.featureBucketTitle")}
+                    />
+                  )}
+                />
+              </div>
+              <div className="flex items-center justify-between gap-3 rounded-xl border border-brand-100 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900">
+                <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
+                  {t("settings.featureShoppingTitle")}
+                </p>
+                <householdForm.Field
+                  name="featureShoppingEnabled"
+                  children={(field: {
+                    state: { value: boolean };
+                    handleChange: (value: boolean) => void;
+                  }) => (
+                    <Switch
+                      checked={field.state.value}
+                      disabled={busy || !isOwner}
+                      onCheckedChange={field.handleChange}
+                      aria-label={t("settings.featureShoppingTitle")}
+                    />
+                  )}
+                />
+              </div>
+              <div className="flex items-center justify-between gap-3 rounded-xl border border-brand-100 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900">
+                <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
+                  {t("settings.featureTasksTitle")}
+                </p>
+                <householdForm.Field
+                  name="featureTasksEnabled"
+                  children={(field: {
+                    state: { value: boolean };
+                    handleChange: (value: boolean) => void;
+                  }) => (
+                    <Switch
+                      checked={field.state.value}
+                      disabled={busy || !isOwner}
+                      onCheckedChange={field.handleChange}
+                      aria-label={t("settings.featureTasksTitle")}
+                    />
+                  )}
+                />
+              </div>
+              <div className="flex items-center justify-between gap-3 rounded-xl border border-brand-100 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900">
+                <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
+                  {t("settings.featureFinancesTitle")}
+                </p>
+                <householdForm.Field
+                  name="featureFinancesEnabled"
+                  children={(field: {
+                    state: { value: boolean };
+                    handleChange: (value: boolean) => void;
+                  }) => (
+                    <Switch
+                      checked={field.state.value}
+                      disabled={busy || !isOwner}
+                      onCheckedChange={field.handleChange}
+                      aria-label={t("settings.featureFinancesTitle")}
+                    />
+                  )}
+                />
+              </div>
+            </div>
+            <div className="flex justify-end">
+              <Button
+                type="button"
+                disabled={busy || !isOwner}
+                onClick={() => void householdForm.handleSubmit()}
+              >
+                {t("settings.householdSave")}
+              </Button>
             </div>
           </CardContent>
         </Card>
@@ -2211,6 +2532,15 @@ export const SettingsPage = ({
                   </div>
                 )}
               />
+            </div>
+            <div className="flex justify-end">
+              <Button
+                type="button"
+                disabled={busy || !isOwner}
+                onClick={() => void householdForm.handleSubmit()}
+              >
+                {t("settings.householdSave")}
+              </Button>
             </div>
           </CardContent>
         </Card>

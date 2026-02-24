@@ -437,22 +437,47 @@ export const HomePage = ({
 }: HomePageProps) => {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
+  const featureFlags = useMemo(
+    () => ({
+      bucket: household.feature_bucket_enabled ?? true,
+      shopping: household.feature_shopping_enabled ?? true,
+      tasks: household.feature_tasks_enabled ?? true,
+      finances: household.feature_finances_enabled ?? true
+    }),
+    [household]
+  );
   const landingInsertOptions = useMemo(
     () => [
-      { label: t("home.widgetTasksDue"), value: widgetTokenFromKey("tasks-overview") },
-      { label: t("home.widgetTasksForYou"), value: widgetTokenFromKey("tasks-for-you") },
-      { label: t("home.widgetYourBalance"), value: widgetTokenFromKey("your-balance") },
-      { label: t("home.widgetHouseholdBalance"), value: widgetTokenFromKey("household-balance") },
+      ...(featureFlags.tasks
+        ? [
+            { label: t("home.widgetTasksDue"), value: widgetTokenFromKey("tasks-overview") },
+            { label: t("home.widgetTasksForYou"), value: widgetTokenFromKey("tasks-for-you") }
+          ]
+        : []),
+      ...(featureFlags.finances
+        ? [
+            { label: t("home.widgetYourBalance"), value: widgetTokenFromKey("your-balance") },
+            { label: t("home.widgetHouseholdBalance"), value: widgetTokenFromKey("household-balance") }
+          ]
+        : []),
       { label: t("home.widgetRecentActivity"), value: widgetTokenFromKey("recent-activity") },
-      { label: t("home.widgetBucketShortList"), value: widgetTokenFromKey("bucket-short-list") },
-      { label: t("home.widgetMemberOfMonth"), value: widgetTokenFromKey("member-of-month") },
-      { label: t("home.widgetFairness"), value: widgetTokenFromKey("fairness-score") },
-      { label: t("home.widgetReliability"), value: widgetTokenFromKey("reliability-score") },
-      { label: t("home.widgetExpensesByMonth"), value: widgetTokenFromKey("expenses-by-month") },
-      { label: t("home.widgetFairnessByMember"), value: widgetTokenFromKey("fairness-by-member") },
-      { label: t("home.widgetReliabilityByMember"), value: widgetTokenFromKey("reliability-by-member") }
+      ...(featureFlags.bucket
+        ? [{ label: t("home.widgetBucketShortList"), value: widgetTokenFromKey("bucket-short-list") }]
+        : []),
+      ...(featureFlags.tasks
+        ? [
+            { label: t("home.widgetMemberOfMonth"), value: widgetTokenFromKey("member-of-month") },
+            { label: t("home.widgetFairness"), value: widgetTokenFromKey("fairness-score") },
+            { label: t("home.widgetReliability"), value: widgetTokenFromKey("reliability-score") },
+            { label: t("home.widgetFairnessByMember"), value: widgetTokenFromKey("fairness-by-member") },
+            { label: t("home.widgetReliabilityByMember"), value: widgetTokenFromKey("reliability-by-member") }
+          ]
+        : []),
+      ...(featureFlags.finances
+        ? [{ label: t("home.widgetExpensesByMonth"), value: widgetTokenFromKey("expenses-by-month") }]
+        : [])
     ],
-    [t]
+    [featureFlags, t]
   );
   const landingInsertOptionsForEditor = useMemo(
     () =>
@@ -482,7 +507,7 @@ export const HomePage = ({
     [household.name, t]
   );
   const showSummary = section === "summary";
-  const showBucket = section === "bucket";
+  const showBucket = section === "bucket" && featureFlags.bucket;
   const showFeed = section === "feed";
   const [isMobileBucketComposer, setIsMobileBucketComposer] = useState(() =>
     typeof window !== "undefined" ? window.matchMedia("(max-width: 639px)").matches : false
@@ -957,6 +982,7 @@ export const HomePage = ({
 
   const renderLandingWidget = useCallback((key: LandingWidgetKey) => {
     if (key === "tasks-overview") {
+      if (!featureFlags.tasks) return null;
       return (
         <button
           type="button"
@@ -973,6 +999,7 @@ export const HomePage = ({
     }
 
     if (key === "tasks-for-you") {
+      if (!featureFlags.tasks) return null;
       return (
         <div className="rounded-xl border border-brand-100 p-3 dark:border-slate-700 dark:bg-slate-900/70">
           <p className="text-xs text-slate-500 dark:text-slate-400">{t("home.widgetTasksForYou")}</p>
@@ -1003,6 +1030,7 @@ export const HomePage = ({
     }
 
     if (key === "your-balance") {
+      if (!featureFlags.finances) return null;
       const positive = yourBalance >= 0;
       return (
         <button
@@ -1020,6 +1048,7 @@ export const HomePage = ({
     }
 
     if (key === "household-balance") {
+      if (!featureFlags.finances) return null;
       return (
         <div className="rounded-xl border border-brand-100 bg-white/80 p-3 dark:border-slate-700 dark:bg-slate-900/70">
           <p className="text-xs text-slate-500 dark:text-slate-400">{t("home.widgetHouseholdBalance")}</p>
@@ -1049,6 +1078,7 @@ export const HomePage = ({
     }
 
     if (key === "bucket-short-list") {
+      if (!featureFlags.bucket) return null;
       return (
         <button
           type="button"
@@ -1072,6 +1102,7 @@ export const HomePage = ({
     }
 
     if (key === "member-of-month") {
+      if (!featureFlags.tasks) return null;
       return (
         <div className="rounded-xl border border-brand-100 bg-white/80 p-3 dark:border-slate-700 dark:bg-slate-900/70">
           <p className="text-xs text-slate-500 dark:text-slate-400">{t("home.widgetMemberOfMonth")}</p>
@@ -1120,6 +1151,7 @@ export const HomePage = ({
     }
 
     if (key === "fairness-score") {
+      if (!featureFlags.tasks) return null;
       return (
         <div className="rounded-xl border border-brand-100 p-3 dark:border-slate-700 dark:bg-slate-800/60">
           <p className="text-xs text-slate-500 dark:text-slate-400">{t("home.widgetFairness")}</p>
@@ -1130,6 +1162,7 @@ export const HomePage = ({
     }
 
     if (key === "reliability-score") {
+      if (!featureFlags.tasks) return null;
       return (
         <div className="rounded-xl border border-brand-100 bg-emerald-50/60 p-3 dark:border-slate-700 dark:bg-slate-800/60">
           <p className="text-xs text-slate-500 dark:text-slate-400">{t("home.widgetReliability")}</p>
@@ -1142,6 +1175,7 @@ export const HomePage = ({
     }
 
     if (key === "expenses-by-month") {
+      if (!featureFlags.finances) return null;
       return monthlyExpenseRows.length > 0 ? (
         <div className="rounded-xl border border-brand-100 bg-white/80 p-3 dark:border-slate-700 dark:bg-slate-900/70">
           <p className="mb-2 text-xs font-semibold text-slate-600 dark:text-slate-300">{t("home.widgetExpensesByMonth")}</p>
@@ -1163,6 +1197,7 @@ export const HomePage = ({
     }
 
     if (key === "fairness-by-member") {
+      if (!featureFlags.tasks) return null;
       return taskFairness.rows.length > 0 ? (
         <div className="rounded-xl border border-brand-100 bg-white/80 p-3 dark:border-slate-700 dark:bg-slate-900/70">
           <p className="mb-2 text-xs font-semibold text-slate-600 dark:text-slate-300">{t("home.widgetFairnessByMember")}</p>
@@ -1186,6 +1221,7 @@ export const HomePage = ({
     }
 
     if (key === "reliability-by-member") {
+      if (!featureFlags.tasks) return null;
       return taskReliability.rows.length > 0 ? (
         <div className="rounded-xl border border-brand-100 bg-white/80 p-3 dark:border-slate-700 dark:bg-slate-900/70">
           <p className="mb-2 text-xs font-semibold text-slate-600 dark:text-slate-300">
@@ -1212,6 +1248,7 @@ export const HomePage = ({
 
     return null;
   }, [
+    featureFlags,
     dueTasksCount,
     openTasksCount,
     dueTasksForYou,

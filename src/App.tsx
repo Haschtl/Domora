@@ -260,6 +260,25 @@ const AppLayout = () => {
   const financeSubTab = useMemo(() => resolveFinanceSubTabFromPathname(location.pathname), [location.pathname]);
   const settingsSubTab = useMemo(() => resolveSettingsSubTabFromPathname(location.pathname), [location.pathname]);
   const isTaskSettingsEnabled = activeHousehold?.task_laziness_enabled ?? false;
+  const featureFlags = useMemo(
+    () => ({
+      bucket: activeHousehold?.feature_bucket_enabled ?? true,
+      shopping: activeHousehold?.feature_shopping_enabled ?? true,
+      tasks: activeHousehold?.feature_tasks_enabled ?? true,
+      finances: activeHousehold?.feature_finances_enabled ?? true
+    }),
+    [activeHousehold]
+  );
+  const visibleTabItems = useMemo(
+    () =>
+      tabItems.filter((item) => {
+        if (item.id === "shopping") return featureFlags.shopping;
+        if (item.id === "tasks") return featureFlags.tasks;
+        if (item.id === "finances") return featureFlags.finances;
+        return true;
+      }),
+    [featureFlags]
+  );
   const [isMobileKeyboardOpen, setIsMobileKeyboardOpen] = useState(false);
   const [isMobileViewport, setIsMobileViewport] = useState(() =>
     typeof window !== "undefined" ? window.matchMedia("(max-width: 639px)").matches : false
@@ -272,7 +291,9 @@ const AppLayout = () => {
   const loadingOverlayHideTimerRef = useRef<number | null>(null);
   const delayedPrefetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const shouldLoadTaskData =
-    !isStandaloneRoute && (tab === "tasks" || tab === "home" || hasPrefetchedTasks || notificationPermission === "granted");
+    featureFlags.tasks &&
+    !isStandaloneRoute &&
+    (tab === "tasks" || tab === "home" || hasPrefetchedTasks || notificationPermission === "granted");
   const tasksQuery = useHouseholdTasks(activeHousehold?.id ?? null, shouldLoadTaskData);
   const tasks = tasksQuery.data ?? [];
   const shoppingItemsQuery = useHouseholdShoppingItems(activeHousehold?.id ?? null);
@@ -364,6 +385,9 @@ const AppLayout = () => {
 
   const onTabChange = (value: string) => {
     const nextTab = value as AppTab;
+    if (nextTab === "shopping" && !featureFlags.shopping) return;
+    if (nextTab === "tasks" && !featureFlags.tasks) return;
+    if (nextTab === "finances" && !featureFlags.finances) return;
     const nextPath = tabPathMap[nextTab] ?? "/home";
 
     if (nextPath === location.pathname) return;
@@ -387,17 +411,20 @@ const AppLayout = () => {
       }
 
       if (path.startsWith("/shopping")) {
+        if (!featureFlags.shopping) return;
         void ensureHouseholdQueries(queryClient, householdId, ["shoppingItems", "shoppingCompletions"]);
         return;
       }
 
       if (path.startsWith("/tasks")) {
+        if (!featureFlags.tasks) return;
         setHasPrefetchedTasks(true);
         void ensureHouseholdQueries(queryClient, householdId, ["tasks", "taskCompletions", "memberPimpers"]);
         return;
       }
 
       if (path.startsWith("/finances")) {
+        if (!featureFlags.finances) return;
         void ensureHouseholdQueries(queryClient, householdId, [
           "financeSubscriptions",
           "cashAuditRequests"
@@ -409,14 +436,16 @@ const AppLayout = () => {
         void ensureHouseholdQueries(queryClient, householdId, ["householdMembers"]);
       }
     },
-    [activeHousehold?.id, queryClient]
+    [activeHousehold?.id, featureFlags.finances, featureFlags.shopping, featureFlags.tasks, queryClient]
   );
 
   const subItems: Array<{ id: string; icon: LucideIcon; labelKey: string; path: string }> =
     tab === "home"
       ? [
           { id: "summary", icon: LayoutList, labelKey: "subnav.home.summary", path: homeSubPathMap.summary },
-          { id: "bucket", icon: CheckSquare, labelKey: "subnav.home.bucket", path: homeSubPathMap.bucket },
+          ...(featureFlags.bucket
+            ? [{ id: "bucket", icon: CheckSquare, labelKey: "subnav.home.bucket", path: homeSubPathMap.bucket }]
+            : []),
           { id: "feed", icon: FileText, labelKey: "subnav.home.feed", path: homeSubPathMap.feed }
         ]
       : tab === "shopping"
@@ -485,7 +514,7 @@ const AppLayout = () => {
       : [
           {
             id: tab,
-            icon: tabItems.find((item) => item.id === tab)?.icon ?? Home,
+            icon: visibleTabItems.find((item) => item.id === tab)?.icon ?? Home,
             labelKey: `tab.${tab}`,
             path: tabPathMap[tab]
           }
@@ -514,6 +543,25 @@ const AppLayout = () => {
       void navigate({ to: "/tasks/overview", replace: true });
     }
   }, [isTaskSettingsEnabled, location.pathname, navigate]);
+
+  useEffect(() => {
+    if (!activeHousehold) return;
+    if (!featureFlags.shopping && location.pathname.startsWith("/shopping")) {
+      void navigate({ to: "/home/summary", replace: true });
+      return;
+    }
+    if (!featureFlags.tasks && location.pathname.startsWith("/tasks")) {
+      void navigate({ to: "/home/summary", replace: true });
+      return;
+    }
+    if (!featureFlags.finances && location.pathname.startsWith("/finances")) {
+      void navigate({ to: "/home/summary", replace: true });
+      return;
+    }
+    if (!featureFlags.bucket && location.pathname.startsWith("/home/bucket")) {
+      void navigate({ to: "/home/summary", replace: true });
+    }
+  }, [activeHousehold, featureFlags, location.pathname, navigate]);
 
   useEffect(() => {
     const brand = t("app.brand");
@@ -825,7 +873,7 @@ const AppLayout = () => {
             <aside className="hidden sm:block">
               <div className="sticky top-6 rounded-2xl border border-brand-100 bg-white/90 p-3 shadow-card dark:border-slate-700 dark:bg-slate-900/80">
                 <ul className="space-y-1">
-                  {tabItems.map((item) => {
+                  {visibleTabItems.map((item) => {
                     const Icon = item.icon;
                     const active = tab === item.id;
 
@@ -1007,7 +1055,7 @@ const AppLayout = () => {
           {!isMobileKeyboardOpen ? (
             <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-brand-200 bg-white/95 px-2 pb-[calc(var(--safe-area-bottom)+0.5rem)] pt-2 shadow-[0_-8px_18px_rgba(15,23,42,0.08)] backdrop-blur dark:border-slate-700 dark:bg-slate-900/95 dark:shadow-[0_-8px_18px_rgba(2,6,23,0.45)] sm:hidden">
               <ul className="grid grid-cols-5 gap-1">
-                {tabItems.map((item) => {
+                {visibleTabItems.map((item) => {
                   const Icon = item.icon;
                   const active = tab === item.id;
 

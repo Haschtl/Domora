@@ -13,6 +13,13 @@ export interface Household {
   utilities_monthly: number | null;
   utilities_on_room_sqm_percent: number;
   task_laziness_enabled: boolean;
+  vacation_tasks_exclude_enabled: boolean;
+  vacation_finances_exclude_enabled: boolean;
+  task_skip_enabled: boolean;
+  feature_bucket_enabled: boolean;
+  feature_shopping_enabled: boolean;
+  feature_tasks_enabled: boolean;
+  feature_finances_enabled: boolean;
   theme_primary_color: string;
   theme_accent_color: string;
   theme_font_family: string;
@@ -33,6 +40,13 @@ export interface UpdateHouseholdInput {
   utilitiesMonthly: number | null;
   utilitiesOnRoomSqmPercent: number;
   taskLazinessEnabled: boolean;
+  vacationTasksExcludeEnabled: boolean;
+  vacationFinancesExcludeEnabled: boolean;
+  taskSkipEnabled: boolean;
+  featureBucketEnabled: boolean;
+  featureShoppingEnabled: boolean;
+  featureTasksEnabled: boolean;
+  featureFinancesEnabled: boolean;
   themePrimaryColor: string;
   themeAccentColor: string;
   themeFontFamily: string;

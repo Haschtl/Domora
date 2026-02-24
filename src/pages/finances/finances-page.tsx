@@ -396,11 +396,13 @@ export const FinancesPage = ({
   const [receiptPreviewTitle, setReceiptPreviewTitle] = useState<string | null>(null);
   const [previewDescription, setPreviewDescription] = useState("");
   const [previewAmountInput, setPreviewAmountInput] = useState("");
+  const excludeVacationFromFinances = household.vacation_finances_exclude_enabled ?? true;
   const getDefaultFinanceSelectionIds = useCallback(() => {
+    if (!excludeVacationFromFinances) return members.map((member) => member.user_id);
     const nonVacationMemberIds = members.filter((member) => !member.vacation_mode).map((member) => member.user_id);
     if (nonVacationMemberIds.length > 0) return nonVacationMemberIds;
     return members.map((member) => member.user_id);
-  }, [members]);
+  }, [excludeVacationFromFinances, members]);
   const [previewPayerIds, setPreviewPayerIds] = useState<string[]>(() => [userId]);
   const [previewBeneficiaryIds, setPreviewBeneficiaryIds] = useState<string[]>(() => getDefaultFinanceSelectionIds());
   const [addEntryCategoryTouched, setAddEntryCategoryTouched] = useState(false);
@@ -684,6 +686,13 @@ export const FinancesPage = ({
         utilitiesMonthly: parsedUtilities,
         utilitiesOnRoomSqmPercent: parsedUtilitiesOnRoomSqmPercent,
         taskLazinessEnabled: household.task_laziness_enabled ?? false,
+        vacationTasksExcludeEnabled: household.vacation_tasks_exclude_enabled ?? true,
+        vacationFinancesExcludeEnabled: household.vacation_finances_exclude_enabled ?? true,
+        taskSkipEnabled: household.task_skip_enabled ?? true,
+        featureBucketEnabled: household.feature_bucket_enabled ?? true,
+        featureShoppingEnabled: household.feature_shopping_enabled ?? true,
+        featureTasksEnabled: household.feature_tasks_enabled ?? true,
+        featureFinancesEnabled: household.feature_finances_enabled ?? true,
         themePrimaryColor: household.theme_primary_color ?? "#1f8a7f",
         themeAccentColor: household.theme_accent_color ?? "#14b8a6",
         themeFontFamily: household.theme_font_family ?? '"Space Grotesk", "Segoe UI", sans-serif',

@@ -812,13 +812,74 @@ export const resources = {
         vacationModeLabel: "Urlaubsmodus",
         vacationModeDescription:
           "Wenn aktiv, wirst du bei neuen Task-Zuweisungen nachrangig behandelt und in Finanzen standardmäßig abgewählt.",
+        vacationModeDescriptionNone:
+          "Urlaubsmodus ist aktiv, aber Tasks und Finanzen sind in dieser WG deaktiviert.",
+        vacationModeDescriptionTasksOff:
+          "Urlaubsmodus betrifft hier keine Aufgaben. Finanzen sind deaktiviert.",
+        vacationModeDescriptionFinancesOff:
+          "Urlaubsmodus betrifft hier keine Finanzen. Aufgaben sind deaktiviert.",
+        vacationModeDescriptionTasksPartial:
+          "Urlaubsmodus beeinflusst hier keine Aufgaben. Finanzen werden weiterhin automatisch abgewählt.",
+        vacationModeDescriptionFinancesPartial:
+          "Urlaubsmodus beeinflusst hier keine Finanzen. Aufgaben werden weiterhin ausgeschlossen.",
+        vacationModeDescriptionFinancesOnly:
+          "Urlaubsmodus wirkt nur bei Finanzen: du wirst automatisch abgewählt.",
+        vacationModeDescriptionTasksOnly:
+          "Urlaubsmodus wirkt nur bei Aufgaben: du wirst bei neuen Zuweisungen ausgeschlossen.",
         vacationModeConfirmTitle: "Urlaubsmodus ändern?",
         vacationModeConfirmEnable:
           "Im Urlaubsmodus wirst du bei neuen Aufgaben nachrangig behandelt. Für die Fairness zählen deine Pimpers neutral. Aktivieren?",
         vacationModeConfirmDisable:
           "Urlaubsmodus beenden? Deine Pimpers werden neutral aufgefüllt, damit dir nicht alles aufgedrückt wird.",
+        vacationModeConfirmEnableNone:
+          "Urlaubsmodus aktivieren? In dieser WG sind Tasks und Finanzen deaktiviert.",
+        vacationModeConfirmDisableNone:
+          "Urlaubsmodus beenden? Tasks und Finanzen sind hier deaktiviert.",
+        vacationModeConfirmEnableTasksOff:
+          "Urlaubsmodus aktivieren? Aufgaben werden hier nicht beeinflusst, Finanzen sind deaktiviert.",
+        vacationModeConfirmDisableTasksOff:
+          "Urlaubsmodus beenden? Aufgaben werden hier nicht beeinflusst, Finanzen sind deaktiviert.",
+        vacationModeConfirmEnableFinancesOff:
+          "Urlaubsmodus aktivieren? Finanzen werden hier nicht beeinflusst, Aufgaben sind deaktiviert.",
+        vacationModeConfirmDisableFinancesOff:
+          "Urlaubsmodus beenden? Finanzen werden hier nicht beeinflusst, Aufgaben sind deaktiviert.",
+        vacationModeConfirmEnableTasksPartial:
+          "Urlaubsmodus aktivieren? Aufgaben bleiben normal, Finanzen werden weiterhin abgewählt.",
+        vacationModeConfirmDisableTasksPartial:
+          "Urlaubsmodus beenden? Aufgaben bleiben normal, Finanzen werden weiterhin abgewählt.",
+        vacationModeConfirmEnableFinancesPartial:
+          "Urlaubsmodus aktivieren? Finanzen bleiben normal, Aufgaben werden weiterhin ausgeschlossen.",
+        vacationModeConfirmDisableFinancesPartial:
+          "Urlaubsmodus beenden? Finanzen bleiben normal, Aufgaben werden weiterhin ausgeschlossen.",
+        vacationModeConfirmEnableFinancesOnly:
+          "Urlaubsmodus aktivieren? Du wirst in Finanzen automatisch abgewählt.",
+        vacationModeConfirmDisableFinancesOnly:
+          "Urlaubsmodus beenden? Du wirst in Finanzen wieder berücksichtigt.",
+        vacationModeConfirmEnableTasksOnly:
+          "Urlaubsmodus aktivieren? Du wirst bei neuen Aufgaben ausgeschlossen.",
+        vacationModeConfirmDisableTasksOnly:
+          "Urlaubsmodus beenden? Du wirst bei Aufgaben wieder berücksichtigt.",
         vacationModeOpenTasksWarning:
           "Heads-up: Du hast noch {{count}} Aufgabe(n), die gerade fällig sind. Die bleiben offen, auch wenn du in den Urlaubsmodus gehst.",
+        householdRulesTitle: "WG-Regeln",
+        householdRulesDescription:
+          "Lege fest, wie Urlaubsmodus, Skippen und Features funktionieren.",
+        vacationExcludeTasksTitle: "Urlaubsmodus: Tasks ausschließen",
+        vacationExcludeTasksDescription:
+          "Mitglieder im Urlaubsmodus werden bei Aufgaben und Pimpers-Neutralisierung berücksichtigt.",
+        vacationExcludeFinancesTitle: "Urlaubsmodus: Finanzen abwählen",
+        vacationExcludeFinancesDescription:
+          "Urlaubsmodus setzt Personen bei neuen Finanzeinträgen automatisch ab.",
+        taskSkipTitle: "Tasks skippen erlauben",
+        taskSkipDescription:
+          "Aktiviert/Deaktiviert die Skip-Funktion für Aufgaben.",
+        householdFeaturesTitle: "Features",
+        householdFeaturesDescription:
+          "Blende ganze Bereiche der App für alle aus.",
+        featureBucketTitle: "Bucket-List",
+        featureShoppingTitle: "Shopping",
+        featureTasksTitle: "Tasks",
+        featureFinancesTitle: "Finanzen",
         pushTitle: "Push-Benachrichtigungen",
         pushDescription:
           "Aktiviere Benachrichtigungen für Aufgaben und WG-Action.",
@@ -1811,13 +1872,73 @@ export const resources = {
         vacationModeLabel: "Vacation mode",
         vacationModeDescription:
           "When enabled, you are deprioritized for new task assignments and deselected by default in finances.",
+        vacationModeDescriptionNone:
+          "Vacation mode is on, but tasks and finances are disabled in this household.",
+        vacationModeDescriptionTasksOff:
+          "Vacation mode doesn't affect tasks here. Finances are disabled.",
+        vacationModeDescriptionFinancesOff:
+          "Vacation mode doesn't affect finances here. Tasks are disabled.",
+        vacationModeDescriptionTasksPartial:
+          "Vacation mode doesn't affect tasks here. Finances are still auto-deselected.",
+        vacationModeDescriptionFinancesPartial:
+          "Vacation mode doesn't affect finances here. Tasks are still excluded.",
+        vacationModeDescriptionFinancesOnly:
+          "Vacation mode only affects finances: you're auto-deselected.",
+        vacationModeDescriptionTasksOnly:
+          "Vacation mode only affects tasks: you're excluded from new assignments.",
         vacationModeConfirmTitle: "Change vacation mode?",
         vacationModeConfirmEnable:
           "In vacation mode you’re deprioritized for new tasks. Your fairness score stays neutral. Enable it?",
         vacationModeConfirmDisable:
           "End vacation mode? Your pimpers are topped up to neutral so you’re not slammed with tasks.",
+        vacationModeConfirmEnableNone:
+          "Enable vacation mode? Tasks and finances are disabled in this household.",
+        vacationModeConfirmDisableNone:
+          "End vacation mode? Tasks and finances are disabled here.",
+        vacationModeConfirmEnableTasksOff:
+          "Enable vacation mode? Tasks won’t be affected here, finances are disabled.",
+        vacationModeConfirmDisableTasksOff:
+          "End vacation mode? Tasks won’t be affected here, finances are disabled.",
+        vacationModeConfirmEnableFinancesOff:
+          "Enable vacation mode? Finances won’t be affected here, tasks are disabled.",
+        vacationModeConfirmDisableFinancesOff:
+          "End vacation mode? Finances won’t be affected here, tasks are disabled.",
+        vacationModeConfirmEnableTasksPartial:
+          "Enable vacation mode? Tasks stay normal, finances are still auto-deselected.",
+        vacationModeConfirmDisableTasksPartial:
+          "End vacation mode? Tasks stay normal, finances are still auto-deselected.",
+        vacationModeConfirmEnableFinancesPartial:
+          "Enable vacation mode? Finances stay normal, tasks are still excluded.",
+        vacationModeConfirmDisableFinancesPartial:
+          "End vacation mode? Finances stay normal, tasks are still excluded.",
+        vacationModeConfirmEnableFinancesOnly:
+          "Enable vacation mode? You’ll be auto-deselected in finances.",
+        vacationModeConfirmDisableFinancesOnly:
+          "End vacation mode? You’ll be included in finances again.",
+        vacationModeConfirmEnableTasksOnly:
+          "Enable vacation mode? You’ll be excluded from new tasks.",
+        vacationModeConfirmDisableTasksOnly:
+          "End vacation mode? You’ll be included in tasks again.",
         vacationModeOpenTasksWarning:
           "Heads-up: you still have {{count}} task(s) that are due now. They stay open even if you enable vacation mode.",
+        householdRulesTitle: "Household rules",
+        householdRulesDescription:
+          "Define how vacation mode, skipping, and features behave.",
+        vacationExcludeTasksTitle: "Vacation mode: exclude tasks",
+        vacationExcludeTasksDescription:
+          "Members in vacation mode are excluded from tasks and fairness reset.",
+        vacationExcludeFinancesTitle: "Vacation mode: deselect finances",
+        vacationExcludeFinancesDescription:
+          "Vacation mode auto-deselects members for new finance entries.",
+        taskSkipTitle: "Allow task skipping",
+        taskSkipDescription: "Enable/disable the task skip feature.",
+        householdFeaturesTitle: "Features",
+        householdFeaturesDescription:
+          "Hide entire app areas for everyone.",
+        featureBucketTitle: "Bucket list",
+        featureShoppingTitle: "Shopping",
+        featureTasksTitle: "Tasks",
+        featureFinancesTitle: "Finances",
         pushTitle: "Push notifications",
         pushDescription: "Enable notifications for tasks and household action.",
         pushStatusLabel: "Status: {{status}}",

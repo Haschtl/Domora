@@ -485,6 +485,8 @@ export const TasksPage = ({
 }: TasksPageProps) => {
   const { t, i18n } = useTranslation();
   const language = i18n.resolvedLanguage ?? i18n.language;
+  const allowTaskSkip = household.task_skip_enabled ?? true;
+  const excludeVacationFromTasks = household.vacation_tasks_exclude_enabled ?? true;
 
   const [rotationUserIds, setRotationUserIds] = useState<string[]>([userId]);
   const [editRotationUserIds, setEditRotationUserIds] = useState<string[]>([]);
@@ -744,6 +746,13 @@ export const TasksPage = ({
     members.forEach((member) => map.set(member.user_id, member));
     return map;
   }, [members]);
+  const isMemberExcludedFromTasks = useCallback(
+    (memberId: string) => {
+      if (!excludeVacationFromTasks) return false;
+      return memberById.get(memberId)?.vacation_mode ?? false;
+    },
+    [excludeVacationFromTasks, memberById]
+  );
   const onTimeStreaks = useMemo(() => {
     const actionByUser = new Map<string, Array<{ at: number; type: "completion" | "skipped"; delay: number; id: string }>>();
     completions.forEach((entry) => {
@@ -1854,9 +1863,9 @@ export const TasksPage = ({
     };
   }, [averageDelayByUserId, editRotationUserIds, editTaskForm.state.values.frequencyDays, pimperByUserId, taskBeingEdited, tasks]);
   const editRotationCandidates = useMemo(() => {
-    const active = editRotationUserIds.filter((memberId) => !(memberById.get(memberId)?.vacation_mode ?? false));
+    const active = editRotationUserIds.filter((memberId) => !isMemberExcludedFromTasks(memberId));
     return active.length > 0 ? active : editRotationUserIds;
-  }, [editRotationUserIds, memberById]);
+  }, [editRotationUserIds, isMemberExcludedFromTasks]);
   const editRotationForecast = useMemo(() => {
     if (!taskBeingEdited || editRotationCandidates.length === 0) {
       return null;
@@ -1924,12 +1933,12 @@ export const TasksPage = ({
       if (!taskBeingEdited?.assignee_id) return order;
       const totalCandidates = order.length;
       if (totalCandidates <= 1) return order;
-      const activeCandidates = order.filter((memberId) => !(memberById.get(memberId)?.vacation_mode ?? false)).length;
+      const activeCandidates = order.filter((memberId) => !isMemberExcludedFromTasks(memberId)).length;
       if (activeCandidates <= 1) return order;
       if (order[0] !== taskBeingEdited.assignee_id) return order;
       return [...order.slice(1), order[0]];
     },
-    [memberById, taskBeingEdited?.assignee_id]
+    [isMemberExcludedFromTasks, taskBeingEdited?.assignee_id]
   );
 
   const onRotationDragEnd = (event: DragEndEvent) => {
@@ -2975,7 +2984,7 @@ export const TasksPage = ({
                   Number.isFinite(dueAtMs) &&
                   dueAtMs - Date.now() <= 24 * 60 * 60 * 1000;
                 const canComplete = canCompleteEarly && !busy;
-                const canSkip = isDue && isAssignedToCurrentUser && !busy;
+                const canSkip = allowTaskSkip && isDue && isAssignedToCurrentUser && !busy;
                 const canTakeover =
                   isDue &&
                   task.assignee_id !== null &&

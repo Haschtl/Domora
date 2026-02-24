@@ -35,7 +35,7 @@ import type {
 const buildInviteCode = () => Math.random().toString(36).slice(2, 8).toUpperCase();
 
 const SELECT_HOUSEHOLD_FIELDS =
-  "id,name,image_url,address,currency,apartment_size_sqm,cold_rent_monthly,utilities_monthly,utilities_on_room_sqm_percent,task_laziness_enabled,theme_primary_color,theme_accent_color,theme_font_family,theme_radius_scale,landing_page_markdown,invite_code,created_by,created_at";
+  "id,name,image_url,address,currency,apartment_size_sqm,cold_rent_monthly,utilities_monthly,utilities_on_room_sqm_percent,task_laziness_enabled,vacation_tasks_exclude_enabled,vacation_finances_exclude_enabled,task_skip_enabled,feature_bucket_enabled,feature_shopping_enabled,feature_tasks_enabled,feature_finances_enabled,theme_primary_color,theme_accent_color,theme_font_family,theme_radius_scale,landing_page_markdown,invite_code,created_by,created_at";
 const SELECT_HOUSEHOLD_MEMBER_FIELDS =
   "household_id,user_id,role,room_size_sqm,common_area_factor,task_laziness_factor,vacation_mode,created_at";
 const SELECT_HOUSEHOLD_MEMBER_WITH_PROFILE_FIELDS =
@@ -95,6 +95,13 @@ const householdSchema = z.object({
   utilities_monthly: nonNegativeOptionalNumberSchema,
   utilities_on_room_sqm_percent: percentageNumberSchema.default(0),
   task_laziness_enabled: z.coerce.boolean().default(false),
+  vacation_tasks_exclude_enabled: z.coerce.boolean().default(true),
+  vacation_finances_exclude_enabled: z.coerce.boolean().default(true),
+  task_skip_enabled: z.coerce.boolean().default(true),
+  feature_bucket_enabled: z.coerce.boolean().default(true),
+  feature_shopping_enabled: z.coerce.boolean().default(true),
+  feature_tasks_enabled: z.coerce.boolean().default(true),
+  feature_finances_enabled: z.coerce.boolean().default(true),
   theme_primary_color: z
     .string()
     .regex(/^#[0-9A-Fa-f]{6}$/)
@@ -735,6 +742,13 @@ export const updateHouseholdSettings = async (
     utilitiesMonthly: nonNegativeOptionalNumberSchema,
     utilitiesOnRoomSqmPercent: percentageNumberSchema,
     taskLazinessEnabled: z.coerce.boolean(),
+    vacationTasksExcludeEnabled: z.coerce.boolean(),
+    vacationFinancesExcludeEnabled: z.coerce.boolean(),
+    taskSkipEnabled: z.coerce.boolean(),
+    featureBucketEnabled: z.coerce.boolean(),
+    featureShoppingEnabled: z.coerce.boolean(),
+    featureTasksEnabled: z.coerce.boolean(),
+    featureFinancesEnabled: z.coerce.boolean(),
     themePrimaryColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/),
     themeAccentColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/),
     themeFontFamily: z.string().min(1),
@@ -753,6 +767,13 @@ export const updateHouseholdSettings = async (
       utilities_monthly: parsedInput.utilitiesMonthly,
       utilities_on_room_sqm_percent: parsedInput.utilitiesOnRoomSqmPercent,
       task_laziness_enabled: parsedInput.taskLazinessEnabled,
+      vacation_tasks_exclude_enabled: parsedInput.vacationTasksExcludeEnabled,
+      vacation_finances_exclude_enabled: parsedInput.vacationFinancesExcludeEnabled,
+      task_skip_enabled: parsedInput.taskSkipEnabled,
+      feature_bucket_enabled: parsedInput.featureBucketEnabled,
+      feature_shopping_enabled: parsedInput.featureShoppingEnabled,
+      feature_tasks_enabled: parsedInput.featureTasksEnabled,
+      feature_finances_enabled: parsedInput.featureFinancesEnabled,
       theme_primary_color: parsedInput.themePrimaryColor,
       theme_accent_color: parsedInput.themeAccentColor,
       theme_font_family: parsedInput.themeFontFamily,
