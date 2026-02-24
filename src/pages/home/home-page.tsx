@@ -3,6 +3,8 @@ import { useNavigate } from "@tanstack/react-router";
 import {
   CalendarCheck2,
   Check,
+  ChevronLeft,
+  ChevronRight,
   ChevronDown,
   ChevronUp,
   GripVertical,
@@ -28,7 +30,8 @@ import {
   useLexicalNodeRemove
 } from "@mdxeditor/editor";
 import { createTrianglifyBannerBackground } from "../../lib/banner";
-import { formatDateTime, getLastMonthRange } from "../../lib/date";
+import { formatDateTime, formatShortDay, getLastMonthRange } from "../../lib/date";
+import { suggestCategoryLabel } from "../../lib/category-heuristics";
 import { createMemberLabelGetter } from "../../lib/member-label";
 import { createDiceBearAvatarDataUri, getMemberAvatarSeed } from "../../lib/avatar";
 import { calculateBalancesByMember } from "../../lib/finance-math";
@@ -64,6 +67,7 @@ import { Label } from "../../components/ui/label";
 import { MultiDateCalendarSelect } from "../../components/ui/multi-date-calendar-select";
 import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "../../components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
+import { buildMonthGrid, dayKey, startOfMonth } from "../../features/tasks-calendar";
 import {   
   LANDING_WIDGET_KEYS,
   type LandingWidgetKey,
@@ -109,6 +113,21 @@ interface HomePageProps {
 }
 
 type LandingContentSegment = { type: "markdown"; content: string } | { type: "widget"; key: LandingWidgetKey };
+type HomeCalendarBucketVote = {
+  item: BucketItem;
+  date: string;
+  voters: string[];
+};
+type HomeCalendarDueTask = {
+  task: TaskItem;
+  status: "overdue" | "due" | "upcoming";
+};
+type HomeCalendarEntry = {
+  cleaningDueTasks: HomeCalendarDueTask[];
+  taskCompletions: TaskCompletion[];
+  financeEntries: FinanceEntry[];
+  bucketVotes: HomeCalendarBucketVote[];
+};
 
 const LANDING_WIDGET_COMPONENTS: Array<{ key: LandingWidgetKey; tag: string }> = [
   { key: "tasks-overview", tag: "LandingWidgetTasksOverview" },
@@ -126,6 +145,7 @@ const LANDING_WIDGET_COMPONENTS: Array<{ key: LandingWidgetKey; tag: string }> =
 ];
 
 const MAX_WHITEBOARD_BYTES = 10 * 1024 * 1024;
+const MAX_CALENDAR_TOOLTIP_ITEMS = 4;
 const widgetTokenFromKey = (key: LandingWidgetKey) => `{{widget:${key}}}`;
 
 const convertLandingTokensToEditorJsx = (markdown: string) => {
@@ -509,6 +529,9 @@ export const HomePage = ({
   const showSummary = section === "summary";
   const showBucket = section === "bucket" && featureFlags.bucket;
   const showFeed = section === "feed";
+  const [calendarMonthDate, setCalendarMonthDate] = useState(() => startOfMonth(new Date()));
+  const [openCalendarTooltipDay, setOpenCalendarTooltipDay] = useState<string | null>(null);
+  const [isCalendarCoarsePointer, setIsCalendarCoarsePointer] = useState(false);
   const [isMobileBucketComposer, setIsMobileBucketComposer] = useState(() =>
     typeof window !== "undefined" ? window.matchMedia("(max-width: 639px)").matches : false
   );
@@ -638,6 +661,110 @@ export const HomePage = ({
     (memberId: string | null) => (memberId ? memberLabel(memberId) : t("common.memberFallback")),
     [memberLabel, t]
   );
+  const calendarWeekdayLabels = useMemo(() => {
+    const monday = new Date(Date.UTC(2026, 0, 5));
+    return Array.from({ length: 7 }, (_, index) =>
+      new Intl.DateTimeFormat(language, { weekday: "short" }).format(new Date(monday.getTime() + index * 86400000))
+    );
+  }, [language]);
+  const calendarMonthCells = useMemo(() => buildMonthGrid(calendarMonthDate), [calendarMonthDate]);
+  const calendarMonthTitle = useMemo(
+    () => new Intl.DateTimeFormat(language, { month: "long", year: "numeric" }).format(calendarMonthDate),
+    [calendarMonthDate, language]
+  );
+  const homeCalendarEntries = useMemo(() => {
+    const map = new Map<string, HomeCalendarEntry>();
+    const ensureEntry = (key: string) => {
+      const current = map.get(key);
+      if (current) return current;
+      const next: HomeCalendarEntry = {
+        cleaningDueTasks: [],
+        taskCompletions: [],
+        financeEntries: [],
+        bucketVotes: []
+      };
+      map.set(key, next);
+      return next;
+    };
+    const parseDateOnly = (value: string) => {
+      const parsed = new Date(`${value}T12:00:00`);
+      return Number.isNaN(parsed.getTime()) ? null : parsed;
+    };
+    const normalizeText = (value: string) =>
+      value
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/\p{Diacritic}/gu, "")
+        .replace(/[^\p{L}\p{N}]+/gu, " ")
+        .trim();
+    const isCleaningTask = (task: TaskItem) => {
+      const candidate = `${task.title} ${task.description || ""}`.trim();
+      if (!candidate) return false;
+      const suggested = suggestCategoryLabel(candidate, language);
+      if (suggested === "Reinigung" || suggested === "Cleaning") return true;
+      const normalized = normalizeText(candidate);
+      return /(?:\bputz|\breinig|\bclean|\bwisch|\bbad\b|\bkueche\b|\bküche\b|\bfenster\b|\bboden\b)/.test(normalized);
+    };
+    const today = new Date();
+    const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    const todayKey = dayKey(todayStart);
+    const overdueTaskIds = new Set<string>();
+
+    if (featureFlags.tasks) {
+      tasks.forEach((task) => {
+        if (!task.is_active) return;
+        if (!isCleaningTask(task)) return;
+        const dueAt = new Date(task.due_at);
+        if (Number.isNaN(dueAt.getTime())) return;
+        const isOverdue = dueAt.getTime() < todayStart.getTime();
+        const dueKey = dayKey(dueAt);
+        const key = isOverdue ? todayKey : dueKey;
+        const status = isOverdue ? "overdue" : dueKey === todayKey ? "due" : "upcoming";
+        ensureEntry(key).cleaningDueTasks.push({ task, status });
+        if (isOverdue) {
+          overdueTaskIds.add(task.id);
+        }
+      });
+
+      taskCompletions.forEach((completion) => {
+        const completedAt = new Date(completion.completed_at);
+        if (Number.isNaN(completedAt.getTime())) return;
+        const key = dayKey(completedAt);
+        if (key === todayKey && overdueTaskIds.has(completion.task_id)) {
+          return;
+        }
+        ensureEntry(key).taskCompletions.push(completion);
+      });
+    }
+
+    if (featureFlags.finances) {
+      financeEntries.forEach((entry) => {
+        const day = entry.entry_date || entry.created_at.slice(0, 10);
+        const parsed = parseDateOnly(day);
+        if (!parsed) return;
+        if (parsed.getTime() > todayStart.getTime()) return;
+        const key = dayKey(parsed);
+        ensureEntry(key).financeEntries.push(entry);
+      });
+    }
+
+    if (featureFlags.bucket) {
+      bucketItems.forEach((item) => {
+        if (item.done) return;
+        const votesByDate = item.votes_by_date ?? {};
+        item.suggested_dates.forEach((date) => {
+          const voters = votesByDate[date] ?? [];
+          if (voters.length === 0) return;
+          const parsed = parseDateOnly(date);
+          if (!parsed) return;
+          const key = dayKey(parsed);
+          ensureEntry(key).bucketVotes.push({ item, date, voters });
+        });
+      });
+    }
+
+    return map;
+  }, [bucketItems, featureFlags, financeEntries, language, taskCompletions, tasks]);
   const taskFairness = useMemo(() => {
     const memberIds = [...new Set(members.map((entry) => entry.user_id))];
     if (memberIds.length === 0) {
@@ -1379,6 +1506,17 @@ export const HomePage = ({
     return () => window.removeEventListener("resize", updateWidth);
   }, [isMobileBucketComposer]);
   useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
+    const media = window.matchMedia("(hover: none), (pointer: coarse)");
+    const update = () => setIsCalendarCoarsePointer(media.matches);
+    update();
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, []);
+  useEffect(() => {
+    setOpenCalendarTooltipDay(null);
+  }, [calendarMonthDate]);
+  useEffect(() => {
     if (whiteboardSaveTimerRef.current) {
       window.clearTimeout(whiteboardSaveTimerRef.current);
       whiteboardSaveTimerRef.current = null;
@@ -2026,6 +2164,252 @@ export const HomePage = ({
 
       {showSummary ? (
         <>
+          <Card className="mt-6 rounded-xl border border-slate-300 bg-white/90 p-3 text-slate-800 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-100">
+            <CardHeader className="gap-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <CardTitle>{t("home.calendarTitle")}</CardTitle>
+                  <CardDescription>{t("home.calendarDescription")}</CardDescription>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-8 w-8 p-0"
+                    onClick={() => {
+                      setCalendarMonthDate((current) => new Date(current.getFullYear(), current.getMonth() - 1, 1));
+                    }}
+                    aria-label={t("home.calendarPrevMonth")}
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </Button>
+                  <p className="min-w-[130px] text-center text-sm font-medium capitalize text-slate-700 dark:text-slate-200">
+                    {calendarMonthTitle}
+                  </p>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-8 w-8 p-0"
+                    onClick={() => {
+                      setCalendarMonthDate((current) => new Date(current.getFullYear(), current.getMonth() + 1, 1));
+                    }}
+                    aria-label={t("home.calendarNextMonth")}
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              <div className="grid grid-cols-7 gap-1">
+                {calendarWeekdayLabels.map((label) => (
+                  <p
+                    key={label}
+                    className="px-1 py-1 text-center text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400"
+                  >
+                    {label}
+                  </p>
+                ))}
+              </div>
+              <TooltipProvider>
+                <div className="grid grid-cols-7 gap-1">
+                  {calendarMonthCells.map((cell) => {
+                    const cellDayKey = dayKey(cell.date);
+                    const isToday = cellDayKey === dayKey(new Date());
+                    const entry = homeCalendarEntries.get(cellDayKey);
+                    const cleaningDueTasks = entry?.cleaningDueTasks ?? [];
+                    const cleaningCount = cleaningDueTasks.length;
+                    const criticalCleaningCount = cleaningDueTasks.filter((taskEntry) => taskEntry.status !== "upcoming").length;
+                    const completionCount = entry?.taskCompletions.length ?? 0;
+                    const financeCount = entry?.financeEntries.length ?? 0;
+                    const bucketCount = entry?.bucketVotes.length ?? 0;
+                    const hasEntries = cleaningCount + completionCount + financeCount + bucketCount > 0;
+
+                    return (
+                      <Tooltip
+                        key={cellDayKey}
+                        open={isCalendarCoarsePointer ? openCalendarTooltipDay === cellDayKey : undefined}
+                        onOpenChange={(open) => {
+                          if (!isCalendarCoarsePointer) return;
+                          setOpenCalendarTooltipDay(open ? cellDayKey : null);
+                        }}
+                      >
+                        <TooltipTrigger asChild>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (!isCalendarCoarsePointer) return;
+                              setOpenCalendarTooltipDay((current) => (current === cellDayKey ? null : cellDayKey));
+                            }}
+                            className={`min-h-[70px] rounded-lg border px-1.5 py-1 text-left transition ${
+                              cell.inCurrentMonth
+                                ? "border-brand-100 bg-white/90 hover:bg-brand-50/60 dark:border-slate-700 dark:bg-slate-900"
+                                : "border-brand-50 bg-white/40 opacity-65 dark:border-slate-800 dark:bg-slate-900/40"
+                            }`}
+                          >
+                            <p
+                              className={`text-xs font-medium ${
+                                isToday ? "text-brand-700 dark:text-brand-300" : "text-slate-700 dark:text-slate-300"
+                              }`}
+                            >
+                              {cell.date.getDate()}
+                            </p>
+                            {hasEntries ? (
+                              <div className="mt-1 flex flex-wrap gap-1 text-[10px] text-slate-600 dark:text-slate-300">
+                                {cleaningCount > 0 ? (
+                                  <span
+                                    className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 ${
+                                      criticalCleaningCount > 0
+                                        ? "bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-200"
+                                        : "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200"
+                                    }`}
+                                  >
+                                    <span
+                                      className={`h-1.5 w-1.5 rounded-full ${
+                                        criticalCleaningCount > 0 ? "bg-rose-500" : "bg-emerald-500"
+                                      }`}
+                                    />
+                                    {cleaningCount}
+                                  </span>
+                                ) : null}
+                                {completionCount > 0 ? (
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-brand-100 px-1.5 py-0.5 text-brand-800 dark:bg-brand-900/30 dark:text-brand-200">
+                                    <span className="h-1.5 w-1.5 rounded-full bg-brand-500" />
+                                    {completionCount}
+                                  </span>
+                                ) : null}
+                                {financeCount > 0 ? (
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-1.5 py-0.5 text-amber-800 dark:bg-amber-900/30 dark:text-amber-200">
+                                    <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                                    {financeCount}
+                                  </span>
+                                ) : null}
+                                {bucketCount > 0 ? (
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-indigo-100 px-1.5 py-0.5 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-200">
+                                    <span className="h-1.5 w-1.5 rounded-full bg-indigo-500" />
+                                    {bucketCount}
+                                  </span>
+                                ) : null}
+                              </div>
+                            ) : null}
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent className="max-w-[320px] border border-slate-200 bg-white text-slate-900 shadow-lg dark:border-slate-700 dark:bg-slate-900 dark:text-slate-50">
+                          <p className="mb-2 font-semibold">
+                            {t("home.calendarTooltipTitle", {
+                              date: formatShortDay(cellDayKey, language, cellDayKey)
+                            })}
+                          </p>
+                          <div className="space-y-2">
+                            {cleaningCount > 0 ? (
+                              <div>
+                                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                                  {t("home.calendarCleaningTitle")}
+                                </p>
+                                <ul className="mt-1 space-y-1">
+                                  {entry?.cleaningDueTasks.slice(0, MAX_CALENDAR_TOOLTIP_ITEMS).map((taskEntry) => (
+                                    <li key={`cleaning-${cellDayKey}-${taskEntry.task.id}`} className="text-xs">
+                                      <span
+                                        className={`mr-1 inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+                                          taskEntry.status === "overdue"
+                                            ? "bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-200"
+                                            : taskEntry.status === "due"
+                                              ? "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200"
+                                              : "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200"
+                                        }`}
+                                      >
+                                        {taskEntry.status === "overdue"
+                                          ? t("home.calendarOverdueLabel")
+                                          : taskEntry.status === "due"
+                                            ? t("home.calendarDueLabel")
+                                            : t("home.calendarUpcomingLabel")}
+                                      </span>
+                                      {taskEntry.task.title} · {labelForUserId(taskEntry.task.assignee_id)}
+                                    </li>
+                                  ))}
+                                </ul>
+                                {cleaningCount > MAX_CALENDAR_TOOLTIP_ITEMS ? (
+                                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                                    {t("home.calendarMore", { count: cleaningCount - MAX_CALENDAR_TOOLTIP_ITEMS })}
+                                  </p>
+                                ) : null}
+                              </div>
+                            ) : null}
+                            {completionCount > 0 ? (
+                              <div>
+                                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                                  {t("home.calendarTasksCompletedTitle")}
+                                </p>
+                                <ul className="mt-1 space-y-1">
+                                  {entry?.taskCompletions.slice(0, MAX_CALENDAR_TOOLTIP_ITEMS).map((completion) => (
+                                    <li key={`completed-${cellDayKey}-${completion.id}`} className="text-xs">
+                                      {(completion.task_title_snapshot || t("tasks.fallbackTitle"))} ·{" "}
+                                      {labelForUserId(completion.user_id)}
+                                    </li>
+                                  ))}
+                                </ul>
+                                {completionCount > MAX_CALENDAR_TOOLTIP_ITEMS ? (
+                                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                                    {t("home.calendarMore", { count: completionCount - MAX_CALENDAR_TOOLTIP_ITEMS })}
+                                  </p>
+                                ) : null}
+                              </div>
+                            ) : null}
+                            {financeCount > 0 ? (
+                              <div>
+                                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                                  {t("home.calendarFinanceTitle")}
+                                </p>
+                                <ul className="mt-1 space-y-1">
+                                  {entry?.financeEntries.slice(0, MAX_CALENDAR_TOOLTIP_ITEMS).map((finance) => (
+                                    <li key={`finance-${cellDayKey}-${finance.id}`} className="text-xs">
+                                      {finance.description} · {formatMoney(finance.amount)}
+                                    </li>
+                                  ))}
+                                </ul>
+                                {financeCount > MAX_CALENDAR_TOOLTIP_ITEMS ? (
+                                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                                    {t("home.calendarMore", { count: financeCount - MAX_CALENDAR_TOOLTIP_ITEMS })}
+                                  </p>
+                                ) : null}
+                              </div>
+                            ) : null}
+                            {bucketCount > 0 ? (
+                              <div>
+                                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                                  {t("home.calendarBucketVotesTitle")}
+                                </p>
+                                <ul className="mt-1 space-y-1">
+                                  {entry?.bucketVotes.slice(0, MAX_CALENDAR_TOOLTIP_ITEMS).map((vote) => (
+                                    <li key={`bucket-${cellDayKey}-${vote.item.id}-${vote.date}`} className="text-xs">
+                                      {vote.item.title} · {t("home.bucketVotes", { count: vote.voters.length })}
+                                    </li>
+                                  ))}
+                                </ul>
+                                {bucketCount > MAX_CALENDAR_TOOLTIP_ITEMS ? (
+                                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                                    {t("home.calendarMore", { count: bucketCount - MAX_CALENDAR_TOOLTIP_ITEMS })}
+                                  </p>
+                                ) : null}
+                              </div>
+                            ) : null}
+                            {!hasEntries ? (
+                              <p className="text-xs text-slate-500 dark:text-slate-400">
+                                {t("home.calendarEmpty")}
+                              </p>
+                            ) : null}
+                          </div>
+                        </TooltipContent>
+                      </Tooltip>
+                    );
+                  })}
+                </div>
+              </TooltipProvider>
+            </CardContent>
+          </Card>
+
           <Card className="mt-6 rounded-xl border border-slate-300 bg-white/90 p-3 text-slate-800 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-100">
             <CardHeader className="gap-1">
               <div className="flex flex-wrap items-center justify-between gap-2">
