@@ -544,6 +544,9 @@ export const HomePage = ({
   const [calendarMonthDate, setCalendarMonthDate] = useState(() => startOfMonth(new Date()));
   const [openCalendarTooltipDay, setOpenCalendarTooltipDay] = useState<string | null>(null);
   const [isCalendarCoarsePointer, setIsCalendarCoarsePointer] = useState(false);
+  const [isCalendarMobile, setIsCalendarMobile] = useState(() =>
+    typeof window !== "undefined" ? window.matchMedia("(max-width: 639px)").matches : false
+  );
   const [calendarFilters, setCalendarFilters] = useState(() => ({
     cleaning: true,
     tasksCompleted: true,
@@ -712,6 +715,11 @@ export const HomePage = ({
       const parsed = new Date(`${value}T12:00:00`);
       return Number.isNaN(parsed.getTime()) ? null : parsed;
     };
+    const addDays = (date: Date, days: number) => {
+      const next = new Date(date);
+      next.setDate(next.getDate() + days);
+      return next;
+    };
     const normalizeText = (value: string) =>
       value
         .toLowerCase()
@@ -731,6 +739,7 @@ export const HomePage = ({
     const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
     const todayKey = dayKey(todayStart);
     const overdueTaskIds = new Set<string>();
+    const taskOccurrenceKeys = new Set<string>();
 
     if (featureFlags.tasks) {
       tasks.forEach((task) => {
@@ -742,9 +751,36 @@ export const HomePage = ({
         const dueKey = dayKey(dueAt);
         const key = isOverdue ? todayKey : dueKey;
         const status = isOverdue ? "overdue" : dueKey === todayKey ? "due" : "upcoming";
-        ensureEntry(key).cleaningDueTasks.push({ task, status });
+        const occurrenceKey = `${task.id}:${key}`;
+        if (!taskOccurrenceKeys.has(occurrenceKey)) {
+          ensureEntry(key).cleaningDueTasks.push({ task, status });
+          taskOccurrenceKeys.add(occurrenceKey);
+        }
         if (isOverdue) {
           overdueTaskIds.add(task.id);
+        }
+
+        const intervalDays = Math.max(1, Math.floor(task.frequency_days || 0));
+        if (intervalDays > 0) {
+          let occurrences = 0;
+          let cursor = dueAt;
+          let safety = 0;
+          while (occurrences < 2 && safety < 20) {
+            safety += 1;
+            cursor = addDays(cursor, intervalDays);
+            if (cursor.getTime() < todayStart.getTime()) {
+              continue;
+            }
+            const nextKey = dayKey(cursor);
+            const nextStatus = nextKey === todayKey ? "due" : "upcoming";
+            const nextOccurrenceKey = `${task.id}:${nextKey}`;
+            if (taskOccurrenceKeys.has(nextOccurrenceKey)) {
+              continue;
+            }
+            ensureEntry(nextKey).cleaningDueTasks.push({ task, status: nextStatus });
+            taskOccurrenceKeys.add(nextOccurrenceKey);
+            occurrences += 1;
+          }
         }
       });
 
@@ -811,6 +847,70 @@ export const HomePage = ({
 
     return map;
   }, [bucketItems, cashAuditRequests, featureFlags, financeEntries, householdEvents, language, taskCompletions, tasks, t]);
+  const getCalendarCounts = useCallback(
+    (entry: HomeCalendarEntry | undefined) => {
+      const showCleaning = calendarFilters.cleaning && featureFlags.tasks;
+      const showTasksCompleted = calendarFilters.tasksCompleted && featureFlags.tasks;
+      const showFinances = calendarFilters.finances && featureFlags.finances;
+      const showCashAudits = calendarFilters.cashAudits && featureFlags.finances;
+      const showBucketVotes = calendarFilters.bucket && featureFlags.bucket;
+      const showShopping = calendarFilters.shopping && featureFlags.shopping;
+
+      const cleaningDueTasks = showCleaning ? entry?.cleaningDueTasks ?? [] : [];
+      const cleaningCount = cleaningDueTasks.length;
+      const criticalCleaningCount = cleaningDueTasks.filter((taskEntry) => taskEntry.status !== "upcoming").length;
+      const completionCount = showTasksCompleted ? entry?.taskCompletions.length ?? 0 : 0;
+      const financeCount = showFinances ? entry?.financeEntries.length ?? 0 : 0;
+      const cashAuditCount = showCashAudits ? entry?.cashAudits.length ?? 0 : 0;
+      const bucketCount = showBucketVotes ? entry?.bucketVotes.length ?? 0 : 0;
+      const shoppingCount = showShopping ? entry?.shoppingEntries.length ?? 0 : 0;
+      const totalCount =
+        cleaningCount + completionCount + financeCount + cashAuditCount + bucketCount + shoppingCount;
+
+      return {
+        cleaningDueTasks,
+        cleaningCount,
+        criticalCleaningCount,
+        completionCount,
+        financeCount,
+        cashAuditCount,
+        bucketCount,
+        shoppingCount,
+        totalCount,
+        showCleaning,
+        showTasksCompleted,
+        showFinances,
+        showCashAudits,
+        showBucketVotes,
+        showShopping
+      };
+    },
+    [calendarFilters, featureFlags]
+  );
+  const isCalendarDense = useMemo(() => {
+    if (isCalendarMobile) return true;
+    let maxEntries = 0;
+    calendarMonthCells.forEach((cell) => {
+      const entry = homeCalendarEntries.get(dayKey(cell.date));
+      const counts = getCalendarCounts(entry);
+      maxEntries = Math.max(maxEntries, counts.totalCount);
+    });
+    return maxEntries >= 5;
+  }, [calendarMonthCells, getCalendarCounts, homeCalendarEntries, isCalendarMobile]);
+  const renderDenseStack = useCallback((count: number, colorClass: string) => {
+    if (count <= 0) return null;
+    const stackCount = Math.min(count, 5);
+    return (
+      <span className="flex items-center -space-x-1">
+        {Array.from({ length: stackCount }).map((_, index) => (
+          <span
+            key={`${colorClass}-${index}`}
+            className={`h-2 w-2 rounded-full ${colorClass} ring-1 ring-white dark:ring-slate-900`}
+          />
+        ))}
+      </span>
+    );
+  }, []);
   const taskFairness = useMemo(() => {
     const memberIds = [...new Set(members.map((entry) => entry.user_id))];
     if (memberIds.length === 0) {
@@ -1560,6 +1660,14 @@ export const HomePage = ({
     return () => media.removeEventListener("change", update);
   }, []);
   useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
+    const media = window.matchMedia("(max-width: 639px)");
+    const update = () => setIsCalendarMobile(media.matches);
+    update();
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, []);
+  useEffect(() => {
     setOpenCalendarTooltipDay(null);
   }, [calendarMonthDate]);
   useEffect(() => {
@@ -2267,7 +2375,10 @@ export const HomePage = ({
                         }
                         disabled={!featureFlags.tasks}
                       >
-                        {t("home.calendarFilterCleaning")}
+                        <span className="inline-flex items-center gap-2">
+                          <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
+                          <span>{t("home.calendarFilterCleaning")}</span>
+                        </span>
                       </DropdownMenuCheckboxItem>
                       <DropdownMenuCheckboxItem
                         checked={calendarFilters.tasksCompleted && featureFlags.tasks}
@@ -2276,7 +2387,10 @@ export const HomePage = ({
                         }
                         disabled={!featureFlags.tasks}
                       >
-                        {t("home.calendarFilterTasksCompleted")}
+                        <span className="inline-flex items-center gap-2">
+                          <span className="h-2.5 w-2.5 rounded-full bg-brand-500" />
+                          <span>{t("home.calendarFilterTasksCompleted")}</span>
+                        </span>
                       </DropdownMenuCheckboxItem>
                       <DropdownMenuSeparator />
                       <DropdownMenuCheckboxItem
@@ -2286,7 +2400,10 @@ export const HomePage = ({
                         }
                         disabled={!featureFlags.finances}
                       >
-                        {t("home.calendarFilterFinances")}
+                        <span className="inline-flex items-center gap-2">
+                          <span className="h-2.5 w-2.5 rounded-full bg-amber-500" />
+                          <span>{t("home.calendarFilterFinances")}</span>
+                        </span>
                       </DropdownMenuCheckboxItem>
                       <DropdownMenuCheckboxItem
                         checked={calendarFilters.cashAudits && featureFlags.finances}
@@ -2295,7 +2412,10 @@ export const HomePage = ({
                         }
                         disabled={!featureFlags.finances}
                       >
-                        {t("home.calendarFilterCashAudits")}
+                        <span className="inline-flex items-center gap-2">
+                          <span className="h-2.5 w-2.5 rounded-full bg-slate-500" />
+                          <span>{t("home.calendarFilterCashAudits")}</span>
+                        </span>
                       </DropdownMenuCheckboxItem>
                       <DropdownMenuSeparator />
                       <DropdownMenuCheckboxItem
@@ -2305,7 +2425,10 @@ export const HomePage = ({
                         }
                         disabled={!featureFlags.bucket}
                       >
-                        {t("home.calendarFilterBucketVotes")}
+                        <span className="inline-flex items-center gap-2">
+                          <span className="h-2.5 w-2.5 rounded-full bg-indigo-500" />
+                          <span>{t("home.calendarFilterBucketVotes")}</span>
+                        </span>
                       </DropdownMenuCheckboxItem>
                       <DropdownMenuCheckboxItem
                         checked={calendarFilters.shopping && featureFlags.shopping}
@@ -2314,14 +2437,17 @@ export const HomePage = ({
                         }
                         disabled={!featureFlags.shopping}
                       >
-                        {t("home.calendarFilterShopping")}
+                        <span className="inline-flex items-center gap-2">
+                          <span className="h-2.5 w-2.5 rounded-full bg-cyan-500" />
+                          <span>{t("home.calendarFilterShopping")}</span>
+                        </span>
                       </DropdownMenuCheckboxItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </div>
               </div>
             </CardHeader>
-            <CardContent className="space-y-2">
+            <CardContent className="select-none space-y-2">
               <div className="grid grid-cols-7 gap-1">
                 {calendarWeekdayLabels.map((label) => (
                   <p
@@ -2338,23 +2464,19 @@ export const HomePage = ({
                     const cellDayKey = dayKey(cell.date);
                     const isToday = cellDayKey === dayKey(new Date());
                     const entry = homeCalendarEntries.get(cellDayKey);
-                    const showCleaning = calendarFilters.cleaning && featureFlags.tasks;
-                    const showTasksCompleted = calendarFilters.tasksCompleted && featureFlags.tasks;
-                    const showFinances = calendarFilters.finances && featureFlags.finances;
-                    const showCashAudits = calendarFilters.cashAudits && featureFlags.finances;
-                    const showBucketVotes = calendarFilters.bucket && featureFlags.bucket;
-                    const showShopping = calendarFilters.shopping && featureFlags.shopping;
-
-                    const cleaningDueTasks = showCleaning ? entry?.cleaningDueTasks ?? [] : [];
-                    const cleaningCount = cleaningDueTasks.length;
-                    const criticalCleaningCount = cleaningDueTasks.filter((taskEntry) => taskEntry.status !== "upcoming").length;
-                    const completionCount = showTasksCompleted ? entry?.taskCompletions.length ?? 0 : 0;
-                    const financeCount = showFinances ? entry?.financeEntries.length ?? 0 : 0;
-                    const cashAuditCount = showCashAudits ? entry?.cashAudits.length ?? 0 : 0;
-                    const bucketCount = showBucketVotes ? entry?.bucketVotes.length ?? 0 : 0;
-                    const shoppingCount = showShopping ? entry?.shoppingEntries.length ?? 0 : 0;
-                    const hasEntries =
-                      cleaningCount + completionCount + financeCount + cashAuditCount + bucketCount + shoppingCount > 0;
+                    const {
+                      cleaningDueTasks,
+                      cleaningCount,
+                      criticalCleaningCount,
+                      completionCount,
+                      financeCount,
+                      cashAuditCount,
+                      bucketCount,
+                      shoppingCount,
+                      totalCount
+                    } = getCalendarCounts(entry);
+                    const hasEntries = totalCount > 0;
+                    const cellHeightClass = isCalendarDense ? "min-h-[52px]" : "min-h-[70px]";
 
                     return (
                       <Tooltip
@@ -2372,7 +2494,7 @@ export const HomePage = ({
                               if (!isCalendarCoarsePointer) return;
                               setOpenCalendarTooltipDay((current) => (current === cellDayKey ? null : cellDayKey));
                             }}
-                            className={`min-h-[70px] rounded-lg border px-1.5 py-1 text-left transition ${
+                            className={`${cellHeightClass} rounded-lg border px-1.5 py-1 text-left transition ${
                               cell.inCurrentMonth
                                 ? "border-brand-100 bg-white/90 hover:bg-brand-50/60 dark:border-slate-700 dark:bg-slate-900"
                                 : "border-brand-50 bg-white/40 opacity-65 dark:border-slate-800 dark:bg-slate-900/40"
@@ -2386,54 +2508,68 @@ export const HomePage = ({
                               {cell.date.getDate()}
                             </p>
                             {hasEntries ? (
-                              <div className="mt-1 flex flex-wrap gap-1 text-[10px] text-slate-600 dark:text-slate-300">
-                                {cleaningCount > 0 ? (
-                                  <span
-                                    className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 ${
-                                      criticalCleaningCount > 0
-                                        ? "bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-200"
-                                        : "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200"
-                                    }`}
-                                  >
+                              isCalendarDense ? (
+                                <div className="mt-1 flex flex-wrap gap-1">
+                                  {renderDenseStack(
+                                    cleaningCount,
+                                    criticalCleaningCount > 0 ? "bg-rose-500" : "bg-emerald-500"
+                                  )}
+                                  {renderDenseStack(completionCount, "bg-brand-500")}
+                                  {renderDenseStack(financeCount, "bg-amber-500")}
+                                  {renderDenseStack(cashAuditCount, "bg-slate-500")}
+                                  {renderDenseStack(bucketCount, "bg-indigo-500")}
+                                  {renderDenseStack(shoppingCount, "bg-cyan-500")}
+                                </div>
+                              ) : (
+                                <div className="mt-1 flex flex-wrap gap-1 text-[10px] text-slate-600 dark:text-slate-300">
+                                  {cleaningCount > 0 ? (
                                     <span
-                                      className={`h-1.5 w-1.5 rounded-full ${
-                                        criticalCleaningCount > 0 ? "bg-rose-500" : "bg-emerald-500"
+                                      className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 ${
+                                        criticalCleaningCount > 0
+                                          ? "bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-200"
+                                          : "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200"
                                       }`}
-                                    />
-                                    {cleaningCount}
-                                  </span>
-                                ) : null}
-                                {completionCount > 0 ? (
-                                  <span className="inline-flex items-center gap-1 rounded-full bg-brand-100 px-1.5 py-0.5 text-brand-800 dark:bg-brand-900/30 dark:text-brand-200">
-                                    <span className="h-1.5 w-1.5 rounded-full bg-brand-500" />
-                                    {completionCount}
-                                  </span>
-                                ) : null}
-                                {financeCount > 0 ? (
-                                  <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-1.5 py-0.5 text-amber-800 dark:bg-amber-900/30 dark:text-amber-200">
-                                    <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
-                                    {financeCount}
-                                  </span>
-                                ) : null}
-                                {cashAuditCount > 0 ? (
-                                  <span className="inline-flex items-center gap-1 rounded-full bg-slate-200 px-1.5 py-0.5 text-slate-700 dark:bg-slate-700 dark:text-slate-200">
-                                    <span className="h-1.5 w-1.5 rounded-full bg-slate-500" />
-                                    {cashAuditCount}
-                                  </span>
-                                ) : null}
-                                {bucketCount > 0 ? (
-                                  <span className="inline-flex items-center gap-1 rounded-full bg-indigo-100 px-1.5 py-0.5 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-200">
-                                    <span className="h-1.5 w-1.5 rounded-full bg-indigo-500" />
-                                    {bucketCount}
-                                  </span>
-                                ) : null}
-                                {shoppingCount > 0 ? (
-                                  <span className="inline-flex items-center gap-1 rounded-full bg-cyan-100 px-1.5 py-0.5 text-cyan-800 dark:bg-cyan-900/30 dark:text-cyan-200">
-                                    <span className="h-1.5 w-1.5 rounded-full bg-cyan-500" />
-                                    {shoppingCount}
-                                  </span>
-                                ) : null}
-                              </div>
+                                    >
+                                      <span
+                                        className={`h-1.5 w-1.5 rounded-full ${
+                                          criticalCleaningCount > 0 ? "bg-rose-500" : "bg-emerald-500"
+                                        }`}
+                                      />
+                                      {cleaningCount}
+                                    </span>
+                                  ) : null}
+                                  {completionCount > 0 ? (
+                                    <span className="inline-flex items-center gap-1 rounded-full bg-brand-100 px-1.5 py-0.5 text-brand-800 dark:bg-brand-900/30 dark:text-brand-200">
+                                      <span className="h-1.5 w-1.5 rounded-full bg-brand-500" />
+                                      {completionCount}
+                                    </span>
+                                  ) : null}
+                                  {financeCount > 0 ? (
+                                    <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-1.5 py-0.5 text-amber-800 dark:bg-amber-900/30 dark:text-amber-200">
+                                      <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                                      {financeCount}
+                                    </span>
+                                  ) : null}
+                                  {cashAuditCount > 0 ? (
+                                    <span className="inline-flex items-center gap-1 rounded-full bg-slate-200 px-1.5 py-0.5 text-slate-700 dark:bg-slate-700 dark:text-slate-200">
+                                      <span className="h-1.5 w-1.5 rounded-full bg-slate-500" />
+                                      {cashAuditCount}
+                                    </span>
+                                  ) : null}
+                                  {bucketCount > 0 ? (
+                                    <span className="inline-flex items-center gap-1 rounded-full bg-indigo-100 px-1.5 py-0.5 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-200">
+                                      <span className="h-1.5 w-1.5 rounded-full bg-indigo-500" />
+                                      {bucketCount}
+                                    </span>
+                                  ) : null}
+                                  {shoppingCount > 0 ? (
+                                    <span className="inline-flex items-center gap-1 rounded-full bg-cyan-100 px-1.5 py-0.5 text-cyan-800 dark:bg-cyan-900/30 dark:text-cyan-200">
+                                      <span className="h-1.5 w-1.5 rounded-full bg-cyan-500" />
+                                      {shoppingCount}
+                                    </span>
+                                  ) : null}
+                                </div>
+                              )
                             ) : null}
                           </button>
                         </TooltipTrigger>
