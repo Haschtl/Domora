@@ -23,6 +23,7 @@ interface ExcalidrawBoardProps {
   sceneJson: string;
   onSceneChange?: (sceneJson: string) => void;
   readOnly?: boolean;
+  previewMode?: boolean;
   className?: string;
   height?: number;
   fullHeight?: boolean;
@@ -133,6 +134,7 @@ export const ExcalidrawBoard = ({
   sceneJson,
   onSceneChange,
   readOnly = false,
+  previewMode = false,
   className,
   height = 520,
   fullHeight = false
@@ -229,10 +231,34 @@ export const ExcalidrawBoard = ({
     setExcalidrawApi(api);
   }, []);
 
+  const isReadOnly = readOnly || previewMode;
+  const uiOptions = useMemo(
+    () => ({
+      canvasActions: previewMode
+        ? {
+            export: false,
+            loadScene: false,
+            saveToActiveFile: false,
+            saveAsImage: false,
+            changeViewBackgroundColor: false,
+            toggleTheme: false
+          }
+        : {
+            export: { saveFileToDisk: true },
+            loadScene: false,
+            saveToActiveFile: false,
+            saveAsImage: true,
+            changeViewBackgroundColor: false,
+            toggleTheme: false
+          }
+    }),
+    [previewMode]
+  );
+
   return (
     <div
       ref={containerRef}
-      className={`excalidraw-embed ${className ?? ""}`.trim()}
+      className={`excalidraw-embed ${previewMode ? "excalidraw-embed--preview" : ""} ${className ?? ""}`.trim()}
       style={{
         height: safeHeight,
         maxHeight: safeHeight,
@@ -248,21 +274,13 @@ export const ExcalidrawBoard = ({
         <Excalidraw
         // @ts-expect-error whooo
           initialData={initialData as unknown}
-          viewModeEnabled={readOnly}
+          viewModeEnabled={isReadOnly}
+          zenModeEnabled={previewMode}
           theme={theme}
           excalidrawAPI={handleApi}
-          UIOptions={{
-            canvasActions: {
-              export: {"saveFileToDisk":true},
-              loadScene: false,
-              saveToActiveFile: false,
-              saveAsImage: true,
-              "changeViewBackgroundColor":false,
-              toggleTheme: false
-            }
-          }}
+          UIOptions={uiOptions}
           onChange={(elements, appState, files) => {
-            if (!onSceneChange) return;
+            if (!onSceneChange || isReadOnly) return;
             const sanitizedElements = sanitizeElements(elements);
             const sanitizedFiles = files ?? {};
             const signature = buildSceneSignature(

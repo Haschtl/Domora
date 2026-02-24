@@ -8,7 +8,6 @@ import {
   GripVertical,
   CircleDot,
   Loader2,
-  Maximize2,
   MoreHorizontal,
   Pencil,
   Plus,
@@ -1571,7 +1570,9 @@ export const HomePage = ({
                       editorRef={landingEditorRef}
                       value={convertLandingTokensToEditorJsx(markdownDraft)}
                       onChange={(nextValue) =>
-                        setMarkdownDraft(convertEditorJsxToLandingTokens(nextValue))
+                        setMarkdownDraft(
+                          convertEditorJsxToLandingTokens(nextValue),
+                        )
                       }
                       placeholder={t("home.markdownPlaceholder")}
                       chrome="flat"
@@ -1993,7 +1994,9 @@ export const HomePage = ({
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <CardTitle>{t("home.whiteboardTitle")}</CardTitle>
-                  <CardDescription>{t("home.whiteboardDescription")}</CardDescription>
+                  <CardDescription>
+                    {t("home.whiteboardDescription")}
+                  </CardDescription>
                 </div>
                 <div className="flex items-center gap-2">
                   <span
@@ -2001,17 +2004,21 @@ export const HomePage = ({
                     aria-live="polite"
                   >
                     {whiteboardStatusIndicator}
-                    <span className="hidden sm:inline">{whiteboardStatusLabel}</span>
+                    <span className="hidden sm:inline">
+                      {whiteboardStatusLabel}
+                    </span>
                   </span>
-                  <button
-                    type="button"
-                    className="inline-flex h-8 w-8 items-center justify-center rounded-xl text-slate-700 hover:bg-slate-200/80 dark:text-brand-100 dark:hover:bg-slate-800"
-                    onClick={() => setIsWhiteboardFullscreenOpen(true)}
-                    aria-label={t("home.whiteboardFullscreen")}
-                    title={t("home.whiteboardFullscreen")}
-                  >
-                    <Maximize2 className="h-4 w-4" />
-                  </button>
+                  {/* {isWhiteboardFullscreenOpen && (
+                    <button
+                      type="button"
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-xl text-slate-700 hover:bg-slate-200/80 dark:text-brand-100 dark:hover:bg-slate-800"
+                      onClick={() => setIsWhiteboardFullscreenOpen(true)}
+                      aria-label={t("home.whiteboardFullscreen")}
+                      title={t("home.whiteboardFullscreen")}
+                    >
+                      <Maximize2 className="h-4 w-4" />
+                    </button>
+                  )} */}
                 </div>
               </div>
             </CardHeader>
@@ -2030,25 +2037,40 @@ export const HomePage = ({
                     </div>
                   }
                 >
-                  <ExcalidrawBoardLazy
-                    sceneJson={whiteboardDraft}
-                    onSceneChange={(nextValue) => {
-                      setWhiteboardDraft(nextValue);
-                    }}
-                    className="rounded-xl border border-brand-100 bg-white dark:border-slate-700"
-                    height={560}
-                  />
+                  <div className="relative">
+                    <ExcalidrawBoardLazy
+                      sceneJson={whiteboardDraft}
+                      onSceneChange={(nextValue) => {
+                        setWhiteboardDraft(nextValue);
+                      }}
+                      className="rounded-xl border border-brand-100 bg-white dark:border-slate-700"
+                      height={560}
+                      previewMode
+                    />
+                    <button
+                      type="button"
+                      className="absolute inset-0 rounded-xl border border-transparent transition hover:border-brand-200 hover:bg-brand-50/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400/60"
+                      onClick={() => setIsWhiteboardFullscreenOpen(true)}
+                      aria-label={t("home.whiteboardFullscreen")}
+                      title={t("home.whiteboardFullscreen")}
+                    />
+                  </div>
                 </Suspense>
               </ErrorBoundary>
             </CardContent>
           </Card>
 
-          <Dialog open={isWhiteboardFullscreenOpen} onOpenChange={setIsWhiteboardFullscreenOpen}>
-            <DialogContent className="flex h-[100vh] w-[100vw] max-w-[100vw] flex-col overflow-hidden rounded-none border-0 p-0">
+          <Dialog
+            open={isWhiteboardFullscreenOpen}
+            onOpenChange={setIsWhiteboardFullscreenOpen}
+          >
+            <DialogContent className="inset-0 left-0 top-0 flex h-[100dvh] w-[100vw] max-w-none -translate-x-0 -translate-y-0 flex-col overflow-hidden rounded-none border-0 p-0">
               <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 dark:border-slate-700">
                 <div>
                   <DialogTitle>{t("home.whiteboardTitle")}</DialogTitle>
-                  <DialogDescription>{t("home.whiteboardDescription")}</DialogDescription>
+                  <DialogDescription>
+                    {t("home.whiteboardDescription")}
+                  </DialogDescription>
                 </div>
                 <div className="flex items-center gap-3">
                   <span className="hidden text-xs font-medium text-slate-500 dark:text-slate-400 sm:inline">

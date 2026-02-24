@@ -1,5 +1,9 @@
 import * as DialogPrimitive from "@radix-ui/react-dialog";
-import type { ComponentPropsWithoutRef, ElementRef, HTMLAttributes } from "react";
+import type {
+  ComponentPropsWithoutRef,
+  ElementRef,
+  HTMLAttributes,
+} from "react";
 import { forwardRef } from "react";
 import { cn } from "../../lib/utils";
 
@@ -7,9 +11,9 @@ export const Dialog = DialogPrimitive.Root;
 export const DialogTrigger = DialogPrimitive.Trigger;
 export const DialogClose = DialogPrimitive.Close;
 
-export const DialogPortal = ({ ...props }: DialogPrimitive.DialogPortalProps) => (
-  <DialogPrimitive.Portal {...props} />
-);
+export const DialogPortal = ({
+  ...props
+}: DialogPrimitive.DialogPortalProps) => <DialogPrimitive.Portal {...props} />;
 
 export const DialogOverlay = forwardRef<
   ElementRef<typeof DialogPrimitive.Overlay>,
@@ -17,7 +21,10 @@ export const DialogOverlay = forwardRef<
 >(({ className, ...props }, ref) => (
   <DialogPrimitive.Overlay
     ref={ref}
-    className={cn("fixed inset-0 z-50 bg-slate-950/50 backdrop-blur-sm", className)}
+    className={cn(
+      "fixed inset-0 z-50 bg-slate-950/50 backdrop-blur-sm",
+      className,
+    )}
     {...props}
   />
 ));
@@ -34,9 +41,9 @@ export const DialogContent = forwardRef<
       ref={ref}
       className={cn(
         "fixed left-1/2 top-1/2 z-50 w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2",
-        "max-h-[calc(100vh-2rem)] max-h-[calc(100dvh-2rem)] overflow-y-auto",
+        "max-h-[100vh] max-h-[100dvh] overflow-y-auto",
         "rounded-2xl bg-white p-5 shadow-xl dark:bg-slate-900 dark:ring-1 dark:ring-slate-700",
-        className
+        className,
       )}
       {...props}
     />
@@ -45,7 +52,10 @@ export const DialogContent = forwardRef<
 
 DialogContent.displayName = DialogPrimitive.Content.displayName;
 
-export const DialogHeader = ({ className, ...props }: HTMLAttributes<HTMLDivElement>) => (
+export const DialogHeader = ({
+  className,
+  ...props
+}: HTMLAttributes<HTMLDivElement>) => (
   <div className={cn("space-y-1", className)} {...props} />
 );
 
@@ -55,7 +65,10 @@ export const DialogTitle = forwardRef<
 >(({ className, ...props }, ref) => (
   <DialogPrimitive.Title
     ref={ref}
-    className={cn("text-lg font-semibold text-slate-900 dark:text-slate-100", className)}
+    className={cn(
+      "text-lg font-semibold text-slate-900 dark:text-slate-100",
+      className,
+    )}
     {...props}
   />
 ));

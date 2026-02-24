@@ -9,7 +9,6 @@ import "react-toastify/dist/ReactToastify.css";
 import { toast } from "react-toastify";
 import { registerSW } from "virtual:pwa-register";
 import { ThemedToastContainer } from "./components/themed-toast-container";
-import { hideNativeLaunchScreen } from "./lib/launch-screen";
 import { setupNativeOAuthListener } from "./lib/native-oauth";
 import { restorePersistedQueryCache, setupPersistedQueryCache } from "./lib/query-cache-persistence";
 import { queryClient } from "./lib/query-client";
@@ -38,7 +37,6 @@ const hideBootstrapOverlay = () => {
 
 const revealAfterFirstRender = () => {
   hideBootstrapOverlay();
-  void hideNativeLaunchScreen();
 };
 
 ReactDOM.createRoot(document.getElementById("root")!).render(

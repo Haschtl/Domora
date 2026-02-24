@@ -216,6 +216,20 @@ input[type="number"] {
   border-radius: 1rem 1rem 0 0;
 }
 
+.excalidraw-embed.excalidraw-embed--preview .App-top-bar,
+.excalidraw-embed.excalidraw-embed--preview .App-bottom-bar,
+.excalidraw-embed.excalidraw-embed--preview .App-toolbar,
+.excalidraw-embed.excalidraw-embed--preview .App-menu__left,
+.excalidraw-embed.excalidraw-embed--preview .App-mobile-menu,
+.excalidraw-embed.excalidraw-embed--preview .LayerUI__wrapper {
+  display: none !important;
+}
+
+.excalidraw-embed.excalidraw-embed--preview .excalidraw,
+.excalidraw-embed.excalidraw-embed--preview .App {
+  pointer-events: none;
+}
+
 .excalidraw-embed .excalidraw,
 .excalidraw-embed .App {
   width: 100% !important;
