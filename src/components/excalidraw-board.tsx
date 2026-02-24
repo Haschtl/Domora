@@ -240,7 +240,7 @@ export const ExcalidrawBoard = ({
             loadScene: false,
             saveToActiveFile: false,
             saveAsImage: false,
-            changeViewBackgroundColor: false,
+            changeViewBackgroundColor: true,
             toggleTheme: false
           }
         : {

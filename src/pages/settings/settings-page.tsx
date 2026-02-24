@@ -1406,110 +1406,6 @@ export const SettingsPage = ({
               </div>
 
               <div className="space-y-1">
-                <Label htmlFor="household-image-upload">
-                  {t("settings.householdImageUploadLabel")}
-                </Label>
-                <input
-                  ref={householdUploadInputRef}
-                  id="household-image-upload"
-                  type="file"
-                  accept="image/*"
-                  className="sr-only"
-                  onChange={(event) => {
-                    const file = event.target.files?.[0];
-                    if (!file) return;
-                    void onHouseholdFileChange(file);
-                    event.currentTarget.value = "";
-                  }}
-                />
-                <input
-                  ref={householdCameraInputRef}
-                  id="household-image-camera"
-                  type="file"
-                  accept="image/*"
-                  capture="environment"
-                  className="sr-only"
-                  onChange={(event) => {
-                    const file = event.target.files?.[0];
-                    if (!file) return;
-                    void onHouseholdFileChange(file);
-                    event.currentTarget.value = "";
-                  }}
-                />
-                <div className="relative">
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <div
-                          role="button"
-                          tabIndex={0}
-                          className="relative inline-flex h-28 w-full items-center justify-center overflow-hidden rounded-xl border border-brand-200 bg-brand-50 text-slate-600 transition hover:border-brand-300 hover:bg-brand-100 focus:outline-none focus:ring-2 focus:ring-brand-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:bg-slate-800"
-                          onClick={() => {
-                            if (busy || !isOwner) return;
-                            householdUploadInputRef.current?.click();
-                          }}
-                          onKeyDown={(event) => {
-                            if (busy || !isOwner) return;
-                            if (event.key === "Enter" || event.key === " ") {
-                              event.preventDefault();
-                              householdUploadInputRef.current?.click();
-                            }
-                          }}
-                          aria-label={t("settings.householdImageUploadLabel")}
-                        >
-                          <span
-                            aria-label={t("settings.householdImagePreviewAlt")}
-                            className="absolute inset-0 bg-cover bg-center"
-                            style={{
-                              backgroundImage: householdPreviewBackgroundImage,
-                            }}
-                          />
-                          <span className="absolute inset-0 bg-gradient-to-r from-slate-900/30 via-slate-900/10 to-slate-900/35" />
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <button
-                                type="button"
-                                className="absolute bottom-2 right-2 inline-flex h-7 w-7 items-center justify-center rounded-full bg-white/90 text-slate-700 dark:bg-slate-900/90 dark:text-slate-200"
-                                onClick={(event) => {
-                                  event.preventDefault();
-                                  event.stopPropagation();
-                                  householdCameraInputRef.current?.click();
-                                }}
-                                aria-label={t("tasks.stateImageCameraButton")}
-                              >
-                                <Camera className="h-4 w-4" />
-                              </button>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                              {t("tasks.stateImageCameraButton")}
-                            </TooltipContent>
-                          </Tooltip>
-                        </div>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        {t("settings.householdImageUploadLabel")}
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                  {householdImageUrl ? (
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="danger"
-                      className="absolute -right-1 -top-1 h-6 w-6 rounded-full p-0"
-                      disabled={busy || !isOwner}
-                      onClick={() => {
-                        void onRemoveHouseholdImage();
-                      }}
-                      aria-label={t("settings.removeImage")}
-                    >
-                      <X className="h-3.5 w-3.5" />
-                    </Button>
-                  ) : null}
-                </div>
-              </div>
-
-              <div className="space-y-1">
                 <Label htmlFor="household-address">
                   {t("settings.householdAddressLabel")}
                 </Label>
@@ -1623,306 +1519,6 @@ export const SettingsPage = ({
                     />
                   )}
                 />
-              </div>
-
-              <div className="rounded-xl border border-brand-200 bg-white px-3 py-3 dark:border-slate-700 dark:bg-slate-900">
-                <div>
-                  <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
-                    {t("settings.householdThemeTitle")}
-                  </p>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">
-                    {t("settings.householdThemeDescription")}
-                  </p>
-                </div>
-                <div className="mt-3 space-y-2">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                    {t("settings.householdThemePresets")}
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    {themePresets.map((preset) => (
-                      <button
-                        key={preset.id}
-                        type="button"
-                        className="inline-flex items-center gap-2 rounded-full border border-brand-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-brand-50/60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
-                        onClick={() => {
-                          if (!isOwner || busy) return;
-                          householdForm.setFieldValue(
-                            "themePrimaryColor",
-                            preset.primary,
-                          );
-                          householdForm.setFieldValue(
-                            "themeAccentColor",
-                            preset.accent,
-                          );
-                          householdForm.setFieldValue(
-                            "themeFontFamily",
-                            preset.font,
-                          );
-                          householdForm.setFieldValue(
-                            "themeRadiusScale",
-                            preset.radius,
-                          );
-                          applyThemePreview({
-                            themePrimaryColor: preset.primary,
-                            themeAccentColor: preset.accent,
-                            themeFontFamily: preset.font,
-                            themeRadiusScale: preset.radius,
-                          });
-                        }}
-                        disabled={!isOwner || busy}
-                      >
-                        <span
-                          className="h-3 w-3 rounded-full border border-slate-300 dark:border-slate-600"
-                          style={{ backgroundColor: preset.primary }}
-                        />
-                        <span
-                          className="h-3 w-3 rounded-full border border-slate-300 dark:border-slate-600"
-                          style={{ backgroundColor: preset.accent }}
-                        />
-                        {preset.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                  <householdForm.Field
-                    name="themePrimaryColor"
-                    children={(field: {
-                      state: { value: string };
-                      handleChange: (value: string) => void;
-                    }) => (
-                      <div className="space-y-1">
-                        <Label>
-                          {t("settings.householdThemePrimaryLabel")}
-                        </Label>
-                        <div className="flex items-center gap-2">
-                          <input
-                            type="color"
-                            value={field.state.value}
-                            disabled={busy || !isOwner}
-                            onChange={(event) => {
-                              field.handleChange(event.target.value);
-                              applyThemePreview({
-                                themePrimaryColor: event.target.value,
-                              });
-                            }}
-                            className="h-9 w-10 cursor-pointer rounded border border-brand-200 bg-white p-0 dark:border-slate-700 dark:bg-slate-900"
-                            aria-label={t(
-                              "settings.householdThemePrimaryLabel",
-                            )}
-                          />
-                          <Input
-                            value={field.state.value}
-                            disabled={busy || !isOwner}
-                            onChange={(event) => {
-                              field.handleChange(event.target.value);
-                              applyThemePreview({
-                                themePrimaryColor: event.target.value,
-                              });
-                            }}
-                            placeholder="#1f8a7f"
-                          />
-                        </div>
-                      </div>
-                    )}
-                  />
-                  <householdForm.Field
-                    name="themeAccentColor"
-                    children={(field: {
-                      state: { value: string };
-                      handleChange: (value: string) => void;
-                    }) => (
-                      <div className="space-y-1">
-                        <Label>{t("settings.householdThemeAccentLabel")}</Label>
-                        <div className="flex items-center gap-2">
-                          <input
-                            type="color"
-                            value={field.state.value}
-                            disabled={busy || !isOwner}
-                            onChange={(event) => {
-                              field.handleChange(event.target.value);
-                              applyThemePreview({
-                                themeAccentColor: event.target.value,
-                              });
-                            }}
-                            className="h-9 w-10 cursor-pointer rounded border border-brand-200 bg-white p-0 dark:border-slate-700 dark:bg-slate-900"
-                            aria-label={t("settings.householdThemeAccentLabel")}
-                          />
-                          <Input
-                            value={field.state.value}
-                            disabled={busy || !isOwner}
-                            onChange={(event) => {
-                              field.handleChange(event.target.value);
-                              applyThemePreview({
-                                themeAccentColor: event.target.value,
-                              });
-                            }}
-                            placeholder="#14b8a6"
-                          />
-                        </div>
-                      </div>
-                    )}
-                  />
-                  <householdForm.Field
-                    name="themeFontFamily"
-                    children={(field: {
-                      state: { value: string };
-                      handleChange: (value: string) => void;
-                    }) => (
-                      <div className="space-y-1">
-                        <Label>{t("settings.householdThemeFontLabel")}</Label>
-                        <select
-                          className="h-10 w-full rounded-xl border border-brand-200 bg-white px-3 text-sm text-slate-900 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                          style={{ fontFamily: field.state.value }}
-                          value={field.state.value}
-                          onChange={(event) => {
-                            field.handleChange(event.target.value);
-                            applyThemePreview({
-                              themeFontFamily: event.target.value,
-                            });
-                          }}
-                          disabled={busy || !isOwner}
-                        >
-                          <option
-                            value='"Space Grotesk", "Segoe UI", sans-serif'
-                            style={{
-                              fontFamily:
-                                '"Space Grotesk", "Segoe UI", sans-serif',
-                            }}
-                          >
-                            Space Grotesk
-                          </option>
-                          <option
-                            value='"Inter", "Segoe UI", sans-serif'
-                            style={{
-                              fontFamily: '"Inter", "Segoe UI", sans-serif',
-                            }}
-                          >
-                            Inter
-                          </option>
-                          <option
-                            value='"Manrope", "Segoe UI", sans-serif'
-                            style={{
-                              fontFamily: '"Manrope", "Segoe UI", sans-serif',
-                            }}
-                          >
-                            Manrope
-                          </option>
-                          <option
-                            value='"Sora", "Segoe UI", sans-serif'
-                            style={{
-                              fontFamily: '"Sora", "Segoe UI", sans-serif',
-                            }}
-                          >
-                            Sora
-                          </option>
-                          <option
-                            value='"Plus Jakarta Sans", "Segoe UI", sans-serif'
-                            style={{
-                              fontFamily:
-                                '"Plus Jakarta Sans", "Segoe UI", sans-serif',
-                            }}
-                          >
-                            Plus Jakarta Sans
-                          </option>
-                          <option
-                            value='"IBM Plex Sans", "Segoe UI", sans-serif'
-                            style={{
-                              fontFamily:
-                                '"IBM Plex Sans", "Segoe UI", sans-serif',
-                            }}
-                          >
-                            IBM Plex Sans
-                          </option>
-                          <option
-                            value='"Fira Sans", "Segoe UI", sans-serif'
-                            style={{
-                              fontFamily: '"Fira Sans", "Segoe UI", sans-serif',
-                            }}
-                          >
-                            Fira Sans
-                          </option>
-                          <option
-                            value='"Rubik", "Segoe UI", sans-serif'
-                            style={{
-                              fontFamily: '"Rubik", "Segoe UI", sans-serif',
-                            }}
-                          >
-                            Rubik
-                          </option>
-                          <option
-                            value='"Nunito", "Segoe UI", sans-serif'
-                            style={{
-                              fontFamily: '"Nunito", "Segoe UI", sans-serif',
-                            }}
-                          >
-                            Nunito
-                          </option>
-                          <option
-                            value='"Source Sans 3", "Segoe UI", sans-serif'
-                            style={{
-                              fontFamily:
-                                '"Source Sans 3", "Segoe UI", sans-serif',
-                            }}
-                          >
-                            Source Sans 3
-                          </option>
-                          <option
-                            value='"Merriweather", "Georgia", serif'
-                            style={{
-                              fontFamily: '"Merriweather", "Georgia", serif',
-                            }}
-                          >
-                            Merriweather
-                          </option>
-                          <option
-                            value='"Lora", "Georgia", serif'
-                            style={{ fontFamily: '"Lora", "Georgia", serif' }}
-                          >
-                            Lora
-                          </option>
-                          <option
-                            value='"Playfair Display", "Georgia", serif'
-                            style={{
-                              fontFamily:
-                                '"Playfair Display", "Georgia", serif',
-                            }}
-                          >
-                            Playfair Display
-                          </option>
-                        </select>
-                      </div>
-                    )}
-                  />
-                  <householdForm.Field
-                    name="themeRadiusScale"
-                    children={(field: {
-                      state: { value: string };
-                      handleChange: (value: string) => void;
-                    }) => (
-                      <div className="space-y-1">
-                        <Label>{t("settings.householdThemeRadiusLabel")}</Label>
-                        <InputWithSuffix
-                          suffix="×"
-                          type="number"
-                          min="0.5"
-                          max="1.5"
-                          step="0.1"
-                          inputMode="decimal"
-                          value={field.state.value}
-                          onChange={(event) => {
-                            field.handleChange(event.target.value);
-                            applyThemePreview({
-                              themeRadiusScale: event.target.value,
-                            });
-                          }}
-                          placeholder="1.0"
-                          disabled={busy || !isOwner}
-                        />
-                      </div>
-                    )}
-                  />
-                </div>
               </div>
 
               {householdUploadError ? (
@@ -2215,6 +1811,410 @@ export const SettingsPage = ({
                   </div>
                 </DialogContent>
               </Dialog>
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {showHousehold ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>{t("settings.householdThemeTitle")}</CardTitle>
+            <CardDescription>{t("settings.householdThemeDescription")}</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-1">
+              <Label htmlFor="household-image-upload">
+                {t("settings.householdImageUploadLabel")}
+              </Label>
+              <input
+                ref={householdUploadInputRef}
+                id="household-image-upload"
+                type="file"
+                accept="image/*"
+                className="sr-only"
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  if (!file) return;
+                  void onHouseholdFileChange(file);
+                  event.currentTarget.value = "";
+                }}
+              />
+              <input
+                ref={householdCameraInputRef}
+                id="household-image-camera"
+                type="file"
+                accept="image/*"
+                capture="environment"
+                className="sr-only"
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  if (!file) return;
+                  void onHouseholdFileChange(file);
+                  event.currentTarget.value = "";
+                }}
+              />
+              <div className="relative">
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <div
+                        role="button"
+                        tabIndex={0}
+                        className="relative inline-flex h-28 w-full items-center justify-center overflow-hidden rounded-xl border border-brand-200 bg-brand-50 text-slate-600 transition hover:border-brand-300 hover:bg-brand-100 focus:outline-none focus:ring-2 focus:ring-brand-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:bg-slate-800"
+                        onClick={() => {
+                          if (busy || !isOwner) return;
+                          householdUploadInputRef.current?.click();
+                        }}
+                        onKeyDown={(event) => {
+                          if (busy || !isOwner) return;
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            householdUploadInputRef.current?.click();
+                          }
+                        }}
+                        aria-label={t("settings.householdImageUploadLabel")}
+                      >
+                        <span
+                          aria-label={t("settings.householdImagePreviewAlt")}
+                          className="absolute inset-0 bg-cover bg-center"
+                          style={{
+                            backgroundImage: householdPreviewBackgroundImage,
+                          }}
+                        />
+                        <span className="absolute inset-0 bg-gradient-to-r from-slate-900/30 via-slate-900/10 to-slate-900/35" />
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button
+                              type="button"
+                              className="absolute bottom-2 right-2 inline-flex h-7 w-7 items-center justify-center rounded-full bg-white/90 text-slate-700 dark:bg-slate-900/90 dark:text-slate-200"
+                              onClick={(event) => {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                householdCameraInputRef.current?.click();
+                              }}
+                              aria-label={t("tasks.stateImageCameraButton")}
+                            >
+                              <Camera className="h-4 w-4" />
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            {t("tasks.stateImageCameraButton")}
+                          </TooltipContent>
+                        </Tooltip>
+                      </div>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      {t("settings.householdImageUploadLabel")}
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+                {householdImageUrl ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="danger"
+                    className="absolute -right-1 -top-1 h-6 w-6 rounded-full p-0"
+                    disabled={busy || !isOwner}
+                    onClick={() => {
+                      void onRemoveHouseholdImage();
+                    }}
+                    aria-label={t("settings.removeImage")}
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </Button>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                {t("settings.householdThemePresets")}
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {themePresets.map((preset) => (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    className="inline-flex items-center gap-2 rounded-full border border-brand-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-brand-50/60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+                    onClick={() => {
+                      if (!isOwner || busy) return;
+                      householdForm.setFieldValue(
+                        "themePrimaryColor",
+                        preset.primary,
+                      );
+                      householdForm.setFieldValue(
+                        "themeAccentColor",
+                        preset.accent,
+                      );
+                      householdForm.setFieldValue(
+                        "themeFontFamily",
+                        preset.font,
+                      );
+                      householdForm.setFieldValue(
+                        "themeRadiusScale",
+                        preset.radius,
+                      );
+                      applyThemePreview({
+                        themePrimaryColor: preset.primary,
+                        themeAccentColor: preset.accent,
+                        themeFontFamily: preset.font,
+                        themeRadiusScale: preset.radius,
+                      });
+                    }}
+                    disabled={!isOwner || busy}
+                  >
+                    <span
+                      className="h-3 w-3 rounded-full border border-slate-300 dark:border-slate-600"
+                      style={{ backgroundColor: preset.primary }}
+                    />
+                    <span
+                      className="h-3 w-3 rounded-full border border-slate-300 dark:border-slate-600"
+                      style={{ backgroundColor: preset.accent }}
+                    />
+                    {preset.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <householdForm.Field
+                name="themePrimaryColor"
+                children={(field: {
+                  state: { value: string };
+                  handleChange: (value: string) => void;
+                }) => (
+                  <div className="space-y-1">
+                    <Label>
+                      {t("settings.householdThemePrimaryLabel")}
+                    </Label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="color"
+                        value={field.state.value}
+                        disabled={busy || !isOwner}
+                        onChange={(event) => {
+                          field.handleChange(event.target.value);
+                          applyThemePreview({
+                            themePrimaryColor: event.target.value,
+                          });
+                        }}
+                        className="h-9 w-10 cursor-pointer rounded border border-brand-200 bg-white p-0 dark:border-slate-700 dark:bg-slate-900"
+                        aria-label={t(
+                          "settings.householdThemePrimaryLabel",
+                        )}
+                      />
+                      <Input
+                        value={field.state.value}
+                        disabled={busy || !isOwner}
+                        onChange={(event) => {
+                          field.handleChange(event.target.value);
+                          applyThemePreview({
+                            themePrimaryColor: event.target.value,
+                          });
+                        }}
+                        placeholder="#1f8a7f"
+                      />
+                    </div>
+                  </div>
+                )}
+              />
+              <householdForm.Field
+                name="themeAccentColor"
+                children={(field: {
+                  state: { value: string };
+                  handleChange: (value: string) => void;
+                }) => (
+                  <div className="space-y-1">
+                    <Label>{t("settings.householdThemeAccentLabel")}</Label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="color"
+                        value={field.state.value}
+                        disabled={busy || !isOwner}
+                        onChange={(event) => {
+                          field.handleChange(event.target.value);
+                          applyThemePreview({
+                            themeAccentColor: event.target.value,
+                          });
+                        }}
+                        className="h-9 w-10 cursor-pointer rounded border border-brand-200 bg-white p-0 dark:border-slate-700 dark:bg-slate-900"
+                        aria-label={t("settings.householdThemeAccentLabel")}
+                      />
+                      <Input
+                        value={field.state.value}
+                        disabled={busy || !isOwner}
+                        onChange={(event) => {
+                          field.handleChange(event.target.value);
+                          applyThemePreview({
+                            themeAccentColor: event.target.value,
+                          });
+                        }}
+                        placeholder="#14b8a6"
+                      />
+                    </div>
+                  </div>
+                )}
+              />
+              <householdForm.Field
+                name="themeFontFamily"
+                children={(field: {
+                  state: { value: string };
+                  handleChange: (value: string) => void;
+                }) => (
+                  <div className="space-y-1">
+                    <Label>{t("settings.householdThemeFontLabel")}</Label>
+                    <select
+                      className="h-10 w-full rounded-xl border border-brand-200 bg-white px-3 text-sm text-slate-900 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                      style={{ fontFamily: field.state.value }}
+                      value={field.state.value}
+                      onChange={(event) => {
+                        field.handleChange(event.target.value);
+                        applyThemePreview({
+                          themeFontFamily: event.target.value,
+                        });
+                      }}
+                      disabled={busy || !isOwner}
+                    >
+                      <option
+                        value='"Space Grotesk", "Segoe UI", sans-serif'
+                        style={{
+                          fontFamily:
+                            '"Space Grotesk", "Segoe UI", sans-serif',
+                        }}
+                      >
+                        Space Grotesk
+                      </option>
+                      <option
+                        value='"Inter", "Segoe UI", sans-serif'
+                        style={{
+                          fontFamily: '"Inter", "Segoe UI", sans-serif',
+                        }}
+                      >
+                        Inter
+                      </option>
+                      <option
+                        value='"Manrope", "Segoe UI", sans-serif'
+                        style={{
+                          fontFamily: '"Manrope", "Segoe UI", sans-serif',
+                        }}
+                      >
+                        Manrope
+                      </option>
+                      <option
+                        value='"Sora", "Segoe UI", sans-serif'
+                        style={{
+                          fontFamily: '"Sora", "Segoe UI", sans-serif',
+                        }}
+                      >
+                        Sora
+                      </option>
+                      <option
+                        value='"Plus Jakarta Sans", "Segoe UI", sans-serif'
+                        style={{
+                          fontFamily:
+                            '"Plus Jakarta Sans", "Segoe UI", sans-serif',
+                        }}
+                      >
+                        Plus Jakarta Sans
+                      </option>
+                      <option
+                        value='"IBM Plex Sans", "Segoe UI", sans-serif'
+                        style={{
+                          fontFamily:
+                            '"IBM Plex Sans", "Segoe UI", sans-serif',
+                        }}
+                      >
+                        IBM Plex Sans
+                      </option>
+                      <option
+                        value='"Fira Sans", "Segoe UI", sans-serif'
+                        style={{
+                          fontFamily: '"Fira Sans", "Segoe UI", sans-serif',
+                        }}
+                      >
+                        Fira Sans
+                      </option>
+                      <option
+                        value='"Rubik", "Segoe UI", sans-serif'
+                        style={{
+                          fontFamily: '"Rubik", "Segoe UI", sans-serif',
+                        }}
+                      >
+                        Rubik
+                      </option>
+                      <option
+                        value='"Nunito", "Segoe UI", sans-serif'
+                        style={{
+                          fontFamily: '"Nunito", "Segoe UI", sans-serif',
+                        }}
+                      >
+                        Nunito
+                      </option>
+                      <option
+                        value='"Source Sans 3", "Segoe UI", sans-serif'
+                        style={{
+                          fontFamily:
+                            '"Source Sans 3", "Segoe UI", sans-serif',
+                        }}
+                      >
+                        Source Sans 3
+                      </option>
+                      <option
+                        value='"Merriweather", "Georgia", serif'
+                        style={{
+                          fontFamily: '"Merriweather", "Georgia", serif',
+                        }}
+                      >
+                        Merriweather
+                      </option>
+                      <option
+                        value='"Lora", "Georgia", serif'
+                        style={{ fontFamily: '"Lora", "Georgia", serif' }}
+                      >
+                        Lora
+                      </option>
+                      <option
+                        value='"Playfair Display", "Georgia", serif'
+                        style={{
+                          fontFamily:
+                            '"Playfair Display", "Georgia", serif',
+                        }}
+                      >
+                        Playfair Display
+                      </option>
+                    </select>
+                  </div>
+                )}
+              />
+              <householdForm.Field
+                name="themeRadiusScale"
+                children={(field: {
+                  state: { value: string };
+                  handleChange: (value: string) => void;
+                }) => (
+                  <div className="space-y-1">
+                    <Label>{t("settings.householdThemeRadiusLabel")}</Label>
+                    <InputWithSuffix
+                      suffix="×"
+                      type="number"
+                      min="0.5"
+                      max="1.5"
+                      step="0.1"
+                      inputMode="decimal"
+                      value={field.state.value}
+                      onChange={(event) => {
+                        field.handleChange(event.target.value);
+                        applyThemePreview({
+                          themeRadiusScale: event.target.value,
+                        });
+                      }}
+                      placeholder="1.0"
+                      disabled={busy || !isOwner}
+                    />
+                  </div>
+                )}
+              />
             </div>
           </CardContent>
         </Card>
