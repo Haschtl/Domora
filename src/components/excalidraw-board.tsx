@@ -261,7 +261,7 @@ export const ExcalidrawBoard = ({
       ref={containerRef}
       className={`excalidraw-embed ${previewMode ? "excalidraw-embed--preview" : ""} ${className ?? ""}`.trim()}
       style={{
-        height: "100%",
+        height: safeHeight,
         maxHeight: safeHeight,
         width: "100%",
         maxWidth: "100%",
