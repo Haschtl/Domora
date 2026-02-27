@@ -2682,7 +2682,7 @@ export const updateFinanceSubscription = async (
   return normalizeFinanceSubscription(data as Record<string, unknown>);
 };
 
-export const deleteFinanceSubscription = async (id: string): Promise<void> => {
+export const deleteFinanceSubscription = async (id: string, householdIdOverride?: string): Promise<void> => {
   const validatedId = z.string().uuid().parse(id);
   const actorUserId = await requireAuthenticatedUserId();
   const { data: before } = await supabase
@@ -2692,7 +2692,9 @@ export const deleteFinanceSubscription = async (id: string): Promise<void> => {
     .maybeSingle();
   const { error } = await supabase.from("finance_subscriptions").delete().eq("id", validatedId);
   if (error) throw error;
-  const householdId = String((before as { household_id?: string | null } | null)?.household_id ?? "");
+  const householdId = String(
+    (before as { household_id?: string | null } | null)?.household_id ?? householdIdOverride ?? ""
+  );
   if (householdId) {
     const { data: profile } = await supabase
       .from("user_profiles")

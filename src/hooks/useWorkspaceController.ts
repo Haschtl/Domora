@@ -1178,7 +1178,7 @@ export const useWorkspaceController = () => {
           }
         ],
         action: async () => {
-          await deleteFinanceSubscription(subscription.id);
+          await deleteFinanceSubscription(subscription.id, activeHousehold.id);
         }
       });
     },
