@@ -50,6 +50,7 @@ import type {
   HouseholdEvent,
   Household,
   HouseholdMember,
+  HouseholdMemberVacation,
   TaskCompletion,
   TaskItem
 } from "../../lib/types";
@@ -97,6 +98,7 @@ interface HomePageProps {
   taskCompletions: TaskCompletion[];
   financeEntries: FinanceEntry[];
   cashAuditRequests: CashAuditRequest[];
+  memberVacations: HouseholdMemberVacation[];
   householdEvents: HouseholdEvent[];
   eventsHasMore?: boolean;
   eventsLoadingMore?: boolean;
@@ -128,6 +130,14 @@ type HomeCalendarShoppingEntry = {
   userId: string | null;
   at: string;
 };
+type HomeCalendarVacationEntry = {
+  id: string;
+  userId: string;
+  startDate: string;
+  endDate: string;
+  note: string | null;
+  manual?: boolean;
+};
 type HomeCalendarDueTask = {
   task: TaskItem;
   status: "overdue" | "due" | "upcoming";
@@ -139,6 +149,7 @@ type HomeCalendarEntry = {
   bucketVotes: HomeCalendarBucketVote[];
   shoppingEntries: HomeCalendarShoppingEntry[];
   cashAudits: CashAuditRequest[];
+  vacations: HomeCalendarVacationEntry[];
 };
 
 const LANDING_WIDGET_COMPONENTS: Array<{ key: LandingWidgetKey; tag: string }> = [
@@ -449,6 +460,7 @@ export const HomePage = ({
   taskCompletions,
   financeEntries,
   cashAuditRequests,
+  memberVacations,
   householdEvents,
   eventsHasMore = false,
   eventsLoadingMore = false,
@@ -550,10 +562,11 @@ export const HomePage = ({
   const [calendarFilters, setCalendarFilters] = useState(() => ({
     cleaning: true,
     tasksCompleted: true,
-    finances: false,
+    finances: true,
     bucket: true,
     shopping: false,
-    cashAudits: true
+    cashAudits: true,
+    vacations: true
   }));
   const [isMobileBucketComposer, setIsMobileBucketComposer] = useState(() =>
     typeof window !== "undefined" ? window.matchMedia("(max-width: 639px)").matches : false
@@ -695,6 +708,7 @@ export const HomePage = ({
     () => new Intl.DateTimeFormat(language, { month: "long", year: "numeric" }).format(calendarMonthDate),
     [calendarMonthDate, language]
   );
+  const todayIso = useMemo(() => new Date().toISOString().slice(0, 10), []);
   const homeCalendarEntries = useMemo(() => {
     const map = new Map<string, HomeCalendarEntry>();
     const ensureEntry = (key: string) => {
@@ -706,7 +720,8 @@ export const HomePage = ({
         financeEntries: [],
         bucketVotes: [],
         shoppingEntries: [],
-        cashAudits: []
+        cashAudits: [],
+        vacations: []
       };
       map.set(key, next);
       return next;
@@ -845,8 +860,59 @@ export const HomePage = ({
       });
     }
 
+    const visibleDayKeys = new Set(calendarMonthCells.map((cell) => dayKey(cell.date)));
+
+    memberVacations.forEach((vacation) => {
+      const start = parseDateOnly(vacation.start_date);
+      const end = parseDateOnly(vacation.end_date);
+      if (!start || !end) return;
+      let cursor = start;
+      let safety = 0;
+      while (cursor.getTime() <= end.getTime() && safety < 500) {
+        safety += 1;
+        const key = dayKey(cursor);
+        if (visibleDayKeys.has(key)) {
+          ensureEntry(key).vacations.push({
+            id: vacation.id,
+            userId: vacation.user_id,
+            startDate: vacation.start_date,
+            endDate: vacation.end_date,
+            note: vacation.note
+          });
+        }
+        cursor = addDays(cursor, 1);
+      }
+    });
+
+    members.forEach((member) => {
+      if (!member.vacation_mode) return;
+      if (!visibleDayKeys.has(todayKey)) return;
+      ensureEntry(todayKey).vacations.push({
+        id: `manual-${member.user_id}`,
+        userId: member.user_id,
+        startDate: todayIso,
+        endDate: todayIso,
+        note: null,
+        manual: true
+      });
+    });
+
     return map;
-  }, [bucketItems, cashAuditRequests, featureFlags, financeEntries, householdEvents, language, taskCompletions, tasks, t]);
+  }, [
+    bucketItems,
+    calendarMonthCells,
+    cashAuditRequests,
+    featureFlags,
+    financeEntries,
+    householdEvents,
+    language,
+    memberVacations,
+    members,
+    taskCompletions,
+    tasks,
+    t,
+    todayIso
+  ]);
   const getCalendarCounts = useCallback(
     (entry: HomeCalendarEntry | undefined) => {
       const showCleaning = calendarFilters.cleaning && featureFlags.tasks;
@@ -855,6 +921,7 @@ export const HomePage = ({
       const showCashAudits = calendarFilters.cashAudits && featureFlags.finances;
       const showBucketVotes = calendarFilters.bucket && featureFlags.bucket;
       const showShopping = calendarFilters.shopping && featureFlags.shopping;
+      const showVacations = calendarFilters.vacations;
 
       const cleaningDueTasks = showCleaning ? entry?.cleaningDueTasks ?? [] : [];
       const cleaningCount = cleaningDueTasks.length;
@@ -864,8 +931,9 @@ export const HomePage = ({
       const cashAuditCount = showCashAudits ? entry?.cashAudits.length ?? 0 : 0;
       const bucketCount = showBucketVotes ? entry?.bucketVotes.length ?? 0 : 0;
       const shoppingCount = showShopping ? entry?.shoppingEntries.length ?? 0 : 0;
+      const vacationCount = showVacations ? entry?.vacations.length ?? 0 : 0;
       const totalCount =
-        cleaningCount + completionCount + financeCount + cashAuditCount + bucketCount + shoppingCount;
+        cleaningCount + completionCount + financeCount + cashAuditCount + bucketCount + shoppingCount + vacationCount;
 
       return {
         cleaningDueTasks,
@@ -876,13 +944,15 @@ export const HomePage = ({
         cashAuditCount,
         bucketCount,
         shoppingCount,
+        vacationCount,
         totalCount,
         showCleaning,
         showTasksCompleted,
         showFinances,
         showCashAudits,
         showBucketVotes,
-        showShopping
+        showShopping,
+        showVacations
       };
     },
     [calendarFilters, featureFlags]
@@ -2446,6 +2516,20 @@ export const HomePage = ({
                           <span>{t("home.calendarFilterCashAudits")}</span>
                         </span>
                       </DropdownMenuCheckboxItem>
+                      <DropdownMenuCheckboxItem
+                        checked={calendarFilters.vacations}
+                        onCheckedChange={(checked) =>
+                          setCalendarFilters((prev) => ({
+                            ...prev,
+                            vacations: Boolean(checked),
+                          }))
+                        }
+                      >
+                        <span className="inline-flex items-center gap-2">
+                          <span className="h-2.5 w-2.5 rounded-full bg-violet-500" />
+                          <span>{t("home.calendarFilterVacations")}</span>
+                        </span>
+                      </DropdownMenuCheckboxItem>
                       <DropdownMenuSeparator />
                       <DropdownMenuCheckboxItem
                         checked={calendarFilters.bucket && featureFlags.bucket}
@@ -2509,6 +2593,7 @@ export const HomePage = ({
                       cashAuditCount,
                       bucketCount,
                       shoppingCount,
+                      vacationCount,
                       totalCount,
                     } = getCalendarCounts(entry);
                     const hasEntries = totalCount > 0;
@@ -2579,6 +2664,10 @@ export const HomePage = ({
                                     "bg-slate-500",
                                   )}
                                   {renderDenseStack(
+                                    vacationCount,
+                                    "bg-violet-500",
+                                  )}
+                                  {renderDenseStack(
                                     bucketCount,
                                     "bg-indigo-500",
                                   )}
@@ -2623,6 +2712,12 @@ export const HomePage = ({
                                     <span className="inline-flex items-center gap-1 rounded-full bg-slate-200 px-1.5 py-0.5 text-slate-700 dark:bg-slate-700 dark:text-slate-200">
                                       <span className="h-1.5 w-1.5 rounded-full bg-slate-500" />
                                       {cashAuditCount}
+                                    </span>
+                                  ) : null}
+                                  {vacationCount > 0 ? (
+                                    <span className="inline-flex items-center gap-1 rounded-full bg-violet-100 px-1.5 py-0.5 text-violet-800 dark:bg-violet-900/30 dark:text-violet-200">
+                                      <span className="h-1.5 w-1.5 rounded-full bg-violet-500" />
+                                      {vacationCount}
                                     </span>
                                   ) : null}
                                   {bucketCount > 0 ? (
@@ -2785,6 +2880,40 @@ export const HomePage = ({
                                     {t("home.calendarMore", {
                                       count:
                                         cashAuditCount -
+                                        MAX_CALENDAR_TOOLTIP_ITEMS,
+                                    })}
+                                  </p>
+                                ) : null}
+                              </div>
+                            ) : null}
+                            {vacationCount > 0 ? (
+                              <div>
+                                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                                  {t("home.calendarVacationsTitle")}
+                                </p>
+                                <ul className="mt-1 space-y-1">
+                                  {entry?.vacations
+                                    .slice(0, MAX_CALENDAR_TOOLTIP_ITEMS)
+                                    .map((vacation) => (
+                                      <li
+                                        key={`vacation-${cellDayKey}-${vacation.id}-${vacation.userId}`}
+                                        className="text-xs"
+                                      >
+                                        {labelForUserId(vacation.userId)}
+                                        {vacation.manual ? (
+                                          <span className="ml-1 text-[10px] text-slate-500 dark:text-slate-400">
+                                            ({t("home.calendarVacationManual")})
+                                          </span>
+                                        ) : null}
+                                        {vacation.note ? ` · ${vacation.note}` : ""}
+                                      </li>
+                                    ))}
+                                </ul>
+                                {vacationCount > MAX_CALENDAR_TOOLTIP_ITEMS ? (
+                                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                                    {t("home.calendarMore", {
+                                      count:
+                                        vacationCount -
                                         MAX_CALENDAR_TOOLTIP_ITEMS,
                                     })}
                                   </p>

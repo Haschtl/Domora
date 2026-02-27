@@ -5,6 +5,7 @@ import {
   getFinanceSubscriptions,
   getHouseholdMemberPimpers,
   getHouseholdMembers,
+  getMemberVacations,
   getHouseholdWhiteboard,
   getShoppingCompletions,
   getShoppingItems,
@@ -45,6 +46,10 @@ export const householdQueryOptions = {
   householdMembers: (householdId: string) => ({
     queryKey: queryKeys.householdMembers(householdId),
     queryFn: () => getHouseholdMembers(householdId)
+  }),
+  memberVacations: (householdId: string) => ({
+    queryKey: queryKeys.householdMemberVacations(householdId),
+    queryFn: () => getMemberVacations(householdId)
   }),
   memberPimpers: (householdId: string) => ({
     queryKey: queryKeys.householdMemberPimpers(householdId),

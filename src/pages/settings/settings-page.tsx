@@ -5,11 +5,19 @@ import { Camera, Check, Crown, Share2, UserMinus, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import QRCode from "react-qr-code";
 import { isSupported } from "firebase/messaging";
-import type { Household, HouseholdMember, PushPreferences, TaskItem, UpdateHouseholdInput } from "../../lib/types";
+import type {
+  Household,
+  HouseholdMember,
+  HouseholdMemberVacation,
+  PushPreferences,
+  TaskItem,
+  UpdateHouseholdInput
+} from "../../lib/types";
 import { createDiceBearAvatarDataUri, getMemberAvatarSeed } from "../../lib/avatar";
 import { createTrianglifyBannerBackground } from "../../lib/banner";
 import { createMemberLabelGetter } from "../../lib/member-label";
 import { isDueNow } from "../../lib/date";
+import { getVacationStatus, isDateWithinRange } from "../../lib/vacation-utils";
 import { ThemeLanguageControls } from "../../components/theme-language-controls";
 import { PaymentBrandIcon } from "../../components/payment-brand-icon";
 import { applyHouseholdTheme } from "../../lib/household-theme";
@@ -41,6 +49,7 @@ interface SettingsPageProps {
   household: Household;
   members: HouseholdMember[];
   currentMember: HouseholdMember | null;
+  memberVacations: HouseholdMemberVacation[];
   tasks: TaskItem[];
   userId: string;
   userEmail: string | undefined;
@@ -59,6 +68,12 @@ interface SettingsPageProps {
   onUpdateUserColor: (userColor: string) => Promise<void>;
   onUpdateUserPaymentHandles: (input: { paypalName: string; revolutName: string; weroName: string }) => Promise<void>;
   onUpdateVacationMode: (vacationMode: boolean) => Promise<void>;
+  onAddMemberVacation: (input: { startDate: string; endDate: string; note?: string }) => Promise<void>;
+  onUpdateMemberVacation: (
+    vacationId: string,
+    input: { startDate?: string; endDate?: string; note?: string }
+  ) => Promise<void>;
+  onDeleteMemberVacation: (vacationId: string) => Promise<void>;
   onSetMemberRole: (targetUserId: string, role: "owner" | "member") => Promise<void>;
   onRemoveMember: (targetUserId: string) => Promise<void>;
   onSignOut: () => Promise<void>;
@@ -137,6 +152,7 @@ export const SettingsPage = ({
   household,
   members,
   currentMember,
+  memberVacations,
   tasks,
   userId,
   userEmail,
@@ -155,6 +171,9 @@ export const SettingsPage = ({
   onUpdateUserColor,
   onUpdateUserPaymentHandles,
   onUpdateVacationMode,
+  onAddMemberVacation,
+  onUpdateMemberVacation,
+  onDeleteMemberVacation,
   onSetMemberRole,
   onRemoveMember,
   onSignOut,
@@ -175,6 +194,12 @@ export const SettingsPage = ({
   const [inviteCopied, setInviteCopied] = useState(false);
   const [vacationDialogOpen, setVacationDialogOpen] = useState(false);
   const [pendingVacationMode, setPendingVacationMode] = useState<boolean | null>(null);
+  const todayIso = useMemo(() => new Date().toISOString().slice(0, 10), []);
+  const [vacationFormStart, setVacationFormStart] = useState(todayIso);
+  const [vacationFormEnd, setVacationFormEnd] = useState(todayIso);
+  const [vacationFormNote, setVacationFormNote] = useState("");
+  const [vacationFormError, setVacationFormError] = useState<string | null>(null);
+  const [editingVacationId, setEditingVacationId] = useState<string | null>(null);
   const dueTasksAssignedToYou = useMemo(() => {
     if (!userId) return [];
     return tasks.filter(
@@ -186,6 +211,35 @@ export const SettingsPage = ({
     );
   }, [tasks, userId]);
   const dueTasksAssignedCount = dueTasksAssignedToYou.length;
+  const memberVacationsForUser = useMemo(
+    () =>
+      memberVacations
+        .filter((vacation) => vacation.user_id === userId)
+        .sort((a, b) => b.start_date.localeCompare(a.start_date)),
+    [memberVacations, userId]
+  );
+  const editingVacation = useMemo(
+    () => memberVacationsForUser.find((vacation) => vacation.id === editingVacationId) ?? null,
+    [editingVacationId, memberVacationsForUser]
+  );
+  const hasVacationStarted = useMemo(() => {
+    if (!editingVacation) return false;
+    return editingVacation.start_date <= todayIso;
+  }, [editingVacation, todayIso]);
+
+  useEffect(() => {
+    if (editingVacation) {
+      setVacationFormStart(editingVacation.start_date);
+      setVacationFormEnd(editingVacation.end_date);
+      setVacationFormNote(editingVacation.note ?? "");
+      setVacationFormError(null);
+      return;
+    }
+    setVacationFormStart(todayIso);
+    setVacationFormEnd(todayIso);
+    setVacationFormNote("");
+    setVacationFormError(null);
+  }, [editingVacation, todayIso]);
   const [pushPreferences, setPushPreferences] = useState<PushPreferences | null>(null);
   const [pushPreferencesSnapshot, setPushPreferencesSnapshot] = useState<string | null>(null);
   const [pushPreferencesBusy, setPushPreferencesBusy] = useState(false);
@@ -769,6 +823,39 @@ export const SettingsPage = ({
     setPushPreferences((current) => (current ? updater(current) : current));
   };
 
+  const onSubmitVacationForm = async () => {
+    if (!userId) return;
+    if (!vacationFormStart || !vacationFormEnd) {
+      setVacationFormError(t("settings.vacationPlanErrorMissing"));
+      return;
+    }
+    if (vacationFormEnd < vacationFormStart) {
+      setVacationFormError(t("settings.vacationPlanErrorRange"));
+      return;
+    }
+    setVacationFormError(null);
+    if (editingVacationId) {
+      const updatePayload: { startDate?: string; endDate?: string; note?: string } = {
+        endDate: vacationFormEnd,
+        note: vacationFormNote.trim()
+      };
+      if (!hasVacationStarted) {
+        updatePayload.startDate = vacationFormStart;
+      }
+      await onUpdateMemberVacation(editingVacationId, updatePayload);
+      setEditingVacationId(null);
+      return;
+    }
+    await onAddMemberVacation({
+      startDate: vacationFormStart,
+      endDate: vacationFormEnd,
+      note: vacationFormNote.trim()
+    });
+    setVacationFormStart(todayIso);
+    setVacationFormEnd(todayIso);
+    setVacationFormNote("");
+  };
+
   const savePushPreferences = async () => {
     if (!pushPreferences) return;
     setPushPreferencesBusy(true);
@@ -1147,6 +1234,158 @@ export const SettingsPage = ({
                   </div>
                 </DialogContent>
               </Dialog>
+
+              <div className="rounded-xl border border-brand-200 bg-white px-3 py-3 dark:border-slate-700 dark:bg-slate-900">
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
+                      {t("settings.vacationPlanTitle")}
+                    </p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      {t("settings.vacationPlanDescription")}
+                    </p>
+                  </div>
+                  {editingVacation ? (
+                    <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800 dark:bg-amber-900/40 dark:text-amber-200">
+                      {t("settings.vacationPlanEditing")}
+                    </span>
+                  ) : null}
+                </div>
+
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="vacation-start">{t("settings.vacationPlanStart")}</Label>
+                    <Input
+                      id="vacation-start"
+                      type="date"
+                      value={vacationFormStart}
+                      disabled={busy || (editingVacationId !== null && hasVacationStarted)}
+                      max={vacationFormEnd}
+                      onChange={(event) => setVacationFormStart(event.target.value)}
+                    />
+                    {editingVacationId !== null && hasVacationStarted ? (
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                        {t("settings.vacationPlanStartLocked")}
+                      </p>
+                    ) : null}
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="vacation-end">{t("settings.vacationPlanEnd")}</Label>
+                    <Input
+                      id="vacation-end"
+                      type="date"
+                      value={vacationFormEnd}
+                      disabled={busy}
+                      min={vacationFormStart}
+                      onChange={(event) => setVacationFormEnd(event.target.value)}
+                    />
+                  </div>
+                </div>
+                <div className="mt-3 space-y-1.5">
+                  <Label htmlFor="vacation-note">{t("settings.vacationPlanNote")}</Label>
+                  <Input
+                    id="vacation-note"
+                    value={vacationFormNote}
+                    disabled={busy}
+                    placeholder={t("settings.vacationPlanNotePlaceholder")}
+                    onChange={(event) => setVacationFormNote(event.target.value)}
+                  />
+                </div>
+                {vacationFormError ? (
+                  <p className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-200">
+                    {vacationFormError}
+                  </p>
+                ) : null}
+                <div className="mt-3 flex flex-wrap justify-end gap-2">
+                  {editingVacationId ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      disabled={busy}
+                      onClick={() => setEditingVacationId(null)}
+                    >
+                      {t("common.cancel")}
+                    </Button>
+                  ) : null}
+                  <Button type="button" disabled={busy} onClick={onSubmitVacationForm}>
+                    {editingVacationId ? t("common.save") : t("settings.vacationPlanAdd")}
+                  </Button>
+                </div>
+
+                <div className="mt-4 space-y-2">
+                  {memberVacationsForUser.length === 0 ? (
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      {t("settings.vacationPlanEmpty")}
+                    </p>
+                  ) : (
+                    memberVacationsForUser.map((vacation) => {
+                      const status = getVacationStatus(vacation, todayIso);
+                      const statusLabel =
+                        status === "active"
+                          ? t("settings.vacationPlanStatusActive")
+                          : status === "upcoming"
+                            ? t("settings.vacationPlanStatusUpcoming")
+                            : t("settings.vacationPlanStatusPast");
+                      const statusClass =
+                        status === "active"
+                          ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200"
+                          : status === "upcoming"
+                            ? "bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-200"
+                            : "bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-200";
+                      const isOngoingToday = isDateWithinRange(todayIso, vacation.start_date, vacation.end_date);
+                      return (
+                        <div
+                          key={vacation.id}
+                          className={`flex flex-wrap items-center justify-between gap-2 rounded-lg border px-3 py-2 text-xs ${
+                            editingVacationId === vacation.id
+                              ? "border-brand-300 bg-brand-50/70 dark:border-brand-600 dark:bg-brand-900/20"
+                              : "border-brand-100 bg-white/80 dark:border-slate-700 dark:bg-slate-900/70"
+                          }`}
+                        >
+                          <div className="space-y-0.5">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${statusClass}`}>
+                                {statusLabel}
+                              </span>
+                              {isOngoingToday ? (
+                                <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800 dark:bg-amber-900/40 dark:text-amber-200">
+                                  {t("settings.vacationPlanStatusToday")}
+                                </span>
+                              ) : null}
+                            </div>
+                            <p className="font-semibold text-slate-800 dark:text-slate-100">
+                              {vacation.start_date} – {vacation.end_date}
+                            </p>
+                            {vacation.note ? (
+                              <p className="text-slate-500 dark:text-slate-400">{vacation.note}</p>
+                            ) : null}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              disabled={busy}
+                              onClick={() => setEditingVacationId(vacation.id)}
+                            >
+                              {t("common.edit")}
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="danger"
+                              disabled={busy}
+                              onClick={() => void onDeleteMemberVacation(vacation.id)}
+                            >
+                              {t("common.delete")}
+                            </Button>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
 
               <div className="rounded-xl border border-brand-200 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900">
                 <div className="flex items-center justify-between gap-3">

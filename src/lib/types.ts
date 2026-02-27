@@ -70,6 +70,17 @@ export interface HouseholdMember {
   created_at: string;
 }
 
+export interface HouseholdMemberVacation {
+  id: string;
+  household_id: string;
+  user_id: string;
+  start_date: string;
+  end_date: string;
+  note: string | null;
+  created_by: string;
+  created_at: string;
+}
+
 export interface HouseholdMemberPimpers {
   household_id: string;
   user_id: string;

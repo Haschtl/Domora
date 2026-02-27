@@ -40,6 +40,7 @@ import type { CaptchaType } from "recaptz";
 import type {
   Household,
   HouseholdMember,
+  HouseholdMemberVacation,
   HouseholdMemberPimpers,
   HouseholdEvent,
   NewTaskInput,
@@ -75,6 +76,7 @@ import { formatDateTime, formatShortDay, getEffectiveIntervalDays, getLastMonthR
 import { createDiceBearAvatarDataUri, getMemberAvatarSeed } from "../../lib/avatar";
 import { createMemberLabelGetter } from "../../lib/member-label";
 import { getMemberOfMonth } from "../../lib/task-leaderboard";
+import { isMemberOnVacationAt } from "../../lib/vacation-utils";
 import { supabase } from "../../lib/supabase";
 import { buildCalendarEntriesByDay, buildCompletionSpansByDay, buildMonthGrid, dayKey, startOfMonth } from "../../features/tasks-calendar";
 import { TaskSuggestion, useTaskSuggestions } from "../../features/hooks/use-task-suggestions";
@@ -95,6 +97,7 @@ interface TasksPageProps {
   completions: TaskCompletion[];
   householdEvents: HouseholdEvent[];
   members: HouseholdMember[];
+  memberVacations: HouseholdMemberVacation[];
   memberPimpers: HouseholdMemberPimpers[];
   userId: string;
   busy: boolean;
@@ -469,6 +472,7 @@ export const TasksPage = ({
   completions,
   householdEvents,
   members,
+  memberVacations,
   memberPimpers,
   userId,
   busy,
@@ -746,12 +750,21 @@ export const TasksPage = ({
     members.forEach((member) => map.set(member.user_id, member));
     return map;
   }, [members]);
-  const isMemberExcludedFromTasks = useCallback(
-    (memberId: string) => {
-      if (!excludeVacationFromTasks) return false;
-      return memberById.get(memberId)?.vacation_mode ?? false;
+  const isMemberOnVacationNow = useCallback(
+    (memberId: string | null | undefined) => {
+      if (!memberId) return false;
+      const manual = memberById.get(memberId)?.vacation_mode ?? false;
+      return manual || isMemberOnVacationAt(memberId, memberVacations, new Date());
     },
-    [excludeVacationFromTasks, memberById]
+    [memberById, memberVacations]
+  );
+  const isMemberExcludedFromTasks = useCallback(
+    (memberId: string, date: Date = new Date()) => {
+      if (!excludeVacationFromTasks) return false;
+      const manual = memberById.get(memberId)?.vacation_mode ?? false;
+      return manual || isMemberOnVacationAt(memberId, memberVacations, date);
+    },
+    [excludeVacationFromTasks, memberById, memberVacations]
   );
   const onTimeStreaks = useMemo(() => {
     const actionByUser = new Map<string, Array<{ at: number; type: "completion" | "skipped"; delay: number; id: string }>>();
@@ -1686,7 +1699,7 @@ export const TasksPage = ({
                       createDiceBearAvatarDataUri(userLabel(member.user_id), member.user_color)
                     }
                     alt={userLabel(member.user_id)}
-                    isVacation={member.vacation_mode ?? false}
+                    isVacation={isMemberOnVacationNow(member.user_id)}
                     className="h-8 w-8 rounded-full border border-brand-200 dark:border-slate-700"
                   />
                   <div>
@@ -1863,9 +1876,10 @@ export const TasksPage = ({
     };
   }, [averageDelayByUserId, editRotationUserIds, editTaskForm.state.values.frequencyDays, pimperByUserId, taskBeingEdited, tasks]);
   const editRotationCandidates = useMemo(() => {
-    const active = editRotationUserIds.filter((memberId) => !isMemberExcludedFromTasks(memberId));
+    const referenceDate = taskBeingEdited?.due_at ? new Date(taskBeingEdited.due_at) : new Date();
+    const active = editRotationUserIds.filter((memberId) => !isMemberExcludedFromTasks(memberId, referenceDate));
     return active.length > 0 ? active : editRotationUserIds;
-  }, [editRotationUserIds, isMemberExcludedFromTasks]);
+  }, [editRotationUserIds, isMemberExcludedFromTasks, taskBeingEdited?.due_at]);
   const editRotationForecast = useMemo(() => {
     if (!taskBeingEdited || editRotationCandidates.length === 0) {
       return null;
@@ -1902,6 +1916,7 @@ export const TasksPage = ({
       {memberIds.slice(0, maxCount).map((memberId, index) => {
         const member = memberById.get(memberId);
         const displayName = userLabel(memberId);
+        const isVacation = isMemberOnVacationNow(memberId);
         const avatarUrl = member?.avatar_url?.trim() ?? "";
         const avatarSrc =
           avatarUrl ||
@@ -1914,10 +1929,10 @@ export const TasksPage = ({
             key={`rotation-avatar-${memberId}-${index}`}
             src={avatarSrc}
             alt={displayName}
-            isVacation={member?.vacation_mode ?? false}
+            isVacation={isVacation}
             className={`h-7 w-7 rounded-full border-2 border-white bg-brand-100 text-[11px] font-semibold text-brand-800 dark:border-slate-900 dark:bg-brand-900 dark:text-brand-100 ${
               index > 0 ? "-ml-2" : ""
-            } ${member?.vacation_mode ? "opacity-50" : ""}`}
+            } ${isVacation ? "opacity-50" : ""}`}
           />
         );
       })}
@@ -1931,14 +1946,15 @@ export const TasksPage = ({
   const adjustPreviewOrder = useCallback(
     (order: string[]) => {
       if (!taskBeingEdited?.assignee_id) return order;
+      const referenceDate = taskBeingEdited?.due_at ? new Date(taskBeingEdited.due_at) : new Date();
       const totalCandidates = order.length;
       if (totalCandidates <= 1) return order;
-      const activeCandidates = order.filter((memberId) => !isMemberExcludedFromTasks(memberId)).length;
+      const activeCandidates = order.filter((memberId) => !isMemberExcludedFromTasks(memberId, referenceDate)).length;
       if (activeCandidates <= 1) return order;
       if (order[0] !== taskBeingEdited.assignee_id) return order;
       return [...order.slice(1), order[0]];
     },
-    [isMemberExcludedFromTasks, taskBeingEdited?.assignee_id]
+    [isMemberExcludedFromTasks, taskBeingEdited?.assignee_id, taskBeingEdited?.due_at]
   );
 
   const onRotationDragEnd = (event: DragEndEvent) => {
@@ -2311,7 +2327,7 @@ export const TasksPage = ({
                                   <MemberAvatar
                                     src={avatarSrc}
                                     alt={displayName}
-                                    isVacation={memberById.get(span.userId)?.vacation_mode ?? false}
+                                    isVacation={isMemberOnVacationNow(span.userId)}
                                     className="absolute -right-1 top-1/2 h-3.5 w-3.5 -translate-y-1/2 rounded-full border border-white bg-white dark:border-slate-900 dark:bg-slate-900"
                                   />
                                 ) : null}
@@ -2341,7 +2357,7 @@ export const TasksPage = ({
                                 key={`${dayKey(cell.date)}-${memberId}`}
                                 src={avatarSrc}
                                 alt={displayName}
-                                isVacation={member?.vacation_mode ?? false}
+                                isVacation={isMemberOnVacationNow(memberId === "__unassigned__" ? null : memberId)}
                                 className={`h-6 w-6 rounded-full border-2 border-white bg-brand-100 text-[10px] font-semibold text-brand-800 dark:border-slate-900 dark:bg-brand-900 dark:text-brand-100 ${
                                   index > 0 ? "-ml-2" : ""
                                 }`}
@@ -2920,9 +2936,7 @@ export const TasksPage = ({
                                                   rotationUserId,
                                                 )}
                                                 avatarSrc={avatarSrc}
-                                                isVacation={
-                                                  member?.vacation_mode ?? false
-                                                }
+                                                isVacation={isMemberOnVacationNow(rotationUserId)}
                                                 pimperCount={score}
                                                 dragHandleLabel={t(
                                                   "tasks.dragHandle",
@@ -3053,9 +3067,7 @@ export const TasksPage = ({
                             <MemberAvatar
                               src={assigneeAvatarSrc}
                               alt={assigneeText}
-                              isVacation={
-                                assigneeMember?.vacation_mode ?? false
-                              }
+                              isVacation={isMemberOnVacationNow(task.assignee_id)}
                               className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-brand-200 bg-brand-50 dark:border-slate-700 dark:bg-slate-800"
                               fallback={
                                 <div className="flex h-full w-full items-center justify-center text-slate-500 dark:text-slate-300">
@@ -3378,7 +3390,7 @@ export const TasksPage = ({
                               )
                             }
                             alt={userLabel(member.user_id)}
-                            isVacation={member.vacation_mode ?? false}
+                            isVacation={isMemberOnVacationNow(member.user_id)}
                             className="h-8 w-8 rounded-full border border-brand-200 dark:border-slate-700"
                           />
                           <p className="mt-1 max-w-[90px] truncate text-center text-[11px] text-slate-600 dark:text-slate-300">
@@ -3455,10 +3467,7 @@ export const TasksPage = ({
                         )
                       }
                       alt={userLabel(memberOfMonth.userId)}
-                      isVacation={
-                        memberById.get(memberOfMonth.userId)?.vacation_mode ??
-                        false
-                      }
+                      isVacation={isMemberOnVacationNow(memberOfMonth.userId)}
                       isMemberOfMonth
                       className="h-9 w-9 rounded-full border border-brand-200 dark:border-slate-700"
                     />
@@ -3517,9 +3526,7 @@ export const TasksPage = ({
                             )
                           }
                           alt={userLabel(row.userId)}
-                          isVacation={
-                            memberById.get(row.userId)?.vacation_mode ?? false
-                          }
+                          isVacation={isMemberOnVacationNow(row.userId)}
                           className="h-7 w-7 rounded-full border border-brand-200 dark:border-slate-700"
                         />
                         <span className="min-w-0 truncate text-slate-700 dark:text-slate-200">
@@ -4997,7 +5004,7 @@ export const TasksPage = ({
                               )
                             }
                             alt={userLabel(entry.memberId)}
-                            isVacation={memberById.get(entry.memberId)?.vacation_mode ?? false}
+                            isVacation={isMemberOnVacationNow(entry.memberId)}
                             className="h-6 w-6 rounded-full border border-brand-200 dark:border-slate-700"
                           />
                           <span className="truncate text-slate-900 dark:text-slate-100">
@@ -5117,7 +5124,7 @@ export const TasksPage = ({
                           )
                         }
                         alt={userLabel(taskDetailsKing.userId)}
-                        isVacation={memberById.get(taskDetailsKing.userId)?.vacation_mode ?? false}
+                        isVacation={isMemberOnVacationNow(taskDetailsKing.userId)}
                         className="h-6 w-6 rounded-full border border-brand-200 dark:border-slate-700"
                       />
                       <span className="truncate font-semibold text-slate-900 dark:text-slate-100">
@@ -5158,7 +5165,7 @@ export const TasksPage = ({
                                 )
                               }
                               alt={userLabel(entry.userId)}
-                              isVacation={memberById.get(entry.userId)?.vacation_mode ?? false}
+                              isVacation={isMemberOnVacationNow(entry.userId)}
                               className="h-5 w-5 rounded-full border border-brand-200 dark:border-slate-700"
                             />
                             <span className="truncate text-slate-900 dark:text-slate-100">

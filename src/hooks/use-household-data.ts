@@ -18,6 +18,7 @@ import type {
   BucketItem,
   CashAuditRequest,
   FinanceSubscription,
+  HouseholdMemberVacation,
   HouseholdWhiteboard,
   HouseholdMemberPimpers,
   ShoppingItem,
@@ -57,6 +58,7 @@ export const useHouseholdHomeBatch = (householdId: string | null, enabled = true
         "tasks",
         "taskCompletions",
         "cashAuditRequests",
+        "memberVacations",
         "householdWhiteboard"
       ]),
     enabled: Boolean(householdId) && enabled
@@ -176,6 +178,14 @@ export const useHouseholdMemberPimpers = (householdId: string | null, enabled = 
     ...(householdId
       ? householdQueryOptions.memberPimpers(householdId)
       : { queryKey: ["household", "none", "member-pimpers"], ...emptyArrayQuery<HouseholdMemberPimpers>() }),
+    enabled: Boolean(householdId) && enabled
+  });
+
+export const useHouseholdMemberVacations = (householdId: string | null, enabled = true) =>
+  useQuery<HouseholdMemberVacation[]>({
+    ...(householdId
+      ? householdQueryOptions.memberVacations(householdId)
+      : { queryKey: ["household", "none", "member-vacations"], ...emptyArrayQuery<HouseholdMemberVacation>() }),
     enabled: Boolean(householdId) && enabled
   });
 

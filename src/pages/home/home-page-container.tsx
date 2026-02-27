@@ -7,7 +7,14 @@ import {
   useHouseholdHomeBatch,
   useHouseholdWhiteboard
 } from "../../hooks/use-household-data";
-import type { BucketItem, CashAuditRequest, HouseholdWhiteboard, TaskCompletion, TaskItem } from "../../lib/types";
+import type {
+  BucketItem,
+  CashAuditRequest,
+  HouseholdMemberVacation,
+  HouseholdWhiteboard,
+  TaskCompletion,
+  TaskItem
+} from "../../lib/types";
 
 interface HomePageContainerProps {
   section: "summary" | "bucket" | "feed";
@@ -51,6 +58,7 @@ export const HomePageContainer = ({ section }: HomePageContainerProps) => {
         tasks: TaskItem[];
         taskCompletions: TaskCompletion[];
         cashAuditRequests: CashAuditRequest[];
+        memberVacations: HouseholdMemberVacation[];
         householdWhiteboard: HouseholdWhiteboard;
       }
     | undefined;
@@ -78,6 +86,7 @@ export const HomePageContainer = ({ section }: HomePageContainerProps) => {
       taskCompletions={homeData?.taskCompletions ?? []}
       financeEntries={financeEntries}
       cashAuditRequests={homeData?.cashAuditRequests ?? []}
+      memberVacations={homeData?.memberVacations ?? []}
       householdEvents={events}
       eventsHasMore={eventsQuery.hasNextPage ?? false}
       eventsLoadingMore={eventsQuery.isFetchingNextPage}

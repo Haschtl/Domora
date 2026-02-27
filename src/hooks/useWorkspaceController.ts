@@ -41,6 +41,9 @@ import {
   updateMemberTaskLaziness,
   resetHouseholdPimpers,
   updateMemberVacationMode,
+  createMemberVacation,
+  updateMemberVacation,
+  deleteMemberVacation,
   updateShoppingItem,
   updateShoppingItemStatus,
   updateUserAvatar,
@@ -188,6 +191,7 @@ export const useWorkspaceController = () => {
     activeHouseholdId,
     activeHousehold,
     householdMembers,
+    householdMemberVacations,
     userEmail,
     userAvatarUrl,
     userDisplayName,
@@ -1392,6 +1396,68 @@ export const useWorkspaceController = () => {
     [activeHousehold, runWithOptimisticUpdate, t, userId]
   );
 
+  const onAddMemberVacation = useCallback(
+    async (input: { startDate: string; endDate: string; note?: string }) => {
+      if (!activeHousehold || !userId) return;
+      await runWithOptimisticUpdate({
+        updates: [
+          {
+            queryKey: queryKeys.householdMemberVacations(activeHousehold.id),
+            updater: (current) => current
+          }
+        ],
+        action: async () => {
+          await createMemberVacation(activeHousehold.id, {
+            userId,
+            startDate: input.startDate,
+            endDate: input.endDate,
+            note: input.note
+          });
+          setMessage(t("settings.vacationPlanSaved"));
+        }
+      });
+    },
+    [activeHousehold, runWithOptimisticUpdate, t, userId]
+  );
+
+  const onUpdateMemberVacation = useCallback(
+    async (vacationId: string, input: { startDate?: string; endDate?: string; note?: string }) => {
+      if (!activeHousehold) return;
+      await runWithOptimisticUpdate({
+        updates: [
+          {
+            queryKey: queryKeys.householdMemberVacations(activeHousehold.id),
+            updater: (current) => current
+          }
+        ],
+        action: async () => {
+          await updateMemberVacation(activeHousehold.id, vacationId, input);
+          setMessage(t("settings.vacationPlanUpdated"));
+        }
+      });
+    },
+    [activeHousehold, runWithOptimisticUpdate, t]
+  );
+
+  const onDeleteMemberVacation = useCallback(
+    async (vacationId: string) => {
+      if (!activeHousehold) return;
+      await runWithOptimisticUpdate({
+        updates: [
+          {
+            queryKey: queryKeys.householdMemberVacations(activeHousehold.id),
+            updater: (current) => current
+          }
+        ],
+        action: async () => {
+          await deleteMemberVacation(activeHousehold.id, vacationId);
+          setMessage(t("settings.vacationPlanDeleted"));
+        }
+      });
+    },
+    [activeHousehold, runWithOptimisticUpdate, t]
+  );
+
   const onResetHouseholdPimpers = useCallback(async () => {
     if (!activeHousehold) return;
 
@@ -1542,6 +1608,7 @@ export const useWorkspaceController = () => {
     householdsLoadError,
     activeHousehold,
     householdMembers,
+    householdMemberVacations,
     userId,
     userEmail,
     userAvatarUrl,
@@ -1591,6 +1658,9 @@ export const useWorkspaceController = () => {
     onUpdateMemberTaskLaziness,
     onUpdateMemberSettingsForUser,
     onUpdateVacationMode,
+    onAddMemberVacation,
+    onUpdateMemberVacation,
+    onDeleteMemberVacation,
     onResetHouseholdPimpers,
     onUpdateUserAvatar,
     onUpdateUserDisplayName,

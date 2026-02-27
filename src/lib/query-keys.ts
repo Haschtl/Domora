@@ -11,6 +11,7 @@ export const queryKeys = {
   householdCashAuditRequests: (householdId: string) => ["household", householdId, "cash-audit-requests"] as const,
   householdFinanceSubscriptions: (householdId: string) => ["household", householdId, "finance-subscriptions"] as const,
   householdMembers: (householdId: string) => ["household", householdId, "members"] as const,
+  householdMemberVacations: (householdId: string) => ["household", householdId, "member-vacations"] as const,
   householdMemberPimpers: (householdId: string) => ["household", householdId, "member-pimpers"] as const,
   householdEvents: (householdId: string) => ["household", householdId, "events"] as const,
   householdWhiteboard: (householdId: string) => ["household", householdId, "whiteboard"] as const

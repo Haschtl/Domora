@@ -31,6 +31,7 @@ import { useTaskNotifications } from "./hooks/useTaskNotifications";
 import { useWorkspaceController } from "./hooks/useWorkspaceController";
 import { ensureHouseholdQueries } from "./lib/household-queries";
 import { applyHouseholdTheme } from "./lib/household-theme";
+import { isMemberOnVacationAt } from "./lib/vacation-utils";
 
 const AuthView = lazy(() => import("./features/AuthView").then((module) => ({ default: module.AuthView })));
 const HouseholdSetupView = lazy(() =>
@@ -194,6 +195,7 @@ const AppLayout = () => {
     activeHousehold,
     userId,
     currentMember,
+    householdMemberVacations,
     notificationPermission,
     setActiveHousehold,
     onSignIn,
@@ -323,6 +325,7 @@ const AppLayout = () => {
         "taskCompletions",
         "cashAuditRequests",
         "financeSubscriptions",
+        "memberVacations",
         "memberPimpers",
         "householdWhiteboard"
       ]);
@@ -374,6 +377,11 @@ const AppLayout = () => {
     const params = new URLSearchParams(location.search);
     return (params.get("invite") ?? "").trim().toUpperCase();
   }, [location.search]);
+  const isVacationActive = useMemo(() => {
+    if (!currentMember) return false;
+    if (currentMember.vacation_mode) return true;
+    return isMemberOnVacationAt(currentMember.user_id, householdMemberVacations, new Date());
+  }, [currentMember, householdMemberVacations]);
 
   const workspaceContextValue = useMemo(
     () => ({
@@ -405,7 +413,8 @@ const AppLayout = () => {
           "bucketItems",
           "tasks",
           "taskCompletions",
-          "cashAuditRequests"
+          "cashAuditRequests",
+          "memberVacations"
         ]);
         return;
       }
@@ -419,7 +428,12 @@ const AppLayout = () => {
       if (path.startsWith("/tasks")) {
         if (!featureFlags.tasks) return;
         setHasPrefetchedTasks(true);
-        void ensureHouseholdQueries(queryClient, householdId, ["tasks", "taskCompletions", "memberPimpers"]);
+        void ensureHouseholdQueries(queryClient, householdId, [
+          "tasks",
+          "taskCompletions",
+          "memberPimpers",
+          "memberVacations"
+        ]);
         return;
       }
 
@@ -433,7 +447,7 @@ const AppLayout = () => {
       }
 
       if (path.startsWith("/settings")) {
-        void ensureHouseholdQueries(queryClient, householdId, ["householdMembers"]);
+        void ensureHouseholdQueries(queryClient, householdId, ["householdMembers", "memberVacations"]);
       }
     },
     [activeHousehold?.id, featureFlags.finances, featureFlags.shopping, featureFlags.tasks, queryClient]
@@ -806,7 +820,7 @@ const AppLayout = () => {
       <Suspense fallback={null}>
         <AppParticlesBackground />
       </Suspense>
-      {currentMember?.vacation_mode ? (
+      {isVacationActive ? (
         <Suspense fallback={null}>
           <VacationOverlay />
         </Suspense>

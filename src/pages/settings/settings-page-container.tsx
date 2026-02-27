@@ -14,6 +14,7 @@ export const SettingsPageContainer = ({ section }: SettingsPageContainerProps) =
     activeHousehold,
     householdMembers,
     currentMember,
+    householdMemberVacations,
     userId,
     userEmail,
     userAvatarUrl,
@@ -31,6 +32,9 @@ export const SettingsPageContainer = ({ section }: SettingsPageContainerProps) =
     onUpdateUserColor,
     onUpdateUserPaymentHandles,
     onUpdateVacationMode,
+    onAddMemberVacation,
+    onUpdateMemberVacation,
+    onDeleteMemberVacation,
     onSetMemberRole,
     onRemoveMember,
     onSignOut,
@@ -62,6 +66,7 @@ export const SettingsPageContainer = ({ section }: SettingsPageContainerProps) =
       household={activeHousehold}
       members={householdMembers}
       currentMember={currentMember}
+      memberVacations={householdMemberVacations}
       tasks={tasksQuery.data ?? []}
       userId={userId}
       userEmail={userEmail}
@@ -80,6 +85,9 @@ export const SettingsPageContainer = ({ section }: SettingsPageContainerProps) =
       onUpdateUserColor={onUpdateUserColor}
       onUpdateUserPaymentHandles={onUpdateUserPaymentHandles}
       onUpdateVacationMode={onUpdateVacationMode}
+      onAddMemberVacation={onAddMemberVacation}
+      onUpdateMemberVacation={onUpdateMemberVacation}
+      onDeleteMemberVacation={onDeleteMemberVacation}
       onSetMemberRole={onSetMemberRole}
       onRemoveMember={onRemoveMember}
       onSignOut={onSignOut}

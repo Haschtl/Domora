@@ -6,6 +6,7 @@ import {
   useHouseholdTasksBatch
 } from "../../hooks/use-household-data";
 import type { HouseholdMemberPimpers, TaskCompletion, TaskItem } from "../../lib/types";
+import { isMemberOnVacationAt } from "../../lib/vacation-utils";
 
 interface TasksPageContainerProps {
   section: "overview" | "stats" | "history" | "settings";
@@ -15,6 +16,7 @@ export const TasksPageContainer = ({ section }: TasksPageContainerProps) => {
   const {
     activeHousehold,
     householdMembers,
+    householdMemberVacations,
     userId,
     busy,
     onAddTask,
@@ -35,6 +37,16 @@ export const TasksPageContainer = ({ section }: TasksPageContainerProps) => {
     () => eventsQuery.data?.pages.flatMap((page) => page.rows) ?? [],
     [eventsQuery.data]
   );
+  const membersWithVacation = useMemo(
+    () =>
+      householdMembers.map((member) => ({
+        ...member,
+        vacation_mode:
+          member.vacation_mode ||
+          isMemberOnVacationAt(member.user_id, householdMemberVacations, new Date())
+      })),
+    [householdMemberVacations, householdMembers]
+  );
 
   if (!activeHousehold || !userId) return null;
 
@@ -53,7 +65,8 @@ export const TasksPageContainer = ({ section }: TasksPageContainerProps) => {
       tasks={tasksData?.tasks ?? []}
       completions={tasksData?.taskCompletions ?? []}
       householdEvents={events}
-      members={householdMembers}
+      members={membersWithVacation}
+      memberVacations={householdMemberVacations}
       memberPimpers={tasksData?.memberPimpers ?? []}
       userId={userId}
       busy={busy}

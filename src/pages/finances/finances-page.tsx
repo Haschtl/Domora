@@ -38,9 +38,11 @@ import type {
   FinanceSubscriptionRecurrence,
   Household,
   HouseholdMember,
+  HouseholdMemberVacation,
   NewFinanceSubscriptionInput,
   UpdateHouseholdInput
 } from "../../lib/types";
+import { isMemberOnVacationAt } from "../../lib/vacation-utils";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
@@ -92,6 +94,7 @@ interface FinancesPageProps {
   household: Household;
   currentMember: HouseholdMember | null;
   members: HouseholdMember[];
+  memberVacations: HouseholdMemberVacation[];
   userId: string;
   busy: boolean;
   mobileTabBarVisible?: boolean;
@@ -357,6 +360,7 @@ export const FinancesPage = ({
   household,
   currentMember,
   members,
+  memberVacations,
   userId,
   busy,
   mobileTabBarVisible = true,
@@ -399,10 +403,15 @@ export const FinancesPage = ({
   const excludeVacationFromFinances = household.vacation_finances_exclude_enabled ?? true;
   const getDefaultFinanceSelectionIds = useCallback(() => {
     if (!excludeVacationFromFinances) return members.map((member) => member.user_id);
-    const nonVacationMemberIds = members.filter((member) => !member.vacation_mode).map((member) => member.user_id);
+    const nonVacationMemberIds = members
+      .filter(
+        (member) =>
+          !member.vacation_mode && !isMemberOnVacationAt(member.user_id, memberVacations, new Date())
+      )
+      .map((member) => member.user_id);
     if (nonVacationMemberIds.length > 0) return nonVacationMemberIds;
     return members.map((member) => member.user_id);
-  }, [excludeVacationFromFinances, members]);
+  }, [excludeVacationFromFinances, memberVacations, members]);
   const [previewPayerIds, setPreviewPayerIds] = useState<string[]>(() => [userId]);
   const [previewBeneficiaryIds, setPreviewBeneficiaryIds] = useState<string[]>(() => getDefaultFinanceSelectionIds());
   const [addEntryCategoryTouched, setAddEntryCategoryTouched] = useState(false);
@@ -2138,7 +2147,7 @@ export const FinancesPage = ({
                         <MemberAvatar
                           src={memberAvatarSrc(entry.memberId)}
                           alt={memberLabel(entry.memberId)}
-                          isVacation={memberById.get(entry.memberId)?.vacation_mode ?? false}
+                          isVacation={isMemberOnVacationAt(entry.memberId, memberVacations, new Date())}
                           className="h-7 w-7 rounded-full border border-brand-100 bg-brand-50 dark:border-slate-700 dark:bg-slate-800"
                         />
                         <span

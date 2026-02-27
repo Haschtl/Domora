@@ -20,6 +20,7 @@ import type {
   HouseholdWhiteboard,
   Household,
   HouseholdMember,
+  HouseholdMemberVacation,
   HouseholdMemberPimpers,
   NewFinanceSubscriptionInput,
   NewTaskInput,
@@ -61,6 +62,8 @@ const SELECT_HOUSEHOLD_EVENT_FIELDS =
 const SELECT_FINANCE_SUBSCRIPTION_FIELDS =
   "id,household_id,name,category,amount,paid_by_user_ids,beneficiary_user_ids,cron_pattern,created_by,created_at,updated_at";
 const SELECT_PUSH_PREFERENCES_FIELDS = "user_id,household_id,enabled,quiet_hours,topics";
+const SELECT_MEMBER_VACATION_FIELDS =
+  "id,household_id,user_id,start_date,end_date,note,created_by,created_at";
 
 const optionalNumberSchema = z.preprocess(
   (value) => {
@@ -83,6 +86,19 @@ const nonNegativeOptionalNumberSchema = optionalNumberSchema.refine(
 const percentageNumberSchema = z.coerce.number().finite().min(0).max(100);
 const shoppingRecurrenceUnitSchema = z.enum(["days", "weeks", "months"]);
 const financeSubscriptionRecurrenceSchema = z.enum(["weekly", "monthly", "quarterly"]);
+const vacationDateSchema = z
+  .string()
+  .regex(/^\\d{4}-\\d{2}-\\d{2}$/);
+const memberVacationSchema = z.object({
+  id: z.string().uuid(),
+  household_id: z.string().uuid(),
+  user_id: z.string().uuid(),
+  start_date: vacationDateSchema,
+  end_date: vacationDateSchema,
+  note: z.string().nullable().optional().transform((value) => value ?? null),
+  created_by: z.string().uuid(),
+  created_at: z.string().min(1)
+});
 
 const householdSchema = z.object({
   id: z.string().uuid(),
@@ -296,6 +312,10 @@ const normalizeHousehold = (row: Record<string, unknown>): Household => ({
 
 const normalizeHouseholdMember = (row: Record<string, unknown>): HouseholdMember => ({
   ...householdMemberSchema.parse(row)
+});
+
+const normalizeMemberVacation = (row: Record<string, unknown>): HouseholdMemberVacation => ({
+  ...memberVacationSchema.parse(row)
 });
 
 const normalizeShoppingItem = (row: Record<string, unknown>): ShoppingItem => ({
@@ -633,6 +653,18 @@ export const getHouseholdMembers = async (householdId: string): Promise<Househol
   return (data ?? []).map((entry) => normalizeHouseholdMember(entry as Record<string, unknown>));
 };
 
+export const getMemberVacations = async (householdId: string): Promise<HouseholdMemberVacation[]> => {
+  const { data, error } = await supabase
+    .from("member_vacations")
+    .select(SELECT_MEMBER_VACATION_FIELDS)
+    .eq("household_id", householdId)
+    .order("start_date", { ascending: false })
+    .order("created_at", { ascending: false });
+
+  if (error) throw error;
+  return (data ?? []).map((entry) => normalizeMemberVacation(entry as Record<string, unknown>));
+};
+
 export const getHouseholdMemberPimpers = async (householdId: string): Promise<HouseholdMemberPimpers[]> => {
   const { data, error } = await supabase
     .from("household_member_pimpers")
@@ -934,6 +966,92 @@ export const updateMemberVacationMode = async (
     payload: { enabled: parsedVacationMode, name: displayName }
   });
   return normalizeHouseholdMember(data as Record<string, unknown>);
+};
+
+const memberVacationInputSchema = z.object({
+  userId: z.string().uuid(),
+  startDate: vacationDateSchema,
+  endDate: vacationDateSchema,
+  note: z.string().trim().max(240).optional()
+});
+
+const ensureVacationRange = (startDate: string, endDate: string) => {
+  if (startDate > endDate) {
+    throw new Error("Vacation end date must be after start date.");
+  }
+};
+
+export const createMemberVacation = async (
+  householdId: string,
+  input: { userId: string; startDate: string; endDate: string; note?: string }
+): Promise<HouseholdMemberVacation> => {
+  const validatedHouseholdId = z.string().uuid().parse(householdId);
+  const parsedInput = memberVacationInputSchema.parse(input);
+  ensureVacationRange(parsedInput.startDate, parsedInput.endDate);
+
+  const { data, error } = await supabase
+    .from("member_vacations")
+    .insert({
+      household_id: validatedHouseholdId,
+      user_id: parsedInput.userId,
+      start_date: parsedInput.startDate,
+      end_date: parsedInput.endDate,
+      note: parsedInput.note?.trim() || null,
+      created_by: parsedInput.userId
+    })
+    .select(SELECT_MEMBER_VACATION_FIELDS)
+    .single();
+
+  if (error) throw error;
+  return normalizeMemberVacation(data as Record<string, unknown>);
+};
+
+export const updateMemberVacation = async (
+  householdId: string,
+  vacationId: string,
+  input: { startDate?: string; endDate?: string; note?: string }
+): Promise<HouseholdMemberVacation> => {
+  const validatedHouseholdId = z.string().uuid().parse(householdId);
+  const validatedVacationId = z.string().uuid().parse(vacationId);
+  const parsed = z
+    .object({
+      startDate: vacationDateSchema.optional(),
+      endDate: vacationDateSchema.optional(),
+      note: z.string().trim().max(240).optional()
+    })
+    .parse(input);
+
+  if (parsed.startDate && parsed.endDate) {
+    ensureVacationRange(parsed.startDate, parsed.endDate);
+  }
+
+  const updatePayload: Record<string, unknown> = {};
+  if (parsed.startDate) updatePayload.start_date = parsed.startDate;
+  if (parsed.endDate) updatePayload.end_date = parsed.endDate;
+  if (parsed.note !== undefined) updatePayload.note = parsed.note?.trim() || null;
+
+  const { data, error } = await supabase
+    .from("member_vacations")
+    .update(updatePayload)
+    .eq("household_id", validatedHouseholdId)
+    .eq("id", validatedVacationId)
+    .select(SELECT_MEMBER_VACATION_FIELDS)
+    .single();
+
+  if (error) throw error;
+  return normalizeMemberVacation(data as Record<string, unknown>);
+};
+
+export const deleteMemberVacation = async (householdId: string, vacationId: string) => {
+  const validatedHouseholdId = z.string().uuid().parse(householdId);
+  const validatedVacationId = z.string().uuid().parse(vacationId);
+  const { error } = await supabase
+    .from("member_vacations")
+    .delete()
+    .eq("household_id", validatedHouseholdId)
+    .eq("id", validatedVacationId);
+
+  if (error) throw error;
 };
 
 export const resetHouseholdPimpers = async (householdId: string): Promise<number> => {

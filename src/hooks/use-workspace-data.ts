@@ -7,7 +7,7 @@ import { getCurrentSession, getHouseholdsForUser } from "../lib/api";
 import { householdQueryOptions } from "../lib/household-queries";
 import { queryKeys } from "../lib/query-keys";
 import { supabase } from "../lib/supabase";
-import type { Household, HouseholdMember } from "../lib/types";
+import type { Household, HouseholdMember, HouseholdMemberVacation } from "../lib/types";
 
 export const useWorkspaceData = () => {
   const queryClient = useQueryClient();
@@ -106,6 +106,9 @@ export const useWorkspaceData = () => {
     subscribeTable("household_members", `household_id=eq.${activeHouseholdId}`, () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.householdMembers(activeHouseholdId) });
     });
+    subscribeTable("member_vacations", `household_id=eq.${activeHouseholdId}`, () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.householdMemberVacations(activeHouseholdId) });
+    });
     subscribeTable("household_member_pimpers", `household_id=eq.${activeHouseholdId}`, () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.householdMemberPimpers(activeHouseholdId) });
     });
@@ -139,6 +142,13 @@ export const useWorkspaceData = () => {
     enabled: Boolean(activeHousehold)
   });
   const householdMembers = householdMembersQuery.data ?? [];
+
+  const householdVacationsQuery = useQuery<HouseholdMemberVacation[]>({
+    queryKey: activeHousehold ? queryKeys.householdMemberVacations(activeHousehold.id) : ["household", "none", "member-vacations"],
+    queryFn: () => householdQueryOptions.memberVacations(activeHousehold!.id).queryFn(),
+    enabled: Boolean(activeHousehold)
+  });
+  const householdMemberVacations = householdVacationsQuery.data ?? [];
 
   const userEmail = session?.user.email;
   const userAvatarUrl = useMemo(() => {
@@ -175,6 +185,7 @@ export const useWorkspaceData = () => {
     activeHouseholdId,
     activeHousehold,
     householdMembers,
+    householdMemberVacations,
     userEmail,
     userAvatarUrl,
     userDisplayName,

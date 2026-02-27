@@ -6,6 +6,7 @@ import {
   useHouseholdFinances
 } from "../../hooks/use-household-data";
 import type { CashAuditRequest, FinanceSubscription } from "../../lib/types";
+import { isMemberOnVacationAt } from "../../lib/vacation-utils";
 
 interface FinancesPageContainerProps {
   section: "overview" | "stats" | "archive" | "subscriptions";
@@ -16,6 +17,7 @@ export const FinancesPageContainer = ({ section }: FinancesPageContainerProps) =
     activeHousehold,
     currentMember,
     householdMembers,
+    householdMemberVacations,
     userId,
     busy,
     mobileTabBarVisible,
@@ -53,6 +55,16 @@ export const FinancesPageContainer = ({ section }: FinancesPageContainerProps) =
       return oldest;
     }, null as string | null);
   }, [entries]);
+  const membersWithVacation = useMemo(
+    () =>
+      householdMembers.map((member) => ({
+        ...member,
+        vacation_mode:
+          member.vacation_mode ||
+          isMemberOnVacationAt(member.user_id, householdMemberVacations, new Date())
+      })),
+    [householdMemberVacations, householdMembers]
+  );
 
   useEffect(() => {
     if (section === "archive") return;
@@ -90,7 +102,8 @@ export const FinancesPageContainer = ({ section }: FinancesPageContainerProps) =
       cashAuditRequests={financeMeta?.cashAuditRequests ?? []}
       household={activeHousehold}
       currentMember={currentMember}
-      members={householdMembers}
+      members={membersWithVacation}
+      memberVacations={householdMemberVacations}
       busy={busy}
       userId={userId}
       mobileTabBarVisible={mobileTabBarVisible}
