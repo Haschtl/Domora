@@ -72,7 +72,7 @@ describe("seed-dummy-data", () => {
     expect(completionRows.every((entry) => entry.pimpers_earned > 0)).toBe(true);
     expect(
       completionRows.every(
-        (entry) => Number.isFinite(entry.delay_minutes) && entry.delay_minutes >= 24 * 60 && entry.delay_minutes <= 30 * 24 * 60
+        (entry) => Number.isFinite(entry.delay_minutes) && entry.delay_minutes >= 0 && entry.delay_minutes <= 20 * 24 * 60
       )
     ).toBe(true);
     const completionBucketsByDate = completionRows.reduce((acc, entry) => {

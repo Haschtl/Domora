@@ -18,6 +18,7 @@ import {
   buildBucketVoteRows,
   buildSubscriptionRows,
   buildTaskCompletionRatingRows,
+  buildMemberVacationRows,
   buildWhiteboardRow,
   memberColors,
   memberProfiles,
@@ -91,6 +92,7 @@ const appTablesToClear = [
   { table: "shopping_item_completions", markerColumn: "id" },
   { table: "shopping_items", markerColumn: "id" },
   { table: "household_member_pimpers", markerColumn: "household_id" },
+  { table: "member_vacations", markerColumn: "id" },
   { table: "household_members", markerColumn: "household_id" },
   { table: "households", markerColumn: "id" },
   { table: "user_profiles", markerColumn: "user_id" }
@@ -146,13 +148,13 @@ const clearDemoAuthUsers = async () => {
   }
 };
 
-const createUsers = async () => {
+const createUsers = async (count = memberCount, offset = 0) => {
   const users = [];
 
-  for (let i = 0; i < memberCount; i += 1) {
-    const profile = memberProfiles[i % memberProfiles.length];
+  for (let i = 0; i < count; i += 1) {
+    const profile = memberProfiles[(i + offset) % memberProfiles.length];
     const name = profile.displayName;
-    const email = `domora+${runId}+${i + 1}@example.com`;
+    const email = `domora+${runId}+${i + 1 + offset}@example.com`;
 
     const { data, error } = await supabase.auth.admin.createUser({
       email,
@@ -183,6 +185,7 @@ const run = async () => {
 
   console.log(`Seeding dummy data (run: ${runId}) ...`);
   const users = await createUsers();
+  const extraUsers = await createUsers(1, users.length);
   const owner = users[0];
   const inviteCode = randomCode(8);
 
@@ -240,7 +243,16 @@ const run = async () => {
     revolut_name: user.email.split("@")[0],
     wero_name: user.name
   }));
-  const { error: profileError } = await supabase.from("user_profiles").upsert(profileRows);
+  const extraProfileRows = extraUsers.map((user, index) => ({
+    user_id: user.id,
+    display_name: user.name,
+    avatar_url: null,
+    user_color: memberColors[(index + users.length) % memberColors.length] ?? "#0ea5e9",
+    paypal_name: user.email.split("@")[0],
+    revolut_name: user.email.split("@")[0],
+    wero_name: user.name
+  }));
+  const { error: profileError } = await supabase.from("user_profiles").upsert([...profileRows, ...extraProfileRows]);
   if (profileError) {
     throw new Error(`Failed to upsert user profiles: ${profileError.message}`);
   }
@@ -352,6 +364,18 @@ const run = async () => {
     throw new Error(`Failed to insert cash audit requests: ${cashAuditError.message}`);
   }
 
+  const memberVacationRows = buildMemberVacationRows({
+    householdId,
+    users,
+    now
+  });
+  if (memberVacationRows.length > 0) {
+    const { error: vacationError } = await supabase.from("member_vacations").insert(memberVacationRows);
+    if (vacationError) {
+      throw new Error(`Failed to insert member vacations: ${vacationError.message}`);
+    }
+  }
+
   const shoppingRows = buildShoppingRows({
     shoppingCount,
     users,
@@ -412,7 +436,12 @@ const run = async () => {
     shoppingCompletionRows,
     financeRows,
     memberRows,
-    insertedTasks
+    insertedTasks,
+    subscriptionRows,
+    cashAuditRows,
+    users,
+    now,
+    extraMembers: extraUsers
   });
   if (eventRows.length > 0) {
     const { error: eventError } = await supabase.from("household_events").insert(eventRows);

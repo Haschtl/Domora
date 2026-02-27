@@ -176,6 +176,17 @@ export const buildRotationRows = ({ insertedTasks, users }) => {
   return rows;
 };
 
+const pseudoRandom = (seed) => {
+  let state = seed >>> 0;
+  state = (state * 1664525 + 1013904223) >>> 0;
+  return state / 0xffffffff;
+};
+
+const sampleDelayDays = (seed) => {
+  const r = pseudoRandom(seed);
+  return Math.min(20, Math.floor(Math.pow(r, 3.3) * 21));
+};
+
 export const buildCompletionRows = ({ insertedTasks, householdId }) => {
   const rows = [];
   const now = new Date();
@@ -196,8 +207,8 @@ export const buildCompletionRows = ({ insertedTasks, householdId }) => {
       const completedAt = new Date(baseCompletedAt.getTime() - round * pairCycleDays * dayMs);
       completedAt.setUTCHours(18 + (pairIndex % 3), (round * 7) % 60, 0, 0);
 
-      // Realistic late completions: between 1 and 30 days after due date.
-      const delayDays = 1 + ((pairIndex * 7 + round * 11 + (index % 2) * 3) % 30);
+      // Realistic late completions: 0-20 days, skewed towards ~4 days late.
+      const delayDays = sampleDelayDays(pairIndex * 1000 + round * 37 + index * 11);
       const delayMinutes = delayDays * 24 * 60;
       const dueAt = new Date(completedAt.getTime() - delayDays * dayMs);
       rows.push({
@@ -222,9 +233,15 @@ export const buildEventRows = ({
   shoppingCompletionRows,
   financeRows,
   memberRows,
-  insertedTasks = []
+  insertedTasks = [],
+  subscriptionRows = [],
+  cashAuditRows = [],
+  users = [],
+  now = new Date(),
+  extraMembers = []
 }) => {
   const rows = [];
+  const userNameById = new Map(users.map((user) => [user.id, user.name]));
 
   completionRows.forEach((entry) => {
     rows.push({
@@ -237,6 +254,24 @@ export const buildEventRows = ({
         title: entry.task_title_snapshot
       },
       created_at: entry.completed_at
+    });
+  });
+
+  completionRows.forEach((entry, index) => {
+    if (index % 3 !== 0) return;
+    const rater = memberRows[(index + 1) % Math.max(memberRows.length, 1)];
+    rows.push({
+      household_id: householdId,
+      event_type: "task_rated",
+      actor_user_id: rater?.user_id ?? null,
+      subject_user_id: entry.user_id,
+      payload: {
+        taskId: entry.task_id,
+        title: entry.task_title_snapshot,
+        rating: 3 + ((index + 1) % 3),
+        rater_name: userNameById.get(rater?.user_id) ?? "WG"
+      },
+      created_at: new Date(new Date(entry.completed_at).getTime() + 2 * 60 * 60 * 1000).toISOString()
     });
   });
 
@@ -286,6 +321,48 @@ export const buildEventRows = ({
     });
   });
 
+  subscriptionRows.forEach((entry) => {
+    rows.push({
+      household_id: householdId,
+      event_type: "contract_created",
+      actor_user_id: entry.created_by ?? null,
+      subject_user_id: null,
+      payload: {
+        contractName: entry.name,
+        amount: entry.amount
+      },
+      created_at: entry.created_at
+    });
+    if (entry.updated_at) {
+      rows.push({
+        household_id: householdId,
+        event_type: "contract_updated",
+        actor_user_id: entry.created_by ?? null,
+        subject_user_id: null,
+        payload: {
+          contractName: entry.name,
+          amount: entry.amount
+        },
+        created_at: entry.updated_at
+      });
+    }
+  });
+
+  if (subscriptionRows.length > 0) {
+    const target = subscriptionRows[0];
+    rows.push({
+      household_id: householdId,
+      event_type: "contract_deleted",
+      actor_user_id: target.created_by ?? null,
+      subject_user_id: null,
+      payload: {
+        contractName: target.name,
+        amount: target.amount
+      },
+      created_at: new Date(new Date(target.created_at).getTime() + 60 * 24 * 60 * 60 * 1000).toISOString()
+    });
+  }
+
   memberRows.forEach((entry, index) => {
     if (entry.role !== "owner") return;
     rows.push({
@@ -299,6 +376,87 @@ export const buildEventRows = ({
       },
       created_at: new Date(Date.now() - (index + 1) * 12 * 60 * 60 * 1000).toISOString()
     });
+  });
+
+  memberRows.forEach((entry, index) => {
+    rows.push({
+      household_id: householdId,
+      event_type: "member_joined",
+      actor_user_id: memberRows[0]?.user_id ?? entry.user_id,
+      subject_user_id: entry.user_id,
+      payload: { name: userNameById.get(entry.user_id) ?? "Mitglied" },
+      created_at: new Date(now.getTime() - (index + 5) * 30 * 24 * 60 * 60 * 1000).toISOString()
+    });
+  });
+
+  extraMembers.forEach((entry, index) => {
+    rows.push({
+      household_id: householdId,
+      event_type: "member_left",
+      actor_user_id: memberRows[0]?.user_id ?? null,
+      subject_user_id: entry.user_id,
+      payload: { name: entry.name ?? "Mitglied" },
+      created_at: new Date(now.getTime() - (index + 2) * 90 * 24 * 60 * 60 * 1000).toISOString()
+    });
+  });
+
+  memberRows.forEach((entry, index) => {
+    if (!entry.vacation_mode) return;
+    rows.push({
+      household_id: householdId,
+      event_type: "vacation_mode_enabled",
+      actor_user_id: entry.user_id,
+      subject_user_id: entry.user_id,
+      payload: { name: userNameById.get(entry.user_id) ?? "Mitglied" },
+      created_at: new Date(now.getTime() - (index + 7) * 6 * 60 * 60 * 1000).toISOString()
+    });
+  });
+
+  if (memberRows.length > 1) {
+    const member = memberRows[1];
+    rows.push({
+      household_id: householdId,
+      event_type: "vacation_mode_enabled",
+      actor_user_id: member.user_id,
+      subject_user_id: member.user_id,
+      payload: { name: userNameById.get(member.user_id) ?? "Mitglied" },
+      created_at: new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000).toISOString()
+    });
+    rows.push({
+      household_id: householdId,
+      event_type: "vacation_mode_disabled",
+      actor_user_id: member.user_id,
+      subject_user_id: member.user_id,
+      payload: { name: userNameById.get(member.user_id) ?? "Mitglied" },
+      created_at: new Date(now.getTime() - 10 * 24 * 60 * 60 * 1000).toISOString()
+    });
+  }
+
+  rows.push({
+    household_id: householdId,
+    event_type: "rent_updated",
+    actor_user_id: memberRows[0]?.user_id ?? null,
+    subject_user_id: null,
+    payload: {
+      name: userNameById.get(memberRows[0]?.user_id) ?? "Mitglied",
+      changes: [
+        { field: "cold_rent_monthly", before: 1550, after: 1690 },
+        { field: "utilities_monthly", before: 320, after: 400 }
+      ]
+    },
+    created_at: new Date(now.getTime() - 40 * 24 * 60 * 60 * 1000).toISOString()
+  });
+
+  rows.push({
+    household_id: householdId,
+    event_type: "rent_updated",
+    actor_user_id: memberRows[0]?.user_id ?? null,
+    subject_user_id: null,
+    payload: {
+      name: userNameById.get(memberRows[0]?.user_id) ?? "Mitglied",
+      changes: [{ field: "apartment_size_sqm", before: 98, after: 103.5 }]
+    },
+    created_at: new Date(now.getTime() - 15 * 24 * 60 * 60 * 1000).toISOString()
   });
 
   rows.push({
@@ -317,6 +475,17 @@ export const buildEventRows = ({
     subject_user_id: null,
     payload: { message: "Auto-heal fixed 2 issue(s): rotation=1, assignee_reset=1" },
     created_at: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString()
+  });
+
+  cashAuditRows.forEach((entry) => {
+    rows.push({
+      household_id: householdId,
+      event_type: "cash_audit_requested",
+      actor_user_id: entry.requested_by ?? null,
+      subject_user_id: null,
+      payload: {},
+      created_at: entry.created_at
+    });
   });
 
   return rows.sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
@@ -490,6 +659,35 @@ export const buildSubscriptionRows = ({ householdId, ownerId, users, now }) => {
   ];
 };
 
+export const buildMemberVacationRows = ({ householdId, users, now }) => {
+  const rows = [];
+  if (!users.length) return rows;
+  const firstUser = users[0]?.id;
+  const secondUser = users[1]?.id ?? firstUser;
+
+  const pastStart = new Date(now.getTime() - 45 * 24 * 60 * 60 * 1000);
+  const pastEnd = new Date(now.getTime() - 32 * 24 * 60 * 60 * 1000);
+  rows.push({
+    household_id: householdId,
+    user_id: firstUser,
+    start_date: pastStart.toISOString().slice(0, 10),
+    end_date: pastEnd.toISOString().slice(0, 10),
+    note: "Skiurlaub"
+  });
+
+  const futureStart = new Date(now.getTime() + 12 * 24 * 60 * 60 * 1000);
+  const futureEnd = new Date(now.getTime() + 21 * 24 * 60 * 60 * 1000);
+  rows.push({
+    household_id: householdId,
+    user_id: secondUser,
+    start_date: futureStart.toISOString().slice(0, 10),
+    end_date: futureEnd.toISOString().slice(0, 10),
+    note: "Familienbesuch"
+  });
+
+  return rows;
+};
+
 export const buildShoppingRows = ({ shoppingCount, users, householdId, ownerId, now }) => {
   const rows = [];
   const historyDays = Math.max(45, Math.ceil((shoppingCount * 150) / Math.max(shoppingCount, 1)));
@@ -595,7 +793,39 @@ export const buildPushPreferenceRows = ({ householdId, users }) =>
     user_id: user.id,
     enabled: index % 4 !== 0,
     quiet_hours: index % 3 === 0 ? { start: "22:00", end: "07:00" } : {},
-    topics: index % 2 === 0 ? ["tasks", "shopping", "finance"] : ["tasks", "shopping"],
+    topics:
+      index % 2 === 0
+        ? [
+            "task_due",
+            "task_completed",
+            "task_skipped",
+            "task_taken_over",
+            "task_rated",
+            "vacation_mode",
+            "member_joined",
+            "member_left",
+            "rent_updated",
+            "contract_created",
+            "contract_updated",
+            "contract_deleted",
+            "member_of_month",
+            "finance_created",
+            "shopping_added",
+            "shopping_completed",
+            "bucket_added",
+            "cash_audit_requested"
+          ]
+        : [
+            "task_due",
+            "task_completed",
+            "task_skipped",
+            "task_taken_over",
+            "task_rated",
+            "finance_created",
+            "shopping_added",
+            "shopping_completed",
+            "cash_audit_requested"
+          ],
     updated_at: new Date().toISOString()
   }));
 
