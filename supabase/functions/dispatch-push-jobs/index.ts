@@ -112,6 +112,14 @@ const buildMessage = (job: PushJob) => {
     base.title = "Urlaubsmodus beendet";
     const name = String(payload.payload?.name ?? "Jemand");
     base.body = `${name} ist wieder da.`;
+  } else if (event === "member_joined") {
+    base.title = "Einzug";
+    const name = String(payload.payload?.name ?? "Jemand");
+    base.body = `${name} ist eingezogen.`;
+  } else if (event === "member_left") {
+    base.title = "Auszug";
+    const name = String(payload.payload?.name ?? "Jemand");
+    base.body = `${name} ist ausgezogen.`;
   }
 
   const dataPayload = payload.payload ?? payload;

@@ -189,6 +189,8 @@ export type HouseholdEventType =
   | "shopping_completed"
   | "finance_created"
   | "role_changed"
+  | "member_joined"
+  | "member_left"
   | "cash_audit_requested"
   | "vacation_mode_enabled"
   | "vacation_mode_disabled"

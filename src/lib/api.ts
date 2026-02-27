@@ -486,6 +486,8 @@ const insertHouseholdEvent = async (input: {
         "shopping_completed",
         "finance_created",
         "role_changed",
+        "member_joined",
+        "member_left",
         "cash_audit_requested",
         "admin_hint",
         "pimpers_reset",
@@ -732,6 +734,20 @@ export const createHousehold = async (name: string, userId: string): Promise<Hou
     throw membershipError;
   }
 
+  const { data: profile } = await supabase
+    .from("user_profiles")
+    .select("display_name")
+    .eq("user_id", requesterUserId)
+    .maybeSingle();
+  const displayName = (profile as { display_name?: string | null } | null)?.display_name ?? null;
+  await insertHouseholdEvent({
+    householdId: data.id,
+    eventType: "member_joined",
+    actorUserId: requesterUserId,
+    subjectUserId: requesterUserId,
+    payload: { reason: "created", name: displayName }
+  });
+
   return normalizeHousehold(data as Record<string, unknown>);
 };
 
@@ -755,6 +771,20 @@ export const joinHouseholdByInvite = async (inviteCode: string, userId: string):
     .eq("id", resolvedHouseholdId)
     .single();
   if (error) throw error;
+
+  const { data: profile } = await supabase
+    .from("user_profiles")
+    .select("display_name")
+    .eq("user_id", requesterUserId)
+    .maybeSingle();
+  const displayName = (profile as { display_name?: string | null } | null)?.display_name ?? null;
+  await insertHouseholdEvent({
+    householdId: resolvedHouseholdId,
+    eventType: "member_joined",
+    actorUserId: requesterUserId,
+    subjectUserId: requesterUserId,
+    payload: { reason: "invite", name: displayName }
+  });
 
   return normalizeHousehold(household as Record<string, unknown>);
 };
@@ -1141,6 +1171,20 @@ export const leaveHousehold = async (householdId: string, userId: string) => {
     assertCanLeaveAsOwner(count ?? 0);
   }
 
+  const { data: profile } = await supabase
+    .from("user_profiles")
+    .select("display_name")
+    .eq("user_id", validatedUserId)
+    .maybeSingle();
+  const displayName = (profile as { display_name?: string | null } | null)?.display_name ?? null;
+  await insertHouseholdEvent({
+    householdId: validatedHouseholdId,
+    eventType: "member_left",
+    actorUserId: validatedUserId,
+    subjectUserId: validatedUserId,
+    payload: { reason: "self", name: displayName }
+  });
+
   const { error } = await supabase
     .from("household_members")
     .delete()
@@ -1239,6 +1283,7 @@ export const setHouseholdMemberRole = async (
 export const removeHouseholdMember = async (householdId: string, targetUserId: string) => {
   const validatedHouseholdId = z.string().uuid().parse(householdId);
   const validatedTargetUserId = z.string().uuid().parse(targetUserId);
+  const actorUserId = await requireAuthenticatedUserId();
 
   const { data: targetMember, error: targetMemberError } = await supabase
     .from("household_members")
@@ -1260,6 +1305,20 @@ export const removeHouseholdMember = async (householdId: string, targetUserId: s
     if (ownerCountError) throw ownerCountError;
     assertCanRemoveOwner(count ?? 0);
   }
+
+  const { data: profile } = await supabase
+    .from("user_profiles")
+    .select("display_name")
+    .eq("user_id", validatedTargetUserId)
+    .maybeSingle();
+  const displayName = (profile as { display_name?: string | null } | null)?.display_name ?? null;
+  await insertHouseholdEvent({
+    householdId: validatedHouseholdId,
+    eventType: "member_left",
+    actorUserId,
+    subjectUserId: validatedTargetUserId,
+    payload: { reason: "removed", name: displayName }
+  });
 
   const { error } = await supabase
     .from("household_members")

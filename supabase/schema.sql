@@ -189,7 +189,7 @@ create table if not exists task_completion_ratings (
 create table if not exists household_events (
   id uuid primary key default gen_random_uuid(),
   household_id uuid not null references households(id) on delete cascade,
-  event_type text not null check (event_type in ('task_completed', 'task_skipped', 'task_rated', 'shopping_completed', 'finance_created', 'role_changed', 'cash_audit_requested', 'admin_hint', 'pimpers_reset', 'vacation_mode_enabled', 'vacation_mode_disabled')),
+  event_type text not null check (event_type in ('task_completed', 'task_skipped', 'task_rated', 'shopping_completed', 'finance_created', 'role_changed', 'member_joined', 'member_left', 'cash_audit_requested', 'admin_hint', 'pimpers_reset', 'vacation_mode_enabled', 'vacation_mode_disabled')),
   actor_user_id uuid references auth.users(id) on delete set null,
   subject_user_id uuid references auth.users(id) on delete set null,
   payload jsonb not null default '{}'::jsonb,
@@ -1193,6 +1193,8 @@ begin
           'shopping_completed',
           'finance_created',
           'role_changed',
+          'member_joined',
+          'member_left',
           'cash_audit_requested',
           'admin_hint',
           'pimpers_reset',

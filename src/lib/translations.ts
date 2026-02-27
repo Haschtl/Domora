@@ -219,6 +219,8 @@ export const resources = {
         activityFinanceCreated: "Finanzeintrag „{{name}}“ mit {{amount}} €",
         activityCashAudit: "{{user}} hat einen Kassensturz gestartet",
         activityRoleChanged: "{{user}} hat jetzt die Rolle {{role}}",
+        activityMemberJoined: "{{user}} ist eingezogen",
+        activityMemberLeft: "{{user}} ist ausgezogen",
         activityVacationEnabled: "{{user}} ist im Urlaub",
         activityVacationDisabled: "{{user}} ist wieder da",
         activityPimpersReset:
@@ -952,6 +954,8 @@ export const resources = {
         pushUsedForTaskTakenOver: "Info, wenn jemand eine Aufgabe übernimmt",
         pushUsedForTaskRated: "Info, wenn deine Aufgabe bewertet wird",
         pushUsedForVacationMode: "Info, wenn jemand in den Urlaubsmodus geht oder zurück ist",
+        pushUsedForMemberJoined: "Info, wenn jemand einzieht",
+        pushUsedForMemberLeft: "Info, wenn jemand auszieht",
         pushUsedForMemberOfMonth: "Monats-Push für Mitbewohner:in des Monats",
         pushUsedForFinanceCreated: "Info bei neuem Finanzeintrag",
         pushUsedForShoppingAdded:
@@ -1344,6 +1348,8 @@ export const resources = {
         activityFinanceCreated: 'Finance entry "{{name}}" with {{amount}} €',
         activityCashAudit: "{{user}} started a cash audit",
         activityRoleChanged: "{{user}} now has role {{role}}",
+        activityMemberJoined: "{{user}} joined the household",
+        activityMemberLeft: "{{user}} left the household",
         activityVacationEnabled: "{{user}} is on vacation",
         activityVacationDisabled: "{{user}} is back",
         activityAdminHintFallback:
@@ -2059,6 +2065,8 @@ export const resources = {
         pushUsedForTaskTakenOver: "Info when someone takes over a task",
         pushUsedForTaskRated: "Info when your task gets rated",
         pushUsedForVacationMode: "Info when someone enters or leaves vacation mode",
+        pushUsedForMemberJoined: "Info when someone joins the household",
+        pushUsedForMemberLeft: "Info when someone leaves the household",
         pushUsedForMemberOfMonth: "Monthly push for housemate of the month",
         pushUsedForFinanceCreated: "Info for new finance entries",
         pushUsedForShoppingAdded: "Info for new shopping list items",

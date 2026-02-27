@@ -771,6 +771,8 @@ export const SettingsPage = ({
       { id: "task_taken_over", label: t("settings.pushUsedForTaskTakenOver") },
       { id: "task_rated", label: t("settings.pushUsedForTaskRated") },
       { id: "vacation_mode", label: t("settings.pushUsedForVacationMode") },
+      { id: "member_joined", label: t("settings.pushUsedForMemberJoined") },
+      { id: "member_left", label: t("settings.pushUsedForMemberLeft") },
       { id: "member_of_month", label: t("settings.pushUsedForMemberOfMonth") },
       { id: "finance_created", label: t("settings.pushUsedForFinanceCreated") },
       { id: "shopping_added", label: t("settings.pushUsedForShoppingAdded") },

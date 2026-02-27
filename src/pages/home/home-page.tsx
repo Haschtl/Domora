@@ -1283,6 +1283,28 @@ export const HomePage = ({
           };
         }
 
+        if (entry.event_type === "member_joined") {
+          return {
+            id: `event-${entry.id}`,
+            at: entry.created_at,
+            icon: "audit",
+            text: t("home.activityMemberJoined", {
+              user: labelForUserId(entry.subject_user_id ?? entry.actor_user_id)
+            })
+          };
+        }
+
+        if (entry.event_type === "member_left") {
+          return {
+            id: `event-${entry.id}`,
+            at: entry.created_at,
+            icon: "audit",
+            text: t("home.activityMemberLeft", {
+              user: labelForUserId(entry.subject_user_id ?? entry.actor_user_id)
+            })
+          };
+        }
+
         return {
           id: `event-${entry.id}`,
           at: entry.created_at,
