@@ -659,7 +659,7 @@ export const buildSubscriptionRows = ({ householdId, ownerId, users, now }) => {
   ];
 };
 
-export const buildMemberVacationRows = ({ householdId, users, now }) => {
+export const buildMemberVacationRows = ({ householdId, users, now, createdBy }) => {
   const rows = [];
   if (!users.length) return rows;
   const firstUser = users[0]?.id;
@@ -672,7 +672,8 @@ export const buildMemberVacationRows = ({ householdId, users, now }) => {
     user_id: firstUser,
     start_date: pastStart.toISOString().slice(0, 10),
     end_date: pastEnd.toISOString().slice(0, 10),
-    note: "Skiurlaub"
+    note: "Skiurlaub",
+    created_by: createdBy ?? firstUser
   });
 
   const futureStart = new Date(now.getTime() + 12 * 24 * 60 * 60 * 1000);
@@ -682,7 +683,8 @@ export const buildMemberVacationRows = ({ householdId, users, now }) => {
     user_id: secondUser,
     start_date: futureStart.toISOString().slice(0, 10),
     end_date: futureEnd.toISOString().slice(0, 10),
-    note: "Familienbesuch"
+    note: "Familienbesuch",
+    created_by: createdBy ?? secondUser
   });
 
   return rows;

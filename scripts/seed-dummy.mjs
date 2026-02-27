@@ -367,7 +367,8 @@ const run = async () => {
   const memberVacationRows = buildMemberVacationRows({
     householdId,
     users,
-    now
+    now,
+    createdBy: owner.id
   });
   if (memberVacationRows.length > 0) {
     const { error: vacationError } = await supabase.from("member_vacations").insert(memberVacationRows);
