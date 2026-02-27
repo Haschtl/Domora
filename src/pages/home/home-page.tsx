@@ -31,7 +31,7 @@ import {
   useLexicalNodeRemove
 } from "@mdxeditor/editor";
 import { createTrianglifyBannerBackground } from "../../lib/banner";
-import { formatDateTime, formatShortDay, getLastMonthRange } from "../../lib/date";
+import { formatDateOnly, formatDateTime, formatShortDay, getLastMonthRange } from "../../lib/date";
 import { suggestCategoryLabel } from "../../lib/category-heuristics";
 import { createMemberLabelGetter } from "../../lib/member-label";
 import { createDiceBearAvatarDataUri, getMemberAvatarSeed } from "../../lib/avatar";
@@ -137,6 +137,9 @@ type HomeCalendarVacationEntry = {
   endDate: string;
   note: string | null;
   manual?: boolean;
+};
+type HomeCalendarVacationSpan = HomeCalendarVacationEntry & {
+  kind: "single" | "start" | "middle" | "end";
 };
 type HomeCalendarDueTask = {
   task: TaskItem;
@@ -709,6 +712,92 @@ export const HomePage = ({
     [calendarMonthDate, language]
   );
   const todayIso = useMemo(() => new Date().toISOString().slice(0, 10), []);
+  const parseDateOnly = useCallback((value: string) => {
+    const parsed = new Date(`${value}T12:00:00`);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }, []);
+  const addDays = useCallback((date: Date, days: number) => {
+    const next = new Date(date);
+    next.setDate(next.getDate() + days);
+    return next;
+  }, []);
+  const calendarMonthRange = useMemo(() => {
+    const firstDate = calendarMonthCells[0]?.date;
+    const lastDate = calendarMonthCells[calendarMonthCells.length - 1]?.date;
+    if (!firstDate || !lastDate) return null;
+    return {
+      start: new Date(firstDate.getFullYear(), firstDate.getMonth(), firstDate.getDate()),
+      end: new Date(lastDate.getFullYear(), lastDate.getMonth(), lastDate.getDate())
+    };
+  }, [calendarMonthCells]);
+  const visibleCalendarDayKeys = useMemo(
+    () => new Set(calendarMonthCells.map((cell) => dayKey(cell.date))),
+    [calendarMonthCells]
+  );
+  const calendarVacationRanges = useMemo<HomeCalendarVacationEntry[]>(() => {
+    const ranges: HomeCalendarVacationEntry[] = [];
+    memberVacations.forEach((vacation) => {
+      ranges.push({
+        id: vacation.id,
+        userId: vacation.user_id,
+        startDate: vacation.start_date,
+        endDate: vacation.end_date,
+        note: vacation.note ?? null
+      });
+    });
+    const vacationEvents = householdEvents
+      .filter(
+        (event) =>
+          event.event_type === "vacation_mode_enabled" || event.event_type === "vacation_mode_disabled"
+      )
+      .filter((event) => Boolean(event.actor_user_id))
+      .slice()
+      .sort((a, b) => {
+        const aTime = new Date(a.created_at).getTime();
+        const bTime = new Date(b.created_at).getTime();
+        return aTime - bTime;
+      });
+    const openByUser = new Map<string, string>();
+    vacationEvents.forEach((event) => {
+      const userId = event.actor_user_id;
+      if (!userId) return;
+      const eventDate = new Date(event.created_at).toISOString().slice(0, 10);
+      if (event.event_type === "vacation_mode_enabled") {
+        if (!openByUser.has(userId)) {
+          openByUser.set(userId, eventDate);
+        }
+        return;
+      }
+      const startDate = openByUser.get(userId);
+      if (!startDate) return;
+      ranges.push({
+        id: `manual-${userId}-${startDate}`,
+        userId,
+        startDate,
+        endDate: eventDate,
+        note: null,
+        manual: true
+      });
+      openByUser.delete(userId);
+    });
+    members.forEach((member) => {
+      if (!member.vacation_mode) return;
+      if (!openByUser.has(member.user_id)) {
+        openByUser.set(member.user_id, todayIso);
+      }
+    });
+    openByUser.forEach((startDate, userId) => {
+      ranges.push({
+        id: `manual-${userId}-${startDate}`,
+        userId,
+        startDate,
+        endDate: todayIso,
+        note: null,
+        manual: true
+      });
+    });
+    return ranges;
+  }, [householdEvents, memberVacations, members, todayIso]);
   const homeCalendarEntries = useMemo(() => {
     const map = new Map<string, HomeCalendarEntry>();
     const ensureEntry = (key: string) => {
@@ -724,15 +813,6 @@ export const HomePage = ({
         vacations: []
       };
       map.set(key, next);
-      return next;
-    };
-    const parseDateOnly = (value: string) => {
-      const parsed = new Date(`${value}T12:00:00`);
-      return Number.isNaN(parsed.getTime()) ? null : parsed;
-    };
-    const addDays = (date: Date, days: number) => {
-      const next = new Date(date);
-      next.setDate(next.getDate() + days);
       return next;
     };
     const normalizeText = (value: string) =>
@@ -860,11 +940,11 @@ export const HomePage = ({
       });
     }
 
-    const visibleDayKeys = new Set(calendarMonthCells.map((cell) => dayKey(cell.date)));
+    const visibleDayKeys = visibleCalendarDayKeys;
 
-    memberVacations.forEach((vacation) => {
-      const start = parseDateOnly(vacation.start_date);
-      const end = parseDateOnly(vacation.end_date);
+    calendarVacationRanges.forEach((vacation) => {
+      const start = parseDateOnly(vacation.startDate);
+      const end = parseDateOnly(vacation.endDate);
       if (!start || !end) return;
       let cursor = start;
       let safety = 0;
@@ -872,46 +952,28 @@ export const HomePage = ({
         safety += 1;
         const key = dayKey(cursor);
         if (visibleDayKeys.has(key)) {
-          ensureEntry(key).vacations.push({
-            id: vacation.id,
-            userId: vacation.user_id,
-            startDate: vacation.start_date,
-            endDate: vacation.end_date,
-            note: vacation.note
-          });
+          ensureEntry(key).vacations.push(vacation);
         }
         cursor = addDays(cursor, 1);
       }
-    });
-
-    members.forEach((member) => {
-      if (!member.vacation_mode) return;
-      if (!visibleDayKeys.has(todayKey)) return;
-      ensureEntry(todayKey).vacations.push({
-        id: `manual-${member.user_id}`,
-        userId: member.user_id,
-        startDate: todayIso,
-        endDate: todayIso,
-        note: null,
-        manual: true
-      });
     });
 
     return map;
   }, [
     bucketItems,
     calendarMonthCells,
+    calendarVacationRanges,
     cashAuditRequests,
     featureFlags,
     financeEntries,
     householdEvents,
     language,
-    memberVacations,
-    members,
+    parseDateOnly,
     taskCompletions,
     tasks,
     t,
-    todayIso
+    visibleCalendarDayKeys,
+    addDays
   ]);
   const getCalendarCounts = useCallback(
     (entry: HomeCalendarEntry | undefined) => {
@@ -957,6 +1019,52 @@ export const HomePage = ({
     },
     [calendarFilters, featureFlags]
   );
+  const vacationSpansByDay = useMemo(() => {
+    const map = new Map<string, HomeCalendarVacationSpan[]>();
+    if (!calendarMonthRange) return map;
+    const visibleStart = calendarMonthRange.start;
+    const visibleEnd = calendarMonthRange.end;
+
+    calendarVacationRanges.forEach((vacation) => {
+      const start = parseDateOnly(vacation.startDate);
+      const end = parseDateOnly(vacation.endDate);
+      if (!start || !end) return;
+      const rangeStart = start.getTime() < visibleStart.getTime() ? visibleStart : start;
+      const rangeEnd = end.getTime() > visibleEnd.getTime() ? visibleEnd : end;
+      if (rangeStart.getTime() > rangeEnd.getTime()) return;
+      const startKey = dayKey(rangeStart);
+      const endKey = dayKey(rangeEnd);
+      let cursor = rangeStart;
+      let safety = 0;
+      while (cursor.getTime() <= rangeEnd.getTime() && safety < 500) {
+        safety += 1;
+        const key = dayKey(cursor);
+        if (!visibleCalendarDayKeys.has(key)) {
+          cursor = addDays(cursor, 1);
+          continue;
+        }
+        const kind =
+          startKey === endKey
+            ? "single"
+            : key === startKey
+              ? "start"
+              : key === endKey
+                ? "end"
+                : "middle";
+        const entry = map.get(key) ?? [];
+        entry.push({ ...vacation, kind });
+        map.set(key, entry);
+        cursor = addDays(cursor, 1);
+      }
+    });
+    return map;
+  }, [
+    addDays,
+    calendarMonthRange,
+    calendarVacationRanges,
+    parseDateOnly,
+    visibleCalendarDayKeys
+  ]);
   const isCalendarDense = useMemo(() => isCalendarMobile, [isCalendarMobile]);
   const renderDenseStack = useCallback((count: number, colorClass: string) => {
     if (count <= 0) return null;
@@ -2585,6 +2693,7 @@ export const HomePage = ({
                     const cellDayKey = dayKey(cell.date);
                     const isToday = cellDayKey === dayKey(new Date());
                     const entry = homeCalendarEntries.get(cellDayKey);
+                    const vacationSpans = vacationSpansByDay.get(cellDayKey) ?? [];
                     const {
                       cleaningCount,
                       criticalCleaningCount,
@@ -2597,6 +2706,7 @@ export const HomePage = ({
                       totalCount,
                     } = getCalendarCounts(entry);
                     const hasEntries = totalCount > 0;
+                    const showVacationSpans = calendarFilters.vacations && vacationSpans.length > 0;
                     const cellHeightClass = isCalendarDense
                       ? "min-h-[52px]"
                       : "min-h-[70px]";
@@ -2642,6 +2752,28 @@ export const HomePage = ({
                             >
                               {cell.date.getDate()}
                             </p>
+                            {showVacationSpans ? (
+                              <div className="mt-1 space-y-0.5">
+                                {vacationSpans.map((span) => {
+                                  const segmentClassName =
+                                    span.kind === "single"
+                                      ? "mx-0 rounded-full"
+                                      : span.kind === "start"
+                                        ? "-mr-2 rounded-l-full"
+                                        : span.kind === "end"
+                                          ? "-ml-2 rounded-r-full"
+                                          : "-mx-2";
+                                  return (
+                                    <div
+                                      key={`${cellDayKey}-vac-${span.id}-${span.kind}`}
+                                      className={`relative z-10 h-1.5 ${segmentClassName} ${
+                                        span.manual ? "bg-violet-400" : "bg-violet-500"
+                                      }`}
+                                    />
+                                  );
+                                })}
+                              </div>
+                            ) : null}
                             {hasEntries ? (
                               isCalendarDense ? (
                                 <div className="mt-1 flex flex-wrap gap-1">
@@ -2905,6 +3037,10 @@ export const HomePage = ({
                                             ({t("home.calendarVacationManual")})
                                           </span>
                                         ) : null}
+                                        <span className="ml-1 text-[10px] text-slate-500 dark:text-slate-400">
+                                          {formatDateOnly(vacation.startDate, language, vacation.startDate)} –{" "}
+                                          {formatDateOnly(vacation.endDate, language, vacation.endDate)}
+                                        </span>
                                         {vacation.note ? ` · ${vacation.note}` : ""}
                                       </li>
                                     ))}
