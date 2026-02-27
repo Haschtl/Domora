@@ -2682,7 +2682,11 @@ export const updateFinanceSubscription = async (
   return normalizeFinanceSubscription(data as Record<string, unknown>);
 };
 
-export const deleteFinanceSubscription = async (id: string, householdIdOverride?: string): Promise<void> => {
+export const deleteFinanceSubscription = async (
+  id: string,
+  householdIdOverride?: string,
+  fallback?: { name?: string | null; amount?: number | null; recurrence?: string | null }
+): Promise<void> => {
   const validatedId = z.string().uuid().parse(id);
   const actorUserId = await requireAuthenticatedUserId();
   const { data: before } = await supabase
@@ -2702,15 +2706,18 @@ export const deleteFinanceSubscription = async (id: string, householdIdOverride?
       .eq("user_id", actorUserId)
       .maybeSingle();
     const displayName = (profile as { display_name?: string | null } | null)?.display_name ?? null;
+    const beforeName = (before as { name?: string | null } | null)?.name ?? null;
+    const beforeAmount = (before as { amount?: number | null } | null)?.amount ?? null;
+    const beforeRecurrence = (before as { cron_pattern?: string | null } | null)?.cron_pattern ?? null;
     await insertHouseholdEvent({
       householdId,
       eventType: "contract_deleted",
       actorUserId,
       payload: {
         subscriptionId: validatedId,
-        contractName: (before as { name?: string | null } | null)?.name ?? null,
-        amount: (before as { amount?: number | null } | null)?.amount ?? null,
-        recurrence: (before as { cron_pattern?: string | null } | null)?.cron_pattern ?? null,
+        contractName: beforeName ?? fallback?.name ?? null,
+        amount: beforeAmount ?? fallback?.amount ?? null,
+        recurrence: beforeRecurrence ?? fallback?.recurrence ?? null,
         actorName: displayName
       }
     });

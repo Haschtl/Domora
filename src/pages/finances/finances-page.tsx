@@ -998,7 +998,7 @@ export const FinancesPage = ({
           const details = [];
           if (contractName) details.push(contractName);
           if (amount !== null) {
-            details.push(`${formatMoneyOrDash(amount)} → ${formatMoneyOrDash(null)}`);
+            details.push(`${formatMoneyOrDash(amount)} → ${formatMoneyOrDash(0)}`);
           }
           return {
             id: event.id,
@@ -1263,20 +1263,31 @@ export const FinancesPage = ({
         return subscriptions;
       }
       const subscriptionId = typeof payload.subscriptionId === "string" ? payload.subscriptionId : null;
+      const hasEventSubscription = subscriptionId
+        ? subscriptions.some((subscription) => subscription.id === subscriptionId)
+        : false;
       const existing = subscriptionId
         ? subscriptions.find((subscription) => subscription.id === subscriptionId) ?? null
         : null;
       const base =
         existing ?? buildSubscriptionFromPayload(payload as { subscriptionId?: string; contractName?: string; amount?: number | string; recurrence?: unknown }, memberIds);
       if (event.event_type === "contract_created") {
-        if (stage === "before") return subscriptions.filter((subscription) => subscription.id !== base.id);
+        if (stage === "before") {
+          return hasEventSubscription
+            ? subscriptions.filter((subscription) => subscription.id !== base.id)
+            : subscriptions;
+        }
         const withBase = subscriptions.some((subscription) => subscription.id === base.id)
           ? subscriptions
           : [...subscriptions, base];
         return withBase;
       }
       if (event.event_type === "contract_deleted") {
-        if (stage === "after") return subscriptions.filter((subscription) => subscription.id !== base.id);
+        if (stage === "after") {
+          return hasEventSubscription
+            ? subscriptions.filter((subscription) => subscription.id !== base.id)
+            : subscriptions;
+        }
         const withBase = subscriptions.some((subscription) => subscription.id === base.id)
           ? subscriptions
           : [...subscriptions, base];
