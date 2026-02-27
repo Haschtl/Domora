@@ -1283,6 +1283,50 @@ export const HomePage = ({
           };
         }
 
+        if (entry.event_type === "rent_updated") {
+          return {
+            id: `event-${entry.id}`,
+            at: entry.created_at,
+            icon: "audit",
+            text: t("home.activityRentUpdated", {
+              user: labelForUserId(entry.actor_user_id)
+            })
+          };
+        }
+
+        if (entry.event_type === "contract_created") {
+          return {
+            id: `event-${entry.id}`,
+            at: entry.created_at,
+            icon: "finance",
+            text: t("home.activityContractCreated", {
+              name: String(payload.contractName ?? t("finances.subscriptionListTitle"))
+            })
+          };
+        }
+
+        if (entry.event_type === "contract_updated") {
+          return {
+            id: `event-${entry.id}`,
+            at: entry.created_at,
+            icon: "finance",
+            text: t("home.activityContractUpdated", {
+              name: String(payload.contractName ?? t("finances.subscriptionListTitle"))
+            })
+          };
+        }
+
+        if (entry.event_type === "contract_deleted") {
+          return {
+            id: `event-${entry.id}`,
+            at: entry.created_at,
+            icon: "finance",
+            text: t("home.activityContractDeleted", {
+              name: String(payload.contractName ?? t("finances.subscriptionListTitle"))
+            })
+          };
+        }
+
         if (entry.event_type === "member_joined") {
           return {
             id: `event-${entry.id}`,

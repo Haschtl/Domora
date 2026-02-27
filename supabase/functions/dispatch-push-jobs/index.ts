@@ -120,6 +120,22 @@ const buildMessage = (job: PushJob) => {
     base.title = "Auszug";
     const name = String(payload.payload?.name ?? "Jemand");
     base.body = `${name} ist ausgezogen.`;
+  } else if (event === "rent_updated") {
+    base.title = "Mietkosten geändert";
+    const name = String(payload.payload?.name ?? "Jemand");
+    base.body = `${name} hat die Mietkosten angepasst.`;
+  } else if (event === "contract_created") {
+    base.title = "Vertrag hinzugefügt";
+    const contract = String(payload.payload?.contractName ?? "Ein Vertrag");
+    base.body = `${contract} wurde angelegt.`;
+  } else if (event === "contract_updated") {
+    base.title = "Vertrag angepasst";
+    const contract = String(payload.payload?.contractName ?? "Ein Vertrag");
+    base.body = `${contract} wurde geändert.`;
+  } else if (event === "contract_deleted") {
+    base.title = "Vertrag entfernt";
+    const contract = String(payload.payload?.contractName ?? "Ein Vertrag");
+    base.body = `${contract} wurde gelöscht.`;
   }
 
   const dataPayload = payload.payload ?? payload;

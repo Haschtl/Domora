@@ -250,6 +250,12 @@ const householdEventSchema = z.object({
     "shopping_completed",
     "finance_created",
     "role_changed",
+    "member_joined",
+    "member_left",
+    "rent_updated",
+    "contract_created",
+    "contract_updated",
+    "contract_deleted",
     "cash_audit_requested",
     "admin_hint",
     "pimpers_reset",
@@ -488,6 +494,10 @@ const insertHouseholdEvent = async (input: {
         "role_changed",
         "member_joined",
         "member_left",
+        "rent_updated",
+        "contract_created",
+        "contract_updated",
+        "contract_deleted",
         "cash_audit_requested",
         "admin_hint",
         "pimpers_reset",
@@ -794,6 +804,12 @@ export const updateHouseholdSettings = async (
   input: UpdateHouseholdInput
 ): Promise<Household> => {
   const validatedHouseholdId = z.string().uuid().parse(householdId);
+  const actorUserId = await requireAuthenticatedUserId();
+  const { data: before } = await supabase
+    .from("households")
+    .select("apartment_size_sqm,cold_rent_monthly,utilities_monthly,utilities_on_room_sqm_percent")
+    .eq("id", validatedHouseholdId)
+    .maybeSingle();
   const parsedInput = z.object({
     name: z.string().trim().min(1).max(120),
     imageUrl: z.string().trim(),
@@ -846,6 +862,45 @@ export const updateHouseholdSettings = async (
     .single();
 
   if (error) throw error;
+  const rentChanges: Array<{ field: string; before: number | null; after: number | null }> = [];
+  const beforeApartment = (before as { apartment_size_sqm?: number | null } | null)?.apartment_size_sqm ?? null;
+  const beforeCold = (before as { cold_rent_monthly?: number | null } | null)?.cold_rent_monthly ?? null;
+  const beforeUtilities = (before as { utilities_monthly?: number | null } | null)?.utilities_monthly ?? null;
+  const beforeUtilitiesFactor =
+    (before as { utilities_on_room_sqm_percent?: number | null } | null)?.utilities_on_room_sqm_percent ?? null;
+  if (beforeApartment !== parsedInput.apartmentSizeSqm) {
+    rentChanges.push({ field: "apartment_size_sqm", before: beforeApartment, after: parsedInput.apartmentSizeSqm });
+  }
+  if (beforeCold !== parsedInput.coldRentMonthly) {
+    rentChanges.push({ field: "cold_rent_monthly", before: beforeCold, after: parsedInput.coldRentMonthly });
+  }
+  if (beforeUtilities !== parsedInput.utilitiesMonthly) {
+    rentChanges.push({ field: "utilities_monthly", before: beforeUtilities, after: parsedInput.utilitiesMonthly });
+  }
+  if (beforeUtilitiesFactor !== parsedInput.utilitiesOnRoomSqmPercent) {
+    rentChanges.push({
+      field: "utilities_on_room_sqm_percent",
+      before: beforeUtilitiesFactor,
+      after: parsedInput.utilitiesOnRoomSqmPercent
+    });
+  }
+  if (rentChanges.length > 0) {
+    const { data: profile } = await supabase
+      .from("user_profiles")
+      .select("display_name")
+      .eq("user_id", actorUserId)
+      .maybeSingle();
+    const displayName = (profile as { display_name?: string | null } | null)?.display_name ?? null;
+    await insertHouseholdEvent({
+      householdId: validatedHouseholdId,
+      eventType: "rent_updated",
+      actorUserId,
+      payload: {
+        changes: rentChanges,
+        name: displayName
+      }
+    });
+  }
   return normalizeHousehold(data as Record<string, unknown>);
 };
 
@@ -2247,6 +2302,12 @@ const DEFAULT_PUSH_TOPICS = [
   "task_taken_over",
   "task_rated",
   "vacation_mode",
+  "member_joined",
+  "member_left",
+  "rent_updated",
+  "contract_created",
+  "contract_updated",
+  "contract_deleted",
   "member_of_month",
   "finance_created",
   "shopping_added",
@@ -2491,6 +2552,7 @@ export const addFinanceSubscription = async (
   userId: string,
   input: NewFinanceSubscriptionInput
 ): Promise<FinanceSubscription> => {
+  const actorUserId = await requireAuthenticatedUserId();
   const parsedInput = z.object({
     householdId: z.string().uuid(),
     userId: z.string().uuid(),
@@ -2528,6 +2590,24 @@ export const addFinanceSubscription = async (
     .single();
 
   if (error) throw error;
+  const { data: profile } = await supabase
+    .from("user_profiles")
+    .select("display_name")
+    .eq("user_id", actorUserId)
+    .maybeSingle();
+  const displayName = (profile as { display_name?: string | null } | null)?.display_name ?? null;
+  await insertHouseholdEvent({
+    householdId: parsedInput.householdId,
+    eventType: "contract_created",
+    actorUserId,
+    payload: {
+      subscriptionId: String((data as { id?: string }).id ?? ""),
+      contractName: parsedInput.name,
+      amount: parsedInput.amount,
+      recurrence: parsedInput.recurrence,
+      actorName: displayName
+    }
+  });
   return normalizeFinanceSubscription(data as Record<string, unknown>);
 };
 
@@ -2535,6 +2615,7 @@ export const updateFinanceSubscription = async (
   id: string,
   input: NewFinanceSubscriptionInput
 ): Promise<FinanceSubscription> => {
+  const actorUserId = await requireAuthenticatedUserId();
   const parsedInput = z.object({
     id: z.string().uuid(),
     name: z.string().trim().min(1).max(200),
@@ -2553,6 +2634,12 @@ export const updateFinanceSubscription = async (
     recurrence: input.recurrence
   });
 
+  const { data: before } = await supabase
+    .from("finance_subscriptions")
+    .select("name,amount,cron_pattern")
+    .eq("id", parsedInput.id)
+    .maybeSingle();
+
   const { data, error } = await supabase
     .from("finance_subscriptions")
     .update({
@@ -2569,11 +2656,61 @@ export const updateFinanceSubscription = async (
     .single();
 
   if (error) throw error;
+  const { data: profile } = await supabase
+    .from("user_profiles")
+    .select("display_name")
+    .eq("user_id", actorUserId)
+    .maybeSingle();
+  const displayName = (profile as { display_name?: string | null } | null)?.display_name ?? null;
+  await insertHouseholdEvent({
+    householdId: String((data as { household_id?: string }).household_id ?? ""),
+    eventType: "contract_updated",
+    actorUserId,
+    payload: {
+      subscriptionId: parsedInput.id,
+      contractName: parsedInput.name,
+      amount: parsedInput.amount,
+      recurrence: parsedInput.recurrence,
+      previous: {
+        contractName: (before as { name?: string | null } | null)?.name ?? null,
+        amount: (before as { amount?: number | null } | null)?.amount ?? null,
+        recurrence: (before as { cron_pattern?: string | null } | null)?.cron_pattern ?? null
+      },
+      actorName: displayName
+    }
+  });
   return normalizeFinanceSubscription(data as Record<string, unknown>);
 };
 
 export const deleteFinanceSubscription = async (id: string): Promise<void> => {
   const validatedId = z.string().uuid().parse(id);
+  const actorUserId = await requireAuthenticatedUserId();
+  const { data: before } = await supabase
+    .from("finance_subscriptions")
+    .select("household_id,name,amount,cron_pattern")
+    .eq("id", validatedId)
+    .maybeSingle();
   const { error } = await supabase.from("finance_subscriptions").delete().eq("id", validatedId);
   if (error) throw error;
+  const householdId = String((before as { household_id?: string | null } | null)?.household_id ?? "");
+  if (householdId) {
+    const { data: profile } = await supabase
+      .from("user_profiles")
+      .select("display_name")
+      .eq("user_id", actorUserId)
+      .maybeSingle();
+    const displayName = (profile as { display_name?: string | null } | null)?.display_name ?? null;
+    await insertHouseholdEvent({
+      householdId,
+      eventType: "contract_deleted",
+      actorUserId,
+      payload: {
+        subscriptionId: validatedId,
+        contractName: (before as { name?: string | null } | null)?.name ?? null,
+        amount: (before as { amount?: number | null } | null)?.amount ?? null,
+        recurrence: (before as { cron_pattern?: string | null } | null)?.cron_pattern ?? null,
+        actorName: displayName
+      }
+    });
+  }
 };

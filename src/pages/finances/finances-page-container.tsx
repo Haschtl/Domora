@@ -3,7 +3,8 @@ import { FinancesPage } from "./finances-page";
 import { useWorkspace } from "../../context/workspace-context";
 import {
   useHouseholdFinancesBatch,
-  useHouseholdFinances
+  useHouseholdFinances,
+  useHouseholdEvents
 } from "../../hooks/use-household-data";
 import type { CashAuditRequest, FinanceSubscription } from "../../lib/types";
 import { isMemberOnVacationAt } from "../../lib/vacation-utils";
@@ -35,10 +36,15 @@ export const FinancesPageContainer = ({ section }: FinancesPageContainerProps) =
 
   const financesQuery = useHouseholdFinances(activeHousehold?.id ?? null);
   const financesBatchQuery = useHouseholdFinancesBatch(activeHousehold?.id ?? null);
+  const eventsQuery = useHouseholdEvents(activeHousehold?.id ?? null);
 
   const entries = useMemo(
     () => financesQuery.data?.pages.flatMap((page) => page.rows) ?? [],
     [financesQuery.data]
+  );
+  const events = useMemo(
+    () => eventsQuery.data?.pages.flatMap((page) => page.rows) ?? [],
+    [eventsQuery.data]
   );
   const financeMeta = financesBatchQuery.data as
     | {
@@ -100,6 +106,7 @@ export const FinancesPageContainer = ({ section }: FinancesPageContainerProps) =
       onLoadMoreEntries={() => void financesQuery.fetchNextPage()}
       subscriptions={financeMeta?.financeSubscriptions ?? []}
       cashAuditRequests={financeMeta?.cashAuditRequests ?? []}
+      householdEvents={events}
       household={activeHousehold}
       currentMember={currentMember}
       members={membersWithVacation}

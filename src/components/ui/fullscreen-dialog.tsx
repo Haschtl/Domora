@@ -50,7 +50,7 @@ export const FullscreenDialog = ({
         <Wrapper className="flex h-full flex-col" onSubmit={onSubmit}>
           <DialogHeader
             className={cn(
-              "shrink-0 border-b border-brand-100 bg-white px-4 py-3",
+              "shrink-0 border-b border-brand-100 bg-white px-4 py-3 max-sm:pt-[calc(var(--safe-area-top)+0.75rem)]",
               "shadow-[0_8px_18px_rgba(15,23,42,0.08)]",
               "dark:border-slate-800 dark:bg-slate-900 dark:shadow-[0_8px_18px_rgba(2,6,23,0.45)]",
               headerClassName,

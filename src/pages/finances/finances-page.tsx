@@ -36,6 +36,7 @@ import type {
   FinanceEntry,
   FinanceSubscription,
   FinanceSubscriptionRecurrence,
+  HouseholdEvent,
   Household,
   HouseholdMember,
   HouseholdMemberVacation,
@@ -91,6 +92,7 @@ interface FinancesPageProps {
   onLoadMoreEntries?: () => void;
   subscriptions: FinanceSubscription[];
   cashAuditRequests: CashAuditRequest[];
+  householdEvents: HouseholdEvent[];
   household: Household;
   currentMember: HouseholdMember | null;
   members: HouseholdMember[];
@@ -357,6 +359,7 @@ export const FinancesPage = ({
   onLoadMoreEntries,
   subscriptions,
   cashAuditRequests,
+  householdEvents,
   household,
   currentMember,
   members,
@@ -858,6 +861,123 @@ export const FinancesPage = ({
     return createDiceBearAvatarDataUri(seed, member?.user_color);
   };
   const moneyLabel = useCallback((value: number) => formatMoney(value, locale), [locale]);
+  const rentHistoryItems = useMemo(() => {
+    const rentFields: Record<string, string> = {
+      apartment_size_sqm: t("settings.householdSizeLabel"),
+      cold_rent_monthly: t("settings.coldRentLabel"),
+      utilities_monthly: t("settings.utilitiesLabel"),
+      utilities_on_room_sqm_percent: t("settings.utilitiesOnRoomSqmPercentLabel")
+    };
+    const formatFieldValue = (field: string, value: number | null) => {
+      if (value === null || !Number.isFinite(value)) return "-";
+      if (field === "apartment_size_sqm") return `${value} m²`;
+      if (field === "utilities_on_room_sqm_percent") return `${value}%`;
+      return moneyLabel(value);
+    };
+    return householdEvents
+      .filter((event) =>
+        [
+          "rent_updated",
+          "contract_created",
+          "contract_updated",
+          "contract_deleted",
+          "member_joined",
+          "member_left"
+        ].includes(event.event_type)
+      )
+      .map((event) => {
+        const payload = event.payload ?? {};
+        const actorLabel = event.actor_user_id ? memberLabel(event.actor_user_id) : null;
+        if (event.event_type === "rent_updated") {
+          const rawChanges = Array.isArray(payload.changes) ? payload.changes : [];
+          const changeLines = rawChanges
+            .map((entry) => {
+              if (!entry || typeof entry !== "object") return null;
+              const change = entry as { field?: string; before?: number | null; after?: number | null };
+              if (!change.field) return null;
+              const label = rentFields[change.field] ?? change.field;
+              const before = formatFieldValue(change.field, typeof change.before === "number" ? change.before : null);
+              const after = formatFieldValue(change.field, typeof change.after === "number" ? change.after : null);
+              return `${label}: ${before} → ${after}`;
+            })
+            .filter((entry): entry is string => Boolean(entry));
+          return {
+            id: event.id,
+            at: event.created_at,
+            title: t("finances.rentHistoryRentUpdated"),
+            meta: actorLabel ? t("finances.rentHistoryBy", { user: actorLabel }) : null,
+            details: changeLines
+          };
+        }
+        if (event.event_type === "contract_created") {
+          const contractName = typeof payload.contractName === "string" ? payload.contractName.trim() : "";
+          const amount = typeof payload.amount === "number" ? payload.amount : null;
+          const details = [];
+          if (contractName) details.push(contractName);
+          if (amount !== null) details.push(moneyLabel(amount));
+          return {
+            id: event.id,
+            at: event.created_at,
+            title: t("finances.rentHistoryContractCreated"),
+            meta: actorLabel ? t("finances.rentHistoryBy", { user: actorLabel }) : null,
+            details: details.length > 0 ? [details.join(" · ")] : []
+          };
+        }
+        if (event.event_type === "contract_updated") {
+          const contractName = typeof payload.contractName === "string" ? payload.contractName.trim() : "";
+          const amount = typeof payload.amount === "number" ? payload.amount : null;
+          const previous = payload.previous as { amount?: number | null } | undefined;
+          const lines: string[] = [];
+          if (contractName) lines.push(contractName);
+          if (amount !== null) lines.push(moneyLabel(amount));
+          const row = lines.length > 0 ? lines.join(" · ") : "";
+          const changeLine =
+            typeof previous?.amount === "number" && amount !== null
+              ? `${moneyLabel(previous.amount)} → ${moneyLabel(amount)}`
+              : null;
+          return {
+            id: event.id,
+            at: event.created_at,
+            title: t("finances.rentHistoryContractUpdated"),
+            meta: actorLabel ? t("finances.rentHistoryBy", { user: actorLabel }) : null,
+            details: [row, changeLine].filter((entry): entry is string => Boolean(entry))
+          };
+        }
+        if (event.event_type === "contract_deleted") {
+          const contractName = typeof payload.contractName === "string" ? payload.contractName.trim() : "";
+          const amount = typeof payload.amount === "number" ? payload.amount : null;
+          const details = [];
+          if (contractName) details.push(contractName);
+          if (amount !== null) details.push(moneyLabel(amount));
+          return {
+            id: event.id,
+            at: event.created_at,
+            title: t("finances.rentHistoryContractDeleted"),
+            meta: actorLabel ? t("finances.rentHistoryBy", { user: actorLabel }) : null,
+            details: details.length > 0 ? [details.join(" · ")] : []
+          };
+        }
+        if (event.event_type === "member_joined") {
+          const userLabel = memberLabel(event.subject_user_id ?? event.actor_user_id ?? "");
+          return {
+            id: event.id,
+            at: event.created_at,
+            title: t("finances.rentHistoryMemberJoined", { user: userLabel }),
+            meta: null,
+            details: []
+          };
+        }
+        const userLabel = memberLabel(event.subject_user_id ?? event.actor_user_id ?? "");
+        return {
+          id: event.id,
+          at: event.created_at,
+          title: t("finances.rentHistoryMemberLeft", { user: userLabel }),
+          meta: null,
+          details: []
+        };
+      })
+      .sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
+  }, [householdEvents, memberLabel, moneyLabel, t]);
   const buildPaymentLinks = (toMemberId: string, amount: number, settlementDateIsoDay?: string) => {
     const target = memberById.get(toMemberId);
     if (!target) return [];
@@ -3183,6 +3303,54 @@ export const FinancesPage = ({
                       {t("finances.rentAreaOverviewEmpty")}
                     </p>
                   ) : null}
+                </>
+              </SectionPanel>
+
+              <SectionPanel className="mt-4">
+                <>
+                  <p className="text-sm font-semibold text-brand-900 dark:text-brand-100">
+                    {t("finances.rentHistoryTitle")}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                    {t("finances.rentHistoryDescription")}
+                  </p>
+                  {rentHistoryItems.length === 0 ? (
+                    <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+                      {t("finances.rentHistoryEmpty")}
+                    </p>
+                  ) : (
+                    <div className="mt-3 space-y-2">
+                      {rentHistoryItems.map((item) => (
+                        <div
+                          key={`rent-history-${item.id}`}
+                          className="rounded-lg border border-brand-100 bg-white/80 px-3 py-2 dark:border-slate-700 dark:bg-slate-900/70"
+                        >
+                          <div className="flex flex-wrap items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                                {item.title}
+                              </p>
+                              {item.meta ? (
+                                <p className="text-xs text-slate-500 dark:text-slate-400">
+                                  {item.meta}
+                                </p>
+                              ) : null}
+                              {item.details.length > 0 ? (
+                                <div className="mt-1 space-y-1 text-xs text-slate-600 dark:text-slate-300">
+                                  {item.details.map((detail, index) => (
+                                    <p key={`${item.id}-detail-${index}`}>{detail}</p>
+                                  ))}
+                                </div>
+                              ) : null}
+                            </div>
+                            <span className="text-xs text-slate-500 dark:text-slate-400">
+                              {formatDateOnly(item.at, language, item.at)}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </>
               </SectionPanel>
 
