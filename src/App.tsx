@@ -31,7 +31,7 @@ import { useTaskNotifications } from "./hooks/useTaskNotifications";
 import { useWorkspaceController } from "./hooks/useWorkspaceController";
 import { ensureHouseholdQueries } from "./lib/household-queries";
 import { applyHouseholdTheme } from "./lib/household-theme";
-import { isMemberOnVacationAt } from "./lib/vacation-utils";
+import { isMemberOnVacation } from "./lib/vacation-utils";
 
 const AuthView = lazy(() => import("./features/AuthView").then((module) => ({ default: module.AuthView })));
 const HouseholdSetupView = lazy(() =>
@@ -379,8 +379,12 @@ const AppLayout = () => {
   }, [location.search]);
   const isVacationActive = useMemo(() => {
     if (!currentMember) return false;
-    if (currentMember.vacation_mode) return true;
-    return isMemberOnVacationAt(currentMember.user_id, householdMemberVacations, new Date());
+    return isMemberOnVacation(
+      currentMember.user_id,
+      householdMemberVacations,
+      new Date(),
+      currentMember.vacation_mode
+    );
   }, [currentMember, householdMemberVacations]);
 
   const workspaceContextValue = useMemo(

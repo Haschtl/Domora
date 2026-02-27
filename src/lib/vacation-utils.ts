@@ -24,6 +24,16 @@ export const isMemberOnVacationAt = (
   return vacations.some((vacation) => vacation.user_id === memberId && isDateWithinRange(date, vacation.start_date, vacation.end_date));
 };
 
+export const isMemberOnVacation = (
+  memberId: string | null | undefined,
+  vacations: HouseholdMemberVacation[],
+  date: string | Date,
+  manualVacationMode: boolean | null | undefined = false
+) => {
+  if (manualVacationMode) return true;
+  return isMemberOnVacationAt(memberId, vacations, date);
+};
+
 export const getVacationStatus = (
   vacation: HouseholdMemberVacation,
   date: string | Date = new Date()

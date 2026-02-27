@@ -62,6 +62,7 @@ import { Label } from "../../components/ui/label";
 import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "../../components/ui/popover";
 import { SectionPanel } from "../../components/ui/section-panel";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
+import { Switch } from "../../components/ui/switch";
 import { Tooltip as RadixTooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../../components/ui/tooltip";
 import { useSmartSuggestions } from "../../hooks/use-smart-suggestions";
 import { suggestCategoryLabel } from "../../lib/category-heuristics";
@@ -193,6 +194,7 @@ interface MemberMultiSelectFieldProps {
   currentUserId: string;
   youLabel: string;
   placeholder: string;
+  vacationMemberIds?: Set<string> | string[];
   compactLabel?: boolean;
 }
 
@@ -219,6 +221,7 @@ const MemberMultiSelectField = ({
   currentUserId,
   youLabel,
   placeholder,
+  vacationMemberIds,
   compactLabel = false
 }: MemberMultiSelectFieldProps) => (
   <div className="space-y-1">
@@ -230,6 +233,7 @@ const MemberMultiSelectField = ({
     <PersonSelect
       mode="multiple"
       members={members}
+      vacationMemberIds={vacationMemberIds}
       value={value}
       onChange={onChange}
       currentUserId={currentUserId}
@@ -268,6 +272,12 @@ const financeRecurrenceToMonthlyFactor = (recurrence: FinanceSubscriptionRecurre
   if (recurrence === "weekly") return 52 / 12;
   if (recurrence === "quarterly") return 1 / 3;
   return 1;
+};
+
+const financeRecurrenceToCronPattern = (recurrence: FinanceSubscriptionRecurrence) => {
+  if (recurrence === "weekly") return "0 9 * * 1";
+  if (recurrence === "quarterly") return "0 9 1 */3 *";
+  return "0 9 1 * *";
 };
 
 const encodePathSegment = (value: string) => encodeURIComponent(value.trim().replace(/^@+/, ""));
@@ -433,6 +443,16 @@ export const FinancesPage = ({
   );
   const [memberOverviewDrafts, setMemberOverviewDrafts] = useState<Record<string, { roomSizeSqm: string; commonAreaFactor: string }>>({});
   const [rentDetailsOpen, setRentDetailsOpen] = useState(false);
+  const [rentHistoryDialogOpen, setRentHistoryDialogOpen] = useState(false);
+  const [rentHistoryContractsOnly, setRentHistoryContractsOnly] = useState(false);
+  const [selectedRentHistoryItem, setSelectedRentHistoryItem] = useState<{
+    id: string;
+    at: string;
+    title: string;
+    meta: string | null;
+    details: string[];
+    event: HouseholdEvent;
+  } | null>(null);
   const language = i18n.resolvedLanguage ?? i18n.language;
   const locale = getDateLocale(i18n.resolvedLanguage ?? i18n.language);
   const showOverview = section === "overview";
@@ -849,10 +869,32 @@ export const FinancesPage = ({
     [members, t, userId]
   );
   const memberById = useMemo(() => new Map(members.map((member) => [member.user_id, member])), [members]);
+  const vacationMemberIds = useMemo(() => {
+    const ids = new Set<string>();
+    members.forEach((member) => {
+      if (
+        member.vacation_mode ||
+        isMemberOnVacationAt(member.user_id, memberVacations, new Date())
+      ) {
+        ids.add(member.user_id);
+      }
+    });
+    return ids;
+  }, [memberVacations, members]);
   const resolveMemberColor = useMemo(
     () => (memberId: string) => normalizeUserColor(memberById.get(memberId)?.user_color) ?? fallbackColorFromUserId(memberId),
     [memberById]
   );
+  const parseEventNumber = useCallback((value: unknown) => {
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+    if (typeof value === "string") {
+      const normalized = value.trim().replace(",", ".");
+      if (!normalized) return null;
+      const parsed = Number(normalized);
+      return Number.isFinite(parsed) ? parsed : null;
+    }
+    return null;
+  }, []);
   const memberAvatarSrc = (memberId: string) => {
     const member = memberById.get(memberId);
     const avatarUrl = member?.avatar_url?.trim() ?? "";
@@ -874,6 +916,8 @@ export const FinancesPage = ({
       if (field === "utilities_on_room_sqm_percent") return `${value}%`;
       return moneyLabel(value);
     };
+    const formatMoneyOrDash = (value: number | null | undefined) =>
+      typeof value === "number" && Number.isFinite(value) ? moneyLabel(value) : "-";
     return householdEvents
       .filter((event) =>
         [
@@ -895,9 +939,11 @@ export const FinancesPage = ({
               if (!entry || typeof entry !== "object") return null;
               const change = entry as { field?: string; before?: number | null; after?: number | null };
               if (!change.field) return null;
+              const beforeValue = parseEventNumber(change.before);
+              const afterValue = parseEventNumber(change.after);
               const label = rentFields[change.field] ?? change.field;
-              const before = formatFieldValue(change.field, typeof change.before === "number" ? change.before : null);
-              const after = formatFieldValue(change.field, typeof change.after === "number" ? change.after : null);
+              const before = formatFieldValue(change.field, beforeValue);
+              const after = formatFieldValue(change.field, afterValue);
               return `${label}: ${before} → ${after}`;
             })
             .filter((entry): entry is string => Boolean(entry));
@@ -906,55 +952,61 @@ export const FinancesPage = ({
             at: event.created_at,
             title: t("finances.rentHistoryRentUpdated"),
             meta: actorLabel ? t("finances.rentHistoryBy", { user: actorLabel }) : null,
-            details: changeLines
+            details: changeLines,
+            event
           };
         }
         if (event.event_type === "contract_created") {
           const contractName = typeof payload.contractName === "string" ? payload.contractName.trim() : "";
-          const amount = typeof payload.amount === "number" ? payload.amount : null;
+          const amount = parseEventNumber(payload.amount);
           const details = [];
           if (contractName) details.push(contractName);
-          if (amount !== null) details.push(moneyLabel(amount));
+          if (amount !== null) {
+            details.push(`${formatMoneyOrDash(null)} → ${formatMoneyOrDash(amount)}`);
+          }
           return {
             id: event.id,
             at: event.created_at,
             title: t("finances.rentHistoryContractCreated"),
             meta: actorLabel ? t("finances.rentHistoryBy", { user: actorLabel }) : null,
-            details: details.length > 0 ? [details.join(" · ")] : []
+            details: details.length > 0 ? [details.join(" · ")] : [],
+            event
           };
         }
         if (event.event_type === "contract_updated") {
           const contractName = typeof payload.contractName === "string" ? payload.contractName.trim() : "";
-          const amount = typeof payload.amount === "number" ? payload.amount : null;
-          const previous = payload.previous as { amount?: number | null } | undefined;
+          const amount = parseEventNumber(payload.amount);
+          const previous = payload.previous as { amount?: number | string | null } | undefined;
           const lines: string[] = [];
           if (contractName) lines.push(contractName);
-          if (amount !== null) lines.push(moneyLabel(amount));
-          const row = lines.length > 0 ? lines.join(" · ") : "";
           const changeLine =
-            typeof previous?.amount === "number" && amount !== null
-              ? `${moneyLabel(previous.amount)} → ${moneyLabel(amount)}`
+            amount !== null || previous?.amount != null
+              ? `${formatMoneyOrDash(parseEventNumber(previous?.amount ?? null))} → ${formatMoneyOrDash(amount)}`
               : null;
           return {
             id: event.id,
             at: event.created_at,
             title: t("finances.rentHistoryContractUpdated"),
             meta: actorLabel ? t("finances.rentHistoryBy", { user: actorLabel }) : null,
-            details: [row, changeLine].filter((entry): entry is string => Boolean(entry))
+            details: [...lines, changeLine].filter((entry): entry is string => Boolean(entry)),
+            event
           };
         }
         if (event.event_type === "contract_deleted") {
           const contractName = typeof payload.contractName === "string" ? payload.contractName.trim() : "";
-          const amount = typeof payload.amount === "number" ? payload.amount : null;
+          const amount = parseEventNumber(payload.amount);
           const details = [];
           if (contractName) details.push(contractName);
-          if (amount !== null) details.push(moneyLabel(amount));
+          if (amount !== null) {
+            details.push(`${formatMoneyOrDash(amount)} → ${formatMoneyOrDash(null)}`);
+          }
           return {
             id: event.id,
             at: event.created_at,
             title: t("finances.rentHistoryContractDeleted"),
             meta: actorLabel ? t("finances.rentHistoryBy", { user: actorLabel }) : null,
-            details: details.length > 0 ? [details.join(" · ")] : []
+            details: details.length > 0 ? [details.join(" · ")] : [],
+            event
           };
         }
         if (event.event_type === "member_joined") {
@@ -964,7 +1016,8 @@ export const FinancesPage = ({
             at: event.created_at,
             title: t("finances.rentHistoryMemberJoined", { user: userLabel }),
             meta: null,
-            details: []
+            details: [],
+            event
           };
         }
         const userLabel = memberLabel(event.subject_user_id ?? event.actor_user_id ?? "");
@@ -973,11 +1026,330 @@ export const FinancesPage = ({
           at: event.created_at,
           title: t("finances.rentHistoryMemberLeft", { user: userLabel }),
           meta: null,
-          details: []
+          details: [],
+          event
         };
       })
       .sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
   }, [householdEvents, memberLabel, moneyLabel, t]);
+
+    const buildCostTableData = useCallback(
+      (
+        inputHousehold: Household,
+        inputMembers: HouseholdMember[],
+        inputSubscriptions: FinanceSubscription[],
+      ) => {
+        const apartmentSizeSqm = inputHousehold.apartment_size_sqm;
+        const coldRentMonthly = inputHousehold.cold_rent_monthly;
+        const utilitiesMonthly = inputHousehold.utilities_monthly;
+        const utilitiesOnRoomFactor =
+          (inputHousehold.utilities_on_room_sqm_percent ?? 0) / 100;
+        const utilitiesOnRoomPool =
+          utilitiesMonthly === null
+            ? null
+            : utilitiesMonthly * utilitiesOnRoomFactor;
+        const totalRoomAreaSqmInner = inputMembers.reduce(
+          (sum, member) => sum + (member.room_size_sqm ?? 0),
+          0,
+        );
+        const coldPerApartmentSqm =
+          apartmentSizeSqm !== null &&
+          apartmentSizeSqm > 0 &&
+          coldRentMonthly !== null
+            ? coldRentMonthly / apartmentSizeSqm
+            : null;
+        const utilitiesPerRoomSqm =
+          utilitiesOnRoomPool !== null && totalRoomAreaSqmInner > 0
+            ? utilitiesOnRoomPool / totalRoomAreaSqmInner
+            : null;
+        const memberIds = inputMembers.map((member) => member.user_id);
+
+        const byMember = new Map<
+          string,
+          {
+            coldForRoom: number | null;
+            utilitiesForRoom: number | null;
+            roomSubtotal: number | null;
+            commonCostsShare: number | null;
+            totalBeforeContracts: number | null;
+            extraContracts: number;
+            grandTotal: number | null;
+          }
+        >();
+
+        inputMembers.forEach((member) => {
+          const roomSize = member.room_size_sqm ?? 0;
+          const coldForRoom =
+            coldPerApartmentSqm === null
+              ? null
+              : coldPerApartmentSqm * roomSize;
+          const utilitiesForRoom =
+            utilitiesPerRoomSqm === null
+              ? null
+              : utilitiesPerRoomSqm * roomSize;
+          const roomSubtotal =
+            coldForRoom === null || utilitiesForRoom === null
+              ? null
+              : coldForRoom + utilitiesForRoom;
+          byMember.set(member.user_id, {
+            coldForRoom,
+            utilitiesForRoom,
+            roomSubtotal,
+            commonCostsShare: null,
+            totalBeforeContracts: null,
+            extraContracts: 0,
+            grandTotal: null,
+          });
+        });
+
+        const sharedAreaSqmRaw =
+          apartmentSizeSqm === null
+            ? null
+            : apartmentSizeSqm - totalRoomAreaSqmInner;
+        const sharedAreaColdCosts =
+          coldPerApartmentSqm === null || sharedAreaSqmRaw === null
+            ? null
+            : coldPerApartmentSqm * sharedAreaSqmRaw;
+        const sharedUtilitiesCosts =
+          utilitiesMonthly === null || utilitiesOnRoomPool === null
+            ? null
+            : utilitiesMonthly - utilitiesOnRoomPool;
+        const remainingApartmentCosts =
+          sharedAreaColdCosts === null || sharedUtilitiesCosts === null
+            ? null
+            : sharedAreaColdCosts + sharedUtilitiesCosts;
+        const totalCommonWeight = inputMembers.reduce(
+          (sum, member) => sum + member.common_area_factor,
+          0,
+        );
+
+        inputMembers.forEach((member) => {
+          const entry = byMember.get(member.user_id);
+          if (!entry) return;
+          const commonCostsShare =
+            remainingApartmentCosts === null || totalCommonWeight <= 0
+              ? null
+              : (remainingApartmentCosts * member.common_area_factor) /
+                totalCommonWeight;
+          const totalBeforeContracts =
+            entry.roomSubtotal === null || commonCostsShare === null
+              ? null
+              : entry.roomSubtotal + commonCostsShare;
+          entry.commonCostsShare = commonCostsShare;
+          entry.totalBeforeContracts = totalBeforeContracts;
+        });
+
+        inputSubscriptions.forEach((subscription) => {
+          const recurrence = cronPatternToFinanceRecurrence(
+            subscription.cron_pattern,
+          );
+          const monthlyAmount =
+            subscription.amount * financeRecurrenceToMonthlyFactor(recurrence);
+          const beneficiaryIds = subscription.beneficiary_user_ids.filter(
+            (memberId) => memberIds.includes(memberId),
+          );
+          const normalizedBeneficiaryIds =
+            beneficiaryIds.length > 0 ? beneficiaryIds : memberIds;
+          if (normalizedBeneficiaryIds.length === 0) return;
+          const contractShareByMember = splitAmountEvenly(
+            monthlyAmount,
+            normalizedBeneficiaryIds,
+          );
+          inputMembers.forEach((member) => {
+            const entry = byMember.get(member.user_id);
+            if (!entry) return;
+            entry.extraContracts +=
+              contractShareByMember.get(member.user_id) ?? 0;
+          });
+        });
+
+        inputMembers.forEach((member) => {
+          const entry = byMember.get(member.user_id);
+          if (!entry) return;
+          entry.grandTotal =
+            entry.totalBeforeContracts === null
+              ? null
+              : entry.totalBeforeContracts + entry.extraContracts;
+        });
+
+        return {
+          byMember,
+          remainingApartmentCosts,
+          sharedAreaColdCosts,
+          sharedUtilitiesCosts,
+        };
+      },
+      [],
+    );
+  const rentHistoryDialogData = useMemo(() => {
+    if (!selectedRentHistoryItem) return null;
+    const { event } = selectedRentHistoryItem;
+    const payload = event.payload ?? {};
+    const subjectUserId = event.subject_user_id ?? event.actor_user_id ?? null;
+    const subjectName = typeof payload.name === "string" ? payload.name.trim() : "";
+    const makePlaceholderMember = (userId: string): HouseholdMember => ({
+      household_id: household.id,
+      user_id: userId,
+      role: "member",
+      display_name: subjectName || null,
+      avatar_url: null,
+      user_color: null,
+      paypal_name: null,
+      revolut_name: null,
+      wero_name: null,
+      room_size_sqm: null,
+      common_area_factor: 1,
+      task_laziness_factor: 1,
+      vacation_mode: false,
+      created_at: event.created_at
+    });
+    const resolveCronPattern = (value: unknown) => {
+      if (value === "weekly" || value === "monthly" || value === "quarterly") {
+        return financeRecurrenceToCronPattern(value);
+      }
+      if (typeof value === "string" && value.trim().length > 0) return value;
+      return financeRecurrenceToCronPattern("monthly");
+    };
+    const buildSubscriptionFromPayload = (
+      input: { subscriptionId?: string; contractName?: string; amount?: number | string; recurrence?: unknown },
+      memberIds: string[]
+    ): FinanceSubscription => ({
+      id: input.subscriptionId ?? crypto.randomUUID(),
+      household_id: household.id,
+      name: input.contractName ?? t("finances.rentHistoryContract"),
+      category: "general",
+      amount: parseEventNumber(input.amount) ?? 0,
+      paid_by_user_ids: memberIds,
+      beneficiary_user_ids: memberIds,
+      cron_pattern: resolveCronPattern(input.recurrence),
+      created_by: event.actor_user_id ?? household.created_by,
+      created_at: event.created_at,
+      updated_at: event.created_at
+    });
+    const applyRentChanges = (stage: "before" | "after") => {
+      if (event.event_type !== "rent_updated") return household;
+      const changes = Array.isArray(payload.changes) ? payload.changes : [];
+      const next = { ...household };
+      changes.forEach((entry) => {
+        if (!entry || typeof entry !== "object") return;
+        const change = entry as { field?: string; before?: number | string | null; after?: number | string | null };
+        if (!change.field) return;
+        const value = parseEventNumber(stage === "before" ? change.before : change.after);
+        if (value === null) return;
+        (next as unknown as Record<string, number | null>)[change.field] = value;
+      });
+      return next;
+    };
+    const buildMembersForStage = (stage: "before" | "after") => {
+      if (!subjectUserId) return members;
+      const hasMember = members.some((member) => member.user_id === subjectUserId);
+      const placeholder = hasMember ? null : makePlaceholderMember(subjectUserId);
+      if (event.event_type === "member_joined") {
+        if (stage === "before") {
+          return members.filter((member) => member.user_id !== subjectUserId);
+        }
+        return hasMember ? members : [...members, placeholder].filter((entry): entry is HouseholdMember => Boolean(entry));
+      }
+      if (event.event_type === "member_left") {
+        if (stage === "after") {
+          return members.filter((member) => member.user_id !== subjectUserId);
+        }
+        return hasMember ? members : [...members, placeholder].filter((entry): entry is HouseholdMember => Boolean(entry));
+      }
+      return members;
+    };
+    const buildSubscriptionsForStage = (stage: "before" | "after", memberIds: string[]) => {
+      if (!["contract_created", "contract_updated", "contract_deleted"].includes(event.event_type)) {
+        return subscriptions;
+      }
+      const subscriptionId = typeof payload.subscriptionId === "string" ? payload.subscriptionId : null;
+      const existing = subscriptionId
+        ? subscriptions.find((subscription) => subscription.id === subscriptionId) ?? null
+        : null;
+      const base =
+        existing ?? buildSubscriptionFromPayload(payload as { subscriptionId?: string; contractName?: string; amount?: number | string; recurrence?: unknown }, memberIds);
+      if (event.event_type === "contract_created") {
+        if (stage === "before") return subscriptions.filter((subscription) => subscription.id !== base.id);
+        const withBase = subscriptions.some((subscription) => subscription.id === base.id)
+          ? subscriptions
+          : [...subscriptions, base];
+        return withBase;
+      }
+      if (event.event_type === "contract_deleted") {
+        if (stage === "after") return subscriptions.filter((subscription) => subscription.id !== base.id);
+        const withBase = subscriptions.some((subscription) => subscription.id === base.id)
+          ? subscriptions
+          : [...subscriptions, base];
+        return withBase;
+      }
+      const previous = payload.previous as { amount?: number | string | null; recurrence?: unknown } | undefined;
+      const resolvedAmount = stage === "before"
+        ? parseEventNumber(previous?.amount ?? null) ?? base.amount
+        : parseEventNumber(payload.amount) ?? base.amount;
+      const resolvedRecurrence = stage === "before"
+        ? previous?.recurrence ?? base.cron_pattern
+        : payload.recurrence ?? base.cron_pattern;
+      const updated = {
+        ...base,
+        amount: resolvedAmount,
+        cron_pattern: resolveCronPattern(resolvedRecurrence),
+        updated_at: event.created_at
+      };
+      if (subscriptions.some((subscription) => subscription.id === base.id)) {
+        return subscriptions.map((subscription) => (subscription.id === base.id ? updated : subscription));
+      }
+      return [...subscriptions, updated];
+    };
+
+    const beforeMembers = buildMembersForStage("before");
+    const afterMembers = buildMembersForStage("after");
+    const beforeMemberIds = beforeMembers.map((member) => member.user_id);
+    const afterMemberIds = afterMembers.map((member) => member.user_id);
+    const beforeSubscriptions = buildSubscriptionsForStage("before", beforeMemberIds);
+    const afterSubscriptions = buildSubscriptionsForStage("after", afterMemberIds);
+    const beforeHousehold = applyRentChanges("before");
+    const afterHousehold = applyRentChanges("after");
+    const beforeCost = buildCostTableData(beforeHousehold, beforeMembers, beforeSubscriptions);
+    const afterCost = buildCostTableData(afterHousehold, afterMembers, afterSubscriptions);
+    const memberIds = [...new Set([...beforeMemberIds, ...afterMemberIds])];
+    const memberNameOverrides = new Map<string, string>();
+    if (subjectUserId && subjectName) {
+      memberNameOverrides.set(subjectUserId, subjectName);
+    }
+
+    return {
+      event,
+      beforeCost,
+      afterCost,
+      beforeMembers,
+      afterMembers,
+      memberIds,
+      memberNameOverrides
+    };
+  }, [buildCostTableData, household, members, selectedRentHistoryItem, subscriptions, t]);
+  const formatHistoryValue = useCallback(
+    (value: number | null) => (value === null ? "-" : moneyLabel(value)),
+    [moneyLabel]
+  );
+  const formatHistoryDelta = useCallback(
+    (before: number | null, after: number | null) => {
+      if (before === null && after === null) return "-";
+      if (before === null) return `+${moneyLabel(after ?? 0)}`;
+      if (after === null) return `-${moneyLabel(before ?? 0)}`;
+      const diff = after - before;
+      if (Math.abs(diff) < 0.005) return moneyLabel(0);
+      const sign = diff > 0 ? "+" : "-";
+      return `${sign}${moneyLabel(Math.abs(diff))}`;
+    },
+    [moneyLabel]
+  );
+  const getHistoryDeltaValue = useCallback((before: number | null, after: number | null) => {
+    if (before === null && after === null) return 0;
+    if (before === null) return after ?? 0;
+    if (after === null) return -before;
+    const diff = after - before;
+    return Math.abs(diff) < 0.005 ? 0 : diff;
+  }, []);
   const buildPaymentLinks = (toMemberId: string, amount: number, settlementDateIsoDay?: string) => {
     const target = memberById.get(toMemberId);
     if (!target) return [];
@@ -1192,102 +1564,11 @@ export const FinancesPage = ({
     if (household.cold_rent_monthly === null || household.utilities_monthly === null) return null;
     return household.cold_rent_monthly + household.utilities_monthly;
   }, [household.cold_rent_monthly, household.utilities_monthly]);
-  const costTableData = useMemo(() => {
-    const apartmentSizeSqm = household.apartment_size_sqm;
-    const coldRentMonthly = household.cold_rent_monthly;
-    const utilitiesMonthly = household.utilities_monthly;
-    const utilitiesOnRoomFactor = (household.utilities_on_room_sqm_percent ?? 0) / 100;
-    const utilitiesOnRoomPool = utilitiesMonthly === null ? null : utilitiesMonthly * utilitiesOnRoomFactor;
-    const coldPerApartmentSqm =
-      apartmentSizeSqm !== null && apartmentSizeSqm > 0 && coldRentMonthly !== null
-        ? coldRentMonthly / apartmentSizeSqm
-        : null;
-    const utilitiesPerRoomSqm =
-      utilitiesOnRoomPool !== null && totalRoomAreaSqm > 0 ? utilitiesOnRoomPool / totalRoomAreaSqm : null;
 
-    const byMember = new Map<
-      string,
-      {
-        coldForRoom: number | null;
-        utilitiesForRoom: number | null;
-        roomSubtotal: number | null;
-        commonCostsShare: number | null;
-        totalBeforeContracts: number | null;
-        extraContracts: number;
-        grandTotal: number | null;
-      }
-    >();
-
-    members.forEach((member) => {
-      const roomSize = member.room_size_sqm ?? 0;
-      const coldForRoom = coldPerApartmentSqm === null ? null : coldPerApartmentSqm * roomSize;
-      const utilitiesForRoom = utilitiesPerRoomSqm === null ? null : utilitiesPerRoomSqm * roomSize;
-      const roomSubtotal =
-        coldForRoom === null || utilitiesForRoom === null ? null : coldForRoom + utilitiesForRoom;
-      byMember.set(member.user_id, {
-        coldForRoom,
-        utilitiesForRoom,
-        roomSubtotal,
-        commonCostsShare: null,
-        totalBeforeContracts: null,
-        extraContracts: 0,
-        grandTotal: null
-      });
-    });
-
-    const sharedAreaSqmRaw = apartmentSizeSqm === null ? null : apartmentSizeSqm - totalRoomAreaSqm;
-    const sharedAreaColdCosts =
-      coldPerApartmentSqm === null || sharedAreaSqmRaw === null ? null : coldPerApartmentSqm * sharedAreaSqmRaw;
-    const sharedUtilitiesCosts =
-      utilitiesMonthly === null || utilitiesOnRoomPool === null ? null : utilitiesMonthly - utilitiesOnRoomPool;
-    const remainingApartmentCosts =
-      sharedAreaColdCosts === null || sharedUtilitiesCosts === null ? null : sharedAreaColdCosts + sharedUtilitiesCosts;
-    const totalCommonWeight = members.reduce((sum, member) => sum + member.common_area_factor, 0);
-
-    members.forEach((member) => {
-      const entry = byMember.get(member.user_id);
-      if (!entry) return;
-      const commonCostsShare =
-        remainingApartmentCosts === null || totalCommonWeight <= 0
-          ? null
-          : (remainingApartmentCosts * member.common_area_factor) / totalCommonWeight;
-      const totalBeforeContracts =
-        entry.roomSubtotal === null || commonCostsShare === null ? null : entry.roomSubtotal + commonCostsShare;
-      entry.commonCostsShare = commonCostsShare;
-      entry.totalBeforeContracts = totalBeforeContracts;
-    });
-
-    subscriptions.forEach((subscription) => {
-      const recurrence = cronPatternToFinanceRecurrence(subscription.cron_pattern);
-      const monthlyAmount = subscription.amount * financeRecurrenceToMonthlyFactor(recurrence);
-      const beneficiaryIds = subscription.beneficiary_user_ids.filter((memberId) => householdMemberIds.includes(memberId));
-      const normalizedBeneficiaryIds = beneficiaryIds.length > 0 ? beneficiaryIds : householdMemberIds;
-      if (normalizedBeneficiaryIds.length === 0) return;
-      const contractShareByMember = splitAmountEvenly(monthlyAmount, normalizedBeneficiaryIds);
-      members.forEach((member) => {
-        const entry = byMember.get(member.user_id);
-        if (!entry) return;
-        entry.extraContracts += contractShareByMember.get(member.user_id) ?? 0;
-      });
-    });
-
-    members.forEach((member) => {
-      const entry = byMember.get(member.user_id);
-      if (!entry) return;
-      entry.grandTotal = entry.totalBeforeContracts === null ? null : entry.totalBeforeContracts + entry.extraContracts;
-    });
-
-    return { byMember, remainingApartmentCosts, sharedAreaColdCosts, sharedUtilitiesCosts };
-  }, [
-    household.apartment_size_sqm,
-    household.cold_rent_monthly,
-    household.utilities_monthly,
-    household.utilities_on_room_sqm_percent,
-    householdMemberIds,
-    members,
-    subscriptions,
-    totalRoomAreaSqm
-  ]);
+  const costTableData = useMemo(
+    () => buildCostTableData(household, members, subscriptions),
+    [buildCostTableData, household, members, subscriptions]
+  );
   const costTableTotals = useMemo(() => {
     const sumNullable = (values: Array<number | null>) => {
       if (values.length === 0 || values.some((value) => value === null)) return null;
@@ -1560,6 +1841,7 @@ export const FinancesPage = ({
             <MemberMultiSelectField
               label={t("finances.paidByLabel")}
               members={members}
+              vacationMemberIds={vacationMemberIds}
               value={field.state.value}
               onChange={field.handleChange}
               currentUserId={userId}
@@ -1574,6 +1856,7 @@ export const FinancesPage = ({
             <MemberMultiSelectField
               label={t("finances.forWhomLabel")}
               members={members}
+              vacationMemberIds={vacationMemberIds}
               value={field.state.value}
               onChange={field.handleChange}
               currentUserId={userId}
@@ -1600,6 +1883,7 @@ export const FinancesPage = ({
               compactLabel={compactLabel}
               label={t("finances.paidByLabel")}
               members={members}
+              vacationMemberIds={vacationMemberIds}
               value={field.state.value}
               onChange={(value) => {
                 field.handleChange(value);
@@ -1618,6 +1902,7 @@ export const FinancesPage = ({
               compactLabel={compactLabel}
               label={t("finances.forWhomLabel")}
               members={members}
+              vacationMemberIds={vacationMemberIds}
               value={field.state.value}
               onChange={(value) => {
                 field.handleChange(value);
@@ -2267,7 +2552,7 @@ export const FinancesPage = ({
                         <MemberAvatar
                           src={memberAvatarSrc(entry.memberId)}
                           alt={memberLabel(entry.memberId)}
-                          isVacation={isMemberOnVacationAt(entry.memberId, memberVacations, new Date())}
+                          isVacation={vacationMemberIds.has(entry.memberId)}
                           className="h-7 w-7 rounded-full border border-brand-100 bg-brand-50 dark:border-slate-700 dark:bg-slate-800"
                         />
                         <span
@@ -2508,6 +2793,7 @@ export const FinancesPage = ({
               </ul>
             </SectionPanel>
           ) : null}
+
         </>
       ) : null}
 
@@ -2621,6 +2907,7 @@ export const FinancesPage = ({
                         <PersonSelect
                           mode="single"
                           members={members}
+                          vacationMemberIds={vacationMemberIds}
                           value={field.state.value}
                           onChange={field.handleChange}
                           currentUserId={userId}
@@ -3309,54 +3596,6 @@ export const FinancesPage = ({
               <SectionPanel className="mt-4">
                 <>
                   <p className="text-sm font-semibold text-brand-900 dark:text-brand-100">
-                    {t("finances.rentHistoryTitle")}
-                  </p>
-                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                    {t("finances.rentHistoryDescription")}
-                  </p>
-                  {rentHistoryItems.length === 0 ? (
-                    <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
-                      {t("finances.rentHistoryEmpty")}
-                    </p>
-                  ) : (
-                    <div className="mt-3 space-y-2">
-                      {rentHistoryItems.map((item) => (
-                        <div
-                          key={`rent-history-${item.id}`}
-                          className="rounded-lg border border-brand-100 bg-white/80 px-3 py-2 dark:border-slate-700 dark:bg-slate-900/70"
-                        >
-                          <div className="flex flex-wrap items-start justify-between gap-2">
-                            <div className="min-w-0">
-                              <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-                                {item.title}
-                              </p>
-                              {item.meta ? (
-                                <p className="text-xs text-slate-500 dark:text-slate-400">
-                                  {item.meta}
-                                </p>
-                              ) : null}
-                              {item.details.length > 0 ? (
-                                <div className="mt-1 space-y-1 text-xs text-slate-600 dark:text-slate-300">
-                                  {item.details.map((detail, index) => (
-                                    <p key={`${item.id}-detail-${index}`}>{detail}</p>
-                                  ))}
-                                </div>
-                              ) : null}
-                            </div>
-                            <span className="text-xs text-slate-500 dark:text-slate-400">
-                              {formatDateOnly(item.at, language, item.at)}
-                            </span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </>
-              </SectionPanel>
-
-              <SectionPanel className="mt-4">
-                <>
-                  <p className="text-sm font-semibold text-brand-900 dark:text-brand-100">
                     {t("finances.costBreakdownTitle")}
                   </p>
                   <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
@@ -3760,6 +3999,62 @@ export const FinancesPage = ({
                   </tbody>
                 </table>
               </div>
+            </SectionPanel>
+          ) : null}
+
+          {!rentDetailsOpen ? (
+            <SectionPanel className="mt-4">
+              <>
+                <p className="text-sm font-semibold text-brand-900 dark:text-brand-100">
+                  {t("finances.rentHistoryTitle")}
+                </p>
+                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                  {t("finances.rentHistoryDescription")}
+                </p>
+                {rentHistoryItems.length === 0 ? (
+                  <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+                    {t("finances.rentHistoryEmpty")}
+                  </p>
+                ) : (
+                  <div className="mt-3 space-y-2">
+                    {rentHistoryItems.map((item) => (
+                      <button
+                        key={`rent-history-${item.id}`}
+                        type="button"
+                        onClick={() => {
+                          setSelectedRentHistoryItem(item);
+                          setRentHistoryContractsOnly(false);
+                          setRentHistoryDialogOpen(true);
+                        }}
+                        className="w-full rounded-lg cursor-pointer border border-brand-100 bg-white/80 px-3 py-2 text-left transition hover:border-brand-200 hover:bg-white dark:border-slate-700 dark:bg-slate-900/70 dark:hover:border-slate-600"
+                      >
+                        <div className="flex flex-wrap items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                              {item.title}
+                            </p>
+                            {item.meta ? (
+                              <p className="text-xs text-slate-500 dark:text-slate-400">
+                                {item.meta}
+                              </p>
+                            ) : null}
+                            {item.details.length > 0 ? (
+                              <div className="mt-1 space-y-1 text-xs text-slate-600 dark:text-slate-300">
+                                {item.details.map((detail, index) => (
+                                  <p key={`${item.id}-detail-${index}`}>{detail}</p>
+                                ))}
+                              </div>
+                            ) : null}
+                          </div>
+                          <span className="text-xs text-slate-500 dark:text-slate-400">
+                            {formatDateOnly(item.at, language, item.at)}
+                          </span>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </>
             </SectionPanel>
           ) : null}
         </>
@@ -4230,6 +4525,111 @@ export const FinancesPage = ({
                 </Button>
               </DialogClose>
             </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+      <Dialog
+        open={rentHistoryDialogOpen}
+        onOpenChange={(open) => {
+          setRentHistoryDialogOpen(open);
+          if (!open) {
+            setSelectedRentHistoryItem(null);
+          }
+        }}
+      >
+        <DialogContent className="max-w-4xl">
+          <DialogHeader>
+            <DialogTitle>{t("finances.rentHistoryDialogTitle")}</DialogTitle>
+            {selectedRentHistoryItem ? (
+              <DialogDescription>
+                {selectedRentHistoryItem.title} ·{" "}
+                {formatDateOnly(selectedRentHistoryItem.at, language, selectedRentHistoryItem.at)}
+              </DialogDescription>
+            ) : null}
+          </DialogHeader>
+          <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              {t("finances.rentHistoryDialogDescription")}
+            </p>
+            <div className="flex items-center gap-2">
+              <Switch
+                checked={rentHistoryContractsOnly}
+                onCheckedChange={(checked) => setRentHistoryContractsOnly(checked)}
+              />
+              <span className="text-xs font-medium text-slate-700 dark:text-slate-300">
+                {rentHistoryContractsOnly
+                  ? t("finances.rentHistoryDialogModeContracts")
+                  : t("finances.rentHistoryDialogModeTotal")}
+              </span>
+            </div>
+          </div>
+
+          {rentHistoryDialogData ? (
+            <div className="mt-3 overflow-auto rounded-lg border border-brand-100 dark:border-slate-700">
+              <table className="min-w-full text-left text-xs">
+                <thead className="bg-brand-50/50 text-[11px] uppercase tracking-wide text-slate-500 dark:bg-slate-900/70 dark:text-slate-200">
+                  <tr>
+                    <th className="px-3 py-2">{t("finances.rentHistoryTableMember")}</th>
+                    <th className="px-3 py-2 text-right">{t("finances.rentHistoryTableBefore")}</th>
+                    <th className="px-3 py-2 text-right">{t("finances.rentHistoryTableChange")}</th>
+                    <th className="px-3 py-2 text-right">{t("finances.rentHistoryTableAfter")}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rentHistoryDialogData.memberIds.map((memberId, index) => {
+                    const labelOverride = rentHistoryDialogData.memberNameOverrides.get(memberId);
+                    const label = labelOverride || memberLabel(memberId);
+                    const beforeEntry = rentHistoryDialogData.beforeCost.byMember.get(memberId) ?? null;
+                    const afterEntry = rentHistoryDialogData.afterCost.byMember.get(memberId) ?? null;
+                    const beforeValue = rentHistoryContractsOnly
+                      ? beforeEntry?.extraContracts ?? null
+                      : beforeEntry?.grandTotal ?? null;
+                    const afterValue = rentHistoryContractsOnly
+                      ? afterEntry?.extraContracts ?? null
+                      : afterEntry?.grandTotal ?? null;
+                    const deltaValue = getHistoryDeltaValue(beforeValue, afterValue);
+                    const deltaColor =
+                      deltaValue > 0
+                        ? "text-rose-600 dark:text-rose-300"
+                        : deltaValue < 0
+                          ? "text-emerald-600 dark:text-emerald-300"
+                          : "text-slate-600 dark:text-slate-300";
+                    return (
+                      <tr
+                        key={`rent-history-row-${memberId}`}
+                        className={[
+                          "border-t border-brand-100 dark:border-slate-700",
+                          index % 2 === 0
+                            ? "bg-white dark:bg-slate-900/60"
+                            : "bg-brand-50/10"
+                        ].join(" ")}
+                      >
+                        <td className="px-3 py-2 font-medium text-slate-900 dark:text-slate-100">{label}</td>
+                        <td className="px-3 py-2 text-right text-slate-700 dark:text-slate-300">
+                          {formatHistoryValue(beforeValue)}
+                        </td>
+                        <td className={`px-3 py-2 text-right font-semibold ${deltaColor}`}>
+                          {formatHistoryDelta(beforeValue, afterValue)}
+                        </td>
+                        <td className="px-3 py-2 text-right text-slate-700 dark:text-slate-300">
+                          {formatHistoryValue(afterValue)}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="mt-4 text-sm text-slate-500 dark:text-slate-400">
+              {t("finances.rentHistoryDialogEmpty")}
+            </p>
+          )}
+
+          <div className="mt-4 flex justify-end">
+            <DialogClose asChild>
+              <Button variant="ghost">{t("common.close")}</Button>
+            </DialogClose>
           </div>
         </DialogContent>
       </Dialog>

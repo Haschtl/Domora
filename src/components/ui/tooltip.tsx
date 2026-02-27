@@ -95,6 +95,8 @@ const TooltipTrigger = React.forwardRef<
         onPointerDown?.(event);
         if (!context?.isCoarsePointer) return;
         if (event.pointerType === "mouse") return;
+        const target = event.target as HTMLElement | null;
+        if (target && target.closest("select")) return;
         event.preventDefault();
         context.setOpen(true);
         context.scheduleClose();

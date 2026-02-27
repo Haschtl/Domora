@@ -14,6 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 interface PersonSelectCommonProps {
   members: HouseholdMember[];
   currentUserId?: string;
+  vacationMemberIds?: Set<string> | string[];
   youLabel?: string;
   youLabels?: {
     nominative?: string;
@@ -44,6 +45,12 @@ type PersonSelectProps = PersonSelectSingleProps | PersonSelectMultipleProps;
 
 export const PersonSelect = (props: PersonSelectProps) => {
   const { t } = useTranslation();
+  const vacationMemberIds = useMemo(() => {
+    if (!props.vacationMemberIds) return null;
+    return props.vacationMemberIds instanceof Set
+      ? props.vacationMemberIds
+      : new Set(props.vacationMemberIds);
+  }, [props.vacationMemberIds]);
   const members = useMemo(() => {
     const dedup = new Map<string, HouseholdMember>();
     props.members.forEach((member) => {
@@ -112,7 +119,7 @@ export const PersonSelect = (props: PersonSelectProps) => {
                         key={member.user_id}
                         src={getMemberAvatar(member)}
                         alt={getMemberName(member.user_id)}
-                        isVacation={member.vacation_mode}
+                        isVacation={member.vacation_mode || Boolean(vacationMemberIds?.has(member.user_id))}
                         className="h-5 w-5 rounded-full border border-white dark:border-slate-900"
                       />
                     ))}
@@ -154,7 +161,7 @@ export const PersonSelect = (props: PersonSelectProps) => {
                     <MemberAvatar
                       src={getMemberAvatar(member)}
                       alt={getMemberName(member.user_id)}
-                      isVacation={member.vacation_mode}
+                      isVacation={member.vacation_mode || Boolean(vacationMemberIds?.has(member.user_id))}
                       className="ml-auto h-4 w-4 rounded-full border border-brand-200 dark:border-slate-700"
                     />
                   </label>
@@ -191,7 +198,7 @@ export const PersonSelect = (props: PersonSelectProps) => {
               <MemberAvatar
                 src={getMemberAvatar(member)}
                 alt={getMemberName(member.user_id)}
-                isVacation={member.vacation_mode}
+                isVacation={member.vacation_mode || Boolean(vacationMemberIds?.has(member.user_id))}
                 className="h-4 w-4 rounded-full border border-brand-200 dark:border-slate-700"
               />
               {getMemberFirstName(member.user_id)}

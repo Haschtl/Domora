@@ -37,6 +37,7 @@ import { createMemberLabelGetter } from "../../lib/member-label";
 import { createDiceBearAvatarDataUri, getMemberAvatarSeed } from "../../lib/avatar";
 import { calculateBalancesByMember } from "../../lib/finance-math";
 import { getMemberOfMonth } from "../../lib/task-leaderboard";
+import { isMemberOnVacation } from "../../lib/vacation-utils";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../../components/ui/tooltip";
 import { MemberAvatar } from "../../components/member-avatar";
 const ExcalidrawBoardLazy = lazy(() =>
@@ -1632,7 +1633,16 @@ export const HomePage = ({
                     )
                   }
                   alt={memberLabel(memberOfMonth.userId)}
-                  isVacation={memberOfMonthProfile?.vacation_mode ?? false}
+                  isVacation={
+                    memberOfMonthProfile
+                      ? isMemberOnVacation(
+                          memberOfMonthProfile.user_id,
+                          memberVacations,
+                          todayIso,
+                          memberOfMonthProfile.vacation_mode
+                        )
+                      : false
+                  }
                   isMemberOfMonth
                   className="h-8 w-8 rounded-full border border-brand-200 dark:border-slate-700"
                 />

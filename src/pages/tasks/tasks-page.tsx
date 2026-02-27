@@ -758,6 +758,15 @@ export const TasksPage = ({
     },
     [memberById, memberVacations]
   );
+  const vacationMemberIds = useMemo(() => {
+    const ids = new Set<string>();
+    members.forEach((member) => {
+      if (isMemberOnVacationNow(member.user_id)) {
+        ids.add(member.user_id);
+      }
+    });
+    return ids;
+  }, [isMemberOnVacationNow, members]);
   const isMemberExcludedFromTasks = useCallback(
     (memberId: string, date: Date = new Date()) => {
       if (!excludeVacationFromTasks) return false;
@@ -2668,6 +2677,7 @@ export const TasksPage = ({
                       <PersonSelect
                         mode="multiple"
                         members={members}
+                        vacationMemberIds={vacationMemberIds}
                         value={rotationUserIds}
                         onChange={(nextSelection) => {
                           const nextSet = new Set(nextSelection);
@@ -4593,6 +4603,7 @@ export const TasksPage = ({
               <PersonSelect
                 mode="multiple"
                 members={members}
+                vacationMemberIds={vacationMemberIds}
                 value={editRotationUserIds}
                 onChange={(nextSelection) => {
                   const nextSet = new Set(nextSelection);

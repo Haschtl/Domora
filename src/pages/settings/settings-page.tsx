@@ -17,7 +17,7 @@ import { createDiceBearAvatarDataUri, getMemberAvatarSeed } from "../../lib/avat
 import { createTrianglifyBannerBackground } from "../../lib/banner";
 import { createMemberLabelGetter } from "../../lib/member-label";
 import { isDueNow } from "../../lib/date";
-import { getVacationStatus, isDateWithinRange } from "../../lib/vacation-utils";
+import { getVacationStatus, isDateWithinRange, isMemberOnVacation } from "../../lib/vacation-utils";
 import { ThemeLanguageControls } from "../../components/theme-language-controls";
 import { PaymentBrandIcon } from "../../components/payment-brand-icon";
 import { applyHouseholdTheme } from "../../lib/household-theme";
@@ -226,6 +226,15 @@ export const SettingsPage = ({
     if (!editingVacation) return false;
     return editingVacation.start_date <= todayIso;
   }, [editingVacation, todayIso]);
+  const plannedVacationTodayIds = useMemo(
+    () =>
+      memberVacationsForUser
+        .filter((vacation) => isDateWithinRange(todayIso, vacation.start_date, vacation.end_date))
+        .map((vacation) => vacation.id),
+    [memberVacationsForUser, todayIso]
+  );
+  const isPlannedVacationToday = plannedVacationTodayIds.length > 0;
+  const isVacationToggleActive = (currentMember?.vacation_mode ?? false) || isPlannedVacationToday;
 
   useEffect(() => {
     if (editingVacation) {
@@ -1177,222 +1186,6 @@ export const SettingsPage = ({
                 </p>
               ) : null}
 
-              <div className="flex items-center justify-between rounded-xl border border-brand-200 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900">
-                <div>
-                  <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
-                    {t("settings.vacationModeLabel")}
-                  </p>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">
-                    {vacationModeDescription}
-                  </p>
-                </div>
-                <Switch
-                  checked={currentMember?.vacation_mode ?? false}
-                  disabled={busy || !currentMember}
-                  onCheckedChange={(checked) => {
-                    setPendingVacationMode(checked);
-                    setVacationDialogOpen(true);
-                  }}
-                  aria-label={t("settings.vacationModeLabel")}
-                />
-              </div>
-              <Dialog
-                open={vacationDialogOpen}
-                onOpenChange={(open) => {
-                  setVacationDialogOpen(open);
-                  if (!open) {
-                    setPendingVacationMode(null);
-                  }
-                }}
-              >
-                <DialogContent>
-                  <DialogHeader>
-                    <DialogTitle>
-                      {t("settings.vacationModeConfirmTitle")}
-                    </DialogTitle>
-                    <DialogDescription>
-                      {vacationModeConfirmText}
-                    </DialogDescription>
-                  </DialogHeader>
-                  {pendingVacationMode && isTasksFeatureEnabled && isVacationTaskExclusionEnabled && dueTasksAssignedCount > 0 ? (
-                    <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-100">
-                      {t("settings.vacationModeOpenTasksWarning", {
-                        count: dueTasksAssignedCount,
-                      })}
-                    </p>
-                  ) : null}
-                  <div className="mt-4 flex justify-end gap-2">
-                    <DialogClose asChild>
-                      <Button variant="ghost">{t("common.cancel")}</Button>
-                    </DialogClose>
-                    <DialogClose asChild>
-                      <Button
-                        type="button"
-                        onClick={() => {
-                          if (pendingVacationMode === null) return;
-                          void onUpdateVacationMode(pendingVacationMode);
-                        }}
-                        disabled={busy || pendingVacationMode === null}
-                      >
-                        {t("common.confirm")}
-                      </Button>
-                    </DialogClose>
-                  </div>
-                </DialogContent>
-              </Dialog>
-
-              <div className="rounded-xl border border-brand-200 bg-white px-3 py-3 dark:border-slate-700 dark:bg-slate-900">
-                <div className="flex items-center justify-between gap-2">
-                  <div>
-                    <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
-                      {t("settings.vacationPlanTitle")}
-                    </p>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">
-                      {t("settings.vacationPlanDescription")}
-                    </p>
-                  </div>
-                  {editingVacation ? (
-                    <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800 dark:bg-amber-900/40 dark:text-amber-200">
-                      {t("settings.vacationPlanEditing")}
-                    </span>
-                  ) : null}
-                </div>
-
-                <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                  <div className="space-y-1.5">
-                    <Label htmlFor="vacation-start">{t("settings.vacationPlanStart")}</Label>
-                    <Input
-                      id="vacation-start"
-                      type="date"
-                      value={vacationFormStart}
-                      disabled={busy || (editingVacationId !== null && hasVacationStarted)}
-                      max={vacationFormEnd}
-                      onChange={(event) => setVacationFormStart(event.target.value)}
-                    />
-                    {editingVacationId !== null && hasVacationStarted ? (
-                      <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                        {t("settings.vacationPlanStartLocked")}
-                      </p>
-                    ) : null}
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="vacation-end">{t("settings.vacationPlanEnd")}</Label>
-                    <Input
-                      id="vacation-end"
-                      type="date"
-                      value={vacationFormEnd}
-                      disabled={busy}
-                      min={vacationFormStart}
-                      onChange={(event) => setVacationFormEnd(event.target.value)}
-                    />
-                  </div>
-                </div>
-                <div className="mt-3 space-y-1.5">
-                  <Label htmlFor="vacation-note">{t("settings.vacationPlanNote")}</Label>
-                  <Input
-                    id="vacation-note"
-                    value={vacationFormNote}
-                    disabled={busy}
-                    placeholder={t("settings.vacationPlanNotePlaceholder")}
-                    onChange={(event) => setVacationFormNote(event.target.value)}
-                  />
-                </div>
-                {vacationFormError ? (
-                  <p className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-200">
-                    {vacationFormError}
-                  </p>
-                ) : null}
-                <div className="mt-3 flex flex-wrap justify-end gap-2">
-                  {editingVacationId ? (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      disabled={busy}
-                      onClick={() => setEditingVacationId(null)}
-                    >
-                      {t("common.cancel")}
-                    </Button>
-                  ) : null}
-                  <Button type="button" disabled={busy} onClick={onSubmitVacationForm}>
-                    {editingVacationId ? t("common.save") : t("settings.vacationPlanAdd")}
-                  </Button>
-                </div>
-
-                <div className="mt-4 space-y-2">
-                  {memberVacationsForUser.length === 0 ? (
-                    <p className="text-xs text-slate-500 dark:text-slate-400">
-                      {t("settings.vacationPlanEmpty")}
-                    </p>
-                  ) : (
-                    memberVacationsForUser.map((vacation) => {
-                      const status = getVacationStatus(vacation, todayIso);
-                      const statusLabel =
-                        status === "active"
-                          ? t("settings.vacationPlanStatusActive")
-                          : status === "upcoming"
-                            ? t("settings.vacationPlanStatusUpcoming")
-                            : t("settings.vacationPlanStatusPast");
-                      const statusClass =
-                        status === "active"
-                          ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200"
-                          : status === "upcoming"
-                            ? "bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-200"
-                            : "bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-200";
-                      const isOngoingToday = isDateWithinRange(todayIso, vacation.start_date, vacation.end_date);
-                      return (
-                        <div
-                          key={vacation.id}
-                          className={`flex flex-wrap items-center justify-between gap-2 rounded-lg border px-3 py-2 text-xs ${
-                            editingVacationId === vacation.id
-                              ? "border-brand-300 bg-brand-50/70 dark:border-brand-600 dark:bg-brand-900/20"
-                              : "border-brand-100 bg-white/80 dark:border-slate-700 dark:bg-slate-900/70"
-                          }`}
-                        >
-                          <div className="space-y-0.5">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${statusClass}`}>
-                                {statusLabel}
-                              </span>
-                              {isOngoingToday ? (
-                                <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800 dark:bg-amber-900/40 dark:text-amber-200">
-                                  {t("settings.vacationPlanStatusToday")}
-                                </span>
-                              ) : null}
-                            </div>
-                            <p className="font-semibold text-slate-800 dark:text-slate-100">
-                              {vacation.start_date} – {vacation.end_date}
-                            </p>
-                            {vacation.note ? (
-                              <p className="text-slate-500 dark:text-slate-400">{vacation.note}</p>
-                            ) : null}
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="outline"
-                              disabled={busy}
-                              onClick={() => setEditingVacationId(vacation.id)}
-                            >
-                              {t("common.edit")}
-                            </Button>
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="danger"
-                              disabled={busy}
-                              onClick={() => void onDeleteMemberVacation(vacation.id)}
-                            >
-                              {t("common.delete")}
-                            </Button>
-                          </div>
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
-              </div>
-
               <div className="rounded-xl border border-brand-200 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900">
                 <div className="flex items-center justify-between gap-3">
                   <div>
@@ -1737,6 +1530,284 @@ export const SettingsPage = ({
         </Card>
       ) : null}
 
+      {showMe ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>{t("settings.vacationCardTitle")}</CardTitle>
+            <CardDescription>
+              {t("settings.vacationPlanDescription")}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+              <div className="mt-3 space-y-3">
+                <div className="flex items-center justify-between gap-3 rounded-lg border border-brand-100 bg-white/80 px-3 py-2 dark:border-slate-700 dark:bg-slate-900/70">
+                  <div>
+                    <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
+                      {t("settings.vacationModeLabel")}
+                    </p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      {vacationModeDescription}
+                    </p>
+                  </div>
+                  <Switch
+                    checked={isVacationToggleActive}
+                    disabled={busy || !currentMember}
+                    onCheckedChange={(checked) => {
+                      setPendingVacationMode(checked);
+                      setVacationDialogOpen(true);
+                    }}
+                    aria-label={t("settings.vacationModeLabel")}
+                  />
+                </div>
+                <Dialog
+                  open={vacationDialogOpen}
+                  onOpenChange={(open) => {
+                    setVacationDialogOpen(open);
+                    if (!open) {
+                      setPendingVacationMode(null);
+                    }
+                  }}
+                >
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>
+                        {t("settings.vacationModeConfirmTitle")}
+                      </DialogTitle>
+                      <DialogDescription>
+                        {vacationModeConfirmText}
+                      </DialogDescription>
+                    </DialogHeader>
+                    {pendingVacationMode &&
+                    isTasksFeatureEnabled &&
+                    isVacationTaskExclusionEnabled &&
+                    dueTasksAssignedCount > 0 ? (
+                      <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-100">
+                        {t("settings.vacationModeOpenTasksWarning", {
+                          count: dueTasksAssignedCount,
+                        })}
+                      </p>
+                    ) : null}
+                    <div className="mt-4 flex justify-end gap-2">
+                      <DialogClose asChild>
+                        <Button variant="ghost">{t("common.cancel")}</Button>
+                      </DialogClose>
+                      <DialogClose asChild>
+                        <Button
+                          type="button"
+                          onClick={async () => {
+                            if (pendingVacationMode === null) return;
+                            if (
+                              !pendingVacationMode &&
+                              plannedVacationTodayIds.length > 0
+                            ) {
+                              await Promise.all(
+                                plannedVacationTodayIds.map((vacationId) =>
+                                  onUpdateMemberVacation(vacationId, {
+                                    endDate: todayIso,
+                                  }),
+                                ),
+                              );
+                            }
+                            await onUpdateVacationMode(pendingVacationMode);
+                          }}
+                          disabled={busy || pendingVacationMode === null}
+                        >
+                          {t("common.confirm")}
+                        </Button>
+                      </DialogClose>
+                    </div>
+                  </DialogContent>
+                </Dialog>
+
+                <div className="rounded-lg border border-brand-100 bg-white/80 px-3 py-3 dark:border-slate-700 dark:bg-slate-900/70">
+                  <div className="flex items-center justify-between gap-2">
+                    <div>
+                      <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
+                        {t("settings.vacationPlanTitle")}
+                      </p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">
+                        {t("settings.vacationPlanDescription")}
+                      </p>
+                    </div>
+                    {editingVacation ? (
+                      <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800 dark:bg-amber-900/40 dark:text-amber-200">
+                        {t("settings.vacationPlanEditing")}
+                      </span>
+                    ) : null}
+                  </div>
+
+                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="vacation-start">
+                        {t("settings.vacationPlanStart")}
+                      </Label>
+                      <Input
+                        id="vacation-start"
+                        type="date"
+                        value={vacationFormStart}
+                        disabled={
+                          busy ||
+                          (editingVacationId !== null && hasVacationStarted)
+                        }
+                        max={vacationFormEnd}
+                        onChange={(event) =>
+                          setVacationFormStart(event.target.value)
+                        }
+                      />
+                      {editingVacationId !== null && hasVacationStarted ? (
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                          {t("settings.vacationPlanStartLocked")}
+                        </p>
+                      ) : null}
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="vacation-end">
+                        {t("settings.vacationPlanEnd")}
+                      </Label>
+                      <Input
+                        id="vacation-end"
+                        type="date"
+                        value={vacationFormEnd}
+                        disabled={busy}
+                        min={vacationFormStart}
+                        onChange={(event) =>
+                          setVacationFormEnd(event.target.value)
+                        }
+                      />
+                    </div>
+                  </div>
+                  <div className="mt-3 space-y-1.5">
+                    <Label htmlFor="vacation-note">
+                      {t("settings.vacationPlanNote")}
+                    </Label>
+                    <Input
+                      id="vacation-note"
+                      value={vacationFormNote}
+                      disabled={busy}
+                      placeholder={t("settings.vacationPlanNotePlaceholder")}
+                      onChange={(event) =>
+                        setVacationFormNote(event.target.value)
+                      }
+                    />
+                  </div>
+                  {vacationFormError ? (
+                    <p className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-200">
+                      {vacationFormError}
+                    </p>
+                  ) : null}
+                  <div className="mt-3 flex flex-wrap justify-end gap-2">
+                    {editingVacationId ? (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        disabled={busy}
+                        onClick={() => setEditingVacationId(null)}
+                      >
+                        {t("common.cancel")}
+                      </Button>
+                    ) : null}
+                    <Button
+                      type="button"
+                      disabled={busy}
+                      onClick={onSubmitVacationForm}
+                    >
+                      {editingVacationId
+                        ? t("common.save")
+                        : t("settings.vacationPlanAdd")}
+                    </Button>
+                  </div>
+
+                  <div className="mt-4 space-y-2">
+                    {memberVacationsForUser.length === 0 ? (
+                      <p className="text-xs text-slate-500 dark:text-slate-400">
+                        {t("settings.vacationPlanEmpty")}
+                      </p>
+                    ) : (
+                      memberVacationsForUser.map((vacation) => {
+                        const status = getVacationStatus(vacation, todayIso);
+                        const statusLabel =
+                          status === "active"
+                            ? t("settings.vacationPlanStatusActive")
+                            : status === "upcoming"
+                              ? t("settings.vacationPlanStatusUpcoming")
+                              : t("settings.vacationPlanStatusPast");
+                        const statusClass =
+                          status === "active"
+                            ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200"
+                            : status === "upcoming"
+                              ? "bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-200"
+                              : "bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-200";
+                        const isOngoingToday = isDateWithinRange(
+                          todayIso,
+                          vacation.start_date,
+                          vacation.end_date,
+                        );
+                        return (
+                          <div
+                            key={vacation.id}
+                            className={`flex flex-wrap items-center justify-between gap-2 rounded-lg border px-3 py-2 text-xs ${
+                              editingVacationId === vacation.id
+                                ? "border-brand-300 bg-brand-50/70 dark:border-brand-600 dark:bg-brand-900/20"
+                                : "border-brand-100 bg-white/80 dark:border-slate-700 dark:bg-slate-900/70"
+                            }`}
+                          >
+                            <div className="space-y-0.5">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span
+                                  className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${statusClass}`}
+                                >
+                                  {statusLabel}
+                                </span>
+                                {isOngoingToday ? (
+                                  <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800 dark:bg-amber-900/40 dark:text-amber-200">
+                                    {t("settings.vacationPlanStatusToday")}
+                                  </span>
+                                ) : null}
+                              </div>
+                              <p className="font-semibold text-slate-800 dark:text-slate-100">
+                                {vacation.start_date} – {vacation.end_date}
+                              </p>
+                              {vacation.note ? (
+                                <p className="text-slate-500 dark:text-slate-400">
+                                  {vacation.note}
+                                </p>
+                              ) : null}
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                disabled={busy}
+                                onClick={() =>
+                                  setEditingVacationId(vacation.id)
+                                }
+                              >
+                                {t("common.edit")}
+                              </Button>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="danger"
+                                disabled={busy}
+                                onClick={() =>
+                                  void onDeleteMemberVacation(vacation.id)
+                                }
+                              >
+                                {t("common.delete")}
+                              </Button>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              </div>
+          </CardContent>
+        </Card>
+      ) : null}
+
       {showHousehold ? (
         <Card>
           <CardHeader>
@@ -1926,6 +1997,12 @@ export const SettingsPage = ({
                       getMemberAvatarSeed(member.user_id, member.display_name),
                       member.user_color,
                     );
+                  const isMemberOnVacationToday = isMemberOnVacation(
+                    member.user_id,
+                    memberVacations,
+                    todayIso,
+                    member.vacation_mode,
+                  );
 
                   return (
                     <li
@@ -1936,7 +2013,7 @@ export const SettingsPage = ({
                         <MemberAvatar
                           src={avatarUrl}
                           alt={displayLabel}
-                          isVacation={member.vacation_mode}
+                          isVacation={isMemberOnVacationToday}
                           className="h-9 w-9 shrink-0 rounded-full border border-brand-100 dark:border-slate-700"
                         />
                         <div className="min-w-0">
@@ -2102,7 +2179,9 @@ export const SettingsPage = ({
         <Card>
           <CardHeader>
             <CardTitle>{t("settings.householdRulesTitle")}</CardTitle>
-            <CardDescription>{t("settings.householdRulesDescription")}</CardDescription>
+            <CardDescription>
+              {t("settings.householdRulesDescription")}
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex items-center justify-between rounded-xl border border-brand-200 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900">
@@ -2223,7 +2302,9 @@ export const SettingsPage = ({
         <Card>
           <CardHeader>
             <CardTitle>{t("settings.householdFeaturesTitle")}</CardTitle>
-            <CardDescription>{t("settings.householdFeaturesDescription")}</CardDescription>
+            <CardDescription>
+              {t("settings.householdFeaturesDescription")}
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-3">

@@ -88,7 +88,7 @@ const shoppingRecurrenceUnitSchema = z.enum(["days", "weeks", "months"]);
 const financeSubscriptionRecurrenceSchema = z.enum(["weekly", "monthly", "quarterly"]);
 const vacationDateSchema = z
   .string()
-  .regex(/^\\d{4}-\\d{2}-\\d{2}$/);
+  .regex(/^\d{4}-\d{2}-\d{2}$/);
 const memberVacationSchema = z.object({
   id: z.string().uuid(),
   household_id: z.string().uuid(),
