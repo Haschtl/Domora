@@ -1974,13 +1974,32 @@ export const completeTask = async (taskId: string, userId: string) => {
 
   if (error) throw error;
 
+  const [{ data: completionRow }, { data: profileRow }] = await Promise.all([
+    supabase
+      .from("task_completions")
+      .select("delay_minutes,pimpers_earned")
+      .eq("task_id", validatedTaskId)
+      .eq("user_id", validatedUserId)
+      .order("completed_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .from("user_profiles")
+      .select("display_name")
+      .eq("user_id", validatedUserId)
+      .maybeSingle()
+  ]);
+
   await insertHouseholdEvent({
     householdId: String(taskRow.household_id),
     eventType: "task_completed",
     actorUserId: validatedUserId,
     payload: {
       title: String(taskRow.title ?? ""),
-      taskId: validatedTaskId
+      taskId: validatedTaskId,
+      actorName: String((profileRow as { display_name?: string | null } | null)?.display_name ?? ""),
+      delayMinutes: Number((completionRow as { delay_minutes?: number | null } | null)?.delay_minutes ?? 0),
+      pimpersEarned: Number((completionRow as { pimpers_earned?: number | null } | null)?.pimpers_earned ?? 0)
     }
   });
 };

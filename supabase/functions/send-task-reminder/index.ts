@@ -8,6 +8,13 @@ type ReminderPayload = {
   accessToken?: string;
 };
 
+type ReminderAction = {
+  at: number;
+  id: string;
+  type: "completion" | "skipped";
+  delay: number;
+};
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -140,6 +147,47 @@ serve(async (req) => {
     return new Response("Task not due", { status: 400, headers: corsHeaders });
   }
 
+  let streakToLose = 0;
+  const [completionResult, skipResult] = await Promise.all([
+    supabase
+      .from("task_completions")
+      .select("id,delay_minutes,completed_at")
+      .eq("household_id", task.household_id)
+      .eq("user_id", task.assignee_id)
+      .order("completed_at", { ascending: false })
+      .limit(200),
+    supabase
+      .from("household_events")
+      .select("id,created_at")
+      .eq("household_id", task.household_id)
+      .eq("event_type", "task_skipped")
+      .eq("actor_user_id", task.assignee_id)
+      .order("created_at", { ascending: false })
+      .limit(200)
+  ]);
+
+  if (!completionResult.error && !skipResult.error) {
+    const completionActions: ReminderAction[] = (completionResult.data ?? []).map((entry) => ({
+      at: new Date(String(entry.completed_at)).getTime(),
+      id: String(entry.id),
+      type: "completion",
+      delay: Math.max(0, Number(entry.delay_minutes ?? 0))
+    }));
+    const skippedActions: ReminderAction[] = (skipResult.data ?? []).map((entry) => ({
+      at: new Date(String(entry.created_at)).getTime(),
+      id: String(entry.id),
+      type: "skipped",
+      delay: 1
+    }));
+    const actions = [...completionActions, ...skippedActions]
+      .filter((entry) => Number.isFinite(entry.at))
+      .sort((a, b) => b.at - a.at || a.id.localeCompare(b.id));
+    for (const action of actions) {
+      if (action.type !== "completion" || action.delay > 0) break;
+      streakToLose += 1;
+    }
+  }
+
   const title = String(payload.title ?? "").trim() || "Aufgabe fällig";
   const body = String(payload.body ?? "").trim() || task.title;
 
@@ -156,6 +204,7 @@ serve(async (req) => {
       body,
       taskId: task.id,
       dueAt: task.due_at,
+      streakToLose,
       actor_user_id: user.id,
       target_user_id: task.assignee_id
     },

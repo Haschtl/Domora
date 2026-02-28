@@ -70,7 +70,21 @@ const buildMessage = (job: PushJob) => {
     base.body = String(payload.payload?.description ?? "Ein neuer Eintrag wurde erstellt.");
   } else if (event === "task_completed") {
     base.title = "Aufgabe erledigt";
-    base.body = String(payload.payload?.title ?? "Eine Aufgabe wurde abgeschlossen.");
+    const actorName = String(payload.payload?.actorName ?? "Jemand");
+    const taskTitle = String(payload.payload?.title ?? "Unbekannt");
+    const delayMinutes = Number(payload.payload?.delayMinutes ?? 0);
+    const pimpersEarnedRaw = Number(payload.payload?.pimpersEarned ?? 0);
+    const delayDays = delayMinutes > 0 ? Math.max(1, Math.ceil(delayMinutes / 1440)) : 0;
+    const delayPart =
+      delayDays <= 0
+        ? "pünktlich"
+        : delayDays === 1
+          ? "mit 1 Tag Verzögerung"
+          : `mit ${delayDays} Tagen Verzögerung`;
+    const pimpersLabel = Number.isInteger(pimpersEarnedRaw)
+      ? `${pimpersEarnedRaw}`
+      : pimpersEarnedRaw.toFixed(2).replace(".", ",");
+    base.body = `${actorName} hat Aufgabe "${taskTitle}" ${delayPart} erledigt und dafür ${pimpersLabel} Pimpers erhalten.`;
   } else if (event === "task_skipped") {
     base.title = "Aufgabe übersprungen";
     base.body = String(payload.payload?.title ?? "Eine Aufgabe wurde übersprungen.");
@@ -100,7 +114,14 @@ const buildMessage = (job: PushJob) => {
     base.body = String(payload.title ?? "Eine Aufgabe ist fällig.");
   } else if (event === "task_reminder") {
     base.title = String(payload.title ?? "Erinnerung");
-    base.body = String(payload.body ?? "Eine Aufgabe wartet.");
+    const reminderBody = String(payload.body ?? "Eine Aufgabe wartet.");
+    const streakToLose = Number(payload.streakToLose ?? payload.payload?.streakToLose ?? 0);
+    if (Number.isFinite(streakToLose) && streakToLose >= 1) {
+      const streakLabel = streakToLose === 1 ? "1er-Serie" : `${Math.floor(streakToLose)}er-Serie`;
+      base.body = `${reminderBody} Wenn du sie nicht pünktlich erledigst, verlierst du deine ${streakLabel}.`;
+    } else {
+      base.body = reminderBody;
+    }
   } else if (event === "member_of_month") {
     base.title = String(payload.title ?? "Mitbewohner:in des Monats");
     base.body = String(payload.body ?? "Neue Auszeichnung in der WG.");
