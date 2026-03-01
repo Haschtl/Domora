@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useForm } from "@tanstack/react-form";
 import {
   BarElement,
@@ -90,6 +90,7 @@ export const ShoppingPage = ({
   onDelete
 }: ShoppingPageProps) => {
   const { t, i18n } = useTranslation();
+  const shoppingTitleSuggestionsListId = useId();
   const [recurrenceUnit, setRecurrenceUnit] = useState<ShoppingRecurrenceUnit>("days");
   const [editRecurrenceUnit, setEditRecurrenceUnit] = useState<ShoppingRecurrenceUnit>("days");
   const [showCompletedItems, setShowCompletedItems] = useState(false);
@@ -306,6 +307,19 @@ export const ShoppingPage = ({
       minMatchCharLength: 2
     }
   });
+  const shoppingNativeTitleSuggestions = useMemo(() => {
+    const seen = new Set<string>();
+    const values: string[] = [];
+    allSuggestions.forEach((entry) => {
+      const title = entry.title.trim();
+      if (!title) return;
+      const key = title.toLocaleLowerCase(language);
+      if (seen.has(key)) return;
+      seen.add(key);
+      values.push(title);
+    });
+    return values;
+  }, [allSuggestions, language]);
 
   const unitOptions: Array<{ id: ShoppingRecurrenceUnit; label: string }> = useMemo(
     () => [
@@ -455,6 +469,11 @@ export const ShoppingPage = ({
                             onKeyDown={onTitleKeyDown}
                             placeholder={t("shopping.placeholder")}
                             autoComplete="off"
+                            list={
+                              shoppingNativeTitleSuggestions.length > 0
+                                ? shoppingTitleSuggestionsListId
+                                : undefined
+                            }
                             className="h-full flex-1 rounded-none border-0 bg-transparent shadow-none focus-visible:ring-0"
                           />
                           <PopoverTrigger asChild>
@@ -819,7 +838,17 @@ export const ShoppingPage = ({
                 children={(field: { state: { value: string }; handleChange: (value: string) => void }) => (
                   <div className="space-y-1">
                     <Label>{t("shopping.itemLabel")}</Label>
-                    <Input value={field.state.value} onChange={(event) => field.handleChange(event.target.value)} required />
+                    <Input
+                      value={field.state.value}
+                      onChange={(event) => field.handleChange(event.target.value)}
+                      autoComplete="off"
+                      list={
+                        shoppingNativeTitleSuggestions.length > 0
+                          ? shoppingTitleSuggestionsListId
+                          : undefined
+                      }
+                      required
+                    />
                   </div>
                 )}
               />
@@ -943,6 +972,11 @@ export const ShoppingPage = ({
                         onKeyDown={onTitleKeyDown}
                         placeholder={t("shopping.placeholder")}
                         autoComplete="off"
+                        list={
+                          shoppingNativeTitleSuggestions.length > 0
+                            ? shoppingTitleSuggestionsListId
+                            : undefined
+                        }
                       />
                     </PopoverAnchor>
                     <PopoverContent
@@ -1248,6 +1282,13 @@ export const ShoppingPage = ({
           </>
         ) : null}
       </CardContent>
+      {shoppingNativeTitleSuggestions.length > 0 ? (
+        <datalist id={shoppingTitleSuggestionsListId}>
+          {shoppingNativeTitleSuggestions.map((title) => (
+            <option key={title} value={title} />
+          ))}
+        </datalist>
+      ) : null}
     </Card>
   );
 };

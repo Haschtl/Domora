@@ -1,4 +1,4 @@
-import { type RefObject, useCallback, useRef, useState, useEffect, useMemo } from "react";
+import { type RefObject, useCallback, useRef, useState, useEffect, useMemo, useId } from "react";
 import { useForm } from "@tanstack/react-form";
 import imageCompression from "browser-image-compression";
 import {
@@ -506,6 +506,7 @@ export const TasksPage = ({
   onUpdateMemberTaskLaziness
 }: TasksPageProps) => {
   const { t, i18n } = useTranslation();
+  const taskTitleSuggestionsListId = useId();
   void onRenewOneOffTaskClaim;
   const language = i18n.resolvedLanguage ?? i18n.language;
   const allowTaskSkip = household.task_skip_enabled ?? true;
@@ -1534,6 +1535,19 @@ export const TasksPage = ({
       minMatchCharLength: 2
     }
   });
+  const taskNativeTitleSuggestions = useMemo(() => {
+    const seen = new Set<string>();
+    const values: string[] = [];
+    availableTaskSuggestions.forEach((entry) => {
+      const title = entry.title.trim();
+      if (!title) return;
+      const key = title.toLocaleLowerCase(language);
+      if (seen.has(key)) return;
+      seen.add(key);
+      values.push(title);
+    });
+    return values;
+  }, [availableTaskSuggestions, language]);
 
   const completionSeries = useMemo(() => {
     const byDayByUser = new Map<string, Map<string, number>>();
@@ -2810,6 +2824,11 @@ export const TasksPage = ({
                               onKeyDown={onTitleKeyDown}
                               placeholder={t("tasks.placeholder")}
                               autoComplete="off"
+                              list={
+                                taskNativeTitleSuggestions.length > 0
+                                  ? taskTitleSuggestionsListId
+                                  : undefined
+                              }
                               required
                             />
                             {titleFocused && taskSuggestions.length > 0 ? (
@@ -4962,6 +4981,12 @@ export const TasksPage = ({
                         field.handleChange(event.target.value)
                       }
                       placeholder={t("tasks.placeholder")}
+                      autoComplete="off"
+                      list={
+                        taskNativeTitleSuggestions.length > 0
+                          ? taskTitleSuggestionsListId
+                          : undefined
+                      }
                       required
                     />
                   </div>
@@ -5708,6 +5733,13 @@ export const TasksPage = ({
             </div>
           </DialogContent>
         </Dialog>
+        {taskNativeTitleSuggestions.length > 0 ? (
+          <datalist id={taskTitleSuggestionsListId}>
+            {taskNativeTitleSuggestions.map((title) => (
+              <option key={title} value={title} />
+            ))}
+          </datalist>
+        ) : null}
         {calendarCard}
       </div>
     </TooltipProvider>
