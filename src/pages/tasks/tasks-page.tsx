@@ -1742,6 +1742,11 @@ export const TasksPage = ({
       const totalVoters = members.filter((member) => member.user_id !== claim.created_by).length;
       const requiredVotes = totalVoters > 0 ? Math.floor(totalVoters / 2) + 1 : 0;
       const supportVotes = voteStats.approvals + voteStats.counters;
+      const showPimpersChip = !hideActions || claim.status === "approved";
+      const pimperValue =
+        claim.status === "approved"
+          ? claim.resolved_pimpers ?? voteStats.suggested
+          : voteStats.suggested;
       const creatorText = userLabel(claim.created_by);
       const creatorMember = memberById.get(claim.created_by);
       const creatorAvatarSrc =
@@ -1824,10 +1829,12 @@ export const TasksPage = ({
                 <Users className="h-3.5 w-3.5" />
                 {claim.votes.length}/{totalVoters}
               </Badge>
-              <Badge className="inline-flex items-center gap-1 rounded-md border border-slate-300 bg-transparent dark:bg-transparent text-slate-700 dark:border-slate-600 dark:text-slate-200">
-                <PimpersIcon />
-                {voteStats.suggested}
-              </Badge>
+              {showPimpersChip ? (
+                <Badge className="inline-flex items-center gap-1 rounded-md border border-slate-300 bg-transparent dark:bg-transparent text-slate-700 dark:border-slate-600 dark:text-slate-200">
+                  <PimpersIcon />
+                  {pimperValue}
+                </Badge>
+              ) : null}
             </div>
             <div className="flex items-center gap-1 text-xs font-medium text-slate-600 dark:text-slate-300">
               <Clock3 className="h-3.5 w-3.5" />

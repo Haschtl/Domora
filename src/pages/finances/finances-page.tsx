@@ -1743,6 +1743,21 @@ export const FinancesPage = ({
       .slice(0, 6);
   }, [addEntryForm.state.values.description, language, openShoppingItems, selectedShoppingItemIds]);
   const entryNameSuggestions = useMemo(() => financeEntrySuggestions.map((entry) => entry.title), [financeEntrySuggestions]);
+  const addEntryNativeSuggestions = useMemo(() => {
+    const seen = new Set<string>();
+    const values: string[] = [];
+    const pushValue = (raw: string) => {
+      const value = raw.trim();
+      if (!value) return;
+      const key = value.toLocaleLowerCase(language);
+      if (seen.has(key)) return;
+      seen.add(key);
+      values.push(value);
+    };
+    openShoppingItems.forEach((item) => pushValue(item.title));
+    entryNameSuggestions.forEach((name) => pushValue(name));
+    return values;
+  }, [entryNameSuggestions, language, openShoppingItems]);
   const latestEntryByDescription = useMemo(() => {
     const byKey = new Map<string, FinanceEntry>();
     const sortedEntries = [...entries].sort((left, right) => right.created_at.localeCompare(left.created_at));
@@ -2371,9 +2386,15 @@ export const FinancesPage = ({
                 <PopoverAnchor asChild>
                   <div
                     ref={addEntryRowRef}
-                    className="relative flex h-10 items-stretch overflow-hidden rounded-xl border border-brand-200 bg-white dark:border-slate-700 dark:bg-slate-900 focus-within:border-brand-500 focus-within:ring-2 focus-within:ring-brand-200 dark:focus-within:border-slate-500 dark:focus-within:ring-slate-600/40"
+                    className={`relative flex items-stretch overflow-hidden rounded-xl border border-brand-200 bg-white dark:border-slate-700 dark:bg-slate-900 focus-within:border-brand-500 focus-within:ring-2 focus-within:ring-brand-200 dark:focus-within:border-slate-500 dark:focus-within:ring-slate-600/40 ${
+                      mobile ? "min-h-10" : "h-10"
+                    }`}
                   >
-                    <div className="flex min-w-0 flex-1 items-center gap-1 px-2">
+                    <div
+                      className={`flex min-w-0 flex-1 gap-1 px-2 ${
+                        mobile ? "flex-wrap content-start py-1" : "items-center"
+                      }`}
+                    >
                       {selectedShoppingItems.map((item) => (
                         <span
                           key={item.id}
@@ -2403,15 +2424,26 @@ export const FinancesPage = ({
                           onEntryDescriptionBlur();
                           tryAutofillNewEntryFromDescription(event.target.value);
                         }}
-                      onKeyDown={handleEntryDescriptionKeyDown}
-                      placeholder={t("finances.descriptionPlaceholder")}
-                      className="h-full min-w-0 flex-1 rounded-none border-0 bg-transparent px-0 shadow-none focus-visible:ring-0"
-                    />
+                        onKeyDown={handleEntryDescriptionKeyDown}
+                        placeholder={t("finances.descriptionPlaceholder")}
+                        list={
+                          addEntryNativeSuggestions.length > 0
+                            ? entryNameSuggestionsListId
+                            : undefined
+                        }
+                        className={`min-w-0 rounded-none border-0 bg-transparent px-0 shadow-none focus-visible:ring-0 ${
+                          mobile ? "h-8 basis-full flex-none" : "h-full flex-1"
+                        }`}
+                      />
                     </div>
                     <addEntryForm.Field
                       name="amount"
                       children={(amountField: { state: { value: string }; handleChange: (value: string) => void }) => (
-                        <div className="relative h-full w-28 shrink-0 border-l border-brand-200 dark:border-slate-700">
+                        <div
+                          className={`relative w-28 shrink-0 border-l border-brand-200 dark:border-slate-700 ${
+                            mobile ? "self-stretch !h-auto min-h-10" : "h-full"
+                          }`}
+                        >
                           <Input
                             type="number"
                             inputMode="decimal"
@@ -2437,7 +2469,9 @@ export const FinancesPage = ({
                         type="button"
                         variant="ghost"
                         size="sm"
-                        className="h-full w-10 shrink-0 rounded-none border-l border-brand-200 p-0 dark:border-slate-700"
+                        className={`w-10 shrink-0 rounded-none border-l border-brand-200 p-0 dark:border-slate-700 ${
+                          mobile ? "self-stretch !h-auto min-h-10" : "h-full"
+                        }`}
                         aria-label={t("finances.moreOptions")}
                       >
                         <MoreHorizontal className="h-4 w-4" />
@@ -2447,7 +2481,9 @@ export const FinancesPage = ({
                       <Button
                         type="button"
                         disabled={busy}
-                        className="h-full shrink-0 rounded-none border-l border-brand-200 px-3 dark:border-slate-700"
+                        className={`shrink-0 rounded-none border-l border-brand-200 px-3 dark:border-slate-700 ${
+                          mobile ? "self-stretch !h-auto min-h-10" : "h-full"
+                        }`}
                         onClick={() => {
                           setOcrError(null);
                           setOcrCameraDialogOpen(true);
@@ -2460,7 +2496,9 @@ export const FinancesPage = ({
                       <Button
                         type="submit"
                         disabled={busy}
-                        className="h-full shrink-0 rounded-none border-l border-brand-200 px-3 dark:border-slate-700"
+                        className={`shrink-0 rounded-none border-l border-brand-200 px-3 dark:border-slate-700 ${
+                          mobile ? "self-stretch !h-auto min-h-10" : "h-full"
+                        }`}
                       >
                         <Plus className="h-4 w-4 sm:hidden" />
                         <span className="hidden sm:inline">{t("common.add")}</span>
@@ -4778,9 +4816,9 @@ export const FinancesPage = ({
           ))}
         </datalist>
       ) : null}
-      {entryNameSuggestions.length > 0 ? (
+      {addEntryNativeSuggestions.length > 0 ? (
         <datalist id={entryNameSuggestionsListId}>
-          {entryNameSuggestions.map((name) => (
+          {addEntryNativeSuggestions.map((name) => (
             <option key={name} value={name} />
           ))}
         </datalist>

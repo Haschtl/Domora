@@ -1,3 +1,1 @@
 benachrichtigungen testen
-
-einkaufsliste und finanzkopplung
