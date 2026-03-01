@@ -607,7 +607,18 @@ export const HomePage = ({
   }, [isWhiteboardFullscreenOpen, navigate]);
   const closeWhiteboardFullscreen = useCallback(() => {
     if (typeof window !== "undefined" && window.history.length > 1) {
+      let didHandlePop = false;
+      const onPopState = () => {
+        didHandlePop = true;
+        void navigate({ to: "/home/summary", replace: true });
+      };
+      window.addEventListener("popstate", onPopState, { once: true });
       window.history.back();
+      window.setTimeout(() => {
+        if (didHandlePop) return;
+        window.removeEventListener("popstate", onPopState);
+        void navigate({ to: "/home/summary", replace: true });
+      }, 220);
       return;
     }
     void navigate({ to: "/home/summary", replace: true });
