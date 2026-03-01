@@ -5,7 +5,7 @@ import {
   useHouseholdEvents,
   useHouseholdTasksBatch
 } from "../../hooks/use-household-data";
-import type { HouseholdMemberPimpers, TaskCompletion, TaskItem } from "../../lib/types";
+import type { HouseholdMemberPimpers, OneOffTaskClaim, TaskCompletion, TaskItem } from "../../lib/types";
 import { isMemberOnVacationAt } from "../../lib/vacation-utils";
 
 interface TasksPageContainerProps {
@@ -20,6 +20,7 @@ export const TasksPageContainer = ({ section }: TasksPageContainerProps) => {
     userId,
     busy,
     onAddTask,
+    onAddOneOffTaskClaim,
     onCompleteTask,
     onSkipTask,
     onTakeoverTask,
@@ -27,8 +28,11 @@ export const TasksPageContainer = ({ section }: TasksPageContainerProps) => {
     onUpdateTask,
     onDeleteTask,
     onRateTaskCompletion,
+    onRenewOneOffTaskClaim,
     onResetHouseholdPimpers,
-    onUpdateMemberTaskLaziness
+    onUpdateMemberTaskLaziness,
+    onVoteOneOffTaskClaim,
+    onWithdrawOneOffTaskClaim
   } = useWorkspace();
 
   const tasksBatchQuery = useHouseholdTasksBatch(activeHousehold?.id ?? null);
@@ -54,6 +58,7 @@ export const TasksPageContainer = ({ section }: TasksPageContainerProps) => {
     | {
         tasks: TaskItem[];
         taskCompletions: TaskCompletion[];
+        oneOffTaskClaims: OneOffTaskClaim[];
         memberPimpers: HouseholdMemberPimpers[];
       }
     | undefined;
@@ -64,6 +69,7 @@ export const TasksPageContainer = ({ section }: TasksPageContainerProps) => {
       household={activeHousehold}
       tasks={tasksData?.tasks ?? []}
       completions={tasksData?.taskCompletions ?? []}
+      oneOffTaskClaims={tasksData?.oneOffTaskClaims ?? []}
       householdEvents={events}
       members={membersWithVacation}
       memberVacations={householdMemberVacations}
@@ -71,6 +77,7 @@ export const TasksPageContainer = ({ section }: TasksPageContainerProps) => {
       userId={userId}
       busy={busy}
       onAdd={onAddTask}
+      onAddOneOffTaskClaim={onAddOneOffTaskClaim}
       onComplete={onCompleteTask}
       onSkip={onSkipTask}
       onTakeover={onTakeoverTask}
@@ -78,8 +85,11 @@ export const TasksPageContainer = ({ section }: TasksPageContainerProps) => {
       onUpdate={onUpdateTask}
       onDelete={onDeleteTask}
       onRateTaskCompletion={onRateTaskCompletion}
+      onRenewOneOffTaskClaim={onRenewOneOffTaskClaim}
       onResetHouseholdPimpers={onResetHouseholdPimpers}
       onUpdateMemberTaskLaziness={onUpdateMemberTaskLaziness}
+      onVoteOneOffTaskClaim={onVoteOneOffTaskClaim}
+      onWithdrawOneOffTaskClaim={onWithdrawOneOffTaskClaim}
     />
   );
 };

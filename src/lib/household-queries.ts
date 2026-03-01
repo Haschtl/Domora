@@ -5,6 +5,7 @@ import {
   getFinanceSubscriptions,
   getHouseholdMemberPimpers,
   getHouseholdMembers,
+  getOneOffTaskClaims,
   getMemberVacations,
   getHouseholdWhiteboard,
   getShoppingCompletions,
@@ -34,6 +35,10 @@ export const householdQueryOptions = {
   taskCompletions: (householdId: string) => ({
     queryKey: queryKeys.householdTaskCompletions(householdId),
     queryFn: () => getTaskCompletions(householdId)
+  }),
+  oneOffTaskClaims: (householdId: string) => ({
+    queryKey: queryKeys.householdOneOffTaskClaims(householdId),
+    queryFn: () => getOneOffTaskClaims(householdId)
   }),
   cashAuditRequests: (householdId: string) => ({
     queryKey: queryKeys.householdCashAuditRequests(householdId),

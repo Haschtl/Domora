@@ -19,7 +19,10 @@ export interface Household {
   feature_bucket_enabled: boolean;
   feature_shopping_enabled: boolean;
   feature_tasks_enabled: boolean;
+  feature_one_off_tasks_enabled: boolean;
   feature_finances_enabled: boolean;
+  one_off_claim_timeout_hours: number;
+  one_off_claim_max_pimpers: number;
   theme_primary_color: string;
   theme_accent_color: string;
   theme_font_family: string;
@@ -46,7 +49,10 @@ export interface UpdateHouseholdInput {
   featureBucketEnabled: boolean;
   featureShoppingEnabled: boolean;
   featureTasksEnabled: boolean;
+  featureOneOffTasksEnabled: boolean;
   featureFinancesEnabled: boolean;
+  oneOffClaimTimeoutHours: number;
+  oneOffClaimMaxPimpers: number;
   themePrimaryColor: string;
   themeAccentColor: string;
   themeFontFamily: string;
@@ -179,6 +185,35 @@ export interface TaskCompletion {
   rating_average: number | null;
   rating_count: number;
   my_rating: number | null;
+}
+
+export type OneOffTaskClaimStatus = "open" | "approved" | "rejected" | "expired" | "withdrawn";
+export type OneOffTaskClaimVoteType = "approve" | "reject" | "counter";
+
+export interface OneOffTaskClaimVote {
+  claim_id: string;
+  household_id: string;
+  user_id: string;
+  vote_type: OneOffTaskClaimVoteType;
+  counter_pimpers: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface OneOffTaskClaim {
+  id: string;
+  household_id: string;
+  title: string;
+  description: string;
+  requested_pimpers: number;
+  status: OneOffTaskClaimStatus;
+  resolved_pimpers: number | null;
+  expires_at: string;
+  resolved_at: string | null;
+  renewed_from: string | null;
+  created_by: string;
+  created_at: string;
+  votes: OneOffTaskClaimVote[];
 }
 
 export type HouseholdEventType =

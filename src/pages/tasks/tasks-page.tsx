@@ -24,12 +24,15 @@ import {
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
+  Clock3,
   CircleUserRound,
   Info,
   Frown,
+  MessageSquareMore,
   Medal,
   MoreHorizontal,
   Plus,
+  Users,
   X
 } from "lucide-react";
 import SparklesEffect from "react-sparkle";
@@ -44,6 +47,7 @@ import type {
   HouseholdMemberPimpers,
   HouseholdEvent,
   NewTaskInput,
+  OneOffTaskClaim,
   TaskCompletion,
   TaskItem
 } from "../../lib/types";
@@ -94,6 +98,7 @@ interface TasksPageProps {
   section?: "overview" | "stats" | "history" | "settings";
   household: Household;
   tasks: TaskItem[];
+  oneOffTaskClaims: OneOffTaskClaim[];
   completions: TaskCompletion[];
   householdEvents: HouseholdEvent[];
   members: HouseholdMember[];
@@ -103,12 +108,20 @@ interface TasksPageProps {
   busy: boolean;
   onAdd: (input: NewTaskInput) => Promise<void>;
   onComplete: (task: TaskItem) => Promise<void>;
+  onAddOneOffTaskClaim: (input: { title: string; description?: string; requestedPimpers: number }) => Promise<void>;
   onSkip: (task: TaskItem) => Promise<void>;
   onTakeover: (task: TaskItem) => Promise<void>;
   onToggleActive: (task: TaskItem) => Promise<void>;
   onUpdate: (task: TaskItem, input: NewTaskInput) => Promise<void>;
   onDelete: (task: TaskItem) => Promise<void>;
   onRateTaskCompletion: (taskCompletionId: string, rating: number) => Promise<void>;
+  onVoteOneOffTaskClaim: (input: {
+    claimId: string;
+    voteType: "approve" | "reject" | "counter";
+    counterPimpers?: number | null;
+  }) => Promise<void>;
+  onRenewOneOffTaskClaim: (claimId: string) => Promise<void>;
+  onWithdrawOneOffTaskClaim: (claimId: string) => Promise<void>;
   onResetHouseholdPimpers: () => Promise<void>;
   onUpdateMemberTaskLaziness: (targetUserId: string, taskLazinessFactor: number) => Promise<void>;
 }
@@ -469,6 +482,7 @@ export const TasksPage = ({
   section = "overview",
   household,
   tasks,
+  oneOffTaskClaims,
   completions,
   householdEvents,
   members,
@@ -477,6 +491,7 @@ export const TasksPage = ({
   userId,
   busy,
   onAdd,
+  onAddOneOffTaskClaim,
   onComplete,
   onSkip,
   onTakeover,
@@ -484,19 +499,32 @@ export const TasksPage = ({
   onUpdate,
   onDelete,
   onRateTaskCompletion,
+  onVoteOneOffTaskClaim,
+  onRenewOneOffTaskClaim,
+  onWithdrawOneOffTaskClaim,
   onResetHouseholdPimpers,
   onUpdateMemberTaskLaziness
 }: TasksPageProps) => {
   const { t, i18n } = useTranslation();
+  void onRenewOneOffTaskClaim;
   const language = i18n.resolvedLanguage ?? i18n.language;
   const allowTaskSkip = household.task_skip_enabled ?? true;
   const excludeVacationFromTasks = household.vacation_tasks_exclude_enabled ?? true;
+  const oneOffTasksEnabled = household.feature_one_off_tasks_enabled ?? true;
+  const oneOffClaimMaxPimpers = household.one_off_claim_max_pimpers ?? 500;
 
   const [rotationUserIds, setRotationUserIds] = useState<string[]>([userId]);
   const [editRotationUserIds, setEditRotationUserIds] = useState<string[]>([]);
   const [formError, setFormError] = useState<string | null>(null);
   const [editFormError, setEditFormError] = useState<string | null>(null);
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+  const [isOneOffCreateDialogOpen, setIsOneOffCreateDialogOpen] = useState(false);
+  const [oneOffTitle, setOneOffTitle] = useState("");
+  const [oneOffDescription, setOneOffDescription] = useState("");
+  const [oneOffRequestedPimpers, setOneOffRequestedPimpers] = useState("1");
+  const [oneOffCounterDialogClaimId, setOneOffCounterDialogClaimId] = useState<string | null>(null);
+  const [oneOffCounterDialogValue, setOneOffCounterDialogValue] = useState("1");
+  const [oneOffCounterDialogSuggested, setOneOffCounterDialogSuggested] = useState(1);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [taskBeingEdited, setTaskBeingEdited] = useState<TaskItem | null>(null);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
@@ -1656,6 +1684,250 @@ export const TasksPage = ({
     return [...active, ...inactive];
   }, [tasks]);
 
+  const openOneOffClaims = useMemo(
+    () => oneOffTaskClaims.filter((claim) => claim.status === "open"),
+    [oneOffTaskClaims]
+  );
+  const closedOneOffClaims = useMemo(
+    () => oneOffTaskClaims.filter((claim) => claim.status !== "open"),
+    [oneOffTaskClaims]
+  );
+  const getOneOffVoteStats = useCallback((claim: OneOffTaskClaim) => {
+    const approvals = claim.votes.filter((vote) => vote.vote_type === "approve").length;
+    const rejects = claim.votes.filter((vote) => vote.vote_type === "reject").length;
+    const counters = claim.votes.filter((vote) => vote.vote_type === "counter");
+    const counterValues = counters.map((vote) => vote.counter_pimpers ?? claim.requested_pimpers);
+    const suggested =
+      counters.length === 0
+        ? claim.requested_pimpers
+        : Math.round(
+            [...counterValues, claim.requested_pimpers].sort((a, b) => a - b)[
+              Math.floor((counterValues.length + 1) / 2)
+            ] ?? claim.requested_pimpers
+          );
+    return {
+      approvals,
+      rejects,
+      counters: counters.length,
+      suggested
+    };
+  }, []);
+  const getOneOffExpiryLabel = useCallback(
+    (expiresAt: string) => {
+      const targetMs = new Date(expiresAt).getTime();
+      if (!Number.isFinite(targetMs)) return t("tasks.noDate");
+      if (targetMs > Date.parse("9990-01-01T00:00:00.000Z")) {
+        return t("tasks.oneOffNoTimeout");
+      }
+      const deltaMs = targetMs - Date.now();
+      const absMinutes = Math.max(1, Math.round(Math.abs(deltaMs) / 60000));
+      const value =
+        absMinutes < 60
+          ? t("tasks.relativeMinutes", { count: absMinutes })
+          : absMinutes < 24 * 60
+            ? t("tasks.relativeHours", { count: Math.round(absMinutes / 60) })
+            : t("tasks.relativeDays", { count: Math.round(absMinutes / (24 * 60)) });
+      return deltaMs >= 0
+        ? t("tasks.oneOffExpiresIn", { value })
+        : t("tasks.oneOffExpiredSince", { value });
+    },
+    [t]
+  );
+  const renderOneOffClaimCard = useCallback(
+    (claim: OneOffTaskClaim, options?: { hideActions?: boolean; keyPrefix?: string }) => {
+      const hideActions = options?.hideActions ?? false;
+      const voteStats = getOneOffVoteStats(claim);
+      const isCreator = claim.created_by === userId;
+      const myVote = claim.votes.find((vote) => vote.user_id === userId);
+      const totalVoters = members.filter((member) => member.user_id !== claim.created_by).length;
+      const requiredVotes = totalVoters > 0 ? Math.floor(totalVoters / 2) + 1 : 0;
+      const supportVotes = voteStats.approvals + voteStats.counters;
+      const creatorText = userLabel(claim.created_by);
+      const creatorMember = memberById.get(claim.created_by);
+      const creatorAvatarSrc =
+        creatorMember?.avatar_url?.trim() ||
+        createDiceBearAvatarDataUri(
+          creatorMember?.display_name?.trim() || creatorText || claim.created_by,
+          creatorMember?.user_color
+        );
+      const noTimeout = Date.parse(claim.expires_at) > Date.parse("9990-01-01T00:00:00.000Z");
+      const cardToneClass =
+        claim.status === "approved"
+          ? "border-emerald-300 bg-emerald-50/70 dark:border-emerald-900/60 dark:bg-emerald-950/20"
+          : claim.status === "withdrawn"
+            ? "border-slate-300 bg-slate-50/70 dark:border-slate-700 dark:bg-slate-900/50"
+            : claim.status === "expired"
+              ? "border-orange-300 bg-orange-50/70 dark:border-orange-900/60 dark:bg-orange-950/20"
+              : claim.status === "rejected"
+                ? "border-rose-300 bg-rose-50/70 dark:border-rose-900/60 dark:bg-rose-950/20"
+                : "border-amber-300 bg-amber-50/70 dark:border-amber-900/60 dark:bg-amber-950/20";
+
+      return (
+        <Card
+          key={`${options?.keyPrefix ?? "open"}-${claim.id}`}
+          className={`mb-3 ${cardToneClass}`}
+        >
+          <CardContent className="space-y-1">
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <div className="inline-flex max-w-full items-center gap-2 rounded-xl bg-white/70 px-2 py-1 backdrop-blur-md dark:bg-slate-900/60">
+                  <MemberAvatar
+                    src={creatorAvatarSrc}
+                    alt={creatorText}
+                    isVacation={isMemberOnVacationNow(claim.created_by)}
+                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-brand-200 bg-brand-50 dark:border-slate-700 dark:bg-slate-800"
+                    fallback={
+                      <div className="flex h-full w-full items-center justify-center text-slate-500 dark:text-slate-300">
+                        <CircleUserRound className="h-4 w-4" />
+                      </div>
+                    }
+                  />
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                      {claim.title}
+                    </p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      {t("tasks.oneOffTaskRequestedBy", { user: creatorText })} ·{" "}
+                      {t("tasks.oneOffTaskRequestedPimpersValue", {
+                        count: claim.requested_pimpers,
+                      })}
+                      {claim.status !== "open" ? ` · ${t(`tasks.oneOffStatus.${claim.status}`)}` : ""}
+                    </p>
+                  </div>
+                </div>
+              </div>
+              <Badge className="bg-amber-200 text-amber-900 dark:bg-amber-900/60 dark:text-amber-100">
+                {t("tasks.oneOffTaskLabel")}
+              </Badge>
+            </div>
+            {claim.description ? (
+              <p className="text-sm text-slate-700 dark:text-slate-300">
+                {claim.description}
+              </p>
+            ) : null}
+            <div className="mb-2 flex flex-wrap items-center gap-2">
+              <div className="inline-flex overflow-hidden rounded-md border border-slate-300 dark:border-slate-600">
+                <Badge className="rounded-none border-0 border-r border-slate-300 inline-flex items-center gap-1 bg-emerald-100 text-emerald-800 dark:border-slate-600 dark:bg-emerald-900/60 dark:text-emerald-100">
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+                  {supportVotes}/{requiredVotes}
+                </Badge>
+                <Badge className="rounded-none border-0 inline-flex items-center gap-1 bg-amber-100 text-amber-900 dark:bg-amber-900/60 dark:text-amber-100">
+                  <MessageSquareMore className="h-3.5 w-3.5" />
+                  {voteStats.counters}
+                </Badge>
+              </div>
+              <Badge className="inline-flex items-center gap-1 rounded-md border border-slate-300 bg-rose-100 text-rose-800 dark:border-slate-600 dark:bg-rose-900/60 dark:text-rose-100">
+                <X className="h-3.5 w-3.5" />
+                {voteStats.rejects}/{requiredVotes}
+              </Badge>
+              <Badge className="inline-flex items-center gap-1 rounded-md border border-slate-300 bg-transparent dark:bg-transparent text-slate-700 dark:border-slate-600 dark:text-slate-200">
+                <Users className="h-3.5 w-3.5" />
+                {claim.votes.length}/{totalVoters}
+              </Badge>
+              <Badge className="inline-flex items-center gap-1 rounded-md border border-slate-300 bg-transparent dark:bg-transparent text-slate-700 dark:border-slate-600 dark:text-slate-200">
+                <PimpersIcon />
+                {voteStats.suggested}
+              </Badge>
+            </div>
+            <div className="flex items-center gap-1 text-xs font-medium text-slate-600 dark:text-slate-300">
+              <Clock3 className="h-3.5 w-3.5" />
+              {noTimeout
+                ? getOneOffExpiryLabel(claim.expires_at)
+                : `${getOneOffExpiryLabel(claim.expires_at)} · ${formatDateTime(claim.expires_at, language)}`}
+            </div>
+            {!hideActions ? (
+              isCreator ? (
+                <div className="flex justify-end">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={busy}
+                    onClick={() =>
+                      void onWithdrawOneOffTaskClaim(claim.id)
+                    }
+                  >
+                    {t("tasks.oneOffWithdraw")}
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex flex-wrap items-center justify-end gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={
+                      myVote?.vote_type === "approve"
+                        ? "default"
+                        : "outline"
+                    }
+                    disabled={busy}
+                    onClick={() =>
+                      void onVoteOneOffTaskClaim({
+                        claimId: claim.id,
+                        voteType: "approve",
+                      })
+                    }
+                  >
+                    {t("tasks.oneOffApprove")}
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={
+                      myVote?.vote_type === "reject"
+                        ? "default"
+                        : "outline"
+                    }
+                    disabled={busy}
+                    onClick={() =>
+                      void onVoteOneOffTaskClaim({
+                        claimId: claim.id,
+                        voteType: "reject",
+                      })
+                    }
+                  >
+                    {t("tasks.oneOffReject")}
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={
+                      myVote?.vote_type === "counter"
+                        ? "default"
+                        : "outline"
+                    }
+                    disabled={busy}
+                    onClick={() => {
+                      setOneOffCounterDialogClaimId(claim.id);
+                      const suggested = Math.max(1, voteStats.suggested);
+                      setOneOffCounterDialogSuggested(suggested);
+                      setOneOffCounterDialogValue(String(suggested));
+                    }}
+                  >
+                    {t("tasks.oneOffCounter")}
+                  </Button>
+                </div>
+              )
+            ) : null}
+          </CardContent>
+        </Card>
+      );
+    },
+    [
+      busy,
+      getOneOffExpiryLabel,
+      getOneOffVoteStats,
+      language,
+      memberById,
+      members,
+      onVoteOneOffTaskClaim,
+      onWithdrawOneOffTaskClaim,
+      t,
+      userId,
+      userLabel
+    ]
+  );
+
   const resetPimpersStatsCard = showStats && isOwner ? (
     <Card className="mt-6 border-rose-200 bg-rose-50/60 dark:border-rose-900/50 dark:bg-rose-950/30">
       <CardHeader className="gap-3">
@@ -2463,17 +2735,31 @@ export const TasksPage = ({
                     <CardTitle>{t("tasks.title")}</CardTitle>
                     <CardDescription>{t("tasks.description")}</CardDescription>
                   </div>
-                  <Button
-                    type="button"
-                    size="sm"
-                    aria-label={t("tasks.createTask")}
-                    onClick={() => {
-                      setTaskImageUploadError(null);
-                      setIsCreateDialogOpen(true);
-                    }}
-                  >
-                    <Plus className="h-4 w-4" />
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    {oneOffTasksEnabled ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        aria-label={t("tasks.createOneOffTask")}
+                        onClick={() => setIsOneOffCreateDialogOpen(true)}
+                      >
+                        <Plus className="mr-1 h-4 w-4" />
+                        {t("tasks.oneOffTaskLabel")}
+                      </Button>
+                    ) : null}
+                    <Button
+                      type="button"
+                      size="sm"
+                      aria-label={t("tasks.createTask")}
+                      onClick={() => {
+                        setTaskImageUploadError(null);
+                        setIsCreateDialogOpen(true);
+                      }}
+                    >
+                      <Plus className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </div>
               </CardHeader>
 
@@ -2983,11 +3269,86 @@ export const TasksPage = ({
                       </div>
                     </form>
                   </MobileSubpageDialog>
+                  {oneOffTasksEnabled ? (
+                  <MobileSubpageDialog
+                    open={isOneOffCreateDialogOpen}
+                    onOpenChange={setIsOneOffCreateDialogOpen}
+                    title={t("tasks.createOneOffTask")}
+                    description={t("tasks.oneOffTaskDescription")}
+                    trigger={<span className="hidden" aria-hidden="true" />}
+                  >
+                    <form
+                      className="space-y-3"
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        const requested = Number(oneOffRequestedPimpers);
+                        if (!Number.isFinite(requested) || requested <= 0 || requested > oneOffClaimMaxPimpers) return;
+                        void onAddOneOffTaskClaim({
+                          title: oneOffTitle,
+                          description: oneOffDescription,
+                          requestedPimpers: Math.round(requested)
+                        }).then(() => {
+                          setOneOffTitle("");
+                          setOneOffDescription("");
+                          setOneOffRequestedPimpers("1");
+                          setIsOneOffCreateDialogOpen(false);
+                        });
+                      }}
+                    >
+                      <div className="space-y-1">
+                        <Label>{t("tasks.oneOffTaskTitleLabel")}</Label>
+                        <Input
+                          value={oneOffTitle}
+                          onChange={(event) => setOneOffTitle(event.target.value)}
+                          placeholder={t("tasks.oneOffTaskTitlePlaceholder")}
+                          required
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label>{t("tasks.descriptionLabel")}</Label>
+                        <textarea
+                          className="min-h-[90px] w-full rounded-xl border border-brand-200 bg-white p-3 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-400"
+                          placeholder={t("tasks.descriptionPlaceholder")}
+                          value={oneOffDescription}
+                          onChange={(event) => setOneOffDescription(event.target.value)}
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label>{t("tasks.oneOffTaskRequestedPimpers")}</Label>
+                        <InputWithSuffix
+                          suffix={<PimpersIcon />}
+                          type="number"
+                          min="1"
+                          max={String(oneOffClaimMaxPimpers)}
+                          inputMode="numeric"
+                          value={oneOffRequestedPimpers}
+                          onChange={(event) => setOneOffRequestedPimpers(event.target.value)}
+                          required
+                        />
+                      </div>
+                      <div className="flex justify-end">
+                        <Button
+                          type="submit"
+                          disabled={
+                            busy ||
+                            !oneOffTitle.trim() ||
+                            !Number.isFinite(Number(oneOffRequestedPimpers)) ||
+                            Number(oneOffRequestedPimpers) <= 0 ||
+                            Number(oneOffRequestedPimpers) > oneOffClaimMaxPimpers
+                          }
+                        >
+                          {t("tasks.createOneOffTask")}
+                        </Button>
+                      </div>
+                    </form>
+                  </MobileSubpageDialog>
+                  ) : null}
                 </div>
               </CardContent>
             </Card>
 
             <div className="space-y-2">
+              {oneOffTasksEnabled ? openOneOffClaims.map((claim) => renderOneOffClaimCard(claim)) : null}
               {visibleTasks.map((task) => {
                 const nowMs = Date.now();
                 const dueAtMs = new Date(task.due_at).getTime();
@@ -3307,11 +3668,116 @@ export const TasksPage = ({
               })}
             </div>
 
-            {visibleTasks.length === 0 ? (
+            {visibleTasks.length === 0 && (!oneOffTasksEnabled || openOneOffClaims.length === 0) ? (
               <p className="text-sm text-slate-500 dark:text-slate-400">
                 {t("tasks.empty")}
               </p>
             ) : null}
+
+            {oneOffTasksEnabled && closedOneOffClaims.length > 0 ? (
+              <Accordion type="single" collapsible className="pt-2">
+                <AccordionItem
+                  value="one-off-completed"
+                  className="rounded-xl border border-slate-200 bg-white/70 px-3 dark:border-slate-700 dark:bg-slate-900/50"
+                >
+                  <AccordionTrigger className="py-3 text-xs font-semibold uppercase tracking-wide text-slate-500 hover:no-underline dark:text-slate-400">
+                    {t("tasks.oneOffCompletedTitle")}
+                  </AccordionTrigger>
+                  <AccordionContent className="space-y-2 pb-3">
+                    {closedOneOffClaims.map((claim) =>
+                      renderOneOffClaimCard(claim, { hideActions: true, keyPrefix: "closed" })
+                    )}
+                  </AccordionContent>
+                </AccordionItem>
+              </Accordion>
+            ) : null}
+
+            <Dialog
+              open={Boolean(oneOffCounterDialogClaimId)}
+              onOpenChange={(open) => {
+                if (!open) {
+                  setOneOffCounterDialogClaimId(null);
+                  setOneOffCounterDialogValue("1");
+                  setOneOffCounterDialogSuggested(1);
+                }
+              }}
+            >
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>{t("tasks.oneOffCounter")}</DialogTitle>
+                </DialogHeader>
+                <p className="text-sm text-slate-600 dark:text-slate-300">
+                  {t("tasks.oneOffCounterDialogDescription", {
+                    suggested: oneOffCounterDialogSuggested,
+                    max: oneOffCounterDialogSuggested * 2
+                  })}
+                </p>
+                <form
+                  className="space-y-3"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    if (!oneOffCounterDialogClaimId) return;
+                    const value = Number(oneOffCounterDialogValue);
+                    if (!Number.isFinite(value) || value <= 0) return;
+                    void onVoteOneOffTaskClaim({
+                      claimId: oneOffCounterDialogClaimId,
+                      voteType: "counter",
+                      counterPimpers: value
+                    }).then(() => {
+                      setOneOffCounterDialogClaimId(null);
+                      setOneOffCounterDialogValue("1");
+                      setOneOffCounterDialogSuggested(1);
+                    });
+                  }}
+                >
+                  <div className="space-y-2">
+                    <input
+                      type="range"
+                      min={0}
+                      max={oneOffCounterDialogSuggested * 2}
+                      step={1}
+                      value={Number.isFinite(Number(oneOffCounterDialogValue)) ? Number(oneOffCounterDialogValue) : oneOffCounterDialogSuggested}
+                      onChange={(event) => setOneOffCounterDialogValue(event.target.value)}
+                      className="w-full"
+                      aria-label={t("tasks.oneOffCounter")}
+                    />
+                    <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
+                      <span>0</span>
+                      <span className="inline-flex items-center gap-1 font-medium text-slate-700 dark:text-slate-200">
+                        <PimpersIcon />
+                        {Number.isFinite(Number(oneOffCounterDialogValue))
+                          ? Math.round(Number(oneOffCounterDialogValue))
+                          : oneOffCounterDialogSuggested}
+                      </span>
+                      <span>{oneOffCounterDialogSuggested * 2}</span>
+                    </div>
+                  </div>
+                  <div className="flex justify-end gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => {
+                        setOneOffCounterDialogClaimId(null);
+                        setOneOffCounterDialogValue("1");
+                        setOneOffCounterDialogSuggested(1);
+                      }}
+                    >
+                      {t("common.cancel")}
+                    </Button>
+                    <Button
+                      type="submit"
+                      disabled={
+                        busy ||
+                        !Number.isFinite(Number(oneOffCounterDialogValue)) ||
+                        Number(oneOffCounterDialogValue) <= 0
+                      }
+                    >
+                      {t("tasks.oneOffCounter")}
+                    </Button>
+                  </div>
+                </form>
+              </DialogContent>
+            </Dialog>
           </>
         ) : null}
 

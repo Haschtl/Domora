@@ -24,6 +24,8 @@ import type {
   HouseholdMemberPimpers,
   NewFinanceSubscriptionInput,
   NewTaskInput,
+  OneOffTaskClaim,
+  OneOffTaskClaimVote,
   UpdateHouseholdInput,
   PushPreferences,
   ShoppingRecurrenceUnit,
@@ -36,7 +38,7 @@ import type {
 const buildInviteCode = () => Math.random().toString(36).slice(2, 8).toUpperCase();
 
 const SELECT_HOUSEHOLD_FIELDS =
-  "id,name,image_url,address,currency,apartment_size_sqm,cold_rent_monthly,utilities_monthly,utilities_on_room_sqm_percent,task_laziness_enabled,vacation_tasks_exclude_enabled,vacation_finances_exclude_enabled,task_skip_enabled,feature_bucket_enabled,feature_shopping_enabled,feature_tasks_enabled,feature_finances_enabled,theme_primary_color,theme_accent_color,theme_font_family,theme_radius_scale,landing_page_markdown,invite_code,created_by,created_at";
+  "id,name,image_url,address,currency,apartment_size_sqm,cold_rent_monthly,utilities_monthly,utilities_on_room_sqm_percent,task_laziness_enabled,vacation_tasks_exclude_enabled,vacation_finances_exclude_enabled,task_skip_enabled,feature_bucket_enabled,feature_shopping_enabled,feature_tasks_enabled,feature_one_off_tasks_enabled,feature_finances_enabled,one_off_claim_timeout_hours,one_off_claim_max_pimpers,theme_primary_color,theme_accent_color,theme_font_family,theme_radius_scale,landing_page_markdown,invite_code,created_by,created_at";
 const SELECT_HOUSEHOLD_MEMBER_FIELDS =
   "household_id,user_id,role,room_size_sqm,common_area_factor,task_laziness_factor,vacation_mode,created_at";
 const SELECT_HOUSEHOLD_MEMBER_WITH_PROFILE_FIELDS =
@@ -54,6 +56,10 @@ const SELECT_TASK_FIELDS =
 const SELECT_TASK_COMPLETION_FIELDS =
   "id,task_id,household_id,task_title_snapshot,user_id,pimpers_earned,due_at_snapshot,delay_minutes,completed_at";
 const SELECT_TASK_COMPLETION_RATING_FIELDS = "task_completion_id,household_id,user_id,rating";
+const SELECT_ONE_OFF_TASK_CLAIM_FIELDS =
+  "id,household_id,title,description,requested_pimpers,status,resolved_pimpers,expires_at,resolved_at,renewed_from,created_by,created_at";
+const SELECT_ONE_OFF_TASK_CLAIM_VOTE_FIELDS =
+  "claim_id,household_id,user_id,vote_type,counter_pimpers,created_at,updated_at";
 const SELECT_FINANCE_ENTRY_FIELDS =
   "id,household_id,description,category,amount,receipt_image_url,paid_by,paid_by_user_ids,beneficiary_user_ids,entry_date,created_by,created_at";
 const SELECT_CASH_AUDIT_FIELDS = "id,household_id,requested_by,status,created_at";
@@ -117,7 +123,10 @@ const householdSchema = z.object({
   feature_bucket_enabled: z.coerce.boolean().default(true),
   feature_shopping_enabled: z.coerce.boolean().default(true),
   feature_tasks_enabled: z.coerce.boolean().default(true),
+  feature_one_off_tasks_enabled: z.coerce.boolean().default(true),
   feature_finances_enabled: z.coerce.boolean().default(true),
+  one_off_claim_timeout_hours: z.coerce.number().int().min(0).max(336).default(72),
+  one_off_claim_max_pimpers: z.coerce.number().int().min(1).max(5000).default(500),
   theme_primary_color: z
     .string()
     .regex(/^#[0-9A-Fa-f]{6}$/)
@@ -238,6 +247,31 @@ const taskCompletionRatingSchema = z.object({
   household_id: z.string().uuid(),
   user_id: z.string().uuid(),
   rating: z.coerce.number().int().min(1).max(5)
+});
+
+const oneOffTaskClaimVoteSchema = z.object({
+  claim_id: z.string().uuid(),
+  household_id: z.string().uuid(),
+  user_id: z.string().uuid(),
+  vote_type: z.enum(["approve", "reject", "counter"]),
+  counter_pimpers: z.coerce.number().int().positive().nullable().optional().transform((value) => value ?? null),
+  created_at: z.string().min(1),
+  updated_at: z.string().min(1)
+});
+
+const oneOffTaskClaimSchema = z.object({
+  id: z.string().uuid(),
+  household_id: z.string().uuid(),
+  title: z.string().min(1),
+  description: z.string().default(""),
+  requested_pimpers: z.coerce.number().int().positive(),
+  status: z.enum(["open", "approved", "rejected", "expired", "withdrawn"]).default("open"),
+  resolved_pimpers: z.coerce.number().nonnegative().nullable().optional().transform((value) => value ?? null),
+  expires_at: z.string().min(1),
+  resolved_at: z.string().nullable().optional().transform((value) => value ?? null),
+  renewed_from: z.string().uuid().nullable().optional().transform((value) => value ?? null),
+  created_by: z.string().uuid(),
+  created_at: z.string().min(1)
 });
 
 const householdEventSchema = z.object({
@@ -363,6 +397,18 @@ const normalizeShoppingCompletion = (row: Record<string, unknown>): ShoppingItem
 
 const normalizeTaskCompletion = (row: Record<string, unknown>): TaskCompletion => ({
   ...taskCompletionSchema.parse(row)
+});
+
+const normalizeOneOffTaskClaimVote = (row: Record<string, unknown>): OneOffTaskClaimVote => ({
+  ...oneOffTaskClaimVoteSchema.parse(row)
+});
+
+const normalizeOneOffTaskClaim = (
+  row: Record<string, unknown>,
+  votes: OneOffTaskClaimVote[]
+): OneOffTaskClaim => ({
+  ...oneOffTaskClaimSchema.parse(row),
+  votes
 });
 
 const normalizeHouseholdEvent = (row: Record<string, unknown>): HouseholdEvent => ({
@@ -826,7 +872,10 @@ export const updateHouseholdSettings = async (
     featureBucketEnabled: z.coerce.boolean(),
     featureShoppingEnabled: z.coerce.boolean(),
     featureTasksEnabled: z.coerce.boolean(),
+    featureOneOffTasksEnabled: z.coerce.boolean(),
     featureFinancesEnabled: z.coerce.boolean(),
+    oneOffClaimTimeoutHours: z.coerce.number().int().min(0).max(336),
+    oneOffClaimMaxPimpers: z.coerce.number().int().min(1).max(5000),
     themePrimaryColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/),
     themeAccentColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/),
     themeFontFamily: z.string().min(1),
@@ -851,7 +900,10 @@ export const updateHouseholdSettings = async (
       feature_bucket_enabled: parsedInput.featureBucketEnabled,
       feature_shopping_enabled: parsedInput.featureShoppingEnabled,
       feature_tasks_enabled: parsedInput.featureTasksEnabled,
+      feature_one_off_tasks_enabled: parsedInput.featureOneOffTasksEnabled,
       feature_finances_enabled: parsedInput.featureFinancesEnabled,
+      one_off_claim_timeout_hours: parsedInput.oneOffClaimTimeoutHours,
+      one_off_claim_max_pimpers: parsedInput.oneOffClaimMaxPimpers,
       theme_primary_color: parsedInput.themePrimaryColor,
       theme_accent_color: parsedInput.themeAccentColor,
       theme_font_family: parsedInput.themeFontFamily,
@@ -2150,6 +2202,262 @@ export const getTaskCompletions = async (householdId: string): Promise<TaskCompl
       my_rating: ratingStats.myRating
     };
   });
+};
+
+const median = (values: number[]) => {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const middle = Math.floor(sorted.length / 2);
+  if (sorted.length % 2 === 0) {
+    return (sorted[middle - 1] + sorted[middle]) / 2;
+  }
+  return sorted[middle];
+};
+
+const resolveOneOffClaimIfNeeded = async (
+  claim: OneOffTaskClaim,
+  votes: OneOffTaskClaimVote[]
+): Promise<OneOffTaskClaim> => {
+  if (claim.status !== "open") return claim;
+
+  const now = Date.now();
+  const expiresAt = new Date(claim.expires_at).getTime();
+  const { count: votersCount, error: votersError } = await supabase
+    .from("household_members")
+    .select("*", { count: "exact", head: true })
+    .eq("household_id", claim.household_id)
+    .neq("user_id", claim.created_by);
+  if (votersError) throw votersError;
+  const totalVoters = Math.max(0, votersCount ?? 0);
+
+  let nextStatus: "approved" | "rejected" | "expired" | null = null;
+  let resolvedPimpers: number | null = null;
+  const approveCount = votes.filter((vote) => vote.vote_type === "approve").length;
+  const rejectCount = votes.filter((vote) => vote.vote_type === "reject").length;
+  const counterVotes = votes.filter((vote) => vote.vote_type === "counter");
+  const supportCount = approveCount + counterVotes.length;
+
+  if (totalVoters === 0) {
+    nextStatus = "approved";
+    resolvedPimpers = claim.requested_pimpers;
+  } else if (rejectCount > totalVoters / 2) {
+    nextStatus = "rejected";
+  } else if (supportCount > totalVoters / 2) {
+    const values = [claim.requested_pimpers, ...counterVotes.map((vote) => vote.counter_pimpers ?? claim.requested_pimpers)];
+    resolvedPimpers = Number(median(values).toFixed(2));
+    nextStatus = "approved";
+  } else if (Number.isFinite(expiresAt) && now > expiresAt) {
+    nextStatus = "expired";
+  } else if (votes.length >= totalVoters) {
+    nextStatus = "expired";
+  }
+
+  if (!nextStatus) return claim;
+  const { data, error } = await supabase.rpc("resolve_one_off_task_claim", {
+    p_claim_id: claim.id,
+    p_status: nextStatus,
+    p_resolved_pimpers: resolvedPimpers
+  });
+  if (error) throw error;
+  return normalizeOneOffTaskClaim((data ?? claim) as Record<string, unknown>, votes);
+};
+
+export const getOneOffTaskClaims = async (householdId: string): Promise<OneOffTaskClaim[]> => {
+  const validatedHouseholdId = z.string().uuid().parse(householdId);
+  const { data: claimRows, error: claimError } = await supabase
+    .from("one_off_task_claims")
+    .select(SELECT_ONE_OFF_TASK_CLAIM_FIELDS)
+    .eq("household_id", validatedHouseholdId)
+    .order("created_at", { ascending: false });
+  if (claimError) throw claimError;
+
+  const normalizedClaims = (claimRows ?? []).map((row) =>
+    normalizeOneOffTaskClaim(row as Record<string, unknown>, [])
+  );
+  if (normalizedClaims.length === 0) return [];
+
+  const claimIds = normalizedClaims.map((claim) => claim.id);
+  const { data: voteRows, error: voteError } = await supabase
+    .from("one_off_task_claim_votes")
+    .select(SELECT_ONE_OFF_TASK_CLAIM_VOTE_FIELDS)
+    .in("claim_id", claimIds);
+  if (voteError) throw voteError;
+
+  const votesByClaimId = new Map<string, OneOffTaskClaimVote[]>();
+  (voteRows ?? []).forEach((row) => {
+    const vote = normalizeOneOffTaskClaimVote(row as Record<string, unknown>);
+    const current = votesByClaimId.get(vote.claim_id) ?? [];
+    votesByClaimId.set(vote.claim_id, [...current, vote]);
+  });
+
+  const withVotes = normalizedClaims.map((claim) => ({
+    ...claim,
+    votes: votesByClaimId.get(claim.id) ?? []
+  }));
+  const resolved = await Promise.all(
+    withVotes.map((claim) => resolveOneOffClaimIfNeeded(claim, claim.votes))
+  );
+  return resolved.sort((a, b) => b.created_at.localeCompare(a.created_at));
+};
+
+export const createOneOffTaskClaim = async (input: {
+  householdId: string;
+  userId: string;
+  title: string;
+  description?: string;
+  requestedPimpers: number;
+}): Promise<OneOffTaskClaim> => {
+  const parsed = z.object({
+    householdId: z.string().uuid(),
+    userId: z.string().uuid(),
+    title: z.string().trim().min(1).max(200),
+    description: z.string().trim().max(2000).optional(),
+    requestedPimpers: z.coerce.number().int().positive()
+  }).parse(input);
+
+  const { data: householdRow, error: householdError } = await supabase
+    .from("households")
+    .select("one_off_claim_timeout_hours,one_off_claim_max_pimpers")
+    .eq("id", parsed.householdId)
+    .single();
+  if (householdError) throw householdError;
+  const timeoutHours = Math.max(0, Math.min(336, Number((householdRow as { one_off_claim_timeout_hours?: number } | null)?.one_off_claim_timeout_hours ?? 72)));
+  const maxPimpers = Math.max(1, Math.min(5000, Number((householdRow as { one_off_claim_max_pimpers?: number } | null)?.one_off_claim_max_pimpers ?? 500)));
+  if (parsed.requestedPimpers > maxPimpers) {
+    throw new Error(`Requested pimpers exceed household max (${maxPimpers})`);
+  }
+  const expiresAt =
+    timeoutHours <= 0
+      ? "9999-12-31T23:59:59.999Z"
+      : new Date(Date.now() + timeoutHours * 60 * 60 * 1000).toISOString();
+
+  const { data, error } = await supabase
+    .from("one_off_task_claims")
+    .insert({
+      household_id: parsed.householdId,
+      created_by: parsed.userId,
+      title: parsed.title,
+      description: parsed.description ?? "",
+      requested_pimpers: parsed.requestedPimpers,
+      expires_at: expiresAt
+    })
+    .select(SELECT_ONE_OFF_TASK_CLAIM_FIELDS)
+    .single();
+  if (error) throw error;
+  return normalizeOneOffTaskClaim(data as Record<string, unknown>, []);
+};
+
+export const voteOneOffTaskClaim = async (input: {
+  claimId: string;
+  voteType: "approve" | "reject" | "counter";
+  counterPimpers?: number | null;
+}): Promise<OneOffTaskClaim> => {
+  const userId = await requireAuthenticatedUserId();
+  const parsed = z.object({
+    claimId: z.string().uuid(),
+    voteType: z.enum(["approve", "reject", "counter"]),
+    counterPimpers: z.coerce.number().int().positive().nullable().optional()
+  }).parse(input);
+
+  const { data: claimRow, error: claimError } = await supabase
+    .from("one_off_task_claims")
+    .select(SELECT_ONE_OFF_TASK_CLAIM_FIELDS)
+    .eq("id", parsed.claimId)
+    .single();
+  if (claimError) throw claimError;
+  const claim = normalizeOneOffTaskClaim(claimRow as Record<string, unknown>, []);
+  if (claim.status !== "open") return claim;
+  if (claim.created_by === userId) {
+    throw new Error("Claim creator cannot vote");
+  }
+
+  const counterValue = parsed.voteType === "counter" ? parsed.counterPimpers ?? null : null;
+  if (parsed.voteType === "counter" && counterValue == null) {
+    throw new Error("Counter vote requires pimper value");
+  }
+
+  const { error: voteError } = await supabase.from("one_off_task_claim_votes").upsert(
+    {
+      claim_id: parsed.claimId,
+      household_id: claim.household_id,
+      user_id: userId,
+      vote_type: parsed.voteType,
+      counter_pimpers: counterValue
+    },
+    { onConflict: "claim_id,user_id" }
+  );
+  if (voteError) throw voteError;
+
+  const { data: voteRows, error: votesError } = await supabase
+    .from("one_off_task_claim_votes")
+    .select(SELECT_ONE_OFF_TASK_CLAIM_VOTE_FIELDS)
+    .eq("claim_id", parsed.claimId);
+  if (votesError) throw votesError;
+  const votes = (voteRows ?? []).map((row) => normalizeOneOffTaskClaimVote(row as Record<string, unknown>));
+  return resolveOneOffClaimIfNeeded(claim, votes);
+};
+
+export const renewOneOffTaskClaim = async (claimId: string): Promise<OneOffTaskClaim> => {
+  const userId = await requireAuthenticatedUserId();
+  const validatedClaimId = z.string().uuid().parse(claimId);
+  const { data: currentRow, error: currentError } = await supabase
+    .from("one_off_task_claims")
+    .select(SELECT_ONE_OFF_TASK_CLAIM_FIELDS)
+    .eq("id", validatedClaimId)
+    .single();
+  if (currentError) throw currentError;
+  const current = normalizeOneOffTaskClaim(currentRow as Record<string, unknown>, []);
+  if (current.created_by !== userId) {
+    throw new Error("Only creator can renew claim");
+  }
+  if (!["expired", "rejected"].includes(current.status)) {
+    throw new Error("Claim can only be renewed after expiration or rejection");
+  }
+
+  const { data, error } = await supabase
+    .from("one_off_task_claims")
+    .insert({
+      household_id: current.household_id,
+      created_by: current.created_by,
+      title: current.title,
+      description: current.description,
+      requested_pimpers: current.requested_pimpers,
+      renewed_from: current.id
+    })
+    .select(SELECT_ONE_OFF_TASK_CLAIM_FIELDS)
+    .single();
+  if (error) throw error;
+  return normalizeOneOffTaskClaim(data as Record<string, unknown>, []);
+};
+
+export const withdrawOneOffTaskClaim = async (claimId: string): Promise<OneOffTaskClaim> => {
+  const userId = await requireAuthenticatedUserId();
+  const validatedClaimId = z.string().uuid().parse(claimId);
+  const { data: currentRow, error: currentError } = await supabase
+    .from("one_off_task_claims")
+    .select(SELECT_ONE_OFF_TASK_CLAIM_FIELDS)
+    .eq("id", validatedClaimId)
+    .single();
+  if (currentError) throw currentError;
+  const current = normalizeOneOffTaskClaim(currentRow as Record<string, unknown>, []);
+  if (current.created_by !== userId) {
+    throw new Error("Only creator can withdraw claim");
+  }
+  const { data, error } = await supabase.rpc("resolve_one_off_task_claim", {
+    p_claim_id: current.id,
+    p_status: "withdrawn",
+    p_resolved_pimpers: null
+  });
+  if (error) throw error;
+  const { data: voteRows, error: votesError } = await supabase
+    .from("one_off_task_claim_votes")
+    .select(SELECT_ONE_OFF_TASK_CLAIM_VOTE_FIELDS)
+    .eq("claim_id", current.id);
+  if (votesError) throw votesError;
+  return normalizeOneOffTaskClaim(
+    (data ?? currentRow) as Record<string, unknown>,
+    (voteRows ?? []).map((row) => normalizeOneOffTaskClaimVote(row as Record<string, unknown>))
+  );
 };
 
 export const rateTaskCompletion = async (taskCompletionId: string, rating: number): Promise<void> => {

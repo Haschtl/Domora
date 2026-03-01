@@ -21,6 +21,7 @@ import type {
   HouseholdMemberVacation,
   HouseholdWhiteboard,
   HouseholdMemberPimpers,
+  OneOffTaskClaim,
   ShoppingItem,
   ShoppingItemCompletion,
   TaskCompletion,
@@ -70,7 +71,7 @@ export const useHouseholdTasksBatch = (householdId: string | null, enabled = tru
   return useQuery({
     queryKey: householdId ? ["household", householdId, "batch", "tasks"] : ["household", "none", "batch", "tasks"],
     queryFn: () =>
-      resolveHouseholdBatch(queryClient, householdId!, ["tasks", "taskCompletions", "memberPimpers"]),
+      resolveHouseholdBatch(queryClient, householdId!, ["tasks", "taskCompletions", "oneOffTaskClaims", "memberPimpers"]),
     enabled: Boolean(householdId) && enabled
   });
 };
@@ -136,6 +137,14 @@ export const useHouseholdTaskCompletions = (householdId: string | null, enabled 
     ...(householdId
       ? householdQueryOptions.taskCompletions(householdId)
       : { queryKey: ["household", "none", "task-completions"], ...emptyArrayQuery<TaskCompletion>() }),
+    enabled: Boolean(householdId) && enabled
+  });
+
+export const useHouseholdOneOffTaskClaims = (householdId: string | null, enabled = true) =>
+  useQuery<OneOffTaskClaim[]>({
+    ...(householdId
+      ? householdQueryOptions.oneOffTaskClaims(householdId)
+      : { queryKey: ["household", "none", "one-off-task-claims"], ...emptyArrayQuery<OneOffTaskClaim>() }),
     enabled: Boolean(householdId) && enabled
   });
 

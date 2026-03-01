@@ -9,6 +9,7 @@ import {
   addFinanceSubscription,
   addShoppingItem,
   addTask,
+  createOneOffTaskClaim,
   deleteTask,
   dissolveHousehold,
   completeTask,
@@ -23,6 +24,7 @@ import {
   removeHouseholdMember,
   requestCashAudit,
   rateTaskCompletion,
+  renewOneOffTaskClaim,
   setHouseholdMemberRole,
   signOut,
   signIn,
@@ -52,7 +54,9 @@ import {
   updateUserPaymentHandles,
   updateBucketDateVote,
   updateBucketItem,
-  updateBucketItemStatus
+  updateBucketItemStatus,
+  voteOneOffTaskClaim,
+  withdrawOneOffTaskClaim
 } from "../lib/api";
 import { setActiveHouseholdId } from "../lib/app-store";
 import { queryKeys } from "../lib/query-keys";
@@ -64,6 +68,7 @@ import type {
   FinanceSubscription,
   FinanceSubscriptionRecurrence,
   NewFinanceSubscriptionInput,
+  OneOffTaskClaim,
   Household,
   NewTaskInput,
   UpdateHouseholdInput,
@@ -91,6 +96,7 @@ const sortBucketItems = (items: BucketItem[]) =>
   });
 
 const sortTasks = (items: TaskItem[]) => [...items].sort((a, b) => a.due_at.localeCompare(b.due_at));
+const sortOneOffTaskClaims = (items: OneOffTaskClaim[]) => [...items].sort((a, b) => b.created_at.localeCompare(a.created_at));
 
 const sortFinanceEntries = (items: FinanceEntry[]) =>
   [...items].sort((a, b) => b.created_at.localeCompare(a.created_at));
@@ -661,6 +667,130 @@ export const useWorkspaceController = () => {
       });
     },
     [activeHousehold, runWithOptimisticUpdate, userId]
+  );
+
+  const onAddOneOffTaskClaim = useCallback(
+    async (input: { title: string; description?: string; requestedPimpers: number }) => {
+      if (!activeHousehold || !userId) return;
+      const nowIso = new Date().toISOString();
+      const optimistic: OneOffTaskClaim = {
+        id: uuid(),
+        household_id: activeHousehold.id,
+        title: input.title,
+        description: input.description?.trim() ?? "",
+        requested_pimpers: input.requestedPimpers,
+        status: "open",
+        resolved_pimpers: null,
+        expires_at:
+          (activeHousehold.one_off_claim_timeout_hours ?? 72) <= 0
+            ? "9999-12-31T23:59:59.999Z"
+            : new Date(
+                Date.now() + (activeHousehold.one_off_claim_timeout_hours ?? 72) * 60 * 60 * 1000
+              ).toISOString(),
+        resolved_at: null,
+        renewed_from: null,
+        created_by: userId,
+        created_at: nowIso,
+        votes: []
+      };
+
+      await runWithOptimisticUpdate({
+        updates: [
+          {
+            queryKey: queryKeys.householdOneOffTaskClaims(activeHousehold.id),
+            updater: (current) => sortOneOffTaskClaims([optimistic, ...((current as OneOffTaskClaim[]) ?? [])])
+          }
+        ],
+        action: async () => {
+          await createOneOffTaskClaim({
+            householdId: activeHousehold.id,
+            userId,
+            title: input.title,
+            description: input.description,
+            requestedPimpers: input.requestedPimpers
+          });
+        }
+      });
+    },
+    [activeHousehold, runWithOptimisticUpdate, userId]
+  );
+
+  const onVoteOneOffTaskClaim = useCallback(
+    async (input: { claimId: string; voteType: "approve" | "reject" | "counter"; counterPimpers?: number | null }) => {
+      if (!activeHousehold || !userId) return;
+      await runWithOptimisticUpdate({
+        updates: [
+          {
+            queryKey: queryKeys.householdOneOffTaskClaims(activeHousehold.id),
+            updater: (current) => {
+              const claims = ((current as OneOffTaskClaim[]) ?? []).map((claim) => {
+                if (claim.id !== input.claimId) return claim;
+                const nextVotes = claim.votes.filter((vote) => vote.user_id !== userId);
+                nextVotes.push({
+                  claim_id: claim.id,
+                  household_id: claim.household_id,
+                  user_id: userId,
+                  vote_type: input.voteType,
+                  counter_pimpers: input.voteType === "counter" ? input.counterPimpers ?? null : null,
+                  created_at: new Date().toISOString(),
+                  updated_at: new Date().toISOString()
+                });
+                return {
+                  ...claim,
+                  votes: nextVotes
+                };
+              });
+              return sortOneOffTaskClaims(claims);
+            }
+          }
+        ],
+        action: async () => {
+          await voteOneOffTaskClaim(input);
+        }
+      });
+    },
+    [activeHousehold, runWithOptimisticUpdate, userId]
+  );
+
+  const onRenewOneOffTaskClaim = useCallback(
+    async (claimId: string) => {
+      if (!activeHousehold) return;
+      await runWithOptimisticUpdate({
+        updates: [
+          {
+            queryKey: queryKeys.householdOneOffTaskClaims(activeHousehold.id),
+            updater: (current) => sortOneOffTaskClaims((current as OneOffTaskClaim[]) ?? [])
+          }
+        ],
+        action: async () => {
+          await renewOneOffTaskClaim(claimId);
+        }
+      });
+    },
+    [activeHousehold, runWithOptimisticUpdate]
+  );
+
+  const onWithdrawOneOffTaskClaim = useCallback(
+    async (claimId: string) => {
+      if (!activeHousehold) return;
+      await runWithOptimisticUpdate({
+        updates: [
+          {
+            queryKey: queryKeys.householdOneOffTaskClaims(activeHousehold.id),
+            updater: (current) =>
+              ((current as OneOffTaskClaim[]) ?? []).map((claim) =>
+                claim.id === claimId
+                  ? { ...claim, status: "withdrawn", resolved_at: new Date().toISOString(), resolved_pimpers: null }
+                  : claim
+              )
+          }
+        ],
+        action: async () => {
+          await withdrawOneOffTaskClaim(claimId);
+        }
+      });
+    },
+    [activeHousehold, runWithOptimisticUpdate]
   );
 
   const onCompleteTask = useCallback(
@@ -1639,12 +1769,16 @@ export const useWorkspaceController = () => {
     onUpdateShoppingItem,
     onDeleteShoppingItem,
     onAddTask,
+    onAddOneOffTaskClaim,
     onCompleteTask,
     onSkipTask,
     onTakeoverTask,
     onToggleTaskActive,
     onUpdateTask,
     onDeleteTask,
+    onVoteOneOffTaskClaim,
+    onRenewOneOffTaskClaim,
+    onWithdrawOneOffTaskClaim,
     onRateTaskCompletion,
     onAddFinanceEntry,
     onUpdateFinanceEntry,

@@ -347,7 +347,10 @@ export const SettingsPage = ({
       featureBucketEnabled: household.feature_bucket_enabled ?? true,
       featureShoppingEnabled: household.feature_shopping_enabled ?? true,
       featureTasksEnabled: household.feature_tasks_enabled ?? true,
+      featureOneOffTasksEnabled: household.feature_one_off_tasks_enabled ?? true,
       featureFinancesEnabled: household.feature_finances_enabled ?? true,
+      oneOffClaimTimeoutHours: String(household.one_off_claim_timeout_hours ?? 72),
+      oneOffClaimMaxPimpers: String(household.one_off_claim_max_pimpers ?? 500),
       themePrimaryColor: household.theme_primary_color ?? "#1f8a7f",
       themeAccentColor: household.theme_accent_color ?? "#14b8a6",
       themeFontFamily: household.theme_font_family ?? '"Space Grotesk", "Segoe UI", sans-serif',
@@ -366,7 +369,10 @@ export const SettingsPage = ({
         featureBucketEnabled: boolean;
         featureShoppingEnabled: boolean;
         featureTasksEnabled: boolean;
+        featureOneOffTasksEnabled: boolean;
         featureFinancesEnabled: boolean;
+        oneOffClaimTimeoutHours: string;
+        oneOffClaimMaxPimpers: string;
         themePrimaryColor: string;
         themeAccentColor: string;
         themeFontFamily: string;
@@ -391,6 +397,16 @@ export const SettingsPage = ({
       }
 
       setFormError(null);
+      const oneOffClaimTimeoutHours = Number(value.oneOffClaimTimeoutHours);
+      const oneOffClaimMaxPimpers = Number(value.oneOffClaimMaxPimpers);
+      if (!Number.isInteger(oneOffClaimTimeoutHours) || oneOffClaimTimeoutHours < 0 || oneOffClaimTimeoutHours > 336) {
+        setFormError(t("settings.oneOffClaimTimeoutError"));
+        return;
+      }
+      if (!Number.isInteger(oneOffClaimMaxPimpers) || oneOffClaimMaxPimpers < 1 || oneOffClaimMaxPimpers > 5000) {
+        setFormError(t("settings.oneOffClaimMaxPimpersError"));
+        return;
+      }
       await onUpdateHousehold({
         name: normalizedName,
         imageUrl: value.imageUrl,
@@ -407,7 +423,10 @@ export const SettingsPage = ({
         featureBucketEnabled: value.featureBucketEnabled,
         featureShoppingEnabled: value.featureShoppingEnabled,
         featureTasksEnabled: value.featureTasksEnabled,
+        featureOneOffTasksEnabled: value.featureOneOffTasksEnabled,
         featureFinancesEnabled: value.featureFinancesEnabled,
+        oneOffClaimTimeoutHours,
+        oneOffClaimMaxPimpers,
         themePrimaryColor: value.themePrimaryColor,
         themeAccentColor: value.themeAccentColor,
         themeFontFamily: value.themeFontFamily,
@@ -453,7 +472,10 @@ export const SettingsPage = ({
     householdForm.setFieldValue("featureBucketEnabled", household.feature_bucket_enabled ?? true);
     householdForm.setFieldValue("featureShoppingEnabled", household.feature_shopping_enabled ?? true);
     householdForm.setFieldValue("featureTasksEnabled", household.feature_tasks_enabled ?? true);
+    householdForm.setFieldValue("featureOneOffTasksEnabled", household.feature_one_off_tasks_enabled ?? true);
     householdForm.setFieldValue("featureFinancesEnabled", household.feature_finances_enabled ?? true);
+    householdForm.setFieldValue("oneOffClaimTimeoutHours", String(household.one_off_claim_timeout_hours ?? 72));
+    householdForm.setFieldValue("oneOffClaimMaxPimpers", String(household.one_off_claim_max_pimpers ?? 500));
     householdForm.setFieldValue("themePrimaryColor", household.theme_primary_color ?? "#1f8a7f");
     householdForm.setFieldValue("themeAccentColor", household.theme_accent_color ?? "#14b8a6");
     householdForm.setFieldValue(
@@ -474,7 +496,10 @@ export const SettingsPage = ({
     household.feature_bucket_enabled,
     household.feature_shopping_enabled,
     household.feature_tasks_enabled,
+    household.feature_one_off_tasks_enabled,
     household.feature_finances_enabled,
+    household.one_off_claim_timeout_hours,
+    household.one_off_claim_max_pimpers,
     household.theme_primary_color,
     household.theme_accent_color,
     household.theme_font_family,
@@ -561,7 +586,10 @@ export const SettingsPage = ({
         featureBucketEnabled: householdForm.state.values.featureBucketEnabled,
         featureShoppingEnabled: householdForm.state.values.featureShoppingEnabled,
         featureTasksEnabled: householdForm.state.values.featureTasksEnabled,
+        featureOneOffTasksEnabled: householdForm.state.values.featureOneOffTasksEnabled,
         featureFinancesEnabled: householdForm.state.values.featureFinancesEnabled,
+        oneOffClaimTimeoutHours: Number(householdForm.state.values.oneOffClaimTimeoutHours),
+        oneOffClaimMaxPimpers: Number(householdForm.state.values.oneOffClaimMaxPimpers),
         themePrimaryColor: householdForm.state.values.themePrimaryColor,
         themeAccentColor: householdForm.state.values.themeAccentColor,
         themeFontFamily: householdForm.state.values.themeFontFamily,
@@ -593,7 +621,10 @@ export const SettingsPage = ({
         featureBucketEnabled: householdForm.state.values.featureBucketEnabled,
         featureShoppingEnabled: householdForm.state.values.featureShoppingEnabled,
         featureTasksEnabled: householdForm.state.values.featureTasksEnabled,
+        featureOneOffTasksEnabled: householdForm.state.values.featureOneOffTasksEnabled,
         featureFinancesEnabled: householdForm.state.values.featureFinancesEnabled,
+        oneOffClaimTimeoutHours: Number(householdForm.state.values.oneOffClaimTimeoutHours),
+        oneOffClaimMaxPimpers: Number(householdForm.state.values.oneOffClaimMaxPimpers),
         themePrimaryColor: householdForm.state.values.themePrimaryColor,
         themeAccentColor: householdForm.state.values.themeAccentColor,
         themeFontFamily: householdForm.state.values.themeFontFamily,
@@ -626,6 +657,9 @@ export const SettingsPage = ({
   const ownerCount = useMemo(() => members.filter((member) => member.role === "owner").length, [members]);
   const isTasksFeatureEnabled = household.feature_tasks_enabled ?? true;
   const isFinancesFeatureEnabled = household.feature_finances_enabled ?? true;
+  const showOneOffClaimSettings =
+    householdForm.state.values.featureTasksEnabled && householdForm.state.values.featureOneOffTasksEnabled;
+  const isOneOffTimeoutDisabled = Number(householdForm.state.values.oneOffClaimTimeoutHours) === 0;
   const isVacationTaskExclusionEnabled = household.vacation_tasks_exclude_enabled ?? true;
   const isVacationFinanceExclusionEnabled = household.vacation_finances_exclude_enabled ?? true;
   const vacationModeDescription = useMemo(() => {
@@ -2365,6 +2399,75 @@ export const SettingsPage = ({
                   )}
                 />
               </div>
+              <div className="flex items-center justify-between gap-3 rounded-xl border border-brand-100 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900">
+                <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
+                  {t("settings.featureOneOffTasksTitle")}
+                </p>
+                <householdForm.Field
+                  name="featureOneOffTasksEnabled"
+                  children={(field: {
+                    state: { value: boolean };
+                    handleChange: (value: boolean) => void;
+                  }) => (
+                    <Switch
+                      checked={field.state.value}
+                      disabled={busy || !isOwner}
+                      onCheckedChange={field.handleChange}
+                      aria-label={t("settings.featureOneOffTasksTitle")}
+                    />
+                  )}
+                />
+              </div>
+              {showOneOffClaimSettings ? (
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <householdForm.Field
+                    name="oneOffClaimTimeoutHours"
+                    children={(field: {
+                      state: { value: string };
+                      handleChange: (value: string) => void;
+                    }) => (
+                      <div className="space-y-1 rounded-xl border border-brand-100 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900">
+                        <Label className="text-xs text-slate-600 dark:text-slate-300">
+                          {isOneOffTimeoutDisabled
+                            ? `${t("settings.oneOffClaimTimeoutHoursLabel")} (${t("common.disabledLabel")})`
+                            : t("settings.oneOffClaimTimeoutHoursLabel")}
+                        </Label>
+                        <Input
+                          type="number"
+                          min={0}
+                          max={336}
+                          inputMode="numeric"
+                          value={field.state.value}
+                          onChange={(event) => field.handleChange(event.target.value)}
+                          disabled={busy || !isOwner}
+                        />
+                      </div>
+                    )}
+                  />
+                  <householdForm.Field
+                    name="oneOffClaimMaxPimpers"
+                    children={(field: {
+                      state: { value: string };
+                      handleChange: (value: string) => void;
+                    }) => (
+                      <div className="space-y-1 rounded-xl border border-brand-100 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900">
+                        <Label className="text-xs text-slate-600 dark:text-slate-300">
+                          {t("settings.oneOffClaimMaxPimpersLabel")}
+                        </Label>
+                        <Input
+                          type="number"
+                          min={1}
+                          max={5000}
+                          inputMode="numeric"
+                          value={field.state.value}
+                          onChange={(event) => field.handleChange(event.target.value)}
+                          disabled={busy || !isOwner}
+                        />
+                      </div>
+                    )}
+                  />
+                </div>
+              ) : null}
               <div className="flex items-center justify-between gap-3 rounded-xl border border-brand-100 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900">
                 <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
                   {t("settings.featureFinancesTitle")}

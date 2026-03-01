@@ -120,7 +120,7 @@ serve(async (req) => {
 
   const { data: task, error: taskError } = await supabase
     .from("tasks")
-    .select("id,household_id,title,due_at,assignee_id,done,is_active")
+    .select("id,household_id,title,due_at,assignee_id,done,is_active,grace_minutes,delay_penalty_per_day,ignore_delay_penalty_once")
     .eq("id", taskId)
     .maybeSingle();
   if (taskError || !task) {
@@ -190,6 +190,13 @@ serve(async (req) => {
 
   const title = String(payload.title ?? "").trim() || "Aufgabe fällig";
   const body = String(payload.body ?? "").trim() || task.title;
+  const graceMinutes = Math.max(0, Number(task.grace_minutes ?? 0));
+  const dueAtMs = dueAt.getTime();
+  const overdueMinutes = Math.max(0, Math.floor((now.getTime() - (dueAtMs + graceMinutes * 60_000)) / 60_000));
+  const delayPenaltyPerDay = Math.max(0, Number(task.delay_penalty_per_day ?? 0));
+  const penaltyActive = delayPenaltyPerDay > 0 && !Boolean(task.ignore_delay_penalty_once);
+  const lostPimpersRaw = penaltyActive ? delayPenaltyPerDay * (overdueMinutes / 1440) : 0;
+  const lostPimpers = Number.isFinite(lostPimpersRaw) ? Number(lostPimpersRaw.toFixed(2)) : 0;
 
   const dedupeKey = `task_reminder:${task.id}:${task.assignee_id}:${now
     .toISOString()
@@ -205,6 +212,7 @@ serve(async (req) => {
       taskId: task.id,
       dueAt: task.due_at,
       streakToLose,
+      lostPimpers,
       actor_user_id: user.id,
       target_user_id: task.assignee_id
     },

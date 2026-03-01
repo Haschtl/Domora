@@ -18,6 +18,8 @@ import {
   buildBucketVoteRows,
   buildSubscriptionRows,
   buildTaskCompletionRatingRows,
+  buildOneOffTaskClaimRows,
+  buildOneOffTaskClaimVoteRows,
   buildMemberVacationRows,
   buildWhiteboardRow,
   memberColors,
@@ -85,6 +87,8 @@ const appTablesToClear = [
   { table: "household_events", markerColumn: "id" },
   { table: "task_completion_ratings", markerColumn: "task_completion_id" },
   { table: "task_completions", markerColumn: "id" },
+  { table: "one_off_task_claim_votes", markerColumn: "claim_id" },
+  { table: "one_off_task_claims", markerColumn: "id" },
   { table: "task_rotation_members", markerColumn: "task_id" },
   { table: "tasks", markerColumn: "id" },
   { table: "bucket_item_date_votes", markerColumn: "bucket_item_id" },
@@ -339,6 +343,55 @@ const run = async () => {
     }
   }
 
+  const oneOffClaimRows = buildOneOffTaskClaimRows({
+    householdId,
+    users,
+    now
+  });
+  let insertedOneOffClaims = [];
+  if (oneOffClaimRows.length > 0) {
+    const { data, error: oneOffClaimError } = await supabase
+      .from("one_off_task_claims")
+      .insert(oneOffClaimRows)
+      .select("id,created_by,title,status,requested_pimpers,resolved_pimpers,created_at");
+    if (oneOffClaimError) {
+      throw new Error(`Failed to insert one-off task claims: ${oneOffClaimError.message}`);
+    }
+    insertedOneOffClaims = data ?? [];
+  }
+
+  const expiredRenewalSource = insertedOneOffClaims.find((entry) => entry.title === "Sofa tiefengereinigt (alt)");
+  const renewalTarget = insertedOneOffClaims.find((entry) => entry.title === "Sofa tiefengereinigt");
+  if (expiredRenewalSource?.id && renewalTarget?.id) {
+    const { error: renewLinkError } = await supabase
+      .from("one_off_task_claims")
+      .update({ renewed_from: expiredRenewalSource.id })
+      .eq("id", renewalTarget.id);
+    if (renewLinkError) {
+      throw new Error(`Failed to link renewed one-off claim: ${renewLinkError.message}`);
+    }
+  }
+
+  const oneOffVoteRows = buildOneOffTaskClaimVoteRows({
+    insertedClaims: insertedOneOffClaims,
+    users,
+    householdId,
+    now
+  });
+  const uniqueOneOffVoteRows = Array.from(
+    new Map(
+      oneOffVoteRows.map((row) => [`${row.claim_id}:${row.user_id}`, row])
+    ).values()
+  );
+  if (uniqueOneOffVoteRows.length > 0) {
+    const { error: oneOffVoteError } = await supabase
+      .from("one_off_task_claim_votes")
+      .insert(uniqueOneOffVoteRows);
+    if (oneOffVoteError) {
+      throw new Error(`Failed to insert one-off task claim votes: ${oneOffVoteError.message}`);
+    }
+  }
+
   const pimperRows = buildPimperRows({ users, householdId, completionRows });
 
   const { error: pimperError } = await supabase.from("household_member_pimpers").upsert(pimperRows);
@@ -460,6 +513,8 @@ const run = async () => {
   });
   console.log(`Tasks created: ${insertedTasks.length}`);
   console.log(`Task completion ratings created: ${completionRatingRows.length}`);
+  console.log(`One-off task claims created: ${insertedOneOffClaims.length}`);
+  console.log(`One-off task claim votes created: ${uniqueOneOffVoteRows.length}`);
   console.log(`Finance entries created: ${financeRows.length}`);
   console.log(`Finance subscriptions created: ${subscriptionRows.length}`);
   console.log(`Cash audits created: ${cashAuditRows.length}`);

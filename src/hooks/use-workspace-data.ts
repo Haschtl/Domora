@@ -94,6 +94,12 @@ export const useWorkspaceData = () => {
     subscribeTable("task_completions", `household_id=eq.${activeHouseholdId}`, () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.householdTaskCompletions(activeHouseholdId) });
     });
+    subscribeTable("one_off_task_claims", `household_id=eq.${activeHouseholdId}`, () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.householdOneOffTaskClaims(activeHouseholdId) });
+    });
+    subscribeTable("one_off_task_claim_votes", `household_id=eq.${activeHouseholdId}`, () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.householdOneOffTaskClaims(activeHouseholdId) });
+    });
     subscribeTable("finance_entries", `household_id=eq.${activeHouseholdId}`, () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.householdFinances(activeHouseholdId) });
     });

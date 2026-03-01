@@ -116,11 +116,19 @@ const buildMessage = (job: PushJob) => {
     base.title = String(payload.title ?? "Erinnerung");
     const reminderBody = String(payload.body ?? "Eine Aufgabe wartet.");
     const streakToLose = Number(payload.streakToLose ?? payload.payload?.streakToLose ?? 0);
+    const lostPimpersRaw = Number(payload.lostPimpers ?? payload.payload?.lostPimpers ?? 0);
+    const hasLostPimpers = Number.isFinite(lostPimpersRaw) && lostPimpersRaw > 0;
+    const lostPimpersLabel = Number.isInteger(lostPimpersRaw)
+      ? `${lostPimpersRaw}`
+      : lostPimpersRaw.toFixed(2).replace(".", ",");
     if (Number.isFinite(streakToLose) && streakToLose >= 1) {
       const streakLabel = streakToLose === 1 ? "1er-Serie" : `${Math.floor(streakToLose)}er-Serie`;
       base.body = `${reminderBody} Wenn du sie nicht pünktlich erledigst, verlierst du deine ${streakLabel}.`;
     } else {
       base.body = reminderBody;
+    }
+    if (hasLostPimpers) {
+      base.body = `${base.body} du hast bereits ${lostPimpersLabel} Pimpers verloren, beeilung!`;
     }
   } else if (event === "member_of_month") {
     base.title = String(payload.title ?? "Mitbewohner:in des Monats");

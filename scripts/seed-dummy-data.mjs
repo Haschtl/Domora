@@ -125,7 +125,10 @@ export const buildMemberRows = ({ householdId, users }) =>
 
 export const buildTaskRows = ({ taskCount, users, householdId, ownerId, now }) => {
   const rows = [];
-  for (let i = 0; i < taskCount; i += 1) {
+  const uniqueTaskTitles = [...new Set(taskTitles)];
+  const totalTasks = Math.min(taskCount, uniqueTaskTitles.length);
+
+  for (let i = 0; i < totalTasks; i += 1) {
     const assignee = users[i % users.length];
     const isDone = i % 3 === 0;
     const dueAt = new Date(now.getTime() + (i - 3) * 24 * 60 * 60 * 1000);
@@ -134,7 +137,7 @@ export const buildTaskRows = ({ taskCount, users, householdId, ownerId, now }) =
 
     rows.push({
       household_id: householdId,
-      title: taskTitles[i % taskTitles.length],
+      title: uniqueTaskTitles[i],
       description: `Demo Task ${i + 1}`,
       current_state_image_url:
         i % 3 === 0
@@ -158,6 +161,196 @@ export const buildTaskRows = ({ taskCount, users, householdId, ownerId, now }) =
       created_by: ownerId
     });
   }
+
+  return rows;
+};
+
+export const buildOneOffTaskClaimRows = ({ householdId, users, now }) => {
+  if (!users.length) return [];
+  const userA = users[0];
+  const userB = users[1] ?? userA;
+  const userC = users[2] ?? userB;
+  const userD = users[3] ?? userC;
+
+  return [
+    {
+      household_id: householdId,
+      title: "Wohnzimmer gestrichen",
+      description: "Wandfarbe besorgt, abgeklebt und komplett neu gestrichen.",
+      requested_pimpers: 24,
+      status: "open",
+      expires_at: new Date(now.getTime() + 2 * 24 * 60 * 60 * 1000).toISOString(),
+      resolved_pimpers: null,
+      resolved_at: null,
+      renewed_from: null,
+      created_by: userA.id,
+      created_at: new Date(now.getTime() - 8 * 60 * 60 * 1000).toISOString()
+    },
+    {
+      household_id: householdId,
+      title: "Keller entrümpelt",
+      description: "Alte Kartons sortiert und Sperrmüll vorbereitet.",
+      requested_pimpers: 18,
+      status: "approved",
+      expires_at: new Date(now.getTime() - 5 * 24 * 60 * 60 * 1000).toISOString(),
+      resolved_pimpers: 16,
+      resolved_at: new Date(now.getTime() - 4 * 24 * 60 * 60 * 1000).toISOString(),
+      renewed_from: null,
+      created_by: userB.id,
+      created_at: new Date(now.getTime() - 6 * 24 * 60 * 60 * 1000).toISOString()
+    },
+    {
+      household_id: householdId,
+      title: "Balkonmöbel repariert",
+      description: "Schrauben ersetzt und Holz neu lasiert.",
+      requested_pimpers: 14,
+      status: "rejected",
+      expires_at: new Date(now.getTime() - 10 * 24 * 60 * 60 * 1000).toISOString(),
+      resolved_pimpers: null,
+      resolved_at: new Date(now.getTime() - 9 * 24 * 60 * 60 * 1000).toISOString(),
+      renewed_from: null,
+      created_by: userC.id,
+      created_at: new Date(now.getTime() - 12 * 24 * 60 * 60 * 1000).toISOString()
+    },
+    {
+      household_id: householdId,
+      title: "Vorratskammer sortiert",
+      description: "Alles neu geordnet und abgelaufene Sachen entsorgt.",
+      requested_pimpers: 9,
+      status: "expired",
+      expires_at: new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000).toISOString(),
+      resolved_pimpers: null,
+      resolved_at: new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000).toISOString(),
+      renewed_from: null,
+      created_by: userD.id,
+      created_at: new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString()
+    },
+    {
+      household_id: householdId,
+      title: "Sofa tiefengereinigt (alt)",
+      description: "Erster Claim ist abgelaufen, weil niemand reagiert hat.",
+      requested_pimpers: 11,
+      status: "expired",
+      expires_at: new Date(now.getTime() - 8 * 24 * 60 * 60 * 1000).toISOString(),
+      resolved_pimpers: null,
+      resolved_at: new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString(),
+      renewed_from: null,
+      created_by: userB.id,
+      created_at: new Date(now.getTime() - 11 * 24 * 60 * 60 * 1000).toISOString()
+    },
+    {
+      household_id: householdId,
+      title: "Sofa tiefengereinigt",
+      description: "Claim nach Ablauf erneut eingereicht.",
+      requested_pimpers: 11,
+      status: "open",
+      expires_at: new Date(now.getTime() + 36 * 60 * 60 * 1000).toISOString(),
+      resolved_pimpers: null,
+      resolved_at: null,
+      renewed_from: null,
+      created_by: userB.id,
+      created_at: new Date(now.getTime() - 20 * 60 * 60 * 1000).toISOString()
+    },
+    {
+      household_id: householdId,
+      title: "Flur-Lampe montiert",
+      description: "Neue Leuchte angebracht, alte entsorgt.",
+      requested_pimpers: 7,
+      status: "withdrawn",
+      expires_at: new Date(now.getTime() + 1 * 24 * 60 * 60 * 1000).toISOString(),
+      resolved_pimpers: null,
+      resolved_at: new Date(now.getTime() - 36 * 60 * 60 * 1000).toISOString(),
+      renewed_from: null,
+      created_by: userA.id,
+      created_at: new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000).toISOString()
+    }
+  ];
+};
+
+export const buildOneOffTaskClaimVoteRows = ({ insertedClaims, users, householdId, now }) => {
+  const rows = [];
+  if (!insertedClaims?.length || !users.length) return rows;
+
+  const nextVoter = (claimCreatorId, offset = 1) => {
+    for (let i = 0; i < users.length; i += 1) {
+      const candidate = users[(i + offset) % users.length];
+      if (candidate?.id !== claimCreatorId) return candidate?.id ?? null;
+    }
+    return null;
+  };
+
+  insertedClaims.forEach((claim, index) => {
+    if (!claim?.id || claim.status === "withdrawn") return;
+    const voterA = nextVoter(claim.created_by, index + 1);
+    const voterB = nextVoter(claim.created_by, index + 2);
+    const baseCreatedAt = new Date(claim.created_at ?? now.toISOString());
+
+    if (claim.status === "open") {
+      if (voterA) {
+        rows.push({
+          claim_id: claim.id,
+          household_id: householdId,
+          user_id: voterA,
+          vote_type: "counter",
+          counter_pimpers: Math.max(1, (claim.requested_pimpers ?? 8) - 4),
+          created_at: new Date(baseCreatedAt.getTime() + 2 * 60 * 60 * 1000).toISOString(),
+          updated_at: new Date(baseCreatedAt.getTime() + 2 * 60 * 60 * 1000).toISOString()
+        });
+      }
+      if (voterB) {
+        rows.push({
+          claim_id: claim.id,
+          household_id: householdId,
+          user_id: voterB,
+          vote_type: "approve",
+          counter_pimpers: null,
+          created_at: new Date(baseCreatedAt.getTime() + 3 * 60 * 60 * 1000).toISOString(),
+          updated_at: new Date(baseCreatedAt.getTime() + 3 * 60 * 60 * 1000).toISOString()
+        });
+      }
+      return;
+    }
+
+    if (claim.status === "approved") {
+      if (voterA) {
+        rows.push({
+          claim_id: claim.id,
+          household_id: householdId,
+          user_id: voterA,
+          vote_type: "approve",
+          counter_pimpers: null,
+          created_at: new Date(baseCreatedAt.getTime() + 60 * 60 * 1000).toISOString(),
+          updated_at: new Date(baseCreatedAt.getTime() + 60 * 60 * 1000).toISOString()
+        });
+      }
+      if (voterB) {
+        rows.push({
+          claim_id: claim.id,
+          household_id: householdId,
+          user_id: voterB,
+          vote_type: "counter",
+          counter_pimpers: claim.resolved_pimpers ?? claim.requested_pimpers,
+          created_at: new Date(baseCreatedAt.getTime() + 90 * 60 * 1000).toISOString(),
+          updated_at: new Date(baseCreatedAt.getTime() + 90 * 60 * 1000).toISOString()
+        });
+      }
+      return;
+    }
+
+    if (claim.status === "rejected" || claim.status === "expired") {
+      if (voterA) {
+        rows.push({
+          claim_id: claim.id,
+          household_id: householdId,
+          user_id: voterA,
+          vote_type: "reject",
+          counter_pimpers: null,
+          created_at: new Date(baseCreatedAt.getTime() + 80 * 60 * 1000).toISOString(),
+          updated_at: new Date(baseCreatedAt.getTime() + 80 * 60 * 1000).toISOString()
+        });
+      }
+    }
+  });
 
   return rows;
 };
@@ -692,12 +885,14 @@ export const buildMemberVacationRows = ({ householdId, users, now, createdBy }) 
 
 export const buildShoppingRows = ({ shoppingCount, users, householdId, ownerId, now }) => {
   const rows = [];
-  const historyDays = Math.max(45, Math.ceil((shoppingCount * 150) / Math.max(shoppingCount, 1)));
+  const uniqueShoppingTitles = [...new Set(shoppingTitles)];
+  const totalShoppingItems = Math.min(shoppingCount, uniqueShoppingTitles.length);
+  const historyDays = Math.max(45, Math.ceil((totalShoppingItems * 150) / Math.max(totalShoppingItems, 1)));
 
-  for (let i = 0; i < shoppingCount; i += 1) {
+  for (let i = 0; i < totalShoppingItems; i += 1) {
     const creator = users[i % users.length] ?? { id: ownerId };
     const isDone = i % 4 === 0;
-    const progress = i / Math.max(shoppingCount - 1, 1);
+    const progress = i / Math.max(totalShoppingItems - 1, 1);
     const dayOffset = Math.round(progress * historyDays);
     const createdAt = new Date(now.getTime() - dayOffset * 24 * 60 * 60 * 1000 - (i % 6) * 60 * 60 * 1000);
     const doneAt = isDone ? new Date(createdAt.getTime() + 6 * 60 * 60 * 1000) : null;
@@ -711,7 +906,7 @@ export const buildShoppingRows = ({ shoppingCount, users, householdId, ownerId, 
 
     rows.push({
       household_id: householdId,
-      title: shoppingTitles[i % shoppingTitles.length],
+      title: uniqueShoppingTitles[i],
       tags: shoppingTags[i % shoppingTags.length],
       recurrence_interval_value: recurrenceInterval?.value ?? null,
       recurrence_interval_unit: recurrenceInterval?.unit ?? null,

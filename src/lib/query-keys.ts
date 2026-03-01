@@ -7,6 +7,7 @@ export const queryKeys = {
   householdShoppingCompletions: (householdId: string) => ["household", householdId, "shopping-completions"] as const,
   householdTasks: (householdId: string) => ["household", householdId, "tasks"] as const,
   householdTaskCompletions: (householdId: string) => ["household", householdId, "task-completions"] as const,
+  householdOneOffTaskClaims: (householdId: string) => ["household", householdId, "one-off-task-claims"] as const,
   householdFinances: (householdId: string) => ["household", householdId, "finances"] as const,
   householdCashAuditRequests: (householdId: string) => ["household", householdId, "cash-audit-requests"] as const,
   householdFinanceSubscriptions: (householdId: string) => ["household", householdId, "finance-subscriptions"] as const,

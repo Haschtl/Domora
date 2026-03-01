@@ -56,7 +56,10 @@ const householdSchema = z.object({
   feature_bucket_enabled: z.coerce.boolean().default(true),
   feature_shopping_enabled: z.coerce.boolean().default(true),
   feature_tasks_enabled: z.coerce.boolean().default(true),
+  feature_one_off_tasks_enabled: z.coerce.boolean().default(true),
   feature_finances_enabled: z.coerce.boolean().default(true),
+  one_off_claim_timeout_hours: z.coerce.number().int().min(0).max(336).default(72),
+  one_off_claim_max_pimpers: z.coerce.number().int().min(1).max(5000).default(500),
   theme_primary_color: z
     .string()
     .regex(/^#[0-9A-Fa-f]{6}$/)
