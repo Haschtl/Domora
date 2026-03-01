@@ -194,7 +194,7 @@ serve(async (req) => {
   const dueAtMs = dueAt.getTime();
   const overdueMinutes = Math.max(0, Math.floor((now.getTime() - (dueAtMs + graceMinutes * 60_000)) / 60_000));
   const delayPenaltyPerDay = Math.max(0, Number(task.delay_penalty_per_day ?? 0));
-  const penaltyActive = delayPenaltyPerDay > 0 && !Boolean(task.ignore_delay_penalty_once);
+  const penaltyActive = delayPenaltyPerDay > 0 && !task.ignore_delay_penalty_once;
   const lostPimpersRaw = penaltyActive ? delayPenaltyPerDay * (overdueMinutes / 1440) : 0;
   const lostPimpers = Number.isFinite(lostPimpersRaw) ? Number(lostPimpersRaw.toFixed(2)) : 0;
 
