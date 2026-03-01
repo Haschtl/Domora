@@ -1,5 +1,5 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import { useNavigate } from "@tanstack/react-router";
+import { useLocation, useNavigate } from "@tanstack/react-router";
 import {
   CalendarCheck2,
   Check,
@@ -485,6 +485,7 @@ export const HomePage = ({
 }: HomePageProps) => {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
+  const location = useLocation();
   const featureFlags = useMemo(
     () => ({
       bucket: household.feature_bucket_enabled ?? true,
@@ -597,9 +598,20 @@ export const HomePage = ({
   const [whiteboardDraft, setWhiteboardDraft] = useState(whiteboardSceneJson);
   const [whiteboardError, setWhiteboardError] = useState<string | null>(null);
   const [whiteboardStatus, setWhiteboardStatus] = useState<"idle" | "saving" | "saved" | "unsaved" | "error">("idle");
-  const [isWhiteboardFullscreenOpen, setIsWhiteboardFullscreenOpen] = useState(false);
   const whiteboardSaveTimerRef = useRef<number | null>(null);
   const lastSavedWhiteboardRef = useRef(whiteboardSceneJson);
+  const isWhiteboardFullscreenOpen = location.pathname === "/home/summary/whiteboard";
+  const openWhiteboardFullscreen = useCallback(() => {
+    if (isWhiteboardFullscreenOpen) return;
+    void navigate({ to: "/home/summary/whiteboard" });
+  }, [isWhiteboardFullscreenOpen, navigate]);
+  const closeWhiteboardFullscreen = useCallback(() => {
+    if (typeof window !== "undefined" && window.history.length > 1) {
+      window.history.back();
+      return;
+    }
+    void navigate({ to: "/home/summary", replace: true });
+  }, [navigate]);
   const canEdit = canEditLandingByRole(currentMember?.role ?? null);
   const prefetchEditor = useCallback(() => {
     void import("../../components/mx-editor");
@@ -3268,7 +3280,7 @@ export const HomePage = ({
                     <button
                       type="button"
                       className="absolute inset-0 rounded-xl border border-transparent transition hover:border-brand-200 hover:bg-brand-50/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400/60"
-                      onClick={() => setIsWhiteboardFullscreenOpen(true)}
+                      onClick={openWhiteboardFullscreen}
                       aria-label={t("home.whiteboardFullscreen")}
                       title={t("home.whiteboardFullscreen")}
                     />
@@ -3280,9 +3292,11 @@ export const HomePage = ({
 
           <Dialog
             open={isWhiteboardFullscreenOpen}
-            onOpenChange={setIsWhiteboardFullscreenOpen}
+            onOpenChange={(open) => {
+              if (!open) closeWhiteboardFullscreen();
+            }}
           >
-            <DialogContent className="inset-0 left-0 top-0 flex h-[100dvh] w-[100vw] max-w-none -translate-x-0 -translate-y-0 flex-col overflow-hidden rounded-none border-0 p-0">
+            <DialogContent className="inset-0 left-0 top-0 flex h-[100dvh] w-[100vw] max-w-none -translate-x-0 -translate-y-0 flex-col overflow-hidden rounded-none border-0 p-0 [padding-bottom:var(--safe-area-bottom)] [padding-left:var(--safe-area-left)] [padding-right:var(--safe-area-right)] [padding-top:var(--safe-area-top)]">
               <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 dark:border-slate-700">
                 <div>
                   <DialogTitle>{t("home.whiteboardTitle")}</DialogTitle>
@@ -3298,7 +3312,7 @@ export const HomePage = ({
                   <button
                     type="button"
                     className="inline-flex h-8 w-8 items-center justify-center rounded-xl text-slate-700 hover:bg-slate-200/80 dark:text-brand-100 dark:hover:bg-slate-800"
-                    onClick={() => setIsWhiteboardFullscreenOpen(false)}
+                    onClick={closeWhiteboardFullscreen}
                     aria-label={t("common.close")}
                   >
                     <X className="h-4 w-4" />

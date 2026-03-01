@@ -5733,13 +5733,13 @@ export const TasksPage = ({
             </div>
           </DialogContent>
         </Dialog>
-        {taskNativeTitleSuggestions.length > 0 ? (
+        {/* {taskNativeTitleSuggestions.length > 0 ? (
           <datalist id={taskTitleSuggestionsListId}>
             {taskNativeTitleSuggestions.map((title) => (
               <option key={title} value={title} />
             ))}
           </datalist>
-        ) : null}
+        ) : null} */}
         {calendarCard}
       </div>
     </TooltipProvider>

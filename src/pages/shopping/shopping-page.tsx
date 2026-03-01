@@ -1282,13 +1282,13 @@ export const ShoppingPage = ({
           </>
         ) : null}
       </CardContent>
-      {shoppingNativeTitleSuggestions.length > 0 ? (
+      {/* {shoppingNativeTitleSuggestions.length > 0 ? (
         <datalist id={shoppingTitleSuggestionsListId}>
           {shoppingNativeTitleSuggestions.map((title) => (
             <option key={title} value={title} />
           ))}
         </datalist>
-      ) : null}
+      ) : null} */}
     </Card>
   );
 };

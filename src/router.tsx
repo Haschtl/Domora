@@ -71,6 +71,19 @@ const homeSummaryRoute = createRoute({
   component: () => null
 });
 
+const homeSummaryWhiteboardRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "home/summary/whiteboard",
+  loader: () =>
+    prefetchHouseholdData([
+      "bucketItems",
+      "tasks",
+      "taskCompletions",
+      "cashAuditRequests"
+    ]),
+  component: () => null
+});
+
 const homeBucketRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "home/bucket",
@@ -238,6 +251,7 @@ const routeTree = rootRoute.addChildren([
   privacyPolicyRoute,
   homeRoute,
   homeSummaryRoute,
+  homeSummaryWhiteboardRoute,
   homeBucketRoute,
   homeFeedRoute,
   shoppingRoute,

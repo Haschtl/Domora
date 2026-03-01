@@ -4810,7 +4810,7 @@ export const FinancesPage = ({
           </div>
         </DialogContent>
       </Dialog>
-      {categorySuggestions.length > 0 ? (
+      {/* {categorySuggestions.length > 0 ? (
         <datalist id={categorySuggestionsListId}>
           {categorySuggestions.map((category) => (
             <option key={category} value={category} />
@@ -4823,7 +4823,7 @@ export const FinancesPage = ({
             <option key={name} value={name} />
           ))}
         </datalist>
-      ) : null}
+      ) : null} */}
     </div>
   );
 };
