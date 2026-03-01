@@ -4348,6 +4348,7 @@ export const FinancesPage = ({
               busy={busy}
               virtualized
               virtualHeight={isMobileAddEntryComposer ? mobileOverviewListHeight : 520}
+              virtualLayout="inline"
             />
           ) : entriesSinceLastAudit.length === 0 ? (
             isMobileAddEntryComposer ? (
