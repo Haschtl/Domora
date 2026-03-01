@@ -1,4 +1,4 @@
-import { type CSSProperties, type RefObject, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { type CSSProperties, type KeyboardEvent, type RefObject, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useForm } from "@tanstack/react-form";
 import imageCompression from "browser-image-compression";
 import {
@@ -41,6 +41,7 @@ import type {
   HouseholdMember,
   HouseholdMemberVacation,
   NewFinanceSubscriptionInput,
+  ShoppingItem,
   UpdateHouseholdInput
 } from "../../lib/types";
 import { isMemberOnVacationAt } from "../../lib/vacation-utils";
@@ -98,6 +99,7 @@ interface FinancesPageProps {
   currentMember: HouseholdMember | null;
   members: HouseholdMember[];
   memberVacations: HouseholdMemberVacation[];
+  shoppingItems: ShoppingItem[];
   userId: string;
   busy: boolean;
   mobileTabBarVisible?: boolean;
@@ -126,6 +128,7 @@ interface FinancesPageProps {
   onAddSubscription: (input: NewFinanceSubscriptionInput) => Promise<void>;
   onUpdateSubscription: (subscription: FinanceSubscription, input: NewFinanceSubscriptionInput) => Promise<void>;
   onDeleteSubscription: (subscription: FinanceSubscription) => Promise<void>;
+  onToggleShoppingItem: (item: ShoppingItem) => Promise<void>;
   onUpdateHousehold: (input: UpdateHouseholdInput) => Promise<void>;
   onUpdateMemberSettings: (input: { roomSizeSqm: number | null; commonAreaFactor: number }) => Promise<void>;
   onUpdateMemberSettingsForUser: (
@@ -374,6 +377,7 @@ export const FinancesPage = ({
   currentMember,
   members,
   memberVacations,
+  shoppingItems,
   userId,
   busy,
   mobileTabBarVisible = true,
@@ -383,6 +387,7 @@ export const FinancesPage = ({
   onAddSubscription,
   onUpdateSubscription,
   onDeleteSubscription,
+  onToggleShoppingItem,
   onUpdateHousehold,
   onUpdateMemberSettings,
   onUpdateMemberSettingsForUser,
@@ -413,6 +418,7 @@ export const FinancesPage = ({
   const [receiptPreviewTitle, setReceiptPreviewTitle] = useState<string | null>(null);
   const [previewDescription, setPreviewDescription] = useState("");
   const [previewAmountInput, setPreviewAmountInput] = useState("");
+  const [selectedShoppingItemIds, setSelectedShoppingItemIds] = useState<string[]>([]);
   const excludeVacationFromFinances = household.vacation_finances_exclude_enabled ?? true;
   const getDefaultFinanceSelectionIds = useCallback(() => {
     if (!excludeVacationFromFinances) return members.map((member) => member.user_id);
@@ -486,9 +492,15 @@ export const FinancesPage = ({
       };
       formApi: { reset: () => void };
     }) => {
+      const selectedOpenShoppingItems = selectedShoppingItemIds
+        .map((id) => shoppingItems.find((item) => item.id === id) ?? null)
+        .filter((item): item is ShoppingItem => Boolean(item && !item.done));
+      const selectedTitles = selectedOpenShoppingItems.map((item) => item.title.trim()).filter(Boolean);
+      const manualDescription = value.description.trim();
+      const resolvedDescription = [manualDescription, ...selectedTitles].filter(Boolean).join(", ");
       const parsedAmount = Number(value.amount);
       if (
-        !value.description.trim() ||
+        !resolvedDescription ||
         Number.isNaN(parsedAmount) ||
         parsedAmount < 0 ||
         value.paidByUserIds.length === 0 ||
@@ -498,7 +510,7 @@ export const FinancesPage = ({
       }
 
       await onAdd({
-        description: value.description,
+        description: resolvedDescription,
         amount: parsedAmount,
         category: value.category,
         receiptImageUrl: value.receiptImageUrl.trim() || null,
@@ -506,6 +518,9 @@ export const FinancesPage = ({
         beneficiaryUserIds: value.beneficiaryUserIds,
         entryDate: value.entryDate || null
       });
+      if (selectedOpenShoppingItems.length > 0) {
+        await Promise.all(selectedOpenShoppingItems.map((item) => onToggleShoppingItem(item)));
+      }
       formApi.reset();
       setReceiptUploadError(null);
       setPreviewDescription("");
@@ -513,6 +528,7 @@ export const FinancesPage = ({
       setPreviewPayerIds([userId]);
       setPreviewBeneficiaryIds(getDefaultFinanceSelectionIds());
       setAddEntryCategoryTouched(false);
+      setSelectedShoppingItemIds([]);
     }
   });
   const archiveFilterForm = useForm({
@@ -1696,6 +1712,36 @@ export const FinancesPage = ({
       return left.title.localeCompare(right.title, language);
     });
   }, [entries, language]);
+  const openShoppingItems = useMemo(
+    () =>
+      shoppingItems
+        .filter((item) => !item.done)
+        .sort((left, right) => right.created_at.localeCompare(left.created_at)),
+    [shoppingItems]
+  );
+  const shoppingItemsById = useMemo(
+    () => new Map(openShoppingItems.map((item) => [item.id, item])),
+    [openShoppingItems]
+  );
+  const selectedShoppingItems = useMemo(
+    () =>
+      selectedShoppingItemIds
+        .map((id) => shoppingItemsById.get(id) ?? null)
+        .filter((item): item is ShoppingItem => Boolean(item)),
+    [selectedShoppingItemIds, shoppingItemsById]
+  );
+  const shoppingSuggestionItems = useMemo(() => {
+    const normalizedQuery = addEntryForm.state.values.description.trim().toLocaleLowerCase(language);
+    const baseItems = openShoppingItems.filter((item) => !selectedShoppingItemIds.includes(item.id));
+    if (!normalizedQuery) return baseItems.slice(0, 6);
+    return baseItems
+      .filter((item) => {
+        const titleMatches = item.title.toLocaleLowerCase(language).includes(normalizedQuery);
+        if (titleMatches) return true;
+        return item.tags.some((tag) => tag.toLocaleLowerCase(language).includes(normalizedQuery));
+      })
+      .slice(0, 6);
+  }, [addEntryForm.state.values.description, language, openShoppingItems, selectedShoppingItemIds]);
   const entryNameSuggestions = useMemo(() => financeEntrySuggestions.map((entry) => entry.title), [financeEntrySuggestions]);
   const latestEntryByDescription = useMemo(() => {
     const byKey = new Map<string, FinanceEntry>();
@@ -1719,6 +1765,14 @@ export const FinancesPage = ({
       addEntryForm.setFieldValue("category", suggestion);
     }
   };
+  const removeSelectedShoppingItem = useCallback((itemId: string) => {
+    setSelectedShoppingItemIds((current) => current.filter((id) => id !== itemId));
+  }, []);
+  const toggleSelectedShoppingItem = useCallback((itemId: string) => {
+    setSelectedShoppingItemIds((current) =>
+      current.includes(itemId) ? current.filter((id) => id !== itemId) : [...current, itemId]
+    );
+  }, []);
   const tryAutofillNewEntryFromDescription = (
     descriptionValue: string,
     options?: { forceCategoryFromSuggestion?: boolean }
@@ -1770,6 +1824,21 @@ export const FinancesPage = ({
       minMatchCharLength: 2
     }
   });
+  const handleEntryDescriptionKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLInputElement>) => {
+      if (
+        event.key === "Backspace" &&
+        addEntryForm.state.values.description.length === 0 &&
+        selectedShoppingItemIds.length > 0
+      ) {
+        event.preventDefault();
+        setSelectedShoppingItemIds((current) => current.slice(0, -1));
+        return;
+      }
+      onEntryDescriptionKeyDown(event);
+    },
+    [addEntryForm.state.values.description.length, onEntryDescriptionKeyDown, selectedShoppingItemIds.length]
+  );
   const subscriptionParticipantsText = (subscription: FinanceSubscription) =>
     t("finances.subscriptionParticipants", {
       paidBy: formatMemberGroupLabel(subscription.paid_by_user_ids, "dative"),
@@ -2304,24 +2373,41 @@ export const FinancesPage = ({
                     ref={addEntryRowRef}
                     className="relative flex h-10 items-stretch overflow-hidden rounded-xl border border-brand-200 bg-white dark:border-slate-700 dark:bg-slate-900 focus-within:border-brand-500 focus-within:ring-2 focus-within:ring-brand-200 dark:focus-within:border-slate-500 dark:focus-within:ring-slate-600/40"
                   >
-                    <Input
-                      value={field.state.value}
-                      onChange={(event) => {
-                        const nextValue = event.target.value;
-                        field.handleChange(nextValue);
-                        setPreviewDescription(nextValue);
-                        tryAutofillNewEntryFromDescription(nextValue);
-                      }}
-                      onFocus={onEntryDescriptionFocus}
-                      onBlur={(event) => {
-                        onEntryDescriptionBlur();
-                        tryAutofillNewEntryFromDescription(event.target.value);
-                      }}
-                      onKeyDown={onEntryDescriptionKeyDown}
+                    <div className="flex min-w-0 flex-1 items-center gap-1 px-2">
+                      {selectedShoppingItems.map((item) => (
+                        <span
+                          key={item.id}
+                          className="inline-flex h-6 max-w-40 items-center gap-1 rounded-md border border-brand-200 bg-brand-50/70 px-2 text-xs text-brand-700 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200"
+                        >
+                          <span className="truncate">{item.title}</span>
+                          <button
+                            type="button"
+                            onClick={() => removeSelectedShoppingItem(item.id)}
+                            className="rounded-sm text-brand-700/80 transition hover:text-brand-900 dark:text-slate-200/80 dark:hover:text-slate-50"
+                            aria-label={t("common.remove")}
+                          >
+                            ×
+                          </button>
+                        </span>
+                      ))}
+                      <Input
+                        value={field.state.value}
+                        onChange={(event) => {
+                          const nextValue = event.target.value;
+                          field.handleChange(nextValue);
+                          setPreviewDescription(nextValue);
+                          tryAutofillNewEntryFromDescription(nextValue);
+                        }}
+                        onFocus={onEntryDescriptionFocus}
+                        onBlur={(event) => {
+                          onEntryDescriptionBlur();
+                          tryAutofillNewEntryFromDescription(event.target.value);
+                        }}
+                      onKeyDown={handleEntryDescriptionKeyDown}
                       placeholder={t("finances.descriptionPlaceholder")}
-                      required
-                      className="h-full min-w-0 flex-1 rounded-none border-0 bg-transparent shadow-none focus-visible:ring-0"
+                      className="h-full min-w-0 flex-1 rounded-none border-0 bg-transparent px-0 shadow-none focus-visible:ring-0"
                     />
+                    </div>
                     <addEntryForm.Field
                       name="amount"
                       children={(amountField: { state: { value: string }; handleChange: (value: string) => void }) => (
@@ -2437,40 +2523,78 @@ export const FinancesPage = ({
                     )}
                 </PopoverContent>
               </Popover>
-              {entryDescriptionFocused && entryDescriptionSuggestions.length > 0 ? (
+              {entryDescriptionFocused &&
+              (entryDescriptionSuggestions.length > 0 || shoppingSuggestionItems.length > 0) ? (
                 <div
                   className={`absolute left-0 right-0 z-50 rounded-xl border border-brand-100 bg-white p-1 shadow-lg dark:border-slate-700 dark:bg-slate-900 ${
                     mobile ? "bottom-[calc(100%+0.65rem)]" : "top-[calc(100%+0.65rem)]"
                   } animate-in fade-in-0 zoom-in-95 duration-150`}
                 >
-                  <p className="px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                    {t("finances.suggestionsTitle")}
-                  </p>
-                  <ul className="max-h-56 overflow-y-auto">
-                    {entryDescriptionSuggestions.map((suggestion, index) => (
-                      <li key={suggestion.key}>
-                        <button
-                          type="button"
-                          className={`flex w-full items-center justify-between gap-2 rounded-lg px-2 py-2 text-left hover:bg-brand-50/80 dark:hover:bg-slate-800/70 ${
-                            index === activeEntryDescriptionSuggestionIndex
-                              ? "bg-brand-100/20"
-                              : ""
-                          }`}
-                          onMouseDown={(event) => event.preventDefault()}
-                          onClick={() => {
-                            onApplyEntryDescriptionSuggestion(suggestion);
-                          }}
-                        >
-                          <p className="truncate text-sm font-medium text-slate-900 dark:text-slate-100">
-                            {suggestion.title}
-                          </p>
-                          <Badge className="text-[10px]">
-                            {t("finances.suggestionUsedCount", { count: suggestion.count })}
-                          </Badge>
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
+                  <div className="max-h-56 space-y-1 overflow-y-auto">
+                    {shoppingSuggestionItems.length > 0 ? (
+                      <>
+                        <p className="px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                          {t("finances.shoppingSuggestionsTitle")}
+                        </p>
+                        <ul>
+                          {shoppingSuggestionItems.map((item) => (
+                            <li key={item.id}>
+                              <button
+                                type="button"
+                                className="flex w-full items-center justify-between gap-2 rounded-lg px-2 py-2 text-left hover:bg-brand-50/80 dark:hover:bg-slate-800/70"
+                                onMouseDown={(event) => event.preventDefault()}
+                                onClick={() => toggleSelectedShoppingItem(item.id)}
+                              >
+                                <div className="min-w-0">
+                                  <p className="truncate text-sm font-medium text-slate-900 dark:text-slate-100">
+                                    {item.title}
+                                  </p>
+                                  {item.tags.length > 0 ? (
+                                    <p className="truncate text-[11px] text-slate-500 dark:text-slate-400">
+                                      #{item.tags.join(" #")}
+                                    </p>
+                                  ) : null}
+                                </div>
+                                <Badge className="text-[10px]">{t("common.add")}</Badge>
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      </>
+                    ) : null}
+                    {entryDescriptionSuggestions.length > 0 ? (
+                      <>
+                        <p className="px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                          {t("finances.suggestionsTitle")}
+                        </p>
+                        <ul>
+                          {entryDescriptionSuggestions.map((suggestion, index) => (
+                            <li key={suggestion.key}>
+                              <button
+                                type="button"
+                                className={`flex w-full items-center justify-between gap-2 rounded-lg px-2 py-2 text-left hover:bg-brand-50/80 dark:hover:bg-slate-800/70 ${
+                                  index === activeEntryDescriptionSuggestionIndex
+                                    ? "bg-brand-100/20"
+                                    : ""
+                                }`}
+                                onMouseDown={(event) => event.preventDefault()}
+                                onClick={() => {
+                                  onApplyEntryDescriptionSuggestion(suggestion);
+                                }}
+                              >
+                                <p className="truncate text-sm font-medium text-slate-900 dark:text-slate-100">
+                                  {suggestion.title}
+                                </p>
+                                <Badge className="text-[10px]">
+                                  {t("finances.suggestionUsedCount", { count: suggestion.count })}
+                                </Badge>
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      </>
+                    ) : null}
+                  </div>
                 </div>
               ) : null}
             </div>

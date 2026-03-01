@@ -4,7 +4,8 @@ import { useWorkspace } from "../../context/workspace-context";
 import {
   useHouseholdFinancesBatch,
   useHouseholdFinances,
-  useHouseholdEvents
+  useHouseholdEvents,
+  useHouseholdShoppingItems
 } from "../../hooks/use-household-data";
 import type { CashAuditRequest, FinanceSubscription } from "../../lib/types";
 import { isMemberOnVacationAt } from "../../lib/vacation-utils";
@@ -28,6 +29,7 @@ export const FinancesPageContainer = ({ section }: FinancesPageContainerProps) =
     onAddFinanceSubscription,
     onUpdateFinanceSubscription,
     onDeleteFinanceSubscription,
+    onToggleShoppingItem,
     onUpdateHousehold,
     onUpdateMemberSettings,
     onUpdateMemberSettingsForUser,
@@ -37,6 +39,7 @@ export const FinancesPageContainer = ({ section }: FinancesPageContainerProps) =
   const financesQuery = useHouseholdFinances(activeHousehold?.id ?? null);
   const financesBatchQuery = useHouseholdFinancesBatch(activeHousehold?.id ?? null);
   const eventsQuery = useHouseholdEvents(activeHousehold?.id ?? null);
+  const shoppingItemsQuery = useHouseholdShoppingItems(activeHousehold?.id ?? null);
 
   const entries = useMemo(
     () => financesQuery.data?.pages.flatMap((page) => page.rows) ?? [],
@@ -111,6 +114,7 @@ export const FinancesPageContainer = ({ section }: FinancesPageContainerProps) =
       currentMember={currentMember}
       members={membersWithVacation}
       memberVacations={householdMemberVacations}
+      shoppingItems={shoppingItemsQuery.data ?? []}
       busy={busy}
       userId={userId}
       mobileTabBarVisible={mobileTabBarVisible}
@@ -120,6 +124,7 @@ export const FinancesPageContainer = ({ section }: FinancesPageContainerProps) =
       onAddSubscription={onAddFinanceSubscription}
       onUpdateSubscription={onUpdateFinanceSubscription}
       onDeleteSubscription={onDeleteFinanceSubscription}
+      onToggleShoppingItem={onToggleShoppingItem}
       onUpdateHousehold={onUpdateHousehold}
       onUpdateMemberSettings={onUpdateMemberSettings}
       onUpdateMemberSettingsForUser={onUpdateMemberSettingsForUser}
