@@ -82,6 +82,10 @@ const sanitizeElements = (elements?: readonly ExcalidrawElement[]) => {
     if ("lastCommittedPoint" in entry) {
       entry.lastCommittedPoint = sanitizePoints(entry.lastCommittedPoint);
     }
+    // Never keep stale transient selection flags from persisted scenes.
+    if ("isSelected" in entry) {
+      delete entry.isSelected;
+    }
     sanitized.push(entry as ExcalidrawElement);
   }
   return sanitized;
@@ -110,6 +114,16 @@ const normalizeAppState = (appState?: Partial<AppState>) => {
         : 0;
   }
   return sanitized;
+};
+
+const clearPreviewSelectionState = (appState: Partial<AppState>) => {
+  const next = { ...(appState as Record<string, unknown>) };
+  next.selectedElementIds = {};
+  next.selectedGroupIds = {};
+  next.editingGroupId = null;
+  next.editingLinearElement = null;
+  next.editingElement = null;
+  return next as Partial<AppState>;
 };
 
 const buildSceneSignature = (
@@ -165,7 +179,10 @@ export const ExcalidrawBoard = ({
 
   const initialData = useMemo<ExcalidrawInitialDataState>(() => {
     const parsed = safeParseScene(sceneJson);
-    const baseAppState = normalizeAppState(parsed?.appState);
+    const normalizedAppState = normalizeAppState(parsed?.appState);
+    const baseAppState = previewMode
+      ? clearPreviewSelectionState(normalizedAppState)
+      : normalizedAppState;
     const initialElements = sanitizeElements(parsed?.elements);
     const initialFiles = parsed?.files ?? {};
     return {
@@ -182,7 +199,7 @@ export const ExcalidrawBoard = ({
           (parsed?.appState?.currentItemBackgroundColor as string) ?? themeColors.accent
       }
     };
-  }, [sceneJson, theme, themeColors]);
+  }, [previewMode, sceneJson, theme, themeColors]);
 
   useEffect(() => {
     const parsed = safeParseScene(sceneJson);
@@ -192,7 +209,10 @@ export const ExcalidrawBoard = ({
     if (lastSceneSignatureRef.current === signature) return;
     lastSceneSignatureRef.current = signature;
     if (!excalidrawApi) return;
-    const baseAppState = normalizeAppState(parsed?.appState);
+    const normalizedAppState = normalizeAppState(parsed?.appState);
+    const baseAppState = previewMode
+      ? clearPreviewSelectionState(normalizedAppState)
+      : normalizedAppState;
     excalidrawApi.updateScene({
       elements: initialElements,
       files: initialFiles,
@@ -212,7 +232,7 @@ export const ExcalidrawBoard = ({
           themeColors.accent,
       },
     });
-  }, [excalidrawApi, sceneJson, theme, themeColors]);
+  }, [excalidrawApi, previewMode, sceneJson, theme, themeColors]);
 
   useEffect(() => {
     const observer = new MutationObserver(() => setTheme(getThemePreference()));

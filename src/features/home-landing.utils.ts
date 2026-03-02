@@ -12,7 +12,13 @@ export const LANDING_WIDGET_KEYS = [
   "reliability-score",
   "expenses-by-month",
   "fairness-by-member",
-  "reliability-by-member"
+  "reliability-by-member",
+  "household-calendar",
+  "household-weather-daily",
+  "household-weather-plot",
+  "household-weather",
+  "household-whiteboard",
+  "household-map"
 ] as const;
 
 export type LandingWidgetKey = (typeof LANDING_WIDGET_KEYS)[number];

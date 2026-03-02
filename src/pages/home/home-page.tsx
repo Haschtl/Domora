@@ -140,6 +140,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { Chart } from "react-chartjs-2";
 import { WeatherSvg, type WeatherState } from "weather-icons-animated";
 import { buildMonthGrid, dayKey, startOfMonth } from "../../features/tasks-calendar";
+import {
+  HouseholdCalendarWidget,
+  HouseholdMapWidget,
+  HouseholdWeatherDailyPreview,
+  HouseholdWeatherPlot,
+  HouseholdWhiteboardWidget
+} from "../../features/components/home-widgets";
 import { queryKeys } from "../../lib/query-keys";
 import { supabase } from "../../lib/supabase";
 import {   
@@ -292,7 +299,13 @@ const LANDING_WIDGET_COMPONENTS: Array<{ key: LandingWidgetKey; tag: string }> =
   { key: "reliability-score", tag: "LandingWidgetReliabilityScore" },
   { key: "expenses-by-month", tag: "LandingWidgetExpensesByMonth" },
   { key: "fairness-by-member", tag: "LandingWidgetFairnessByMember" },
-  { key: "reliability-by-member", tag: "LandingWidgetReliabilityByMember" }
+  { key: "reliability-by-member", tag: "LandingWidgetReliabilityByMember" },
+  { key: "household-calendar", tag: "LandingWidgetHouseholdCalendar" },
+  { key: "household-weather-daily", tag: "LandingWidgetHouseholdWeatherDaily" },
+  { key: "household-weather-plot", tag: "LandingWidgetHouseholdWeatherPlot" },
+  { key: "household-weather", tag: "LandingWidgetHouseholdWeather" },
+  { key: "household-whiteboard", tag: "LandingWidgetHouseholdWhiteboard" },
+  { key: "household-map", tag: "LandingWidgetHouseholdMap" }
 ];
 
 ChartJS.register(
@@ -1247,6 +1260,27 @@ const getUvAxisMax = (values: Array<number | null>) => {
   return Math.ceil(target);
 };
 
+const getWeatherPrimaryAxisRange = (points: HouseholdWeatherHourlyPoint[]) => {
+  const allValues: number[] = [];
+  points.forEach((point) => {
+    if (typeof point.tempC === "number" && Number.isFinite(point.tempC)) allValues.push(point.tempC);
+    if (typeof point.apparentTempC === "number" && Number.isFinite(point.apparentTempC)) allValues.push(point.apparentTempC);
+    if (typeof point.windSpeedKmh === "number" && Number.isFinite(point.windSpeedKmh)) allValues.push(point.windSpeedKmh);
+  });
+
+  if (allValues.length === 0) {
+    return { min: -5, max: 35 };
+  }
+
+  const minValue = Math.min(...allValues);
+  const maxValue = Math.max(...allValues);
+  const basePadding = 2;
+  const min = Math.floor(minValue - basePadding);
+  const max = Math.ceil(maxValue + basePadding);
+  if (max <= min) return { min, max: min + 6 };
+  return { min, max };
+};
+
 const convertLandingTokensToEditorJsx = (markdown: string) => {
   const segments = splitLandingContentSegments(markdown);
   let widgetOrder = 0;
@@ -1440,7 +1474,7 @@ const LandingWidgetEditorShell = ({
           <TooltipTrigger asChild>
             <button
               type="button"
-              className="absolute left-2 top-2 z-20 inline-flex h-7 w-7 cursor-grab touch-none items-center justify-center rounded-full border border-slate-300 bg-white/95 text-slate-600 shadow-sm hover:bg-slate-100 active:cursor-grabbing dark:border-slate-600 dark:bg-slate-900/95 dark:text-slate-300 dark:hover:bg-slate-800"
+              className="absolute left-2 top-2 z-[2100] inline-flex h-7 w-7 cursor-grab touch-none items-center justify-center rounded-full border border-slate-300 bg-white/95 text-slate-600 shadow-sm hover:bg-slate-100 active:cursor-grabbing dark:border-slate-600 dark:bg-slate-900/95 dark:text-slate-300 dark:hover:bg-slate-800"
               onMouseDown={(event) => {
                 event.stopPropagation();
               }}
@@ -1459,7 +1493,7 @@ const LandingWidgetEditorShell = ({
           <TooltipTrigger asChild>
             <button
               type="button"
-              className="absolute left-2 top-10 z-20 inline-flex h-7 w-7 items-center justify-center rounded-full border border-slate-300 bg-white/95 text-slate-600 shadow-sm hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-900/95 dark:text-slate-300 dark:hover:bg-slate-800"
+              className="absolute left-2 top-10 z-[2100] inline-flex h-7 w-7 items-center justify-center rounded-full border border-slate-300 bg-white/95 text-slate-600 shadow-sm hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-900/95 dark:text-slate-300 dark:hover:bg-slate-800"
               onMouseDown={(event) => {
                 event.preventDefault();
                 event.stopPropagation();
@@ -1480,7 +1514,7 @@ const LandingWidgetEditorShell = ({
           <TooltipTrigger asChild>
             <button
               type="button"
-              className="absolute left-2 top-[4.25rem] z-20 inline-flex h-7 w-7 items-center justify-center rounded-full border border-slate-300 bg-white/95 text-slate-600 shadow-sm hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-900/95 dark:text-slate-300 dark:hover:bg-slate-800"
+              className="absolute left-2 top-[4.25rem] z-[2100] inline-flex h-7 w-7 items-center justify-center rounded-full border border-slate-300 bg-white/95 text-slate-600 shadow-sm hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-900/95 dark:text-slate-300 dark:hover:bg-slate-800"
               onMouseDown={(event) => {
                 event.preventDefault();
                 event.stopPropagation();
@@ -1501,7 +1535,7 @@ const LandingWidgetEditorShell = ({
           <TooltipTrigger asChild>
             <button
               type="button"
-              className="absolute right-2 top-2 z-20 inline-flex h-7 w-7 items-center justify-center rounded-full border border-slate-300 bg-white/95 text-slate-600 shadow-sm hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-900/95 dark:text-slate-300 dark:hover:bg-slate-800"
+              className="absolute right-2 top-2 z-[2100] inline-flex h-7 w-7 items-center justify-center rounded-full border border-slate-300 bg-white/95 text-slate-600 shadow-sm hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-900/95 dark:text-slate-300 dark:hover:bg-slate-800"
               onMouseDown={(event) => {
                 event.preventDefault();
                 event.stopPropagation();
@@ -1597,7 +1631,12 @@ export const HomePage = ({
         : []),
       ...(featureFlags.finances
         ? [{ label: t("home.widgetExpensesByMonth"), value: widgetTokenFromKey("expenses-by-month") }]
-        : [])
+        : []),
+      { label: t("home.calendarTitle"), value: widgetTokenFromKey("household-calendar") },
+      { label: t("home.householdWeatherDailyWidgetTitle"), value: widgetTokenFromKey("household-weather-daily") },
+      { label: t("home.householdWeatherPlotWidgetTitle"), value: widgetTokenFromKey("household-weather-plot") },
+      { label: t("home.whiteboardTitle"), value: widgetTokenFromKey("household-whiteboard") },
+      { label: t("home.householdMapTitle"), value: widgetTokenFromKey("household-map") }
     ],
     [featureFlags, t]
   );
@@ -1777,6 +1816,31 @@ export const HomePage = ({
   );
   const language = i18n.resolvedLanguage ?? i18n.language;
   const addressInput = household.address.trim();
+  const weatherLocationLabel = useMemo(() => {
+    const source = (addressMapLabel ?? addressInput).trim();
+    if (!source) return "";
+    const cityFromPostalPattern = source.match(/\b\d{4,5}\s+([^,\d][^,]*)/u)?.[1]?.trim() ?? "";
+    if (cityFromPostalPattern.length > 0) {
+      return cityFromPostalPattern;
+    }
+    const commaParts = source
+      .split(",")
+      .map((part) => part.trim())
+      .filter((part) => part.length > 0);
+    const cleanPart = (part: string) =>
+      part
+        .replace(/\b\d{4,5}\b/g, "")
+        .replace(/\s+/g, " ")
+        .trim();
+    const alphaOnlyPart = commaParts
+      .map(cleanPart)
+      .find((part) => /\p{L}/u.test(part) && !/\d/.test(part) && part.length > 1);
+    if (alphaOnlyPart) return alphaOnlyPart;
+    return "";
+  }, [addressInput, addressMapLabel]);
+  const householdWeatherTitle = weatherLocationLabel
+    ? t("home.householdWeatherTitleWithLocation", { location: weatherLocationLabel })
+    : t("home.householdWeatherTitle");
   const firstManualMarkerCenter = useMemo(() => {
     for (const marker of household.household_map_markers) {
       const center = getHouseholdMarkerCenter(marker);
@@ -2130,6 +2194,7 @@ export const HomePage = ({
     [householdWeatherHourly]
   );
   const weatherChartRef = useRef<ChartJS<"bar"> | null>(null);
+  const weatherChartContainerRef = useRef<HTMLDivElement | null>(null);
   const lastWeatherChartTapRef = useRef<{ at: number; x: number; y: number } | null>(null);
   const [weatherLegendVersion, setWeatherLegendVersion] = useState(0);
   const zoomOutWeatherChart = useCallback(() => {
@@ -2167,6 +2232,36 @@ export const HomePage = ({
       y: touch.clientY
     };
   }, [zoomOutWeatherChart]);
+  useEffect(() => {
+    const hideWeatherTooltip = () => {
+      const chart = weatherChartRef.current as
+        | (ChartJS<"bar"> & {
+            tooltip?: { setActiveElements?: (elements: unknown[], position: { x: number; y: number }) => void };
+            setActiveElements?: (elements: unknown[]) => void;
+          })
+        | null;
+      if (!chart) return;
+      chart.tooltip?.setActiveElements?.([], { x: 0, y: 0 });
+      chart.setActiveElements?.([]);
+      chart.update();
+    };
+
+    const handlePointerOutside = (event: MouseEvent | TouchEvent) => {
+      const targetNode = event.target as Node | null;
+      if (!targetNode) return;
+      const container = weatherChartContainerRef.current;
+      if (!container) return;
+      if (container.contains(targetNode)) return;
+      hideWeatherTooltip();
+    };
+
+    document.addEventListener("mousedown", handlePointerOutside, true);
+    document.addEventListener("touchstart", handlePointerOutside, true);
+    return () => {
+      document.removeEventListener("mousedown", handlePointerOutside, true);
+      document.removeEventListener("touchstart", handlePointerOutside, true);
+    };
+  }, []);
   const householdWeatherByDay = useMemo(() => {
     const byDay = new Map<string, HouseholdWeatherDay>();
     householdWeatherDays.forEach((day) => {
@@ -2476,6 +2571,10 @@ export const HomePage = ({
       const uvAxisMax = getUvAxisMax(
         householdWeatherHourly.map((entry) => entry.uvIndex)
       );
+      const primaryAxisRange = getWeatherPrimaryAxisRange(householdWeatherHourly);
+      const initialVisibleHours = 48;
+      const initialXMin = 0;
+      const initialXMax = Math.max(0, Math.min(householdWeatherHourly.length - 1, initialVisibleHours - 1));
       const options: Record<string, unknown> = {
       responsive: true,
       maintainAspectRatio: false,
@@ -2546,10 +2645,15 @@ export const HomePage = ({
       },
       scales: {
         x: {
+          min: initialXMin,
+          max: initialXMax,
           ticks: {
-            autoSkip: false,
+            autoSkip: isMobileBucketComposer,
+            maxTicksLimit: isMobileBucketComposer ? 6 : 14,
             maxRotation: 0,
             color: "rgb(100 116 139)",
+            padding: isMobileBucketComposer ? 6 : 4,
+            font: isMobileBucketComposer ? { size: 10 } : undefined,
             callback: function (this: { min?: number; max?: number }, value: string | number, index: number) {
               const visibleMin = Number.isFinite(this.min) ? Number(this.min) : 0;
               const visibleMax = Number.isFinite(this.max)
@@ -2558,7 +2662,10 @@ export const HomePage = ({
               const visibleHours = Math.max(1, Math.round(visibleMax - visibleMin + 1));
               const density = getWeatherXAxisDensity(visibleHours);
               const labelEvery = isMobileBucketComposer
-                ? Math.max(density.labelEvery * 2, visibleHours <= 30 ? 3 : 2)
+                ? Math.max(
+                    density.labelEvery * 4,
+                    visibleHours <= 30 ? 6 : visibleHours <= 96 ? 8 : 12
+                  )
                 : density.labelEvery;
               const parsedIndex = resolveChartTickIndex(value, index);
               const clampedIndex = Math.max(0, Math.min(householdWeatherHourly.length - 1, parsedIndex));
@@ -2604,6 +2711,15 @@ export const HomePage = ({
               const density = getWeatherXAxisDensity(visibleHours);
               const tickIndex = resolveChartTickIndex(ctx.tick?.value, ctx.index);
               const normalized = Math.max(0, tickIndex);
+              const row = householdWeatherHourly[Math.min(householdWeatherHourly.length - 1, normalized)];
+              if (row) {
+                const isMidnightByRawTime = /T00:00(?::00)?$/.test(row.time);
+                const date = new Date(row.time);
+                const isMidnightByParsedTime = !Number.isNaN(date.getTime()) && date.getHours() === 0;
+                if (isMidnightByRawTime || isMidnightByParsedTime) {
+                  return "rgba(100, 116, 139, 0.5)";
+                }
+              }
 
               if (normalized % density.majorGridEvery === 0) {
                 return "rgba(148, 163, 184, 0.24)";
@@ -2623,6 +2739,13 @@ export const HomePage = ({
               const density = getWeatherXAxisDensity(visibleHours);
               const tickIndex = resolveChartTickIndex(ctx.tick?.value, ctx.index);
               const normalized = Math.max(0, tickIndex);
+              const row = householdWeatherHourly[Math.min(householdWeatherHourly.length - 1, normalized)];
+              if (row) {
+                const isMidnightByRawTime = /T00:00(?::00)?$/.test(row.time);
+                const date = new Date(row.time);
+                const isMidnightByParsedTime = !Number.isNaN(date.getTime()) && date.getHours() === 0;
+                if (isMidnightByRawTime || isMidnightByParsedTime) return 1.8;
+              }
               if (normalized % density.majorGridEvery === 0) return 1.1;
               if (normalized % density.minorGridEvery === 0) return 0.7;
               return 0.35;
@@ -2631,6 +2754,8 @@ export const HomePage = ({
         },
         y: {
           position: "left" as const,
+          min: primaryAxisRange.min,
+          max: primaryAxisRange.max,
           ticks: {
             display: !isMobileBucketComposer,
             color: "rgb(100 116 139)",
@@ -2713,7 +2838,8 @@ export const HomePage = ({
       plugins.zoom = {
         pan: {
           enabled: true,
-          mode: "x"
+          mode: "x",
+          scaleMode: "x"
         },
         zoom: {
           wheel: {
@@ -2726,10 +2852,17 @@ export const HomePage = ({
             enabled: true,
             backgroundColor: "rgba(59, 130, 246, 0.12)"
           },
-          mode: "x"
+          mode: "x",
+          scaleMode: "x"
         },
         limits: {
-          x: { min: 0, max: Math.max(0, householdWeatherHourly.length - 1) }
+          x: { min: 0, max: Math.max(0, householdWeatherHourly.length - 1) },
+          y: { min: primaryAxisRange.min, max: primaryAxisRange.max },
+          yPrecip: { min: 0, max: precipitationAxisMax },
+          ySnow: { min: 0, max: snowfallAxisMax },
+          yCloud: { min: 0, max: 100 },
+          yUv: { min: 0, max: uvAxisMax },
+          ySky: { min: 0, max: 1 }
         }
       };
 
@@ -4868,6 +5001,24 @@ export const HomePage = ({
     []
   );
   const landingContentSegments = useMemo(() => splitLandingContentSegments(effectiveMarkdown), [effectiveMarkdown]);
+  const landingWidgetKeySet = useMemo(() => {
+    const keys = new Set<LandingWidgetKey>();
+    for (const segment of landingContentSegments) {
+      if (segment.type === "widget") {
+        keys.add(segment.key);
+      }
+    }
+    return keys;
+  }, [landingContentSegments]);
+  const hasHouseholdAddress = addressInput.length > 0;
+  const showSummaryCalendarCard = !landingWidgetKeySet.has("household-calendar");
+  const showSummaryWhiteboardCard = !landingWidgetKeySet.has("household-whiteboard");
+  const showSummaryMapCard = hasHouseholdAddress && !landingWidgetKeySet.has("household-map");
+  const hasWeatherWidgetInLanding =
+    landingWidgetKeySet.has("household-weather")
+    || landingWidgetKeySet.has("household-weather-daily")
+    || landingWidgetKeySet.has("household-weather-plot");
+  const showSummaryWeatherCard = hasHouseholdAddress && !hasWeatherWidgetInLanding;
   const openBucketItemsCount = useMemo(() => bucketItems.filter((entry) => !entry.done).length, [bucketItems]);
   const doneBucketItemsCount = useMemo(() => bucketItems.filter((entry) => entry.done).length, [bucketItems]);
   const visibleBucketItems = useMemo(
@@ -4947,6 +5098,653 @@ export const HomePage = ({
     await onCompleteTask(pendingCompleteTask);
     setPendingCompleteTask(null);
   }, [onCompleteTask, pendingCompleteTask]);
+
+  const renderHouseholdCalendarCard = (withTopMargin: boolean, showTitle: boolean) => (
+              <Card className={`${withTopMargin ? "mt-6 " : ""}rounded-xl border border-slate-300 bg-white/90 p-3 text-slate-800 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-100`}>
+                <HouseholdCalendarWidget
+                  title={showTitle ? t("home.calendarTitle") : <span className="sr-only">{t("home.calendarTitle")}</span>}
+                  description={showTitle ? t("home.calendarDescription") : undefined}
+                  headerActions={
+                    <div className="flex items-center gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="h-8 w-8 p-0"
+                        onClick={() => {
+                          setCalendarMonthDate(
+                            (current) =>
+                              new Date(
+                                current.getFullYear(),
+                                current.getMonth() - 1,
+                                1,
+                              ),
+                          );
+                        }}
+                        aria-label={t("home.calendarPrevMonth")}
+                      >
+                        <ChevronLeft className="h-4 w-4" />
+                      </Button>
+                      <p className="min-w-[130px] text-center text-sm font-medium capitalize text-slate-700 dark:text-slate-200">
+                        {calendarMonthTitle}
+                      </p>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="h-8 w-8 p-0"
+                        onClick={() => {
+                          setCalendarMonthDate(
+                            (current) =>
+                              new Date(
+                                current.getFullYear(),
+                                current.getMonth() + 1,
+                                1,
+                              ),
+                          );
+                        }}
+                        aria-label={t("home.calendarNextMonth")}
+                      >
+                        <ChevronRight className="h-4 w-4" />
+                      </Button>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="h-8 gap-2 px-2.5"
+                            aria-label={t("home.calendarFilterAction")}
+                          >
+                            <SlidersHorizontal className="h-4 w-4" />
+                            <span className="hidden sm:inline">
+                              {t("home.calendarFilterAction")}
+                            </span>
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="min-w-[220px]">
+                          <DropdownMenuLabel>
+                            {t("home.calendarFilterTitle")}
+                          </DropdownMenuLabel>
+                          <DropdownMenuCheckboxItem
+                            checked={calendarFilters.cleaning && featureFlags.tasks}
+                            onCheckedChange={(checked) =>
+                              setCalendarFilters((prev) => ({
+                                ...prev,
+                                cleaning: Boolean(checked),
+                              }))
+                            }
+                            disabled={!featureFlags.tasks}
+                          >
+                            <span className="inline-flex items-center gap-2">
+                              <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
+                              <span>{t("home.calendarFilterCleaning")}</span>
+                            </span>
+                          </DropdownMenuCheckboxItem>
+                          <DropdownMenuCheckboxItem
+                            checked={
+                              calendarFilters.tasksCompleted && featureFlags.tasks
+                            }
+                            onCheckedChange={(checked) =>
+                              setCalendarFilters((prev) => ({
+                                ...prev,
+                                tasksCompleted: Boolean(checked),
+                              }))
+                            }
+                            disabled={!featureFlags.tasks}
+                          >
+                            <span className="inline-flex items-center gap-2">
+                              <span className="h-2.5 w-2.5 rounded-full bg-brand-500" />
+                              <span>{t("home.calendarFilterTasksCompleted")}</span>
+                            </span>
+                          </DropdownMenuCheckboxItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuCheckboxItem
+                            checked={
+                              calendarFilters.finances && featureFlags.finances
+                            }
+                            onCheckedChange={(checked) =>
+                              setCalendarFilters((prev) => ({
+                                ...prev,
+                                finances: Boolean(checked),
+                              }))
+                            }
+                            disabled={!featureFlags.finances}
+                          >
+                            <span className="inline-flex items-center gap-2">
+                              <span className="h-2.5 w-2.5 rounded-full bg-amber-500" />
+                              <span>{t("home.calendarFilterFinances")}</span>
+                            </span>
+                          </DropdownMenuCheckboxItem>
+                          <DropdownMenuCheckboxItem
+                            checked={
+                              calendarFilters.cashAudits && featureFlags.finances
+                            }
+                            onCheckedChange={(checked) =>
+                              setCalendarFilters((prev) => ({
+                                ...prev,
+                                cashAudits: Boolean(checked),
+                              }))
+                            }
+                            disabled={!featureFlags.finances}
+                          >
+                            <span className="inline-flex items-center gap-2">
+                              <span className="h-2.5 w-2.5 rounded-full bg-slate-500" />
+                              <span>{t("home.calendarFilterCashAudits")}</span>
+                            </span>
+                          </DropdownMenuCheckboxItem>
+                          <DropdownMenuCheckboxItem
+                            checked={calendarFilters.vacations}
+                            onCheckedChange={(checked) =>
+                              setCalendarFilters((prev) => ({
+                                ...prev,
+                                vacations: Boolean(checked),
+                              }))
+                            }
+                          >
+                            <span className="inline-flex items-center gap-2">
+                              <span className="h-2.5 w-2.5 rounded-full bg-violet-500" />
+                              <span>{t("home.calendarFilterVacations")}</span>
+                            </span>
+                          </DropdownMenuCheckboxItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuCheckboxItem
+                            checked={calendarFilters.bucket && featureFlags.bucket}
+                            onCheckedChange={(checked) =>
+                              setCalendarFilters((prev) => ({
+                                ...prev,
+                                bucket: Boolean(checked),
+                              }))
+                            }
+                            disabled={!featureFlags.bucket}
+                          >
+                            <span className="inline-flex items-center gap-2">
+                              <span className="h-2.5 w-2.5 rounded-full bg-indigo-500" />
+                              <span>{t("home.calendarFilterBucketVotes")}</span>
+                            </span>
+                          </DropdownMenuCheckboxItem>
+                          <DropdownMenuCheckboxItem
+                            checked={
+                              calendarFilters.shopping && featureFlags.shopping
+                            }
+                            onCheckedChange={(checked) =>
+                              setCalendarFilters((prev) => ({
+                                ...prev,
+                                shopping: Boolean(checked),
+                              }))
+                            }
+                            disabled={!featureFlags.shopping}
+                          >
+                            <span className="inline-flex items-center gap-2">
+                              <span className="h-2.5 w-2.5 rounded-full bg-cyan-500" />
+                              <span>{t("home.calendarFilterShopping")}</span>
+                            </span>
+                          </DropdownMenuCheckboxItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
+                  }
+                >
+                  <div className="grid grid-cols-7 gap-1">
+                    {calendarWeekdayLabels.map((label) => (
+                      <p
+                        key={label}
+                        className="px-1 py-1 text-center text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400"
+                      >
+                        {label}
+                      </p>
+                    ))}
+                  </div>
+                  <TooltipProvider>
+                    <div className="grid grid-cols-7 gap-1">
+                      {calendarMonthCells.map((cell) => {
+                        const cellDayKey = dayKey(cell.date);
+                        const dayWeather = householdWeatherByDay.get(cellDayKey) ?? null;
+                        const isToday = cellDayKey === dayKey(new Date());
+                        const entry = homeCalendarEntries.get(cellDayKey);
+                        const vacationSpans = vacationSpansByDay.get(cellDayKey) ?? [];
+                        const {
+                          cleaningCount,
+                          criticalCleaningCount,
+                          completionCount,
+                          financeCount,
+                          cashAuditCount,
+                          bucketCount,
+                          shoppingCount,
+                          vacationCount,
+                        } = getCalendarCounts(entry);
+                        const hasEntries =
+                          cleaningCount +
+                            completionCount +
+                            financeCount +
+                            cashAuditCount +
+                            bucketCount +
+                            shoppingCount >
+                          0;
+                        const showVacationSpans = calendarFilters.vacations && vacationSpans.length > 0;
+                        const cellHeightClass = isCalendarDense
+                          ? "min-h-[52px]"
+                          : "min-h-[70px]";
+    
+                        return (
+                          <Tooltip
+                            key={cellDayKey}
+                            open={
+                              isCalendarCoarsePointer
+                                ? openCalendarTooltipDay === cellDayKey
+                                : undefined
+                            }
+                            onOpenChange={(open) => {
+                              if (!isCalendarCoarsePointer) return;
+                              setOpenCalendarTooltipDay(open ? cellDayKey : null);
+                            }}
+                          >
+                            <TooltipTrigger asChild>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (!isCalendarCoarsePointer) return;
+                                  setOpenCalendarTooltipDay((current) =>
+                                    current === cellDayKey ? null : cellDayKey,
+                                  );
+                                }}
+                                className={`${cellHeightClass} flex h-full flex-col justify-between rounded-lg border px-1.5 py-1 text-left transition ${
+                                  cell.inCurrentMonth
+                                    ? `border-brand-100 bg-white/90 hover:bg-brand-50/60 dark:border-slate-700 dark:bg-slate-900 ${
+                                        isToday
+                                          ? "ring-2 ring-brand-400/60 ring-offset-1 ring-offset-white dark:ring-brand-500/50 dark:ring-offset-slate-900"
+                                          : ""
+                                      }`
+                                    : "border-brand-50 bg-white/40 opacity-65 dark:border-slate-800 dark:bg-slate-900/40"
+                                }`}
+                              >
+                                <div className="flex items-center justify-between">
+                                  <p
+                                    className={`text-xs font-medium ${
+                                      isToday
+                                        ? "text-brand-700 dark:text-brand-300"
+                                        : "text-slate-700 dark:text-slate-300"
+                                    }`}
+                                  >
+                                    {cell.date.getDate()}
+                                  </p>
+                                  {dayWeather ? (
+                                    <span className="inline-flex items-center justify-center">
+                                      {getStaticWeatherCalendarIcon(dayWeather)}
+                                    </span>
+                                  ) : null}
+                                </div>
+                                <div className="mt-1 flex min-h-[16px] flex-col justify-end">
+                                  {hasEntries ? (
+                                    isCalendarDense ? (
+                                      <div className="flex flex-wrap gap-1">
+                                        {renderDenseStack(
+                                          cleaningCount,
+                                          criticalCleaningCount > 0
+                                            ? "bg-rose-500"
+                                            : "bg-emerald-500",
+                                        )}
+                                        {renderDenseStack(
+                                          completionCount,
+                                          "bg-brand-500",
+                                        )}
+                                        {renderDenseStack(
+                                          financeCount,
+                                          "bg-amber-500",
+                                        )}
+                                        {renderDenseStack(
+                                          cashAuditCount,
+                                          "bg-slate-500",
+                                        )}
+                                        {renderDenseStack(
+                                          bucketCount,
+                                          "bg-indigo-500",
+                                        )}
+                                        {renderDenseStack(
+                                          shoppingCount,
+                                          "bg-cyan-500",
+                                        )}
+                                      </div>
+                                    ) : (
+                                      <div className="flex flex-wrap gap-1 text-[10px] text-slate-600 dark:text-slate-300">
+                                        {cleaningCount > 0 ? (
+                                          <span
+                                            className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 ${
+                                              criticalCleaningCount > 0
+                                                ? "bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-200"
+                                                : "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200"
+                                            }`}
+                                          >
+                                            <span
+                                              className={`h-1.5 w-1.5 rounded-full ${
+                                                criticalCleaningCount > 0
+                                                  ? "bg-rose-500"
+                                                  : "bg-emerald-500"
+                                              }`}
+                                            />
+                                            {cleaningCount}
+                                          </span>
+                                        ) : null}
+                                        {completionCount > 0 ? (
+                                          <span className="inline-flex items-center gap-1 rounded-full bg-brand-100 px-1.5 py-0.5 text-brand-800 dark:bg-brand-900/30 dark:text-brand-200">
+                                            <span className="h-1.5 w-1.5 rounded-full bg-brand-500" />
+                                            {completionCount}
+                                          </span>
+                                        ) : null}
+                                        {financeCount > 0 ? (
+                                          <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-1.5 py-0.5 text-amber-800 dark:bg-amber-900/30 dark:text-amber-200">
+                                            <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                                            {financeCount}
+                                          </span>
+                                        ) : null}
+                                        {cashAuditCount > 0 ? (
+                                          <span className="inline-flex items-center gap-1 rounded-full bg-slate-200 px-1.5 py-0.5 text-slate-700 dark:bg-slate-700 dark:text-slate-200">
+                                            <span className="h-1.5 w-1.5 rounded-full bg-slate-500" />
+                                            {cashAuditCount}
+                                          </span>
+                                        ) : null}
+                                        {bucketCount > 0 ? (
+                                          <span className="inline-flex items-center gap-1 rounded-full bg-indigo-100 px-1.5 py-0.5 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-200">
+                                            <span className="h-1.5 w-1.5 rounded-full bg-indigo-500" />
+                                            {bucketCount}
+                                          </span>
+                                        ) : null}
+                                        {shoppingCount > 0 ? (
+                                          <span className="inline-flex items-center gap-1 rounded-full bg-cyan-100 px-1.5 py-0.5 text-cyan-800 dark:bg-cyan-900/30 dark:text-cyan-200">
+                                            <span className="h-1.5 w-1.5 rounded-full bg-cyan-500" />
+                                            {shoppingCount}
+                                          </span>
+                                        ) : null}
+                                      </div>
+                                    )
+                                  ) : null}
+                                  {showVacationSpans ? (
+                                    <div className="mt-1 space-y-0.5">
+                                      {vacationSpans.map((span) => {
+                                        const segmentClassName =
+                                          span.kind === "single"
+                                            ? "mx-0 rounded-full"
+                                            : span.kind === "start"
+                                              ? "-mr-2 rounded-l-full"
+                                              : span.kind === "end"
+                                                ? "-ml-2 rounded-r-full"
+                                                : "-mx-2";
+                                        return (
+                                          <div
+                                            key={`${cellDayKey}-vac-${span.id}-${span.kind}`}
+                                            className={`relative z-10 h-1.5 ${segmentClassName} ${
+                                              span.manual ? "bg-violet-400" : "bg-violet-500"
+                                            }`}
+                                          />
+                                        );
+                                      })}
+                                    </div>
+                                  ) : null}
+                                </div>
+                              </button>
+                            </TooltipTrigger>
+                            <TooltipContent className="max-w-[320px] border border-slate-200 bg-white text-slate-900 shadow-lg dark:border-slate-700 dark:bg-slate-900 dark:text-slate-50">
+                              <p className="mb-2 font-semibold">
+                                {t("home.calendarTooltipTitle", {
+                                  date: formatShortDay(
+                                    cellDayKey,
+                                    language,
+                                    cellDayKey,
+                                  ),
+                                })}
+                              </p>
+                              <div className="space-y-2">
+                                {cleaningCount > 0 ? (
+                                  <div>
+                                    <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                                      {t("home.calendarCleaningTitle")}
+                                    </p>
+                                    <ul className="mt-1 space-y-1">
+                                      {entry?.cleaningDueTasks
+                                        .slice(0, MAX_CALENDAR_TOOLTIP_ITEMS)
+                                        .map((taskEntry) => (
+                                          <li
+                                            key={`cleaning-${cellDayKey}-${taskEntry.task.id}`}
+                                            className="text-xs"
+                                          >
+                                            <span
+                                              className={`mr-1 inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+                                                taskEntry.status === "overdue"
+                                                  ? "bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-200"
+                                                  : taskEntry.status === "due"
+                                                    ? "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200"
+                                                    : "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200"
+                                              }`}
+                                            >
+                                              {taskEntry.status === "overdue"
+                                                ? t("home.calendarOverdueLabel")
+                                                : taskEntry.status === "due"
+                                                  ? t("home.calendarDueLabel")
+                                                  : t("home.calendarUpcomingLabel")}
+                                            </span>
+                                            {taskEntry.task.title} ·{" "}
+                                            {labelForUserId(
+                                              taskEntry.task.assignee_id,
+                                            )}
+                                          </li>
+                                        ))}
+                                    </ul>
+                                    {cleaningCount > MAX_CALENDAR_TOOLTIP_ITEMS ? (
+                                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                                        {t("home.calendarMore", {
+                                          count:
+                                            cleaningCount -
+                                            MAX_CALENDAR_TOOLTIP_ITEMS,
+                                        })}
+                                      </p>
+                                    ) : null}
+                                  </div>
+                                ) : null}
+                                {completionCount > 0 ? (
+                                  <div>
+                                    <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                                      {t("home.calendarTasksCompletedTitle")}
+                                    </p>
+                                    <ul className="mt-1 space-y-1">
+                                      {entry?.taskCompletions
+                                        .slice(0, MAX_CALENDAR_TOOLTIP_ITEMS)
+                                        .map((completion) => (
+                                          <li
+                                            key={`completed-${cellDayKey}-${completion.id}`}
+                                            className="text-xs"
+                                          >
+                                            {completion.task_title_snapshot ||
+                                              t("tasks.fallbackTitle")}{" "}
+                                            · {labelForUserId(completion.user_id)}
+                                          </li>
+                                        ))}
+                                    </ul>
+                                    {completionCount >
+                                    MAX_CALENDAR_TOOLTIP_ITEMS ? (
+                                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                                        {t("home.calendarMore", {
+                                          count:
+                                            completionCount -
+                                            MAX_CALENDAR_TOOLTIP_ITEMS,
+                                        })}
+                                      </p>
+                                    ) : null}
+                                  </div>
+                                ) : null}
+                                {financeCount > 0 ? (
+                                  <div>
+                                    <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                                      {t("home.calendarFinanceTitle")}
+                                    </p>
+                                    <ul className="mt-1 space-y-1">
+                                      {entry?.financeEntries
+                                        .slice(0, MAX_CALENDAR_TOOLTIP_ITEMS)
+                                        .map((finance) => (
+                                          <li
+                                            key={`finance-${cellDayKey}-${finance.id}`}
+                                            className="text-xs"
+                                          >
+                                            {finance.description} ·{" "}
+                                            {formatMoney(finance.amount)}
+                                          </li>
+                                        ))}
+                                    </ul>
+                                    {financeCount > MAX_CALENDAR_TOOLTIP_ITEMS ? (
+                                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                                        {t("home.calendarMore", {
+                                          count:
+                                            financeCount -
+                                            MAX_CALENDAR_TOOLTIP_ITEMS,
+                                        })}
+                                      </p>
+                                    ) : null}
+                                  </div>
+                                ) : null}
+                                {cashAuditCount > 0 ? (
+                                  <div>
+                                    <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                                      {t("home.calendarCashAuditTitle")}
+                                    </p>
+                                    <ul className="mt-1 space-y-1">
+                                      {entry?.cashAudits
+                                        .slice(0, MAX_CALENDAR_TOOLTIP_ITEMS)
+                                        .map((audit) => (
+                                          <li
+                                            key={`audit-${cellDayKey}-${audit.id}`}
+                                            className="text-xs"
+                                          >
+                                            {t("home.calendarCashAuditEntry", {
+                                              user: labelForUserId(
+                                                audit.requested_by,
+                                              ),
+                                            })}
+                                          </li>
+                                        ))}
+                                    </ul>
+                                    {cashAuditCount > MAX_CALENDAR_TOOLTIP_ITEMS ? (
+                                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                                        {t("home.calendarMore", {
+                                          count:
+                                            cashAuditCount -
+                                            MAX_CALENDAR_TOOLTIP_ITEMS,
+                                        })}
+                                      </p>
+                                    ) : null}
+                                  </div>
+                                ) : null}
+                                {vacationCount > 0 ? (
+                                  <div>
+                                    <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                                      {t("home.calendarVacationsTitle")}
+                                    </p>
+                                    <ul className="mt-1 space-y-1">
+                                      {entry?.vacations
+                                        .slice(0, MAX_CALENDAR_TOOLTIP_ITEMS)
+                                        .map((vacation) => (
+                                          <li
+                                            key={`vacation-${cellDayKey}-${vacation.id}-${vacation.userId}`}
+                                            className="text-xs"
+                                          >
+                                            {labelForUserId(vacation.userId)}
+                                            {vacation.manual ? (
+                                              <span className="ml-1 text-[10px] text-slate-500 dark:text-slate-400">
+                                                ({t("home.calendarVacationManual")})
+                                              </span>
+                                            ) : null}
+                                            <span className="ml-1 text-[10px] text-slate-500 dark:text-slate-400">
+                                              {formatDateOnly(vacation.startDate, language, vacation.startDate)} –{" "}
+                                              {formatDateOnly(vacation.endDate, language, vacation.endDate)}
+                                            </span>
+                                            {vacation.note ? ` · ${vacation.note}` : ""}
+                                          </li>
+                                        ))}
+                                    </ul>
+                                    {vacationCount > MAX_CALENDAR_TOOLTIP_ITEMS ? (
+                                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                                        {t("home.calendarMore", {
+                                          count:
+                                            vacationCount -
+                                            MAX_CALENDAR_TOOLTIP_ITEMS,
+                                        })}
+                                      </p>
+                                    ) : null}
+                                  </div>
+                                ) : null}
+                                {shoppingCount > 0 ? (
+                                  <div>
+                                    <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                                      {t("home.calendarShoppingTitle")}
+                                    </p>
+                                    <ul className="mt-1 space-y-1">
+                                      {entry?.shoppingEntries
+                                        .slice(0, MAX_CALENDAR_TOOLTIP_ITEMS)
+                                        .map((shopping) => (
+                                          <li
+                                            key={`shopping-${cellDayKey}-${shopping.id}`}
+                                            className="text-xs"
+                                          >
+                                            {shopping.title} ·{" "}
+                                            {labelForUserId(shopping.userId)}
+                                          </li>
+                                        ))}
+                                    </ul>
+                                    {shoppingCount > MAX_CALENDAR_TOOLTIP_ITEMS ? (
+                                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                                        {t("home.calendarMore", {
+                                          count:
+                                            shoppingCount -
+                                            MAX_CALENDAR_TOOLTIP_ITEMS,
+                                        })}
+                                      </p>
+                                    ) : null}
+                                  </div>
+                                ) : null}
+                                {bucketCount > 0 ? (
+                                  <div>
+                                    <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                                      {t("home.calendarBucketVotesTitle")}
+                                    </p>
+                                    <ul className="mt-1 space-y-1">
+                                      {entry?.bucketVotes
+                                        .slice(0, MAX_CALENDAR_TOOLTIP_ITEMS)
+                                        .map((vote) => (
+                                          <li
+                                            key={`bucket-${cellDayKey}-${vote.item.id}-${vote.date}`}
+                                            className="text-xs"
+                                          >
+                                            {vote.item.title} ·{" "}
+                                            {t("home.bucketVotes", {
+                                              count: vote.voters.length,
+                                            })}
+                                          </li>
+                                        ))}
+                                    </ul>
+                                    {bucketCount > MAX_CALENDAR_TOOLTIP_ITEMS ? (
+                                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                                        {t("home.calendarMore", {
+                                          count:
+                                            bucketCount -
+                                            MAX_CALENDAR_TOOLTIP_ITEMS,
+                                        })}
+                                      </p>
+                                    ) : null}
+                                  </div>
+                                ) : null}
+                                {!hasEntries ? (
+                                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                                    {t("home.calendarEmpty")}
+                                  </p>
+                                ) : null}
+                              </div>
+                            </TooltipContent>
+                          </Tooltip>
+                        );
+                      })}
+                    </div>
+                  </TooltipProvider>
+                </HouseholdCalendarWidget>
+              </Card>
+  );
 
   const renderLandingWidget = useCallback((key: LandingWidgetKey) => {
     if (key === "tasks-overview") {
@@ -5221,6 +6019,185 @@ export const HomePage = ({
           </ul>
         </div>
       ) : null;
+    }
+
+    if (key === "household-calendar") {
+      return renderHouseholdCalendarCard(false, false);
+    }
+
+    if (key === "household-weather-daily") {
+      return (
+        !mapHasPin ? (
+          <p className="text-xs text-slate-500 dark:text-slate-400">{t("home.householdWeatherNeedsAddress")}</p>
+        ) : householdWeatherQuery.isLoading ? (
+          <p className="text-xs text-slate-500 dark:text-slate-400">{t("home.householdWeatherLoading")}</p>
+        ) : householdWeatherQuery.isError ? (
+          <p className="text-xs text-rose-600 dark:text-rose-400">{t("home.householdWeatherError")}</p>
+        ) : householdWeatherHourly.length === 0 ? (
+          <p className="text-xs text-slate-500 dark:text-slate-400">{t("home.householdWeatherEmpty")}</p>
+        ) : (
+          <HouseholdWeatherDailyPreview>
+            {householdWeatherDays.slice(0, 4).map((day, index) => (
+              <div
+                key={`landing-weather-day-${day.date}`}
+                className="w-[168px] shrink-0 rounded-2xl border border-slate-200/90 bg-gradient-to-b from-white/95 to-slate-50/90 p-3 shadow-sm dark:border-slate-700/90 dark:from-slate-900/85 dark:to-slate-900/65"
+              >
+                <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+                  {index === 0
+                    ? t("home.householdWeatherRelativeToday")
+                    : index === 1
+                      ? t("home.householdWeatherRelativeTomorrow")
+                      : index === 2
+                        ? t("home.householdWeatherRelativeDayAfterTomorrow")
+                        : formatDateOnly(day.date, language, day.date)}
+                </p>
+                <div className="relative mt-2 flex items-center justify-center rounded-xl bg-white/70 py-2 dark:bg-slate-800/65">
+                  <WeatherSvg state={getAnimatedWeatherState(day)} width={52} height={52} />
+                  <span className="absolute bottom-1.5 right-2 rounded-full border border-slate-200/90 bg-white/90 px-2 py-0.5 text-[10px] font-medium text-slate-700 dark:border-slate-700 dark:bg-slate-900/90 dark:text-slate-200">
+                    {t(getWeatherConditionLabelKey(day))}
+                  </span>
+                </div>
+                <p className="mt-2 text-xs font-semibold text-slate-700 dark:text-slate-300">
+                  {t("home.householdWeatherTemp", {
+                    max: day.tempMaxC === null ? "—" : Math.round(day.tempMaxC),
+                    min: day.tempMinC === null ? "—" : Math.round(day.tempMinC)
+                  })}
+                </p>
+                <p className="mt-1 text-[11px] text-slate-600 dark:text-slate-300">
+                  {t("home.householdWeatherPrecip", {
+                    mm: day.precipitationMm === null ? "—" : Number(day.precipitationMm.toFixed(1)),
+                    prob:
+                      day.precipitationProbabilityPercent === null
+                        ? "—"
+                        : Math.round(day.precipitationProbabilityPercent)
+                  })}
+                </p>
+                <p className="mt-1 text-[11px] text-slate-600 dark:text-slate-300">
+                  {t("home.householdWeatherWind", {
+                    min:
+                      day.windSpeedKmh === null && day.windGustKmh === null
+                        ? "—"
+                        : Math.min(
+                            day.windSpeedKmh ?? Number.POSITIVE_INFINITY,
+                            day.windGustKmh ?? Number.POSITIVE_INFINITY
+                          ) === Number.POSITIVE_INFINITY
+                          ? "—"
+                          : Math.round(
+                              Math.min(
+                                day.windSpeedKmh ?? Number.POSITIVE_INFINITY,
+                                day.windGustKmh ?? Number.POSITIVE_INFINITY
+                              )
+                            ),
+                    max:
+                      day.windSpeedKmh === null && day.windGustKmh === null
+                        ? "—"
+                        : Math.round(Math.max(day.windSpeedKmh ?? 0, day.windGustKmh ?? 0)),
+                    dir: getWindDirectionLabel(day.windDirectionDeg)
+                  })}
+                </p>
+              </div>
+            ))}
+          </HouseholdWeatherDailyPreview>
+        )
+      );
+    }
+
+    if (key === "household-weather-plot") {
+      return (
+        !mapHasPin ? (
+          <p className="text-xs text-slate-500 dark:text-slate-400">{t("home.householdWeatherNeedsAddress")}</p>
+        ) : householdWeatherQuery.isLoading ? (
+          <p className="text-xs text-slate-500 dark:text-slate-400">{t("home.householdWeatherLoading")}</p>
+        ) : householdWeatherQuery.isError ? (
+          <p className="text-xs text-rose-600 dark:text-rose-400">{t("home.householdWeatherError")}</p>
+        ) : householdWeatherHourly.length === 0 ? (
+          <p className="text-xs text-slate-500 dark:text-slate-400">{t("home.householdWeatherEmpty")}</p>
+        ) : (
+          <HouseholdWeatherPlot
+            hint={t("home.householdWeatherChartHint")}
+            isMobile={isMobileBucketComposer}
+            legendButtonLabel={t("home.householdWeatherLegendButton")}
+            legendItems={weatherLegendItems}
+            onToggleLegendItem={toggleWeatherLegendDataset}
+          >
+            <div
+              ref={weatherChartContainerRef}
+              className="h-64 rounded-lg border border-slate-200/90 bg-white/80 p-2 dark:border-slate-700/90 dark:bg-slate-900/70"
+              onDoubleClick={zoomOutWeatherChart}
+              onTouchEndCapture={onWeatherChartTouchEndCapture}
+            >
+              <Chart
+                ref={weatherChartRef}
+                type="bar"
+                data={householdWeatherChartData}
+                options={householdWeatherChartOptions}
+              />
+            </div>
+          </HouseholdWeatherPlot>
+        )
+      );
+    }
+
+    if (key === "household-weather") {
+      return (
+        <div className="space-y-2">
+          {renderLandingWidget("household-weather-daily")}
+          {renderLandingWidget("household-weather-plot")}
+        </div>
+      );
+    }
+
+    if (key === "household-whiteboard") {
+      return (
+        <Suspense
+          fallback={
+            <div className="flex h-[560px] items-center justify-center rounded-xl border border-brand-100 bg-white/70 text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-300">
+              {t("common.loading")}
+            </div>
+          }
+        >
+          <div className="relative">
+            <ExcalidrawBoardLazy
+              sceneJson={whiteboardDraft}
+              onSceneChange={(nextValue) => {
+                setWhiteboardDraft(nextValue);
+              }}
+              className="rounded-xl border border-brand-100 bg-white dark:border-slate-700"
+              height={560}
+              previewMode
+            />
+            <button
+              type="button"
+              className="absolute inset-0 rounded-xl border border-transparent transition hover:border-brand-200 hover:bg-brand-50/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400/60"
+              onClick={openWhiteboardFullscreen}
+              aria-label={t("home.whiteboardFullscreen")}
+              title={t("home.whiteboardFullscreen")}
+            />
+          </div>
+        </Suspense>
+      );
+    }
+
+    if (key === "household-map") {
+      return (
+        <div className="relative">
+          {renderHouseholdMapSurface(
+            "relative h-72 overflow-hidden rounded-lg border border-brand-100 dark:border-slate-700",
+            false
+          )}
+          <div className="pointer-events-none absolute inset-x-3 bottom-3 z-[1200] flex items-end justify-start">
+            <button
+              type="button"
+              className="pointer-events-auto z-[1201] inline-flex h-8 w-8 items-center justify-center rounded-xl border border-slate-200 bg-white/95 text-slate-700 shadow-sm transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900/95 dark:text-brand-100 dark:hover:bg-slate-800"
+              onClick={openMapFullscreen}
+              aria-label={t("home.householdMapFullscreen")}
+              title={t("home.householdMapFullscreen")}
+            >
+              <Maximize2 className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      );
     }
 
     return null;
@@ -6022,662 +6999,14 @@ export const HomePage = ({
 
       {showSummary ? (
         <>
-          <Card className="mt-6 rounded-xl border border-slate-300 bg-white/90 p-3 text-slate-800 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-100">
-            <CardHeader className="gap-2">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <CardTitle>{t("home.calendarTitle")}</CardTitle>
-                  <CardDescription>
-                    {t("home.calendarDescription")}
-                  </CardDescription>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    className="h-8 w-8 p-0"
-                    onClick={() => {
-                      setCalendarMonthDate(
-                        (current) =>
-                          new Date(
-                            current.getFullYear(),
-                            current.getMonth() - 1,
-                            1,
-                          ),
-                      );
-                    }}
-                    aria-label={t("home.calendarPrevMonth")}
-                  >
-                    <ChevronLeft className="h-4 w-4" />
-                  </Button>
-                  <p className="min-w-[130px] text-center text-sm font-medium capitalize text-slate-700 dark:text-slate-200">
-                    {calendarMonthTitle}
-                  </p>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    className="h-8 w-8 p-0"
-                    onClick={() => {
-                      setCalendarMonthDate(
-                        (current) =>
-                          new Date(
-                            current.getFullYear(),
-                            current.getMonth() + 1,
-                            1,
-                          ),
-                      );
-                    }}
-                    aria-label={t("home.calendarNextMonth")}
-                  >
-                    <ChevronRight className="h-4 w-4" />
-                  </Button>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        className="h-8 gap-2 px-2.5"
-                        aria-label={t("home.calendarFilterAction")}
-                      >
-                        <SlidersHorizontal className="h-4 w-4" />
-                        <span className="hidden sm:inline">
-                          {t("home.calendarFilterAction")}
-                        </span>
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="min-w-[220px]">
-                      <DropdownMenuLabel>
-                        {t("home.calendarFilterTitle")}
-                      </DropdownMenuLabel>
-                      <DropdownMenuCheckboxItem
-                        checked={calendarFilters.cleaning && featureFlags.tasks}
-                        onCheckedChange={(checked) =>
-                          setCalendarFilters((prev) => ({
-                            ...prev,
-                            cleaning: Boolean(checked),
-                          }))
-                        }
-                        disabled={!featureFlags.tasks}
-                      >
-                        <span className="inline-flex items-center gap-2">
-                          <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
-                          <span>{t("home.calendarFilterCleaning")}</span>
-                        </span>
-                      </DropdownMenuCheckboxItem>
-                      <DropdownMenuCheckboxItem
-                        checked={
-                          calendarFilters.tasksCompleted && featureFlags.tasks
-                        }
-                        onCheckedChange={(checked) =>
-                          setCalendarFilters((prev) => ({
-                            ...prev,
-                            tasksCompleted: Boolean(checked),
-                          }))
-                        }
-                        disabled={!featureFlags.tasks}
-                      >
-                        <span className="inline-flex items-center gap-2">
-                          <span className="h-2.5 w-2.5 rounded-full bg-brand-500" />
-                          <span>{t("home.calendarFilterTasksCompleted")}</span>
-                        </span>
-                      </DropdownMenuCheckboxItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuCheckboxItem
-                        checked={
-                          calendarFilters.finances && featureFlags.finances
-                        }
-                        onCheckedChange={(checked) =>
-                          setCalendarFilters((prev) => ({
-                            ...prev,
-                            finances: Boolean(checked),
-                          }))
-                        }
-                        disabled={!featureFlags.finances}
-                      >
-                        <span className="inline-flex items-center gap-2">
-                          <span className="h-2.5 w-2.5 rounded-full bg-amber-500" />
-                          <span>{t("home.calendarFilterFinances")}</span>
-                        </span>
-                      </DropdownMenuCheckboxItem>
-                      <DropdownMenuCheckboxItem
-                        checked={
-                          calendarFilters.cashAudits && featureFlags.finances
-                        }
-                        onCheckedChange={(checked) =>
-                          setCalendarFilters((prev) => ({
-                            ...prev,
-                            cashAudits: Boolean(checked),
-                          }))
-                        }
-                        disabled={!featureFlags.finances}
-                      >
-                        <span className="inline-flex items-center gap-2">
-                          <span className="h-2.5 w-2.5 rounded-full bg-slate-500" />
-                          <span>{t("home.calendarFilterCashAudits")}</span>
-                        </span>
-                      </DropdownMenuCheckboxItem>
-                      <DropdownMenuCheckboxItem
-                        checked={calendarFilters.vacations}
-                        onCheckedChange={(checked) =>
-                          setCalendarFilters((prev) => ({
-                            ...prev,
-                            vacations: Boolean(checked),
-                          }))
-                        }
-                      >
-                        <span className="inline-flex items-center gap-2">
-                          <span className="h-2.5 w-2.5 rounded-full bg-violet-500" />
-                          <span>{t("home.calendarFilterVacations")}</span>
-                        </span>
-                      </DropdownMenuCheckboxItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuCheckboxItem
-                        checked={calendarFilters.bucket && featureFlags.bucket}
-                        onCheckedChange={(checked) =>
-                          setCalendarFilters((prev) => ({
-                            ...prev,
-                            bucket: Boolean(checked),
-                          }))
-                        }
-                        disabled={!featureFlags.bucket}
-                      >
-                        <span className="inline-flex items-center gap-2">
-                          <span className="h-2.5 w-2.5 rounded-full bg-indigo-500" />
-                          <span>{t("home.calendarFilterBucketVotes")}</span>
-                        </span>
-                      </DropdownMenuCheckboxItem>
-                      <DropdownMenuCheckboxItem
-                        checked={
-                          calendarFilters.shopping && featureFlags.shopping
-                        }
-                        onCheckedChange={(checked) =>
-                          setCalendarFilters((prev) => ({
-                            ...prev,
-                            shopping: Boolean(checked),
-                          }))
-                        }
-                        disabled={!featureFlags.shopping}
-                      >
-                        <span className="inline-flex items-center gap-2">
-                          <span className="h-2.5 w-2.5 rounded-full bg-cyan-500" />
-                          <span>{t("home.calendarFilterShopping")}</span>
-                        </span>
-                      </DropdownMenuCheckboxItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent className="select-none space-y-2">
-              <div className="grid grid-cols-7 gap-1">
-                {calendarWeekdayLabels.map((label) => (
-                  <p
-                    key={label}
-                    className="px-1 py-1 text-center text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400"
-                  >
-                    {label}
-                  </p>
-                ))}
-              </div>
-              <TooltipProvider>
-                <div className="grid grid-cols-7 gap-1">
-                  {calendarMonthCells.map((cell) => {
-                    const cellDayKey = dayKey(cell.date);
-                    const dayWeather = householdWeatherByDay.get(cellDayKey) ?? null;
-                    const isToday = cellDayKey === dayKey(new Date());
-                    const entry = homeCalendarEntries.get(cellDayKey);
-                    const vacationSpans = vacationSpansByDay.get(cellDayKey) ?? [];
-                    const {
-                      cleaningCount,
-                      criticalCleaningCount,
-                      completionCount,
-                      financeCount,
-                      cashAuditCount,
-                      bucketCount,
-                      shoppingCount,
-                      vacationCount,
-                    } = getCalendarCounts(entry);
-                    const hasEntries =
-                      cleaningCount +
-                        completionCount +
-                        financeCount +
-                        cashAuditCount +
-                        bucketCount +
-                        shoppingCount >
-                      0;
-                    const showVacationSpans = calendarFilters.vacations && vacationSpans.length > 0;
-                    const cellHeightClass = isCalendarDense
-                      ? "min-h-[52px]"
-                      : "min-h-[70px]";
+          {showSummaryCalendarCard ? renderHouseholdCalendarCard(true, true) : null}
 
-                    return (
-                      <Tooltip
-                        key={cellDayKey}
-                        open={
-                          isCalendarCoarsePointer
-                            ? openCalendarTooltipDay === cellDayKey
-                            : undefined
-                        }
-                        onOpenChange={(open) => {
-                          if (!isCalendarCoarsePointer) return;
-                          setOpenCalendarTooltipDay(open ? cellDayKey : null);
-                        }}
-                      >
-                        <TooltipTrigger asChild>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              if (!isCalendarCoarsePointer) return;
-                              setOpenCalendarTooltipDay((current) =>
-                                current === cellDayKey ? null : cellDayKey,
-                              );
-                            }}
-                            className={`${cellHeightClass} rounded-lg border px-1.5 py-1 text-left transition ${
-                              cell.inCurrentMonth
-                                ? `border-brand-100 bg-white/90 hover:bg-brand-50/60 dark:border-slate-700 dark:bg-slate-900 ${
-                                    isToday
-                                      ? "ring-2 ring-brand-400/60 ring-offset-1 ring-offset-white dark:ring-brand-500/50 dark:ring-offset-slate-900"
-                                      : ""
-                                  }`
-                                : "border-brand-50 bg-white/40 opacity-65 dark:border-slate-800 dark:bg-slate-900/40"
-                            }`}
-                          >
-                            <div className="flex items-center justify-between">
-                              <p
-                                className={`text-xs font-medium ${
-                                  isToday
-                                    ? "text-brand-700 dark:text-brand-300"
-                                    : "text-slate-700 dark:text-slate-300"
-                                }`}
-                              >
-                                {cell.date.getDate()}
-                              </p>
-                              {dayWeather ? (
-                                <span className="inline-flex items-center justify-center">
-                                  {getStaticWeatherCalendarIcon(dayWeather)}
-                                </span>
-                              ) : null}
-                            </div>
-                            {showVacationSpans ? (
-                              <div className="mt-1 space-y-0.5">
-                                {vacationSpans.map((span) => {
-                                  const segmentClassName =
-                                    span.kind === "single"
-                                      ? "mx-0 rounded-full"
-                                      : span.kind === "start"
-                                        ? "-mr-2 rounded-l-full"
-                                        : span.kind === "end"
-                                          ? "-ml-2 rounded-r-full"
-                                          : "-mx-2";
-                                  return (
-                                    <div
-                                      key={`${cellDayKey}-vac-${span.id}-${span.kind}`}
-                                      className={`relative z-10 h-1.5 ${segmentClassName} ${
-                                        span.manual ? "bg-violet-400" : "bg-violet-500"
-                                      }`}
-                                    />
-                                  );
-                                })}
-                              </div>
-                            ) : null}
-                            {hasEntries ? (
-                              isCalendarDense ? (
-                                <div className="mt-1 flex flex-wrap gap-1">
-                                  {renderDenseStack(
-                                    cleaningCount,
-                                    criticalCleaningCount > 0
-                                      ? "bg-rose-500"
-                                      : "bg-emerald-500",
-                                  )}
-                                  {renderDenseStack(
-                                    completionCount,
-                                    "bg-brand-500",
-                                  )}
-                                  {renderDenseStack(
-                                    financeCount,
-                                    "bg-amber-500",
-                                  )}
-                                  {renderDenseStack(
-                                    cashAuditCount,
-                                    "bg-slate-500",
-                                  )}
-                                  {renderDenseStack(
-                                    bucketCount,
-                                    "bg-indigo-500",
-                                  )}
-                                  {renderDenseStack(
-                                    shoppingCount,
-                                    "bg-cyan-500",
-                                  )}
-                                </div>
-                              ) : (
-                                <div className="mt-1 flex flex-wrap gap-1 text-[10px] text-slate-600 dark:text-slate-300">
-                                  {cleaningCount > 0 ? (
-                                    <span
-                                      className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 ${
-                                        criticalCleaningCount > 0
-                                          ? "bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-200"
-                                          : "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200"
-                                      }`}
-                                    >
-                                      <span
-                                        className={`h-1.5 w-1.5 rounded-full ${
-                                          criticalCleaningCount > 0
-                                            ? "bg-rose-500"
-                                            : "bg-emerald-500"
-                                        }`}
-                                      />
-                                      {cleaningCount}
-                                    </span>
-                                  ) : null}
-                                  {completionCount > 0 ? (
-                                    <span className="inline-flex items-center gap-1 rounded-full bg-brand-100 px-1.5 py-0.5 text-brand-800 dark:bg-brand-900/30 dark:text-brand-200">
-                                      <span className="h-1.5 w-1.5 rounded-full bg-brand-500" />
-                                      {completionCount}
-                                    </span>
-                                  ) : null}
-                                  {financeCount > 0 ? (
-                                    <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-1.5 py-0.5 text-amber-800 dark:bg-amber-900/30 dark:text-amber-200">
-                                      <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
-                                      {financeCount}
-                                    </span>
-                                  ) : null}
-                                  {cashAuditCount > 0 ? (
-                                    <span className="inline-flex items-center gap-1 rounded-full bg-slate-200 px-1.5 py-0.5 text-slate-700 dark:bg-slate-700 dark:text-slate-200">
-                                      <span className="h-1.5 w-1.5 rounded-full bg-slate-500" />
-                                      {cashAuditCount}
-                                    </span>
-                                  ) : null}
-                                  {bucketCount > 0 ? (
-                                    <span className="inline-flex items-center gap-1 rounded-full bg-indigo-100 px-1.5 py-0.5 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-200">
-                                      <span className="h-1.5 w-1.5 rounded-full bg-indigo-500" />
-                                      {bucketCount}
-                                    </span>
-                                  ) : null}
-                                  {shoppingCount > 0 ? (
-                                    <span className="inline-flex items-center gap-1 rounded-full bg-cyan-100 px-1.5 py-0.5 text-cyan-800 dark:bg-cyan-900/30 dark:text-cyan-200">
-                                      <span className="h-1.5 w-1.5 rounded-full bg-cyan-500" />
-                                      {shoppingCount}
-                                    </span>
-                                  ) : null}
-                                </div>
-                              )
-                            ) : null}
-                          </button>
-                        </TooltipTrigger>
-                        <TooltipContent className="max-w-[320px] border border-slate-200 bg-white text-slate-900 shadow-lg dark:border-slate-700 dark:bg-slate-900 dark:text-slate-50">
-                          <p className="mb-2 font-semibold">
-                            {t("home.calendarTooltipTitle", {
-                              date: formatShortDay(
-                                cellDayKey,
-                                language,
-                                cellDayKey,
-                              ),
-                            })}
-                          </p>
-                          <div className="space-y-2">
-                            {cleaningCount > 0 ? (
-                              <div>
-                                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                                  {t("home.calendarCleaningTitle")}
-                                </p>
-                                <ul className="mt-1 space-y-1">
-                                  {entry?.cleaningDueTasks
-                                    .slice(0, MAX_CALENDAR_TOOLTIP_ITEMS)
-                                    .map((taskEntry) => (
-                                      <li
-                                        key={`cleaning-${cellDayKey}-${taskEntry.task.id}`}
-                                        className="text-xs"
-                                      >
-                                        <span
-                                          className={`mr-1 inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
-                                            taskEntry.status === "overdue"
-                                              ? "bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-200"
-                                              : taskEntry.status === "due"
-                                                ? "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200"
-                                                : "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200"
-                                          }`}
-                                        >
-                                          {taskEntry.status === "overdue"
-                                            ? t("home.calendarOverdueLabel")
-                                            : taskEntry.status === "due"
-                                              ? t("home.calendarDueLabel")
-                                              : t("home.calendarUpcomingLabel")}
-                                        </span>
-                                        {taskEntry.task.title} ·{" "}
-                                        {labelForUserId(
-                                          taskEntry.task.assignee_id,
-                                        )}
-                                      </li>
-                                    ))}
-                                </ul>
-                                {cleaningCount > MAX_CALENDAR_TOOLTIP_ITEMS ? (
-                                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                                    {t("home.calendarMore", {
-                                      count:
-                                        cleaningCount -
-                                        MAX_CALENDAR_TOOLTIP_ITEMS,
-                                    })}
-                                  </p>
-                                ) : null}
-                              </div>
-                            ) : null}
-                            {completionCount > 0 ? (
-                              <div>
-                                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                                  {t("home.calendarTasksCompletedTitle")}
-                                </p>
-                                <ul className="mt-1 space-y-1">
-                                  {entry?.taskCompletions
-                                    .slice(0, MAX_CALENDAR_TOOLTIP_ITEMS)
-                                    .map((completion) => (
-                                      <li
-                                        key={`completed-${cellDayKey}-${completion.id}`}
-                                        className="text-xs"
-                                      >
-                                        {completion.task_title_snapshot ||
-                                          t("tasks.fallbackTitle")}{" "}
-                                        · {labelForUserId(completion.user_id)}
-                                      </li>
-                                    ))}
-                                </ul>
-                                {completionCount >
-                                MAX_CALENDAR_TOOLTIP_ITEMS ? (
-                                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                                    {t("home.calendarMore", {
-                                      count:
-                                        completionCount -
-                                        MAX_CALENDAR_TOOLTIP_ITEMS,
-                                    })}
-                                  </p>
-                                ) : null}
-                              </div>
-                            ) : null}
-                            {financeCount > 0 ? (
-                              <div>
-                                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                                  {t("home.calendarFinanceTitle")}
-                                </p>
-                                <ul className="mt-1 space-y-1">
-                                  {entry?.financeEntries
-                                    .slice(0, MAX_CALENDAR_TOOLTIP_ITEMS)
-                                    .map((finance) => (
-                                      <li
-                                        key={`finance-${cellDayKey}-${finance.id}`}
-                                        className="text-xs"
-                                      >
-                                        {finance.description} ·{" "}
-                                        {formatMoney(finance.amount)}
-                                      </li>
-                                    ))}
-                                </ul>
-                                {financeCount > MAX_CALENDAR_TOOLTIP_ITEMS ? (
-                                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                                    {t("home.calendarMore", {
-                                      count:
-                                        financeCount -
-                                        MAX_CALENDAR_TOOLTIP_ITEMS,
-                                    })}
-                                  </p>
-                                ) : null}
-                              </div>
-                            ) : null}
-                            {cashAuditCount > 0 ? (
-                              <div>
-                                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                                  {t("home.calendarCashAuditTitle")}
-                                </p>
-                                <ul className="mt-1 space-y-1">
-                                  {entry?.cashAudits
-                                    .slice(0, MAX_CALENDAR_TOOLTIP_ITEMS)
-                                    .map((audit) => (
-                                      <li
-                                        key={`audit-${cellDayKey}-${audit.id}`}
-                                        className="text-xs"
-                                      >
-                                        {t("home.calendarCashAuditEntry", {
-                                          user: labelForUserId(
-                                            audit.requested_by,
-                                          ),
-                                        })}
-                                      </li>
-                                    ))}
-                                </ul>
-                                {cashAuditCount > MAX_CALENDAR_TOOLTIP_ITEMS ? (
-                                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                                    {t("home.calendarMore", {
-                                      count:
-                                        cashAuditCount -
-                                        MAX_CALENDAR_TOOLTIP_ITEMS,
-                                    })}
-                                  </p>
-                                ) : null}
-                              </div>
-                            ) : null}
-                            {vacationCount > 0 ? (
-                              <div>
-                                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                                  {t("home.calendarVacationsTitle")}
-                                </p>
-                                <ul className="mt-1 space-y-1">
-                                  {entry?.vacations
-                                    .slice(0, MAX_CALENDAR_TOOLTIP_ITEMS)
-                                    .map((vacation) => (
-                                      <li
-                                        key={`vacation-${cellDayKey}-${vacation.id}-${vacation.userId}`}
-                                        className="text-xs"
-                                      >
-                                        {labelForUserId(vacation.userId)}
-                                        {vacation.manual ? (
-                                          <span className="ml-1 text-[10px] text-slate-500 dark:text-slate-400">
-                                            ({t("home.calendarVacationManual")})
-                                          </span>
-                                        ) : null}
-                                        <span className="ml-1 text-[10px] text-slate-500 dark:text-slate-400">
-                                          {formatDateOnly(vacation.startDate, language, vacation.startDate)} –{" "}
-                                          {formatDateOnly(vacation.endDate, language, vacation.endDate)}
-                                        </span>
-                                        {vacation.note ? ` · ${vacation.note}` : ""}
-                                      </li>
-                                    ))}
-                                </ul>
-                                {vacationCount > MAX_CALENDAR_TOOLTIP_ITEMS ? (
-                                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                                    {t("home.calendarMore", {
-                                      count:
-                                        vacationCount -
-                                        MAX_CALENDAR_TOOLTIP_ITEMS,
-                                    })}
-                                  </p>
-                                ) : null}
-                              </div>
-                            ) : null}
-                            {shoppingCount > 0 ? (
-                              <div>
-                                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                                  {t("home.calendarShoppingTitle")}
-                                </p>
-                                <ul className="mt-1 space-y-1">
-                                  {entry?.shoppingEntries
-                                    .slice(0, MAX_CALENDAR_TOOLTIP_ITEMS)
-                                    .map((shopping) => (
-                                      <li
-                                        key={`shopping-${cellDayKey}-${shopping.id}`}
-                                        className="text-xs"
-                                      >
-                                        {shopping.title} ·{" "}
-                                        {labelForUserId(shopping.userId)}
-                                      </li>
-                                    ))}
-                                </ul>
-                                {shoppingCount > MAX_CALENDAR_TOOLTIP_ITEMS ? (
-                                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                                    {t("home.calendarMore", {
-                                      count:
-                                        shoppingCount -
-                                        MAX_CALENDAR_TOOLTIP_ITEMS,
-                                    })}
-                                  </p>
-                                ) : null}
-                              </div>
-                            ) : null}
-                            {bucketCount > 0 ? (
-                              <div>
-                                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                                  {t("home.calendarBucketVotesTitle")}
-                                </p>
-                                <ul className="mt-1 space-y-1">
-                                  {entry?.bucketVotes
-                                    .slice(0, MAX_CALENDAR_TOOLTIP_ITEMS)
-                                    .map((vote) => (
-                                      <li
-                                        key={`bucket-${cellDayKey}-${vote.item.id}-${vote.date}`}
-                                        className="text-xs"
-                                      >
-                                        {vote.item.title} ·{" "}
-                                        {t("home.bucketVotes", {
-                                          count: vote.voters.length,
-                                        })}
-                                      </li>
-                                    ))}
-                                </ul>
-                                {bucketCount > MAX_CALENDAR_TOOLTIP_ITEMS ? (
-                                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                                    {t("home.calendarMore", {
-                                      count:
-                                        bucketCount -
-                                        MAX_CALENDAR_TOOLTIP_ITEMS,
-                                    })}
-                                  </p>
-                                ) : null}
-                              </div>
-                            ) : null}
-                            {!hasEntries ? (
-                              <p className="text-xs text-slate-500 dark:text-slate-400">
-                                {t("home.calendarEmpty")}
-                              </p>
-                            ) : null}
-                          </div>
-                        </TooltipContent>
-                      </Tooltip>
-                    );
-                  })}
-                </div>
-              </TooltipProvider>
-            </CardContent>
-          </Card>
-
+          {showSummaryWhiteboardCard ? (
           <Card className="mt-6 rounded-xl border border-slate-300 bg-white/90 p-3 text-slate-800 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-100">
-            <CardHeader className="gap-1">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <CardTitle>{t("home.whiteboardTitle")}</CardTitle>
-                  <CardDescription>
-                    {t("home.whiteboardDescription")}
-                  </CardDescription>
+            <HouseholdWhiteboardWidget
+              title={
+                <>
+                  {t("home.whiteboardTitle")}
                   {whiteboardOnlineMembers.length > 0 ? (
                     <div className="mt-2 flex flex-wrap items-center gap-1.5">
                       <span className="text-[11px] font-medium text-emerald-700 dark:text-emerald-300">
@@ -6694,32 +7023,11 @@ export const HomePage = ({
                       ))}
                     </div>
                   ) : null}
-                </div>
-                <div className="flex items-center gap-2">
-                  {/* <span
-                    className="inline-flex items-center gap-2 text-xs font-medium text-slate-500 dark:text-slate-400"
-                    aria-live="polite"
-                  >
-                    {whiteboardStatusIndicator}
-                    <span className="hidden sm:inline">
-                      {whiteboardStatusLabel}
-                    </span>
-                  </span> */}
-                  {/* {isWhiteboardFullscreenOpen && (
-                    <button
-                      type="button"
-                      className="inline-flex h-8 w-8 items-center justify-center rounded-xl text-slate-700 hover:bg-slate-200/80 dark:text-brand-100 dark:hover:bg-slate-800"
-                      onClick={() => setIsWhiteboardFullscreenOpen(true)}
-                      aria-label={t("home.whiteboardFullscreen")}
-                      title={t("home.whiteboardFullscreen")}
-                    >
-                      <Maximize2 className="h-4 w-4" />
-                    </button>
-                  )} */}
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent className="pt-2">
+                </>
+              }
+              description={t("home.whiteboardDescription")}
+              headerActions={<div className="flex items-center gap-2" />}
+            >
               <ErrorBoundary
                 fallback={
                   <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-6 text-sm text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-200">
@@ -6754,16 +7062,16 @@ export const HomePage = ({
                   </div>
                 </Suspense>
               </ErrorBoundary>
-            </CardContent>
+            </HouseholdWhiteboardWidget>
           </Card>
+          ) : null}
 
+          {showSummaryMapCard ? (
           <Card className="mt-6 rounded-xl border border-slate-300 bg-white/90 p-3 text-slate-800 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-100">
-            <CardHeader className="gap-1">
-              <div className="flex items-center justify-between gap-2">
-                <div>
-                  <CardTitle>{t("home.householdMapTitle")}</CardTitle>
-                  <CardDescription>{t("home.householdMapDescription")}</CardDescription>
-                </div>
+            <HouseholdMapWidget
+              title={t("home.householdMapTitle")}
+              description={t("home.householdMapDescription")}
+              headerActions={
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
@@ -6775,9 +7083,8 @@ export const HomePage = ({
                     <Maximize2 className="h-4 w-4" />
                   </button>
                 </div>
-              </div>
-            </CardHeader>
-            <CardContent className="pt-2">
+              }
+            >
               {renderHouseholdMapSurface(
                 "relative h-72 overflow-hidden rounded-lg border border-brand-100 dark:border-slate-700",
                 false
@@ -6836,12 +7143,14 @@ export const HomePage = ({
               {liveShareError ? (
                 <div className="mt-1 text-xs text-rose-600 dark:text-rose-400">{liveShareError}</div>
               ) : null}
-            </CardContent>
+            </HouseholdMapWidget>
           </Card>
+          ) : null}
 
+          {showSummaryWeatherCard ? (
           <Card className="mt-6 rounded-xl border border-slate-300 bg-white/90 p-3 text-slate-800 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-100">
             <CardHeader className="gap-1">
-              <CardTitle>{t("home.householdWeatherTitle")}</CardTitle>
+              <CardTitle>{householdWeatherTitle}</CardTitle>
               <CardDescription>{t("home.householdWeatherDescription")}</CardDescription>
             </CardHeader>
             <CardContent className="pt-2">
@@ -6856,8 +7165,7 @@ export const HomePage = ({
               ) : (
                 <div className="space-y-2">
                   {householdWeatherDays.length > 0 ? (
-                    <div className="-mx-1 overflow-x-auto px-1 pb-1">
-                      <div className="flex min-w-max gap-3">
+                    <HouseholdWeatherDailyPreview>
                         {householdWeatherDays.map((day, index) => (
                           <div
                             key={`weather-day-${day.date}`}
@@ -6963,59 +7271,34 @@ export const HomePage = ({
                             </p>
                           </div>
                         ))}
-                      </div>
-                    </div>
+                    </HouseholdWeatherDailyPreview>
                   ) : null}
-                  {isMobileBucketComposer ? (
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="text-xs text-slate-500 dark:text-slate-400">
-                        {t("home.householdWeatherChartHint")}
-                      </p>
-                      {weatherLegendItems.length > 0 ? (
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button type="button" size="sm" variant="outline" className="h-8 px-2 text-xs">
-                              <SlidersHorizontal className="mr-1 h-3.5 w-3.5" />
-                              {t("home.householdWeatherLegendButton")}
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end" className="w-56">
-                            <DropdownMenuLabel>{t("home.householdWeatherLegendButton")}</DropdownMenuLabel>
-                            <DropdownMenuSeparator />
-                            {weatherLegendItems.map((item) => (
-                              <DropdownMenuCheckboxItem
-                                key={`weather-legend-item-${item.index}`}
-                                checked={item.visible}
-                                onCheckedChange={() => toggleWeatherLegendDataset(item.index)}
-                              >
-                                {item.label}
-                              </DropdownMenuCheckboxItem>
-                            ))}
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      ) : null}
-                    </div>
-                  ) : (
-                    <p className="text-xs text-slate-500 dark:text-slate-400">
-                      {t("home.householdWeatherChartHint")}
-                    </p>
-                  )}
-                  <div
-                    className="h-64 rounded-lg border border-slate-200/90 bg-white/80 p-2 dark:border-slate-700/90 dark:bg-slate-900/70"
-                    onDoubleClick={zoomOutWeatherChart}
-                    onTouchEndCapture={onWeatherChartTouchEndCapture}
+                  <HouseholdWeatherPlot
+                    hint={t("home.householdWeatherChartHint")}
+                    isMobile={isMobileBucketComposer}
+                    legendButtonLabel={t("home.householdWeatherLegendButton")}
+                    legendItems={weatherLegendItems}
+                    onToggleLegendItem={toggleWeatherLegendDataset}
                   >
-                    <Chart
-                      ref={weatherChartRef}
-                      type="bar"
-                      data={householdWeatherChartData}
-                      options={householdWeatherChartOptions}
-                    />
-                  </div>
+                    <div
+                      ref={weatherChartContainerRef}
+                      className="h-64 rounded-lg border border-slate-200/90 bg-white/80 p-2 dark:border-slate-700/90 dark:bg-slate-900/70"
+                      onDoubleClick={zoomOutWeatherChart}
+                      onTouchEndCapture={onWeatherChartTouchEndCapture}
+                    >
+                      <Chart
+                        ref={weatherChartRef}
+                        type="bar"
+                        data={householdWeatherChartData}
+                        options={householdWeatherChartOptions}
+                      />
+                    </div>
+                  </HouseholdWeatherPlot>
                 </div>
               )}
             </CardContent>
           </Card>
+          ) : null}
 
           <Dialog
             open={isLiveShareDialogOpen}
