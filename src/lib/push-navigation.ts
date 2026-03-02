@@ -1,5 +1,8 @@
 export const getForegroundPushRoute = (data: Record<string, string>) => {
   const type = data.type;
+  if (data.claimId) {
+    return "/tasks/overview";
+  }
   if (data.taskId) {
     if (type === "task_completed" || type === "task_skipped") {
       return "/tasks/history";

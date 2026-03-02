@@ -221,7 +221,7 @@ create table if not exists one_off_task_claim_votes (
 create table if not exists household_events (
   id uuid primary key default gen_random_uuid(),
   household_id uuid not null references households(id) on delete cascade,
-  event_type text not null check (event_type in ('task_completed', 'task_skipped', 'task_rated', 'shopping_completed', 'finance_created', 'role_changed', 'member_joined', 'member_left', 'rent_updated', 'contract_created', 'contract_updated', 'contract_deleted', 'cash_audit_requested', 'admin_hint', 'pimpers_reset', 'vacation_mode_enabled', 'vacation_mode_disabled', 'live_location_started')),
+  event_type text not null check (event_type in ('task_completed', 'task_skipped', 'task_rated', 'shopping_completed', 'finance_created', 'role_changed', 'member_joined', 'member_left', 'rent_updated', 'contract_created', 'contract_updated', 'contract_deleted', 'cash_audit_requested', 'admin_hint', 'pimpers_reset', 'vacation_mode_enabled', 'vacation_mode_disabled', 'live_location_started', 'one_off_claim_created')),
   actor_user_id uuid references auth.users(id) on delete set null,
   subject_user_id uuid references auth.users(id) on delete set null,
   payload jsonb not null default '{}'::jsonb,
@@ -1621,7 +1621,8 @@ begin
           'pimpers_reset',
           'vacation_mode_enabled',
           'vacation_mode_disabled',
-          'live_location_started'
+          'live_location_started',
+          'one_off_claim_created'
         )
       );
   end if;

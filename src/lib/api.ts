@@ -420,7 +420,8 @@ const householdEventSchema = z.object({
     "pimpers_reset",
     "vacation_mode_enabled",
     "vacation_mode_disabled",
-    "live_location_started"
+    "live_location_started",
+    "one_off_claim_created"
   ]),
   actor_user_id: z.string().uuid().nullable().optional().transform((value) => value ?? null),
   subject_user_id: z.string().uuid().nullable().optional().transform((value) => value ?? null),
@@ -689,7 +690,8 @@ const insertHouseholdEvent = async (input: {
       "pimpers_reset",
       "vacation_mode_enabled",
       "vacation_mode_disabled",
-      "live_location_started"
+      "live_location_started",
+      "one_off_claim_created"
     ]),
       actorUserId: z.string().uuid().nullable().optional(),
       subjectUserId: z.string().uuid().nullable().optional(),
@@ -2596,7 +2598,20 @@ export const createOneOffTaskClaim = async (input: {
     .select(SELECT_ONE_OFF_TASK_CLAIM_FIELDS)
     .single();
   if (error) throw error;
-  return normalizeOneOffTaskClaim(data as Record<string, unknown>, []);
+  const claim = normalizeOneOffTaskClaim(data as Record<string, unknown>, []);
+
+  await insertHouseholdEvent({
+    householdId: parsed.householdId,
+    eventType: "one_off_claim_created",
+    actorUserId: parsed.userId,
+    payload: {
+      claimId: claim.id,
+      title: claim.title,
+      requestedPimpers: claim.requested_pimpers
+    }
+  });
+
+  return claim;
 };
 
 export const voteOneOffTaskClaim = async (input: {
@@ -3316,6 +3331,37 @@ const nearbyPoiSchema = z.object({
   tags: z.record(z.string(), z.string()).default({})
 });
 
+const reachabilityTravelModeSchema = z.enum(["walk", "bike", "car", "transit"]);
+const reachabilityGeoJsonFeatureSchema = z.object({
+  type: z.literal("Feature"),
+  properties: z.record(z.string(), z.unknown()).optional().default({}),
+  geometry: z.object({
+    type: z.enum(["Polygon", "MultiPolygon"]),
+    coordinates: z.array(z.unknown())
+  })
+});
+const reachabilityGeoJsonSchema = z.object({
+  type: z.literal("FeatureCollection"),
+  features: z.array(reachabilityGeoJsonFeatureSchema).min(1)
+});
+
+export type ReachabilityTravelMode = z.infer<typeof reachabilityTravelModeSchema>;
+export type ReachabilityGeoJson = z.infer<typeof reachabilityGeoJsonSchema>;
+
+const routeGeoJsonFeatureSchema = z.object({
+  type: z.literal("Feature"),
+  properties: z.record(z.string(), z.unknown()).optional().default({}),
+  geometry: z.object({
+    type: z.enum(["LineString", "MultiLineString"]),
+    coordinates: z.array(z.unknown())
+  })
+});
+const routeGeoJsonSchema = z.object({
+  type: z.literal("FeatureCollection"),
+  features: z.array(routeGeoJsonFeatureSchema).min(1)
+});
+export type RouteGeoJson = z.infer<typeof routeGeoJsonSchema>;
+
 export const getNearbyPois = async (input: {
   householdId: string;
   lat: number;
@@ -3355,4 +3401,76 @@ export const getNearbyPois = async (input: {
     cached: parsedResponse.cached,
     expiresAt: parsedResponse.expiresAt
   };
+};
+
+export const getHouseholdReachability = async (input: {
+  householdId: string;
+  lat: number;
+  lon: number;
+  minutes: number;
+  travelMode: ReachabilityTravelMode;
+}): Promise<{ geojson: ReachabilityGeoJson }> => {
+  const parsedInput = z.object({
+    householdId: z.string().uuid(),
+    lat: z.coerce.number().finite().min(-90).max(90),
+    lon: z.coerce.number().finite().min(-180).max(180),
+    minutes: z.coerce.number().int().min(1).max(180),
+    travelMode: reachabilityTravelModeSchema
+  }).parse(input);
+
+  const { data, error } = await supabase.functions.invoke("get-reachability", {
+    body: {
+      householdId: parsedInput.householdId,
+      lat: parsedInput.lat,
+      lon: parsedInput.lon,
+      minutes: parsedInput.minutes,
+      travelMode: parsedInput.travelMode
+    }
+  });
+
+  if (error) throw error;
+  const parsedResponse = z.object({
+    geojson: reachabilityGeoJsonSchema
+  }).parse(data);
+
+  return { geojson: parsedResponse.geojson };
+};
+
+export const getHouseholdRoute = async (input: {
+  householdId: string;
+  fromLat: number;
+  fromLon: number;
+  toLat: number;
+  toLon: number;
+  maxMinutes: number;
+  travelMode: ReachabilityTravelMode;
+}): Promise<{ geojson: RouteGeoJson }> => {
+  const parsedInput = z.object({
+    householdId: z.string().uuid(),
+    fromLat: z.coerce.number().finite().min(-90).max(90),
+    fromLon: z.coerce.number().finite().min(-180).max(180),
+    toLat: z.coerce.number().finite().min(-90).max(90),
+    toLon: z.coerce.number().finite().min(-180).max(180),
+    maxMinutes: z.coerce.number().int().min(1).max(240),
+    travelMode: reachabilityTravelModeSchema
+  }).parse(input);
+
+  const { data, error } = await supabase.functions.invoke("get-route", {
+    body: {
+      householdId: parsedInput.householdId,
+      fromLat: parsedInput.fromLat,
+      fromLon: parsedInput.fromLon,
+      toLat: parsedInput.toLat,
+      toLon: parsedInput.toLon,
+      maxMinutes: parsedInput.maxMinutes,
+      travelMode: parsedInput.travelMode
+    }
+  });
+
+  if (error) throw error;
+  const parsedResponse = z.object({
+    geojson: routeGeoJsonSchema
+  }).parse(data);
+
+  return { geojson: parsedResponse.geojson };
 };

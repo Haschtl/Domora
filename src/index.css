@@ -410,6 +410,122 @@ input[type="number"] {
   filter: brightness(0) saturate(100%) invert(85%) sepia(24%) saturate(663%) hue-rotate(103deg) brightness(106%) contrast(103%);
 }
 
+.domora-map-surface .leaflet-bar-timecontrol {
+  border: 1px solid rgb(226 232 240 / 0.9);
+  border-radius: var(--radius-xl);
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgb(15 23 42 / 0.14);
+  background: rgb(255 255 255 / 0.95);
+}
+
+.domora-map-surface .leaflet-bar-timecontrol .leaflet-control-timecontrol {
+  height: 2rem;
+  min-height: 2rem;
+  line-height: 2rem;
+  border: 0;
+  border-right: 1px solid rgb(226 232 240 / 0.9);
+  color: rgb(15 23 42 / 0.92);
+  background: rgb(255 255 255 / 0.95);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.domora-map-surface .leaflet-bar-timecontrol .leaflet-control-timecontrol:last-child {
+  border-right: 0;
+}
+
+.domora-map-surface .leaflet-bar-timecontrol a.leaflet-control-timecontrol {
+  width: 2rem;
+  min-width: 2rem;
+  padding: 0;
+  text-decoration: none;
+}
+
+.domora-map-surface .leaflet-bar-timecontrol a.timecontrol-date {
+  width: auto;
+  min-width: 7.5rem;
+  padding: 0 0.55rem;
+}
+
+.domora-map-surface .leaflet-bar-timecontrol .timecontrol-slider .slider {
+  border-color: rgb(203 213 225 / 0.9);
+  background: rgb(241 245 249 / 0.95);
+}
+
+.domora-map-surface .leaflet-bar-timecontrol .timecontrol-slider .knob {
+  border-color: rgb(15 118 110 / 0.4);
+  background: rgb(20 184 166 / 0.2);
+}
+
+.domora-map-surface .leaflet-bar-timecontrol .timecontrol-play::before,
+.domora-map-surface .leaflet-bar-timecontrol .timecontrol-stop::before,
+.domora-map-surface .leaflet-bar-timecontrol .timecontrol-forward::before,
+.domora-map-surface .leaflet-bar-timecontrol .timecontrol-backward::before,
+.domora-map-surface .leaflet-bar-timecontrol .timecontrol-loop::before {
+  font-family: inherit !important;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.domora-map-surface .leaflet-bar-timecontrol .timecontrol-play::before {
+  content: "▶";
+}
+
+.domora-map-surface .leaflet-bar-timecontrol .timecontrol-play.pause::before {
+  content: "❚❚";
+  font-size: 0.62rem;
+}
+
+.domora-map-surface .leaflet-bar-timecontrol .timecontrol-stop::before {
+  content: "■";
+}
+
+.domora-map-surface .leaflet-bar-timecontrol .timecontrol-forward::before {
+  content: "⏭";
+}
+
+.domora-map-surface .leaflet-bar-timecontrol .timecontrol-backward::before {
+  content: "⏮";
+}
+
+.domora-map-surface .leaflet-bar-timecontrol .timecontrol-loop::before {
+  content: "↻";
+}
+
+.domora-map-surface .leaflet-bar-timecontrol .leaflet-control-timecontrol:hover,
+.domora-map-surface .leaflet-bar-timecontrol .leaflet-control-timecontrol:focus {
+  background: rgb(241 245 249 / 0.98);
+  color: rgb(15 118 110);
+}
+
+.dark .domora-map-surface .leaflet-bar-timecontrol {
+  border-color: rgb(51 65 85 / 0.85);
+  box-shadow: 0 8px 22px rgb(2 6 23 / 0.45);
+  background: rgb(15 23 42 / 0.94);
+}
+
+.dark .domora-map-surface .leaflet-bar-timecontrol .leaflet-control-timecontrol {
+  border-right-color: rgb(51 65 85 / 0.85);
+  background: rgb(15 23 42 / 0.94);
+  color: rgb(226 232 240 / 0.96);
+}
+
+.dark .domora-map-surface .leaflet-bar-timecontrol .timecontrol-slider .slider {
+  border-color: rgb(71 85 105 / 0.9);
+  background: rgb(30 41 59 / 0.95);
+}
+
+.dark .domora-map-surface .leaflet-bar-timecontrol .timecontrol-slider .knob {
+  border-color: rgb(45 212 191 / 0.45);
+  background: rgb(45 212 191 / 0.2);
+}
+
+.dark .domora-map-surface .leaflet-bar-timecontrol .leaflet-control-timecontrol:hover,
+.dark .domora-map-surface .leaflet-bar-timecontrol .leaflet-control-timecontrol:focus {
+  background: rgb(30 41 59 / 0.98);
+  color: rgb(45 212 191 / 0.98);
+}
+
 .excalidraw-embed canvas {
   max-width: 100% !important;
   max-height: 100% !important;

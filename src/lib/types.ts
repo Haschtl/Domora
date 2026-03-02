@@ -345,6 +345,7 @@ export type HouseholdEventType =
   | "vacation_mode_enabled"
   | "vacation_mode_disabled"
   | "live_location_started"
+  | "one_off_claim_created"
   | "admin_hint";
 
 export interface HouseholdEvent {

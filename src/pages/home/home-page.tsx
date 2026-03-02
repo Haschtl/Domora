@@ -58,6 +58,7 @@ import {
   Pencil,
   Plus,
   Receipt,
+  Route,
   Ruler,
   Satellite,
   Search,
@@ -80,13 +81,18 @@ import {
   type MDXEditorMethods,
   useLexicalNodeRemove
 } from "@mdxeditor/editor";
-import { Circle, MapContainer, Marker, Polyline, Popup, Rectangle, TileLayer, Tooltip as LeafletTooltip, useMap } from "react-leaflet";
+import { Circle, MapContainer, Marker, Polyline, Popup, Rectangle, TileLayer, Tooltip as LeafletTooltip, useMap, useMapEvents } from "react-leaflet";
 import { createTrianglifyBannerBackground } from "../../lib/banner";
 import { formatDateOnly, formatDateTime, formatShortDay, getLastMonthRange } from "../../lib/date";
 import { suggestCategoryLabel } from "../../lib/category-heuristics";
 import {
   getHouseholdLiveLocations,
+  getHouseholdReachability,
+  getHouseholdRoute,
   getNearbyPois,
+  type ReachabilityGeoJson,
+  type ReachabilityTravelMode,
+  type RouteGeoJson,
   startHouseholdLiveLocationShare,
   stopHouseholdLiveLocationShare,
   updateHouseholdLiveLocationShare
@@ -240,8 +246,14 @@ type MapStyleOption = {
   subdomains?: string;
   maxZoom?: number;
 };
+type MapWeatherLayerToggles = {
+  radar: boolean;
+  warnings: boolean;
+  lightning: boolean;
+};
 type ManualMarkerFilterMode = "all" | "mine" | "member" | "none";
 type MapMeasureMode = "distance" | "area";
+type MapReachabilityMode = ReachabilityTravelMode;
 type MapSearchViewportBounds = {
   south: number;
   west: number;
@@ -346,6 +358,14 @@ const MANUAL_MARKER_ICON_OPTIONS: Array<{ id: HouseholdMapMarkerIcon; labelKey: 
   { id: "star", labelKey: "home.householdMapMarkerIconStar" }
 ];
 const LIVE_LOCATION_DURATION_OPTIONS = [5, 15, 30, 60] as const;
+const REACHABILITY_MINUTES_DEFAULT = 20;
+const ROUTE_MAX_MINUTES_DEFAULT = 45;
+const REACHABILITY_OPTIONS: Array<{ id: MapReachabilityMode; labelKey: string }> = [
+  { id: "walk", labelKey: "home.householdMapReachabilityModeWalk" },
+  { id: "bike", labelKey: "home.householdMapReachabilityModeBike" },
+  { id: "car", labelKey: "home.householdMapReachabilityModeCar" },
+  { id: "transit", labelKey: "home.householdMapReachabilityModeTransit" }
+];
 const MAP_STYLE_OPTIONS: MapStyleOption[] = [
   {
     id: "street",
@@ -422,6 +442,69 @@ type MapWithPm = L.Map & {
     enableDraw: (shape: "Line" | "Polygon", options?: Record<string, unknown>) => void;
     disableDraw: () => void;
   };
+};
+type MapWithTimeDimension = L.Map & {
+  timeDimension?: unknown;
+};
+
+const LEAFLET_TIME_DIMENSION_SCRIPT_ID = "domora-leaflet-time-dimension-script";
+const LEAFLET_TIME_DIMENSION_STYLE_ID = "domora-leaflet-time-dimension-style";
+const ISO8601_PERIOD_SCRIPT_ID = "domora-iso8601-period-script";
+
+const loadScriptOnce = (id: string, src: string) =>
+  new Promise<void>((resolve, reject) => {
+    if (typeof document === "undefined") {
+      reject(new Error("document_unavailable"));
+      return;
+    }
+
+    const existing = document.getElementById(id) as HTMLScriptElement | null;
+    if (existing) {
+      if (existing.dataset.loaded === "true") {
+        resolve();
+        return;
+      }
+      existing.addEventListener("load", () => resolve(), { once: true });
+      existing.addEventListener("error", () => reject(new Error(`script_load_failed:${id}`)), { once: true });
+      return;
+    }
+
+    const script = document.createElement("script");
+    script.id = id;
+    script.src = src;
+    script.async = true;
+    script.addEventListener("load", () => {
+      script.dataset.loaded = "true";
+      resolve();
+    });
+    script.addEventListener("error", () => reject(new Error(`script_load_failed:${id}`)));
+    document.head.appendChild(script);
+  });
+
+const loadStylesheetOnce = (id: string, href: string) => {
+  if (typeof document === "undefined") return;
+  const existing = document.getElementById(id);
+  if (existing) return;
+  const link = document.createElement("link");
+  link.id = id;
+  link.rel = "stylesheet";
+  link.href = href;
+  document.head.appendChild(link);
+};
+
+const ensureLeafletTimeDimension = async () => {
+  loadStylesheetOnce(
+    LEAFLET_TIME_DIMENSION_STYLE_ID,
+    "https://unpkg.com/leaflet-timedimension@1.1.1/dist/leaflet.timedimension.control.min.css"
+  );
+  await loadScriptOnce(
+    ISO8601_PERIOD_SCRIPT_ID,
+    "https://unpkg.com/iso8601-js-period@0.2.1/iso8601.min.js"
+  );
+  await loadScriptOnce(
+    LEAFLET_TIME_DIMENSION_SCRIPT_ID,
+    "https://unpkg.com/leaflet-timedimension@1.1.1/dist/leaflet.timedimension.min.js"
+  );
 };
 
 const toLinearLatLngs = (latLngs: L.LatLng[] | L.LatLng[][]) =>
@@ -888,6 +971,336 @@ const MapSearchZoomBridge = ({
   return null;
 };
 
+const ReachabilityLayerBridge = ({
+  geojson,
+  color
+}: {
+  geojson: ReachabilityGeoJson | null;
+  color: string;
+}) => {
+  const map = useMap();
+  const layerRef = useRef<L.GeoJSON | null>(null);
+
+  useEffect(() => {
+    if (layerRef.current) {
+      map.removeLayer(layerRef.current);
+      layerRef.current = null;
+    }
+    if (!geojson) return;
+    const layer = L.geoJSON(geojson as unknown as GeoJSON.GeoJsonObject, {
+      style: () => ({
+        color,
+        weight: 2,
+        fillColor: color,
+        fillOpacity: 0.22
+      }),
+      interactive: false
+    });
+    layer.addTo(map);
+    layerRef.current = layer;
+    return () => {
+      if (!layerRef.current) return;
+      map.removeLayer(layerRef.current);
+      layerRef.current = null;
+    };
+  }, [color, geojson, map]);
+
+  return null;
+};
+
+const ReachabilityFitBoundsBridge = ({
+  geojson,
+  requestToken
+}: {
+  geojson: ReachabilityGeoJson | null;
+  requestToken: number;
+}) => {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!geojson) return;
+    if (requestToken <= 0) return;
+    const layer = L.geoJSON(geojson as unknown as GeoJSON.GeoJsonObject);
+    const bounds = layer.getBounds();
+    if (bounds.isValid()) {
+      map.fitBounds(bounds, { animate: true, padding: [40, 40] });
+    }
+  }, [geojson, map, requestToken]);
+
+  return null;
+};
+
+const RouteLayerBridge = ({
+  geojson,
+  color
+}: {
+  geojson: RouteGeoJson | null;
+  color: string;
+}) => {
+  const map = useMap();
+  const layerRef = useRef<L.GeoJSON | null>(null);
+
+  useEffect(() => {
+    if (layerRef.current) {
+      map.removeLayer(layerRef.current);
+      layerRef.current = null;
+    }
+    if (!geojson) return;
+    const layer = L.geoJSON(geojson as unknown as GeoJSON.GeoJsonObject, {
+      style: () => ({
+        color,
+        weight: 4,
+        opacity: 0.95
+      }),
+      interactive: false
+    });
+    layer.addTo(map);
+    layerRef.current = layer;
+    return () => {
+      if (!layerRef.current) return;
+      map.removeLayer(layerRef.current);
+      layerRef.current = null;
+    };
+  }, [color, geojson, map]);
+
+  return null;
+};
+
+const RouteFitBoundsBridge = ({
+  geojson,
+  requestToken
+}: {
+  geojson: RouteGeoJson | null;
+  requestToken: number;
+}) => {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!geojson) return;
+    if (requestToken <= 0) return;
+    const layer = L.geoJSON(geojson as unknown as GeoJSON.GeoJsonObject);
+    const bounds = layer.getBounds();
+    if (bounds.isValid()) {
+      map.fitBounds(bounds, { animate: true, padding: [40, 40] });
+    }
+  }, [geojson, map, requestToken]);
+
+  return null;
+};
+
+const RouteTargetPickBridge = ({
+  enabled,
+  onPick
+}: {
+  enabled: boolean;
+  onPick: (lat: number, lon: number) => void;
+}) => {
+  const map = useMapEvents({
+    click: (event) => {
+      if (!enabled) return;
+      onPick(event.latlng.lat, event.latlng.lng);
+    }
+  });
+
+  useEffect(() => {
+    const container = map.getContainer();
+    if (enabled) {
+      container.style.cursor = "crosshair";
+    } else if (container.style.cursor === "crosshair") {
+      container.style.cursor = "";
+    }
+    return () => {
+      if (container.style.cursor === "crosshair") {
+        container.style.cursor = "";
+      }
+    };
+  }, [enabled, map]);
+
+  return null;
+};
+
+const DwdTimeDimensionBridge = ({
+  enabled,
+  layers
+}: {
+  enabled: boolean;
+  layers: MapWeatherLayerToggles;
+}) => {
+  const map = useMap();
+  const controlRef = useRef<L.Control | null>(null);
+  const radarLayerRef = useRef<L.Layer | null>(null);
+  const lightningLayerRef = useRef<L.Layer | null>(null);
+  const warningLayerRef = useRef<L.Layer | null>(null);
+
+  useEffect(() => {
+    let disposed = false;
+
+    const clearLayers = () => {
+      if (radarLayerRef.current) {
+        map.removeLayer(radarLayerRef.current);
+        radarLayerRef.current = null;
+      }
+      if (lightningLayerRef.current) {
+        map.removeLayer(lightningLayerRef.current);
+        lightningLayerRef.current = null;
+      }
+      if (warningLayerRef.current) {
+        map.removeLayer(warningLayerRef.current);
+        warningLayerRef.current = null;
+      }
+      if (controlRef.current) {
+        controlRef.current.remove();
+        controlRef.current = null;
+      }
+    };
+
+    if (!enabled) {
+      clearLayers();
+      return () => undefined;
+    }
+
+    void (async () => {
+      try {
+        await ensureLeafletTimeDimension();
+      } catch {
+        return;
+      }
+      if (disposed) return;
+
+      const leafletWithTd = L as typeof L & {
+        TimeDimension?: new (options?: Record<string, unknown>) => unknown;
+        Control?: typeof L.Control & {
+          TimeDimension?: new (options?: Record<string, unknown>) => L.Control;
+        };
+        timeDimension?: {
+          layer?: {
+            wms?: (layer: L.TileLayer.WMS, options?: Record<string, unknown>) => L.Layer;
+          };
+        };
+      };
+
+      if (!leafletWithTd.TimeDimension || !leafletWithTd.timeDimension?.layer?.wms) {
+        return;
+      }
+
+      const mapWithTd = map as MapWithTimeDimension;
+      if (!mapWithTd.timeDimension) {
+        mapWithTd.timeDimension = new leafletWithTd.TimeDimension({
+          currentTime: Date.now(),
+          period: "PT5M"
+        });
+      }
+
+      if (leafletWithTd.Control?.TimeDimension && !controlRef.current) {
+        const control = new leafletWithTd.Control.TimeDimension({
+          position: "bottomleft",
+          timeDimension: mapWithTd.timeDimension,
+          autoPlay: false,
+          loopButton: true,
+          timeSliderDragUpdate: true,
+          playerOptions: {
+            transitionTime: 400,
+            loop: false,
+            startOver: true
+          }
+        });
+        control.addTo(map);
+        controlRef.current = control;
+      }
+
+      const dwdWmsUrl = "https://maps.dwd.de/geoserver/ows";
+
+      if (layers.radar && !radarLayerRef.current) {
+        const radarWms = L.tileLayer.wms(dwdWmsUrl, {
+          layers: "dwd:Radar_wn-product_1x1km_ger",
+          styles: "radar_wn-product_1x1km_ger",
+          format: "image/png",
+          transparent: true,
+          opacity: 0.78,
+          version: "1.3.0",
+          attribution: "Deutscher Wetterdienst (DWD)"
+        });
+        const radarTd = leafletWithTd.timeDimension.layer.wms(radarWms, {
+          updateTimeDimension: true,
+          setDefaultTime: true,
+          cacheBackward: 3,
+          cacheForward: 24
+        });
+        radarTd.addTo(map);
+        radarLayerRef.current = radarTd;
+      }
+      if (!layers.radar && radarLayerRef.current) {
+        map.removeLayer(radarLayerRef.current);
+        radarLayerRef.current = null;
+      }
+
+      if (layers.lightning && !lightningLayerRef.current) {
+        const lightningWms = L.tileLayer.wms(dwdWmsUrl, {
+          layers: "dwd:Blitzdichte",
+          styles: "blitzdichte",
+          format: "image/png",
+          transparent: true,
+          opacity: 0.9,
+          version: "1.3.0",
+          attribution: "Deutscher Wetterdienst (DWD)"
+        });
+        const lightningTd = leafletWithTd.timeDimension.layer.wms(lightningWms, {
+          updateTimeDimension: true,
+          setDefaultTime: true,
+          cacheBackward: 2,
+          cacheForward: 12
+        });
+        lightningTd.addTo(map);
+        lightningLayerRef.current = lightningTd;
+      }
+      if (!layers.lightning && lightningLayerRef.current) {
+        map.removeLayer(lightningLayerRef.current);
+        lightningLayerRef.current = null;
+      }
+
+      if (layers.warnings && !warningLayerRef.current) {
+        const warnings = L.tileLayer.wms(dwdWmsUrl, {
+          layers: "dwd:Warngebiete_Gemeinden",
+          styles: "warngebiete_gemeinden_env",
+          format: "image/png",
+          transparent: true,
+          opacity: 0.72,
+          version: "1.3.0",
+          attribution: "Deutscher Wetterdienst (DWD)"
+        });
+        warnings.addTo(map);
+        warningLayerRef.current = warnings;
+      }
+      if (!layers.warnings && warningLayerRef.current) {
+        map.removeLayer(warningLayerRef.current);
+        warningLayerRef.current = null;
+      }
+    })();
+
+    return () => {
+      disposed = true;
+      if (radarLayerRef.current) {
+        map.removeLayer(radarLayerRef.current);
+        radarLayerRef.current = null;
+      }
+      if (lightningLayerRef.current) {
+        map.removeLayer(lightningLayerRef.current);
+        lightningLayerRef.current = null;
+      }
+      if (warningLayerRef.current) {
+        map.removeLayer(warningLayerRef.current);
+        warningLayerRef.current = null;
+      }
+      if (controlRef.current) {
+        controlRef.current.remove();
+        controlRef.current = null;
+      }
+    };
+  }, [enabled, layers.lightning, layers.radar, layers.warnings, map]);
+
+  return null;
+};
+
 const getMarkerEmoji = (icon: HouseholdMapMarkerIcon) => {
   switch (icon) {
     case "home":
@@ -917,12 +1330,30 @@ const getManualMarkerIcon = (icon: HouseholdMapMarkerIcon) => {
   if (cached) return cached;
   const divIcon = L.divIcon({
     className: "domora-map-marker-icon",
-    html: `<div style="background:#0f766e;border:2px solid #fff;color:#fff;width:30px;height:30px;border-radius:999px;display:flex;align-items:center;justify-content:center;font-size:16px;box-shadow:0 2px 8px rgba(0,0,0,.35)">${getMarkerEmoji(icon)}</div>`,
-    iconSize: [30, 30],
-    iconAnchor: [15, 30],
-    popupAnchor: [0, -28]
+    html: `<div style="position:relative;width:34px;height:44px;display:flex;align-items:flex-start;justify-content:center"><div style="background:#0f766e;border:2px solid #fff;color:#fff;width:30px;height:30px;border-radius:999px;display:flex;align-items:center;justify-content:center;font-size:16px;box-shadow:0 2px 8px rgba(0,0,0,.35)">${getMarkerEmoji(icon)}</div><div style="position:absolute;top:27px;left:50%;transform:translateX(-50%);width:0;height:0;border-left:7px solid transparent;border-right:7px solid transparent;border-top:13px solid #0f766e;filter:drop-shadow(0 2px 4px rgba(0,0,0,.28))"></div></div>`,
+    iconSize: [34, 44],
+    iconAnchor: [17, 44],
+    popupAnchor: [0, -40]
   });
   markerDivIconCache.set(icon, divIcon);
+  return divIcon;
+};
+
+const escapeHtmlAttr = (value: string) => value.replace(/"/g, "&quot;");
+const liveLocationUserIconCache = new Map<string, L.DivIcon>();
+const getLiveLocationUserIcon = (avatarUrl: string) => {
+  const cacheKey = avatarUrl;
+  const cached = liveLocationUserIconCache.get(cacheKey);
+  if (cached) return cached;
+  const safeAvatar = escapeHtmlAttr(avatarUrl);
+  const divIcon = L.divIcon({
+    className: "domora-map-live-user-icon",
+    html: `<div style="position:relative;width:34px;height:34px;border-radius:999px;overflow:hidden;border:2px solid #ffffff;box-shadow:0 3px 10px rgba(0,0,0,.38);background:#0f172a"><img src="${safeAvatar}" alt="" style="width:100%;height:100%;object-fit:cover" /><span style="position:absolute;right:-1px;bottom:-1px;width:11px;height:11px;border-radius:999px;background:#22c55e;border:2px solid #fff"></span></div>`,
+    iconSize: [34, 34],
+    iconAnchor: [17, 34],
+    popupAnchor: [0, -32]
+  });
+  liveLocationUserIconCache.set(cacheKey, divIcon);
   return divIcon;
 };
 
@@ -1734,8 +2165,30 @@ export const HomePage = ({
   const [editingMarkerError, setEditingMarkerError] = useState<string | null>(null);
   const [editingMarkerSaving, setEditingMarkerSaving] = useState(false);
   const [mapStyle, setMapStyle] = useState<MapStyleId>("street");
+  const [mapWeatherLayersOpen, setMapWeatherLayersOpen] = useState(false);
+  const [mapWeatherLayers, setMapWeatherLayers] = useState<MapWeatherLayerToggles>({
+    radar: true,
+    warnings: true,
+    lightning: false
+  });
   const [mapMeasureMode, setMapMeasureMode] = useState<MapMeasureMode | null>(null);
   const [mapMeasureResult, setMapMeasureResult] = useState<string | null>(null);
+  const [mapReachabilityMode, setMapReachabilityMode] = useState<MapReachabilityMode>("walk");
+  const [mapReachabilityMinutes, setMapReachabilityMinutes] = useState<number>(REACHABILITY_MINUTES_DEFAULT);
+  const [mapReachabilityGeoJson, setMapReachabilityGeoJson] = useState<ReachabilityGeoJson | null>(null);
+  const [mapReachabilityLoading, setMapReachabilityLoading] = useState(false);
+  const [mapReachabilityError, setMapReachabilityError] = useState<string | null>(null);
+  const [mapReachabilityPanelOpen, setMapReachabilityPanelOpen] = useState(false);
+  const [mapReachabilityFitRequestToken, setMapReachabilityFitRequestToken] = useState(0);
+  const [mapRoutePanelOpen, setMapRoutePanelOpen] = useState(false);
+  const [mapRouteMode, setMapRouteMode] = useState<MapReachabilityMode>("walk");
+  const [mapRouteMaxMinutes, setMapRouteMaxMinutes] = useState<number>(ROUTE_MAX_MINUTES_DEFAULT);
+  const [mapRouteTarget, setMapRouteTarget] = useState<[number, number] | null>(null);
+  const [mapRoutePickTargetActive, setMapRoutePickTargetActive] = useState(false);
+  const [mapRouteGeoJson, setMapRouteGeoJson] = useState<RouteGeoJson | null>(null);
+  const [mapRouteLoading, setMapRouteLoading] = useState(false);
+  const [mapRouteError, setMapRouteError] = useState<string | null>(null);
+  const [mapRouteFitRequestToken, setMapRouteFitRequestToken] = useState(0);
   const [mapSearchQuery, setMapSearchQuery] = useState("");
   const [mapSearchResults, setMapSearchResults] = useState<MapSearchResult[]>([]);
   const [mapSearchLoading, setMapSearchLoading] = useState(false);
@@ -1868,6 +2321,17 @@ export const HomePage = ({
       const display = member?.display_name?.trim();
       if (display) return display;
       return memberId;
+    },
+    [members]
+  );
+  const getMemberAvatarForMap = useCallback(
+    (memberId: string) => {
+      const member = members.find((entry) => entry.user_id === memberId);
+      const avatar = member?.avatar_url?.trim();
+      if (avatar) return avatar;
+      return createDiceBearAvatarDataUri(
+        getMemberAvatarSeed(memberId, member?.display_name),
+      );
     },
     [members]
   );
@@ -2018,6 +2482,9 @@ export const HomePage = ({
       setMapSearchResults([]);
       setMapSearchError(null);
       setMapSearchLoading(false);
+      setMapReachabilityPanelOpen(false);
+      setMapRoutePanelOpen(false);
+      setMapRoutePickTargetActive(false);
     }
   }, [isMapFullscreenOpen]);
   const nearbyPoiQuery = useQuery({
@@ -2430,6 +2897,7 @@ export const HomePage = ({
         {
           type: "bar" as const,
           label: t("home.householdWeatherChartCloudCover"),
+          hidden: true,
           data: householdWeatherHourly.map((entry) => {
             if (typeof entry.cloudCoverPercent !== "number" || !Number.isFinite(entry.cloudCoverPercent)) return null;
             return 100 - Math.min(100, Math.max(0, entry.cloudCoverPercent));
@@ -2648,7 +3116,7 @@ export const HomePage = ({
           min: initialXMin,
           max: initialXMax,
           ticks: {
-            autoSkip: isMobileBucketComposer,
+            autoSkip: false,
             maxTicksLimit: isMobileBucketComposer ? 6 : 14,
             maxRotation: 0,
             color: "rgb(100 116 139)",
@@ -2674,7 +3142,18 @@ export const HomePage = ({
               const date = new Date(row.time);
               if (Number.isNaN(date.getTime())) return "";
 
-              if (clampedIndex % labelEvery !== 0) {
+              const firstVisibleIndex = Math.max(
+                0,
+                Math.min(householdWeatherHourly.length - 1, Math.round(visibleMin))
+              );
+              const lastVisibleIndex = Math.max(
+                0,
+                Math.min(householdWeatherHourly.length - 1, Math.round(visibleMax))
+              );
+              const relativeIndex = Math.max(0, clampedIndex - firstVisibleIndex);
+              const isEdgeTick = clampedIndex === firstVisibleIndex || clampedIndex === lastVisibleIndex;
+
+              if (!isEdgeTick && relativeIndex % labelEvery !== 0) {
                 return "";
               }
 
@@ -3134,6 +3613,111 @@ export const HomePage = ({
     );
   }, [t]);
 
+  const runReachability = useCallback(async () => {
+    const origin = myLocationCenter ?? addressMapCenter;
+    if (!origin) {
+      setMapReachabilityError(t("home.householdMapReachabilityNeedsOrigin"));
+      return;
+    }
+    try {
+      setMapReachabilityLoading(true);
+      setMapReachabilityError(null);
+      const response = await getHouseholdReachability({
+        householdId: household.id,
+        lat: origin[0],
+        lon: origin[1],
+        minutes: mapReachabilityMinutes,
+        travelMode: mapReachabilityMode
+      });
+      setMapReachabilityGeoJson(response.geojson);
+      setMapReachabilityFitRequestToken(Date.now());
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t("home.householdMapReachabilityError");
+      setMapReachabilityError(message);
+    } finally {
+      setMapReachabilityLoading(false);
+    }
+  }, [addressMapCenter, household.id, mapReachabilityMinutes, mapReachabilityMode, myLocationCenter, t]);
+
+  const clearReachability = useCallback(() => {
+    setMapReachabilityGeoJson(null);
+    setMapReachabilityError(null);
+    setMapReachabilityLoading(false);
+  }, []);
+
+  const mapReachabilityColor = useMemo(() => {
+    switch (mapReachabilityMode) {
+      case "walk":
+        return "#16a34a";
+      case "bike":
+        return "#0891b2";
+      case "car":
+        return "#f97316";
+      case "transit":
+        return "#7c3aed";
+      default:
+        return "#0f766e";
+    }
+  }, [mapReachabilityMode]);
+
+  const mapRouteOrigin = useMemo<[number, number] | null>(() => {
+    if (myLocationCenter) return myLocationCenter;
+    if (addressMapCenter) return addressMapCenter;
+    return null;
+  }, [addressMapCenter, myLocationCenter]);
+
+  const runRoutePlanning = useCallback(async () => {
+    if (!mapRouteOrigin) {
+      setMapRouteError(t("home.householdMapRouteNeedsOrigin"));
+      return;
+    }
+    if (!mapRouteTarget) {
+      setMapRouteError(t("home.householdMapRouteNeedsTarget"));
+      return;
+    }
+    try {
+      setMapRouteLoading(true);
+      setMapRouteError(null);
+      const response = await getHouseholdRoute({
+        householdId: household.id,
+        fromLat: mapRouteOrigin[0],
+        fromLon: mapRouteOrigin[1],
+        toLat: mapRouteTarget[0],
+        toLon: mapRouteTarget[1],
+        maxMinutes: mapRouteMaxMinutes,
+        travelMode: mapRouteMode
+      });
+      setMapRouteGeoJson(response.geojson);
+      setMapRouteFitRequestToken(Date.now());
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t("home.householdMapRouteError");
+      setMapRouteError(message);
+    } finally {
+      setMapRouteLoading(false);
+    }
+  }, [household.id, mapRouteMaxMinutes, mapRouteMode, mapRouteOrigin, mapRouteTarget, t]);
+
+  const clearRoutePlanning = useCallback(() => {
+    setMapRouteGeoJson(null);
+    setMapRouteError(null);
+    setMapRouteLoading(false);
+  }, []);
+
+  const mapRouteColor = useMemo(() => {
+    switch (mapRouteMode) {
+      case "walk":
+        return "#16a34a";
+      case "bike":
+        return "#0891b2";
+      case "car":
+        return "#f97316";
+      case "transit":
+        return "#7c3aed";
+      default:
+        return "#0f766e";
+    }
+  }, [mapRouteMode]);
+
   const getCurrentPositionOnce = useCallback(
     () =>
       new Promise<{ lat: number; lon: number }>((resolve, reject) => {
@@ -3583,6 +4167,45 @@ export const HomePage = ({
             <Button
               type="button"
               size="sm"
+              variant={mapWeatherLayersOpen ? "default" : "outline"}
+              className="h-8 w-8 border-slate-200/80 bg-white/95 p-0 backdrop-blur dark:border-slate-600/80 dark:bg-slate-900/95"
+              onClick={() => {
+                setMapWeatherLayersOpen((current) => !current);
+              }}
+              aria-label={t("home.householdMapWeatherLayers")}
+              title={t("home.householdMapWeatherLayers")}
+            >
+              <CloudRain className="h-4 w-4" />
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant={mapRoutePanelOpen ? "default" : "outline"}
+              className="h-8 w-8 border-slate-200/80 bg-white/95 p-0 backdrop-blur dark:border-slate-600/80 dark:bg-slate-900/95"
+              onClick={() => {
+                setMapRoutePanelOpen((current) => !current);
+              }}
+              aria-label={t("home.householdMapRoute")}
+              title={t("home.householdMapRoute")}
+            >
+              <Route className="h-4 w-4" />
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant={mapReachabilityPanelOpen ? "default" : "outline"}
+              className="h-8 w-8 border-slate-200/80 bg-white/95 p-0 backdrop-blur dark:border-slate-600/80 dark:bg-slate-900/95"
+              onClick={() => {
+                setMapReachabilityPanelOpen((current) => !current);
+              }}
+              aria-label={t("home.householdMapReachability")}
+              title={t("home.householdMapReachability")}
+            >
+              <Route className="h-4 w-4" />
+            </Button>
+            <Button
+              type="button"
+              size="sm"
               variant={mapMeasureMode === "distance" ? "default" : "outline"}
               className="h-8 w-8 border-slate-200/80 bg-white/95 p-0 backdrop-blur dark:border-slate-600/80 dark:bg-slate-900/95"
               onClick={() => {
@@ -3649,6 +4272,24 @@ export const HomePage = ({
             onModeChange={setMapMeasureMode}
             onMeasured={onMeasuredWithGeoman}
           />
+          <DwdTimeDimensionBridge
+            enabled={isFullscreen}
+            layers={mapWeatherLayers}
+          />
+          <RouteTargetPickBridge
+            enabled={isFullscreen && mapRoutePanelOpen && mapRoutePickTargetActive}
+            onPick={(lat, lon) => {
+              setMapRouteTarget([lat, lon]);
+              setMapRoutePickTargetActive(false);
+            }}
+          />
+          <RouteLayerBridge geojson={mapRouteGeoJson} color={mapRouteColor} />
+          <RouteFitBoundsBridge geojson={mapRouteGeoJson} requestToken={mapRouteFitRequestToken} />
+          <ReachabilityLayerBridge geojson={mapReachabilityGeoJson} color={mapReachabilityColor} />
+          <ReachabilityFitBoundsBridge
+            geojson={mapReachabilityGeoJson}
+            requestToken={mapReachabilityFitRequestToken}
+          />
           <AddressMapView center={mapCenter} />
           <RecenterMapOnRequest
             center={mapCenter}
@@ -3714,7 +4355,7 @@ export const HomePage = ({
             <Marker
               key={`live-location-${entry.user_id}`}
               position={[entry.lat, entry.lon]}
-              icon={getManualMarkerIcon("work")}
+              icon={getLiveLocationUserIcon(getMemberAvatarForMap(entry.user_id))}
               pmIgnore
             >
               <Popup>
@@ -3734,6 +4375,21 @@ export const HomePage = ({
               </Popup>
             </Marker>
           ))}
+          {isFullscreen && mapRouteTarget ? (
+            <Marker
+              key={`route-target-${mapRouteTarget[0]}-${mapRouteTarget[1]}`}
+              position={mapRouteTarget}
+              icon={getSearchResultMarkerIcon()}
+              pmIgnore
+            >
+              <Popup>
+                <div className="space-y-1">
+                  <p className="text-xs font-semibold">{t("home.householdMapRouteTarget")}</p>
+                  {renderOpenInMapsButton(mapRouteTarget[0], mapRouteTarget[1])}
+                </div>
+              </Popup>
+            </Marker>
+          ) : null}
           {isFullscreen
             ? mapSearchResults.map((result) => (
                 <Marker
@@ -4026,6 +4682,215 @@ export const HomePage = ({
             </div>
           </div>
         ) : null}
+        {isFullscreen && mapReachabilityPanelOpen ? (
+          <div className="absolute bottom-[11rem] left-2 z-[1000] w-[min(320px,calc(100%-1rem))] rounded-xl border border-slate-200/85 bg-white/95 p-2 shadow-sm backdrop-blur dark:border-slate-600/80 dark:bg-slate-900/95">
+            <div className="grid grid-cols-1 gap-2">
+              <div className="grid grid-cols-2 items-center gap-2">
+                <Label className="text-xs">{t("home.householdMapReachabilityModeLabel")}</Label>
+                <Select
+                  value={mapReachabilityMode}
+                  onValueChange={(value) => setMapReachabilityMode(value as MapReachabilityMode)}
+                >
+                  <SelectTrigger className="h-8 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {REACHABILITY_OPTIONS.map((option) => (
+                      <SelectItem key={option.id} value={option.id}>
+                        {t(option.labelKey as never)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid grid-cols-2 items-center gap-2">
+                <Label className="text-xs" htmlFor="map-reachability-minutes">
+                  {t("home.householdMapReachabilityDurationLabel")}
+                </Label>
+                <Input
+                  id="map-reachability-minutes"
+                  type="number"
+                  min={1}
+                  max={180}
+                  step={1}
+                  value={String(mapReachabilityMinutes)}
+                  onChange={(event) => {
+                    const parsed = Number(event.target.value);
+                    if (!Number.isFinite(parsed)) return;
+                    setMapReachabilityMinutes(Math.max(1, Math.min(180, Math.round(parsed))));
+                  }}
+                  className="h-8 text-xs"
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  className="h-8 flex-1"
+                  onClick={() => {
+                    void runReachability();
+                  }}
+                  disabled={mapReachabilityLoading}
+                >
+                  {mapReachabilityLoading ? (
+                    <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                  ) : null}
+                  {t("home.householdMapReachabilityRun")}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-8"
+                  onClick={clearReachability}
+                  disabled={mapReachabilityLoading && !mapReachabilityGeoJson}
+                >
+                  {t("home.householdMapReachabilityClear")}
+                </Button>
+              </div>
+              {mapReachabilityError ? (
+                <p className="text-xs text-rose-600 dark:text-rose-400">{mapReachabilityError}</p>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
+        {isFullscreen && mapWeatherLayersOpen ? (
+          <div className="absolute bottom-[11rem] left-2 z-[1000] w-[min(320px,calc(100%-1rem))] rounded-xl border border-slate-200/85 bg-white/95 p-2 shadow-sm backdrop-blur dark:border-slate-600/80 dark:bg-slate-900/95">
+            <div className="space-y-2">
+              <p className="text-xs font-semibold text-slate-700 dark:text-slate-200">
+                {t("home.householdMapWeatherLayers")}
+              </p>
+              <label className="flex items-center gap-2 text-xs text-slate-700 dark:text-slate-200">
+                <Checkbox
+                  checked={mapWeatherLayers.radar}
+                  onCheckedChange={(checked) =>
+                    setMapWeatherLayers((current) => ({ ...current, radar: Boolean(checked) }))
+                  }
+                />
+                <span>{t("home.householdMapWeatherLayerRadar")}</span>
+              </label>
+              <label className="flex items-center gap-2 text-xs text-slate-700 dark:text-slate-200">
+                <Checkbox
+                  checked={mapWeatherLayers.warnings}
+                  onCheckedChange={(checked) =>
+                    setMapWeatherLayers((current) => ({ ...current, warnings: Boolean(checked) }))
+                  }
+                />
+                <span>{t("home.householdMapWeatherLayerWarnings")}</span>
+              </label>
+              <label className="flex items-center gap-2 text-xs text-slate-700 dark:text-slate-200">
+                <Checkbox
+                  checked={mapWeatherLayers.lightning}
+                  onCheckedChange={(checked) =>
+                    setMapWeatherLayers((current) => ({ ...current, lightning: Boolean(checked) }))
+                  }
+                />
+                <span>{t("home.householdMapWeatherLayerLightning")}</span>
+              </label>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                {t("home.householdMapWeatherLayersHint")}
+              </p>
+            </div>
+          </div>
+        ) : null}
+        {isFullscreen && mapRoutePanelOpen ? (
+          <div className="absolute bottom-[11rem] right-2 z-[1000] w-[min(340px,calc(100%-1rem))] rounded-xl border border-slate-200/85 bg-white/95 p-2 shadow-sm backdrop-blur dark:border-slate-600/80 dark:bg-slate-900/95">
+            <div className="grid grid-cols-1 gap-2">
+              <div className="grid grid-cols-2 items-center gap-2">
+                <Label className="text-xs">{t("home.householdMapRouteModeLabel")}</Label>
+                <Select
+                  value={mapRouteMode}
+                  onValueChange={(value) => setMapRouteMode(value as MapReachabilityMode)}
+                >
+                  <SelectTrigger className="h-8 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {REACHABILITY_OPTIONS.map((option) => (
+                      <SelectItem key={`route-mode-${option.id}`} value={option.id}>
+                        {t(option.labelKey as never)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid grid-cols-2 items-center gap-2">
+                <Label className="text-xs" htmlFor="map-route-max-minutes">
+                  {t("home.householdMapRouteMaxDurationLabel")}
+                </Label>
+                <Input
+                  id="map-route-max-minutes"
+                  type="number"
+                  min={1}
+                  max={240}
+                  step={1}
+                  value={String(mapRouteMaxMinutes)}
+                  onChange={(event) => {
+                    const parsed = Number(event.target.value);
+                    if (!Number.isFinite(parsed)) return;
+                    setMapRouteMaxMinutes(Math.max(1, Math.min(240, Math.round(parsed))));
+                  }}
+                  className="h-8 text-xs"
+                />
+              </div>
+              <div className="text-[11px] text-slate-600 dark:text-slate-300">
+                {mapRouteOrigin ? t("home.householdMapRouteOriginReady") : t("home.householdMapRouteNeedsOrigin")}
+              </div>
+              <Button
+                type="button"
+                size="sm"
+                variant={mapRoutePickTargetActive ? "default" : "outline"}
+                className="h-8"
+                onClick={() => {
+                  setMapRoutePickTargetActive((current) => !current);
+                }}
+              >
+                {mapRoutePickTargetActive
+                  ? t("home.householdMapRoutePickTargetActive")
+                  : t("home.householdMapRoutePickTarget")}
+              </Button>
+              <div className="text-[11px] text-slate-600 dark:text-slate-300">
+                {mapRouteTarget
+                  ? t("home.householdMapRouteTargetReady", {
+                      lat: mapRouteTarget[0].toFixed(5),
+                      lon: mapRouteTarget[1].toFixed(5)
+                    })
+                  : t("home.householdMapRouteNeedsTarget")}
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  className="h-8 flex-1"
+                  onClick={() => {
+                    void runRoutePlanning();
+                  }}
+                  disabled={mapRouteLoading}
+                >
+                  {mapRouteLoading ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : null}
+                  {t("home.householdMapRouteRun")}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-8"
+                  onClick={() => {
+                    clearRoutePlanning();
+                    setMapRouteTarget(null);
+                    setMapRoutePickTargetActive(false);
+                  }}
+                  disabled={mapRouteLoading && !mapRouteGeoJson}
+                >
+                  {t("home.householdMapRouteClear")}
+                </Button>
+              </div>
+              {mapRouteError ? (
+                <p className="text-xs text-rose-600 dark:text-rose-400">{mapRouteError}</p>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
         {isFullscreen && mapMeasureResult ? (
           <div className="absolute bottom-[8.75rem] left-2 z-[1000] rounded-md border border-slate-200/80 bg-white/95 px-2.5 py-1.5 text-xs text-slate-700 shadow-sm backdrop-blur dark:border-slate-600/80 dark:bg-slate-900/95 dark:text-slate-200">
             {mapMeasureResult}
@@ -4050,6 +4915,27 @@ export const HomePage = ({
       manualMarkerFilterMode,
       mapMeasureMode,
       mapMeasureResult,
+      mapRouteColor,
+      mapRouteError,
+      mapRouteFitRequestToken,
+      mapRouteGeoJson,
+      mapRouteLoading,
+      mapRouteMaxMinutes,
+      mapRouteMode,
+      mapRouteOrigin,
+      mapRoutePanelOpen,
+      mapRoutePickTargetActive,
+      mapRouteTarget,
+      mapWeatherLayers,
+      mapWeatherLayersOpen,
+      mapReachabilityColor,
+      mapReachabilityError,
+      mapReachabilityFitRequestToken,
+      mapReachabilityGeoJson,
+      mapReachabilityLoading,
+      mapReachabilityMinutes,
+      mapReachabilityMode,
+      mapReachabilityPanelOpen,
       mapSearchError,
       mapSearchInputFocused,
       mapSearchLoading,
@@ -4071,6 +4957,8 @@ export const HomePage = ({
       onLocateControlFound,
       onLocateControlReady,
       onMeasuredWithGeoman,
+      clearReachability,
+      clearRoutePlanning,
       applyMapSearchResult,
       onSaveExistingPoiOverride,
       onSavePoiOverride,
@@ -4078,6 +4966,8 @@ export const HomePage = ({
       poiOverrideMarkersByRef,
       poiOverrideSavingId,
       requestMyLocation,
+      runReachability,
+      runRoutePlanning,
       selectedPoiCategories.length,
       isHouseholdOwner,
       language,
@@ -4745,7 +5635,13 @@ export const HomePage = ({
     [language, lastMonthRange]
   );
   const recentActivity = useMemo(() => {
-    type ActivityItem = { id: string; at: string; icon: "task" | "shopping" | "finance" | "audit"; text: string };
+    type ActivityItem = {
+      id: string;
+      at: string;
+      icon: "task" | "shopping" | "finance" | "audit";
+      text: string;
+      navigateTo?: "/tasks/overview" | "/home/summary";
+    };
     return householdEvents
       .map((entry): ActivityItem => {
         const payload = entry.payload ?? {};
@@ -4754,10 +5650,11 @@ export const HomePage = ({
             id: `event-${entry.id}`,
             at: entry.created_at,
             icon: "task",
-              text: t("home.activityTaskCompleted", {
+            text: t("home.activityTaskCompleted", {
               user: labelForUserId(entry.actor_user_id),
               task: String(payload.title ?? t("tasks.fallbackTitle"))
-            })
+            }),
+            navigateTo: "/tasks/overview"
           };
         }
 
@@ -4766,10 +5663,11 @@ export const HomePage = ({
             id: `event-${entry.id}`,
             at: entry.created_at,
             icon: "task",
-              text: t("home.activityTaskSkipped", {
+            text: t("home.activityTaskSkipped", {
               user: labelForUserId(entry.actor_user_id),
               task: String(payload.title ?? t("tasks.fallbackTitle"))
-            })
+            }),
+            navigateTo: "/tasks/overview"
           };
         }
 
@@ -4778,11 +5676,12 @@ export const HomePage = ({
             id: `event-${entry.id}`,
             at: entry.created_at,
             icon: "task",
-              text: t("home.activityTaskRated", {
+            text: t("home.activityTaskRated", {
               user: labelForUserId(entry.actor_user_id),
               task: String(payload.title ?? t("tasks.fallbackTitle")),
               rating: String(payload.rating ?? "")
-            })
+            }),
+            navigateTo: "/tasks/overview"
           };
         }
 
@@ -4938,7 +5837,20 @@ export const HomePage = ({
             text: t("home.activityLiveLocationStarted", {
               user: labelForUserId(entry.actor_user_id),
               minutes: Number(payload.durationMinutes ?? 0)
-            })
+            }),
+            navigateTo: "/home/summary"
+          };
+        }
+
+        if (entry.event_type === "one_off_claim_created") {
+          return {
+            id: `event-${entry.id}`,
+            at: entry.created_at,
+            icon: "task",
+            text: t("tasks.oneOffTaskRequestedBy", {
+              user: labelForUserId(entry.actor_user_id)
+            }),
+            navigateTo: "/tasks/overview"
           };
         }
 
@@ -5832,7 +6744,21 @@ export const HomePage = ({
             <ul className="space-y-1">
               {recentActivity.slice(0, 4).map((entry) => (
                 <li key={entry.id} className="truncate text-xs text-slate-600 dark:text-slate-300">
-                  {entry.text}
+                  {entry.navigateTo ? (
+                    <button
+                      type="button"
+                      className="w-full truncate text-left underline-offset-2 hover:underline"
+                      onClick={() => {
+                        const target = entry.navigateTo;
+                        if (!target) return;
+                        void navigate({ to: target });
+                      }}
+                    >
+                      {entry.text}
+                    </button>
+                  ) : (
+                    entry.text
+                  )}
                 </li>
               ))}
             </ul>
@@ -6026,23 +6952,36 @@ export const HomePage = ({
     }
 
     if (key === "household-weather-daily") {
-      return (
-        !mapHasPin ? (
-          <p className="text-xs text-slate-500 dark:text-slate-400">{t("home.householdWeatherNeedsAddress")}</p>
-        ) : householdWeatherQuery.isLoading ? (
-          <p className="text-xs text-slate-500 dark:text-slate-400">{t("home.householdWeatherLoading")}</p>
-        ) : householdWeatherQuery.isError ? (
-          <p className="text-xs text-rose-600 dark:text-rose-400">{t("home.householdWeatherError")}</p>
-        ) : householdWeatherHourly.length === 0 ? (
-          <p className="text-xs text-slate-500 dark:text-slate-400">{t("home.householdWeatherEmpty")}</p>
-        ) : (
-          <HouseholdWeatherDailyPreview>
-            {householdWeatherDays.slice(0, 4).map((day, index) => (
-              <div
-                key={`landing-weather-day-${day.date}`}
-                className="w-[168px] shrink-0 rounded-2xl border border-slate-200/90 bg-gradient-to-b from-white/95 to-slate-50/90 p-3 shadow-sm dark:border-slate-700/90 dark:from-slate-900/85 dark:to-slate-900/65"
-              >
-                <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+      return !mapHasPin ? (
+        <p className="text-xs text-slate-500 dark:text-slate-400">
+          {t("home.householdWeatherNeedsAddress")}
+        </p>
+      ) : householdWeatherQuery.isLoading ? (
+        <p className="text-xs text-slate-500 dark:text-slate-400">
+          {t("home.householdWeatherLoading")}
+        </p>
+      ) : householdWeatherQuery.isError ? (
+        <p className="text-xs text-rose-600 dark:text-rose-400">
+          {t("home.householdWeatherError")}
+        </p>
+      ) : householdWeatherHourly.length === 0 ? (
+        <p className="text-xs text-slate-500 dark:text-slate-400">
+          {t("home.householdWeatherEmpty")}
+        </p>
+      ) : (
+        <HouseholdWeatherDailyPreview>
+          {householdWeatherDays.slice(0, 4).map((day, index) => (
+            <div
+              key={`landing-weather-day-${day.date}`}
+              className="w-[168px] shrink-0 rounded-2xl border border-slate-200/90 bg-gradient-to-b from-white/95 to-slate-50/90 p-1 shadow-sm dark:border-slate-700/90 dark:from-slate-900/85 dark:to-slate-900/65"
+            >
+              <div className="relative flex items-center justify-center rounded-xl bg-white/70 py-1 pt-4 dark:bg-slate-800/65">
+                <WeatherSvg
+                  state={getAnimatedWeatherState(day)}
+                  width={52}
+                  height={52}
+                />
+                <p className="absolute top-2 left-2 text-sm font-semibold text-slate-800 dark:text-slate-100">
                   {index === 0
                     ? t("home.householdWeatherRelativeToday")
                     : index === 1
@@ -6051,54 +6990,56 @@ export const HomePage = ({
                         ? t("home.householdWeatherRelativeDayAfterTomorrow")
                         : formatDateOnly(day.date, language, day.date)}
                 </p>
-                <div className="relative mt-2 flex items-center justify-center rounded-xl bg-white/70 py-2 dark:bg-slate-800/65">
-                  <WeatherSvg state={getAnimatedWeatherState(day)} width={52} height={52} />
-                  <span className="absolute bottom-1.5 right-2 rounded-full border border-slate-200/90 bg-white/90 px-2 py-0.5 text-[10px] font-medium text-slate-700 dark:border-slate-700 dark:bg-slate-900/90 dark:text-slate-200">
-                    {t(getWeatherConditionLabelKey(day))}
-                  </span>
-                </div>
-                <p className="mt-2 text-xs font-semibold text-slate-700 dark:text-slate-300">
-                  {t("home.householdWeatherTemp", {
-                    max: day.tempMaxC === null ? "—" : Math.round(day.tempMaxC),
-                    min: day.tempMinC === null ? "—" : Math.round(day.tempMinC)
-                  })}
-                </p>
-                <p className="mt-1 text-[11px] text-slate-600 dark:text-slate-300">
-                  {t("home.householdWeatherPrecip", {
-                    mm: day.precipitationMm === null ? "—" : Number(day.precipitationMm.toFixed(1)),
-                    prob:
-                      day.precipitationProbabilityPercent === null
-                        ? "—"
-                        : Math.round(day.precipitationProbabilityPercent)
-                  })}
-                </p>
-                <p className="mt-1 text-[11px] text-slate-600 dark:text-slate-300">
-                  {t("home.householdWeatherWind", {
-                    min:
-                      day.windSpeedKmh === null && day.windGustKmh === null
-                        ? "—"
-                        : Math.min(
-                            day.windSpeedKmh ?? Number.POSITIVE_INFINITY,
-                            day.windGustKmh ?? Number.POSITIVE_INFINITY
-                          ) === Number.POSITIVE_INFINITY
-                          ? "—"
-                          : Math.round(
-                              Math.min(
-                                day.windSpeedKmh ?? Number.POSITIVE_INFINITY,
-                                day.windGustKmh ?? Number.POSITIVE_INFINITY
-                              )
-                            ),
-                    max:
-                      day.windSpeedKmh === null && day.windGustKmh === null
-                        ? "—"
-                        : Math.round(Math.max(day.windSpeedKmh ?? 0, day.windGustKmh ?? 0)),
-                    dir: getWindDirectionLabel(day.windDirectionDeg)
-                  })}
-                </p>
+                <span className="absolute bottom-1.5 right-2 rounded-full border border-slate-200/90 bg-white/90 px-2 py-0.5 text-[10px] font-medium text-slate-700 dark:border-slate-700 dark:bg-slate-900/90 dark:text-slate-200">
+                  {t(getWeatherConditionLabelKey(day))}
+                </span>
               </div>
-            ))}
-          </HouseholdWeatherDailyPreview>
-        )
+              <p className="p-2 text-xs font-semibold text-slate-700 dark:text-slate-300">
+                {t("home.householdWeatherTemp", {
+                  max: day.tempMaxC === null ? "—" : Math.round(day.tempMaxC),
+                  min: day.tempMinC === null ? "—" : Math.round(day.tempMinC),
+                })}
+              </p>
+              <p className="px-2 mt-1 text-[11px] text-slate-600 dark:text-slate-300">
+                {t("home.householdWeatherPrecip", {
+                  mm:
+                    day.precipitationMm === null
+                      ? "—"
+                      : Number(day.precipitationMm.toFixed(1)),
+                  prob:
+                    day.precipitationProbabilityPercent === null
+                      ? "—"
+                      : Math.round(day.precipitationProbabilityPercent),
+                })}
+              </p>
+              <p className="px-2 mt-1 text-[11px] text-slate-600 dark:text-slate-300">
+                {t("home.householdWeatherWind", {
+                  min:
+                    day.windSpeedKmh === null && day.windGustKmh === null
+                      ? "—"
+                      : Math.min(
+                            day.windSpeedKmh ?? Number.POSITIVE_INFINITY,
+                            day.windGustKmh ?? Number.POSITIVE_INFINITY,
+                          ) === Number.POSITIVE_INFINITY
+                        ? "—"
+                        : Math.round(
+                            Math.min(
+                              day.windSpeedKmh ?? Number.POSITIVE_INFINITY,
+                              day.windGustKmh ?? Number.POSITIVE_INFINITY,
+                            ),
+                          ),
+                  max:
+                    day.windSpeedKmh === null && day.windGustKmh === null
+                      ? "—"
+                      : Math.round(
+                          Math.max(day.windSpeedKmh ?? 0, day.windGustKmh ?? 0),
+                        ),
+                  dir: getWindDirectionLabel(day.windDirectionDeg),
+                })}
+              </p>
+            </div>
+          ))}
+        </HouseholdWeatherDailyPreview>
       );
     }
 
@@ -6966,9 +7907,23 @@ export const HomePage = ({
                     >
                       <div className="flex min-w-0 items-start gap-2">
                         <Icon className="mt-0.5 h-4 w-4 shrink-0 text-brand-600 dark:text-brand-300" />
-                        <span className="min-w-0 text-slate-700 dark:text-slate-300">
-                          {entry.text}
-                        </span>
+                        {entry.navigateTo ? (
+                          <button
+                            type="button"
+                            className="min-w-0 text-left text-slate-700 underline-offset-2 hover:underline dark:text-slate-300"
+                            onClick={() => {
+                              const target = entry.navigateTo;
+                              if (!target) return;
+                              void navigate({ to: target });
+                            }}
+                          >
+                            {entry.text}
+                          </button>
+                        ) : (
+                          <span className="min-w-0 text-slate-700 dark:text-slate-300">
+                            {entry.text}
+                          </span>
+                        )}
                       </div>
                       <span className="shrink-0 text-xs text-slate-500 dark:text-slate-400">
                         {formatDateTime(entry.at, language, entry.at)}
@@ -6999,198 +7954,241 @@ export const HomePage = ({
 
       {showSummary ? (
         <>
-          {showSummaryCalendarCard ? renderHouseholdCalendarCard(true, true) : null}
+          {showSummaryCalendarCard
+            ? renderHouseholdCalendarCard(true, true)
+            : null}
 
           {showSummaryWhiteboardCard ? (
-          <Card className="mt-6 rounded-xl border border-slate-300 bg-white/90 p-3 text-slate-800 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-100">
-            <HouseholdWhiteboardWidget
-              title={
-                <>
-                  {t("home.whiteboardTitle")}
-                  {whiteboardOnlineMembers.length > 0 ? (
-                    <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                      <span className="text-[11px] font-medium text-emerald-700 dark:text-emerald-300">
-                        {t("home.whiteboardOnlineNow", { count: whiteboardOnlineMembers.length })}
-                      </span>
-                      {whiteboardOnlineMembers.slice(0, 6).map((member) => (
-                        <span
-                          key={`wb-online-card-${member.user_id}`}
-                          className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-200"
-                        >
-                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                          {memberLabel(member.user_id)}
+            <Card className="mt-6 rounded-xl border border-slate-300 bg-white/90 p-3 text-slate-800 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-100">
+              <HouseholdWhiteboardWidget
+                title={
+                  <>
+                    {t("home.whiteboardTitle")}
+                    {whiteboardOnlineMembers.length > 0 ? (
+                      <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                        <span className="text-[11px] font-medium text-emerald-700 dark:text-emerald-300">
+                          {t("home.whiteboardOnlineNow", {
+                            count: whiteboardOnlineMembers.length,
+                          })}
                         </span>
-                      ))}
-                    </div>
-                  ) : null}
-                </>
-              }
-              description={t("home.whiteboardDescription")}
-              headerActions={<div className="flex items-center gap-2" />}
-            >
-              <ErrorBoundary
-                fallback={
-                  <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-6 text-sm text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-200">
-                    {t("home.whiteboardError")}
-                  </div>
+                        {whiteboardOnlineMembers.slice(0, 6).map((member) => (
+                          <span
+                            key={`wb-online-card-${member.user_id}`}
+                            className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-200"
+                          >
+                            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                            {memberLabel(member.user_id)}
+                          </span>
+                        ))}
+                      </div>
+                    ) : null}
+                  </>
                 }
+                description={t("home.whiteboardDescription")}
+                headerActions={<div className="flex items-center gap-2" />}
               >
-                <Suspense
+                <ErrorBoundary
                   fallback={
-                    <div className="flex h-[560px] items-center justify-center rounded-xl border border-brand-100 bg-white/70 text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-300">
-                      {t("common.loading")}
+                    <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-6 text-sm text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-200">
+                      {t("home.whiteboardError")}
                     </div>
                   }
                 >
-                  <div className="relative">
-                    <ExcalidrawBoardLazy
-                      sceneJson={whiteboardDraft}
-                      onSceneChange={(nextValue) => {
-                        setWhiteboardDraft(nextValue);
-                      }}
-                      className="rounded-xl border border-brand-100 bg-white dark:border-slate-700"
-                      height={560}
-                      previewMode
-                    />
-                    <button
-                      type="button"
-                      className="absolute inset-0 rounded-xl border border-transparent transition hover:border-brand-200 hover:bg-brand-50/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400/60"
-                      onClick={openWhiteboardFullscreen}
-                      aria-label={t("home.whiteboardFullscreen")}
-                      title={t("home.whiteboardFullscreen")}
-                    />
-                  </div>
-                </Suspense>
-              </ErrorBoundary>
-            </HouseholdWhiteboardWidget>
-          </Card>
+                  <Suspense
+                    fallback={
+                      <div className="flex h-[560px] items-center justify-center rounded-xl border border-brand-100 bg-white/70 text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-300">
+                        {t("common.loading")}
+                      </div>
+                    }
+                  >
+                    <div className="relative">
+                      <ExcalidrawBoardLazy
+                        sceneJson={whiteboardDraft}
+                        onSceneChange={(nextValue) => {
+                          setWhiteboardDraft(nextValue);
+                        }}
+                        className="rounded-xl border border-brand-100 bg-white dark:border-slate-700"
+                        height={560}
+                        previewMode
+                      />
+                      <button
+                        type="button"
+                        className="absolute inset-0 rounded-xl border border-transparent transition hover:border-brand-200 hover:bg-brand-50/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400/60"
+                        onClick={openWhiteboardFullscreen}
+                        aria-label={t("home.whiteboardFullscreen")}
+                        title={t("home.whiteboardFullscreen")}
+                      />
+                    </div>
+                  </Suspense>
+                </ErrorBoundary>
+              </HouseholdWhiteboardWidget>
+            </Card>
           ) : null}
 
           {showSummaryMapCard ? (
-          <Card className="mt-6 rounded-xl border border-slate-300 bg-white/90 p-3 text-slate-800 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-100">
-            <HouseholdMapWidget
-              title={t("home.householdMapTitle")}
-              description={t("home.householdMapDescription")}
-              headerActions={
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    className="inline-flex h-8 w-8 items-center justify-center rounded-xl text-slate-700 hover:bg-slate-200/80 dark:text-brand-100 dark:hover:bg-slate-800"
-                    onClick={openMapFullscreen}
-                    aria-label={t("home.householdMapFullscreen")}
-                    title={t("home.householdMapFullscreen")}
-                  >
-                    <Maximize2 className="h-4 w-4" />
-                  </button>
-                </div>
-              }
-            >
-              {renderHouseholdMapSurface(
-                "relative h-72 overflow-hidden rounded-lg border border-brand-100 dark:border-slate-700",
-                false
-              )}
-              <div className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-                {!mapHasPin
-                  ? t("home.householdMapPoiNeedsAddress")
-                  : nearbyPoiQuery.isFetching
-                    ? t("home.householdMapPoiLoading")
-                    : nearbyPoiQuery.isError
-                      ? t("home.householdMapPoiError")
-                      : t("home.householdMapPoiCount", { count: nearbyPois.length })}
-              </div>
-              {myLocationStatus === "loading" ? (
-                <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">{t("home.householdMapLocating")}</div>
-              ) : null}
-              {myLocationError ? (
-                <div className="mt-1 text-xs text-rose-600 dark:text-rose-400">{myLocationError}</div>
-              ) : null}
-              {poiOverrideError ? (
-                <div className="mt-1 text-xs text-rose-600 dark:text-rose-400">{poiOverrideError}</div>
-              ) : null}
-              <div className="mt-3 flex flex-wrap items-center gap-2">
-                {myActiveLiveLocation ? (
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={() => {
-                      void stopLiveLocationShareNow();
-                    }}
-                    disabled={liveShareStatus === "stopping"}
-                  >
-                    {t("home.householdMapLiveShareStop")}
-                  </Button>
-                ) : (
-                  <Button
-                    type="button"
-                    size="sm"
-                    onClick={() => {
-                      setIsLiveShareDialogOpen(true);
-                    }}
-                    disabled={liveShareStatus === "starting"}
-                  >
-                    {t("home.householdMapLiveShareStart")}
-                  </Button>
+            <Card className="mt-6 rounded-xl border border-slate-300 bg-white/90 p-3 text-slate-800 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-100">
+              <HouseholdMapWidget
+                title={t("home.householdMapTitle")}
+                description={t("home.householdMapDescription")}
+                headerActions={
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-xl text-slate-700 hover:bg-slate-200/80 dark:text-brand-100 dark:hover:bg-slate-800"
+                      onClick={openMapFullscreen}
+                      aria-label={t("home.householdMapFullscreen")}
+                      title={t("home.householdMapFullscreen")}
+                    >
+                      <Maximize2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                }
+              >
+                {renderHouseholdMapSurface(
+                  "relative h-72 overflow-hidden rounded-lg border border-brand-100 dark:border-slate-700",
+                  false,
                 )}
-                {myActiveLiveLocation ? (
-                  <span className="text-xs text-slate-500 dark:text-slate-400">
-                    {t("home.householdMapLiveShareActiveUntil", {
-                      at: formatDateTime(myActiveLiveLocation.expires_at, language, myActiveLiveLocation.expires_at)
-                    })}
-                  </span>
+                <div className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                  {!mapHasPin
+                    ? t("home.householdMapPoiNeedsAddress")
+                    : nearbyPoiQuery.isFetching
+                      ? t("home.householdMapPoiLoading")
+                      : nearbyPoiQuery.isError
+                        ? t("home.householdMapPoiError")
+                        : t("home.householdMapPoiCount", {
+                            count: nearbyPois.length,
+                          })}
+                </div>
+                {myLocationStatus === "loading" ? (
+                  <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                    {t("home.householdMapLocating")}
+                  </div>
                 ) : null}
-              </div>
-              {liveShareError ? (
-                <div className="mt-1 text-xs text-rose-600 dark:text-rose-400">{liveShareError}</div>
-              ) : null}
-            </HouseholdMapWidget>
-          </Card>
+                {myLocationError ? (
+                  <div className="mt-1 text-xs text-rose-600 dark:text-rose-400">
+                    {myLocationError}
+                  </div>
+                ) : null}
+                {poiOverrideError ? (
+                  <div className="mt-1 text-xs text-rose-600 dark:text-rose-400">
+                    {poiOverrideError}
+                  </div>
+                ) : null}
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  {myActiveLiveLocation ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        void stopLiveLocationShareNow();
+                      }}
+                      disabled={liveShareStatus === "stopping"}
+                    >
+                      {t("home.householdMapLiveShareStop")}
+                    </Button>
+                  ) : (
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={() => {
+                        setIsLiveShareDialogOpen(true);
+                      }}
+                      disabled={liveShareStatus === "starting"}
+                    >
+                      {t("home.householdMapLiveShareStart")}
+                    </Button>
+                  )}
+                  {myActiveLiveLocation ? (
+                    <span className="text-xs text-slate-500 dark:text-slate-400">
+                      {t("home.householdMapLiveShareActiveUntil", {
+                        at: formatDateTime(
+                          myActiveLiveLocation.expires_at,
+                          language,
+                          myActiveLiveLocation.expires_at,
+                        ),
+                      })}
+                    </span>
+                  ) : null}
+                </div>
+                {liveShareError ? (
+                  <div className="mt-1 text-xs text-rose-600 dark:text-rose-400">
+                    {liveShareError}
+                  </div>
+                ) : null}
+              </HouseholdMapWidget>
+            </Card>
           ) : null}
 
           {showSummaryWeatherCard ? (
-          <Card className="mt-6 rounded-xl border border-slate-300 bg-white/90 p-3 text-slate-800 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-100">
-            <CardHeader className="gap-1">
-              <CardTitle>{householdWeatherTitle}</CardTitle>
-              <CardDescription>{t("home.householdWeatherDescription")}</CardDescription>
-            </CardHeader>
-            <CardContent className="pt-2">
-              {!mapHasPin ? (
-                <p className="text-xs text-slate-500 dark:text-slate-400">{t("home.householdWeatherNeedsAddress")}</p>
-              ) : householdWeatherQuery.isLoading ? (
-                <p className="text-xs text-slate-500 dark:text-slate-400">{t("home.householdWeatherLoading")}</p>
-              ) : householdWeatherQuery.isError ? (
-                <p className="text-xs text-rose-600 dark:text-rose-400">{t("home.householdWeatherError")}</p>
-              ) : householdWeatherHourly.length === 0 ? (
-                <p className="text-xs text-slate-500 dark:text-slate-400">{t("home.householdWeatherEmpty")}</p>
-              ) : (
-                <div className="space-y-2">
-                  {householdWeatherDays.length > 0 ? (
-                    <HouseholdWeatherDailyPreview>
+            <Card className="mt-6 rounded-xl border border-slate-300 bg-white/90 p-3 text-slate-800 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-100">
+              <CardHeader className="gap-1">
+                <CardTitle>{householdWeatherTitle}</CardTitle>
+                <CardDescription>
+                  {t("home.householdWeatherDescription")}
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="pt-2">
+                {!mapHasPin ? (
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    {t("home.householdWeatherNeedsAddress")}
+                  </p>
+                ) : householdWeatherQuery.isLoading ? (
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    {t("home.householdWeatherLoading")}
+                  </p>
+                ) : householdWeatherQuery.isError ? (
+                  <p className="text-xs text-rose-600 dark:text-rose-400">
+                    {t("home.householdWeatherError")}
+                  </p>
+                ) : householdWeatherHourly.length === 0 ? (
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    {t("home.householdWeatherEmpty")}
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    {householdWeatherDays.length > 0 ? (
+                      <HouseholdWeatherDailyPreview>
                         {householdWeatherDays.map((day, index) => (
                           <div
                             key={`weather-day-${day.date}`}
-                            className="w-[168px] shrink-0 rounded-2xl border border-slate-200/90 bg-gradient-to-b from-white/95 to-slate-50/90 p-3 shadow-sm dark:border-slate-700/90 dark:from-slate-900/85 dark:to-slate-900/65"
+                            className="w-[168px] shrink-0 rounded-2xl border border-slate-200/90 bg-gradient-to-b from-white/95 to-slate-50/90 p-1 shadow-sm dark:border-slate-700/90 dark:from-slate-900/85 dark:to-slate-900/65"
                           >
-                            <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">
-                              {index === 0
-                                ? t("home.householdWeatherRelativeToday")
-                                : index === 1
-                                  ? t("home.householdWeatherRelativeTomorrow")
-                                  : index === 2
-                                    ? t("home.householdWeatherRelativeDayAfterTomorrow")
-                                    : formatDateOnly(day.date, language, day.date)}
-                            </p>
                             {(() => {
                               const warnings = getDailyWeatherWarnings(day);
                               return (
-                                <div className="relative mt-2 flex items-center justify-center rounded-xl bg-white/70 py-2 dark:bg-slate-800/65">
-                                  {(warnings.icy || warnings.heat || warnings.storm || warnings.uv) ? (
+                                <div className="relative flex items-center justify-center rounded-xl bg-white/70 py-1 pt-4 dark:bg-slate-800/65">
+                                  <p className="absolute top-2 left-2 text-sm font-semibold text-slate-800 dark:text-slate-100">
+                                    {index === 0
+                                      ? t("home.householdWeatherRelativeToday")
+                                      : index === 1
+                                        ? t(
+                                            "home.householdWeatherRelativeTomorrow",
+                                          )
+                                        : index === 2
+                                          ? t(
+                                              "home.householdWeatherRelativeDayAfterTomorrow",
+                                            )
+                                          : formatDateOnly(
+                                              day.date,
+                                              language,
+                                              day.date,
+                                            )}
+                                  </p>
+                                  {warnings.icy ||
+                                  warnings.heat ||
+                                  warnings.storm ||
+                                  warnings.uv ? (
                                     <div className="absolute left-1.5 top-1.5 flex items-center gap-1">
                                       {warnings.icy ? (
                                         <span
                                           className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-cyan-200/90 bg-cyan-50/95 text-cyan-700 dark:border-cyan-800 dark:bg-cyan-900/40 dark:text-cyan-200"
-                                          title={t("home.householdWeatherWarningIcy")}
-                                          aria-label={t("home.householdWeatherWarningIcy")}
+                                          title={t(
+                                            "home.householdWeatherWarningIcy",
+                                          )}
+                                          aria-label={t(
+                                            "home.householdWeatherWarningIcy",
+                                          )}
                                         >
                                           <Snowflake className="h-3 w-3" />
                                         </span>
@@ -7198,8 +8196,12 @@ export const HomePage = ({
                                       {warnings.heat ? (
                                         <span
                                           className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-orange-200/90 bg-orange-50/95 text-orange-700 dark:border-orange-800 dark:bg-orange-900/40 dark:text-orange-200"
-                                          title={t("home.householdWeatherWarningHeat")}
-                                          aria-label={t("home.householdWeatherWarningHeat")}
+                                          title={t(
+                                            "home.householdWeatherWarningHeat",
+                                          )}
+                                          aria-label={t(
+                                            "home.householdWeatherWarningHeat",
+                                          )}
                                         >
                                           <Flame className="h-3 w-3" />
                                         </span>
@@ -7207,8 +8209,12 @@ export const HomePage = ({
                                       {warnings.storm ? (
                                         <span
                                           className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-indigo-200/90 bg-indigo-50/95 text-indigo-700 dark:border-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-200"
-                                          title={t("home.householdWeatherWarningStorm")}
-                                          aria-label={t("home.householdWeatherWarningStorm")}
+                                          title={t(
+                                            "home.householdWeatherWarningStorm",
+                                          )}
+                                          aria-label={t(
+                                            "home.householdWeatherWarningStorm",
+                                          )}
                                         >
                                           <Wind className="h-3 w-3" />
                                         </span>
@@ -7216,88 +8222,118 @@ export const HomePage = ({
                                       {warnings.uv ? (
                                         <span
                                           className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-amber-200/90 bg-amber-50/95 text-amber-700 dark:border-amber-800 dark:bg-amber-900/40 dark:text-amber-200"
-                                          title={t("home.householdWeatherWarningUv")}
-                                          aria-label={t("home.householdWeatherWarningUv")}
+                                          title={t(
+                                            "home.householdWeatherWarningUv",
+                                          )}
+                                          aria-label={t(
+                                            "home.householdWeatherWarningUv",
+                                          )}
                                         >
                                           <Sun className="h-3 w-3" />
                                         </span>
                                       ) : null}
                                     </div>
                                   ) : null}
-                                  <WeatherSvg state={getAnimatedWeatherState(day)} width={52} height={52} />
+                                  <WeatherSvg
+                                    state={getAnimatedWeatherState(day)}
+                                    width={52}
+                                    height={52}
+                                  />
                                   <span className="absolute bottom-1.5 right-2 rounded-full border border-slate-200/90 bg-white/90 px-2 py-0.5 text-[10px] font-medium text-slate-700 dark:border-slate-700 dark:bg-slate-900/90 dark:text-slate-200">
                                     {t(getWeatherConditionLabelKey(day))}
                                   </span>
                                 </div>
                               );
                             })()}
-                            <p className="mt-2 text-xs font-semibold text-slate-700 dark:text-slate-300">
+                            <p className="p-2 text-xs font-semibold text-slate-700 dark:text-slate-300">
                               {t("home.householdWeatherTemp", {
-                                max: day.tempMaxC === null ? "—" : Math.round(day.tempMaxC),
-                                min: day.tempMinC === null ? "—" : Math.round(day.tempMinC)
+                                max:
+                                  day.tempMaxC === null
+                                    ? "—"
+                                    : Math.round(day.tempMaxC),
+                                min:
+                                  day.tempMinC === null
+                                    ? "—"
+                                    : Math.round(day.tempMinC),
                               })}
                             </p>
-                            <p className="mt-1 text-[11px] text-slate-600 dark:text-slate-300">
+                            <p className="px-2 mt-1 text-[11px] text-slate-600 dark:text-slate-300">
                               {t("home.householdWeatherPrecip", {
-                                mm: day.precipitationMm === null ? "—" : Number(day.precipitationMm.toFixed(1)),
+                                mm:
+                                  day.precipitationMm === null
+                                    ? "—"
+                                    : Number(day.precipitationMm.toFixed(1)),
                                 prob:
                                   day.precipitationProbabilityPercent === null
                                     ? "—"
-                                    : Math.round(day.precipitationProbabilityPercent)
+                                    : Math.round(
+                                        day.precipitationProbabilityPercent,
+                                      ),
                               })}
                             </p>
-                            <p className="mt-1 text-[11px] text-slate-600 dark:text-slate-300">
+                            <p className="px-2 mt-1 text-[11px] text-slate-600 dark:text-slate-300">
                               {t("home.householdWeatherWind", {
                                 min:
-                                  day.windSpeedKmh === null && day.windGustKmh === null
+                                  day.windSpeedKmh === null &&
+                                  day.windGustKmh === null
                                     ? "—"
                                     : Math.min(
-                                        day.windSpeedKmh ?? Number.POSITIVE_INFINITY,
-                                        day.windGustKmh ?? Number.POSITIVE_INFINITY
-                                      ) === Number.POSITIVE_INFINITY
+                                          day.windSpeedKmh ??
+                                            Number.POSITIVE_INFINITY,
+                                          day.windGustKmh ??
+                                            Number.POSITIVE_INFINITY,
+                                        ) === Number.POSITIVE_INFINITY
                                       ? "—"
                                       : Math.round(
                                           Math.min(
-                                            day.windSpeedKmh ?? Number.POSITIVE_INFINITY,
-                                            day.windGustKmh ?? Number.POSITIVE_INFINITY
-                                          )
+                                            day.windSpeedKmh ??
+                                              Number.POSITIVE_INFINITY,
+                                            day.windGustKmh ??
+                                              Number.POSITIVE_INFINITY,
+                                          ),
                                         ),
                                 max:
-                                  day.windSpeedKmh === null && day.windGustKmh === null
+                                  day.windSpeedKmh === null &&
+                                  day.windGustKmh === null
                                     ? "—"
-                                    : Math.max(day.windSpeedKmh ?? 0, day.windGustKmh ?? 0),
-                                dir: getWindDirectionLabel(day.windDirectionDeg)
+                                    : Math.max(
+                                        day.windSpeedKmh ?? 0,
+                                        day.windGustKmh ?? 0,
+                                      ),
+                                dir: getWindDirectionLabel(
+                                  day.windDirectionDeg,
+                                ),
                               })}
                             </p>
                           </div>
                         ))}
-                    </HouseholdWeatherDailyPreview>
-                  ) : null}
-                  <HouseholdWeatherPlot
-                    hint={t("home.householdWeatherChartHint")}
-                    isMobile={isMobileBucketComposer}
-                    legendButtonLabel={t("home.householdWeatherLegendButton")}
-                    legendItems={weatherLegendItems}
-                    onToggleLegendItem={toggleWeatherLegendDataset}
-                  >
-                    <div
-                      ref={weatherChartContainerRef}
-                      className="h-64 rounded-lg border border-slate-200/90 bg-white/80 p-2 dark:border-slate-700/90 dark:bg-slate-900/70"
-                      onDoubleClick={zoomOutWeatherChart}
-                      onTouchEndCapture={onWeatherChartTouchEndCapture}
+                      </HouseholdWeatherDailyPreview>
+                    ) : null}
+                    <HouseholdWeatherPlot
+                      hint={t("home.householdWeatherChartHint")}
+                      isMobile={isMobileBucketComposer}
+                      legendButtonLabel={t("home.householdWeatherLegendButton")}
+                      legendItems={weatherLegendItems}
+                      onToggleLegendItem={toggleWeatherLegendDataset}
                     >
-                      <Chart
-                        ref={weatherChartRef}
-                        type="bar"
-                        data={householdWeatherChartData}
-                        options={householdWeatherChartOptions}
-                      />
-                    </div>
-                  </HouseholdWeatherPlot>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+                      <div
+                        ref={weatherChartContainerRef}
+                        className="h-64 rounded-lg  overflow-hidden border border-slate-200/90 bg-white/80 dark:border-slate-700/90 dark:bg-slate-900/70"
+                        onDoubleClick={zoomOutWeatherChart}
+                        onTouchEndCapture={onWeatherChartTouchEndCapture}
+                      >
+                        <Chart
+                          ref={weatherChartRef}
+                          type="bar"
+                          data={householdWeatherChartData}
+                          options={householdWeatherChartOptions}
+                        />
+                      </div>
+                    </HouseholdWeatherPlot>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
           ) : null}
 
           <Dialog
@@ -7309,23 +8345,36 @@ export const HomePage = ({
           >
             <DialogContent className="sm:max-w-md">
               <DialogHeader>
-                <DialogTitle>{t("home.householdMapLiveShareStart")}</DialogTitle>
-                <DialogDescription>{t("home.householdMapLiveShareDialogDescription")}</DialogDescription>
+                <DialogTitle>
+                  {t("home.householdMapLiveShareStart")}
+                </DialogTitle>
+                <DialogDescription>
+                  {t("home.householdMapLiveShareDialogDescription")}
+                </DialogDescription>
               </DialogHeader>
               <div className="space-y-3">
                 <div className="space-y-1">
                   <Label>{t("home.householdMapLiveShareDurationLabel")}</Label>
                   <Select
                     value={String(liveShareDurationMinutes)}
-                    onValueChange={(value) => setLiveShareDurationMinutes(Number(value))}
+                    onValueChange={(value) =>
+                      setLiveShareDurationMinutes(Number(value))
+                    }
                     disabled={liveShareStatus === "starting"}
                   >
                     <SelectTrigger className="h-9">
-                      <SelectValue placeholder={t("home.householdMapLiveShareDurationLabel")} />
+                      <SelectValue
+                        placeholder={t(
+                          "home.householdMapLiveShareDurationLabel",
+                        )}
+                      />
                     </SelectTrigger>
                     <SelectContent>
                       {LIVE_LOCATION_DURATION_OPTIONS.map((minutes) => (
-                        <SelectItem key={`live-duration-dialog-${minutes}`} value={String(minutes)}>
+                        <SelectItem
+                          key={`live-duration-dialog-${minutes}`}
+                          value={String(minutes)}
+                        >
                           {t("home.householdMapLiveShareMinutes", { minutes })}
                         </SelectItem>
                       ))}
@@ -7369,7 +8418,9 @@ export const HomePage = ({
                   {whiteboardOnlineMembers.length > 0 ? (
                     <div className="mt-2 flex flex-wrap items-center gap-1.5">
                       <span className="text-[11px] font-medium text-emerald-700 dark:text-emerald-300">
-                        {t("home.whiteboardOnlineNow", { count: whiteboardOnlineMembers.length })}
+                        {t("home.whiteboardOnlineNow", {
+                          count: whiteboardOnlineMembers.length,
+                        })}
                       </span>
                       {whiteboardOnlineMembers.slice(0, 10).map((member) => (
                         <span
@@ -7430,7 +8481,9 @@ export const HomePage = ({
               <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 dark:border-slate-700">
                 <div>
                   <DialogTitle>{t("home.householdMapTitle")}</DialogTitle>
-                  <DialogDescription>{t("home.householdMapDescription")}</DialogDescription>
+                  <DialogDescription>
+                    {t("home.householdMapDescription")}
+                  </DialogDescription>
                 </div>
                 <button
                   type="button"
@@ -7442,7 +8495,10 @@ export const HomePage = ({
                 </button>
               </div>
               <div className="flex-1">
-                {renderHouseholdMapSurface("relative h-full overflow-hidden border-brand-100 dark:border-slate-700", true)}
+                {renderHouseholdMapSurface(
+                  "relative h-full overflow-hidden border-brand-100 dark:border-slate-700",
+                  true,
+                )}
               </div>
             </DialogContent>
           </Dialog>
@@ -7461,7 +8517,9 @@ export const HomePage = ({
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>{t("home.bucketEdit")}</DialogTitle>
-            <DialogDescription>{t("home.householdMapMarkersTitle")}</DialogDescription>
+            <DialogDescription>
+              {t("home.householdMapMarkersTitle")}
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
             <div className="space-y-1">
@@ -7473,9 +8531,9 @@ export const HomePage = ({
                     current
                       ? {
                           ...current,
-                          icon: value as HouseholdMapMarkerIcon
+                          icon: value as HouseholdMapMarkerIcon,
                         }
-                      : current
+                      : current,
                   )
                 }
                 disabled={editingMarkerSaving}
@@ -7485,7 +8543,10 @@ export const HomePage = ({
                 </SelectTrigger>
                 <SelectContent>
                   {MANUAL_MARKER_ICON_OPTIONS.map((option) => (
-                    <SelectItem key={`marker-edit-icon-${option.id}`} value={option.id}>
+                    <SelectItem
+                      key={`marker-edit-icon-${option.id}`}
+                      value={option.id}
+                    >
                       <span className="inline-flex items-center gap-2">
                         <span>{getMarkerEmoji(option.id)}</span>
                         <span>{t(option.labelKey as never)}</span>
@@ -7504,9 +8565,9 @@ export const HomePage = ({
                     current
                       ? {
                           ...current,
-                          title: event.target.value
+                          title: event.target.value,
                         }
-                      : current
+                      : current,
                   )
                 }
                 placeholder={t("home.householdMapMarkerTitlePlaceholder")}
@@ -7522,9 +8583,9 @@ export const HomePage = ({
                     current
                       ? {
                           ...current,
-                          description: event.target.value
+                          description: event.target.value,
                         }
-                      : current
+                      : current,
                   )
                 }
                 placeholder={t("home.householdMapMarkerDescriptionPlaceholder")}
@@ -7532,7 +8593,9 @@ export const HomePage = ({
               />
             </div>
             {editingMarkerError ? (
-              <p className="text-xs text-rose-600 dark:text-rose-400">{editingMarkerError}</p>
+              <p className="text-xs text-rose-600 dark:text-rose-400">
+                {editingMarkerError}
+              </p>
             ) : null}
             <div className="flex justify-end gap-2">
               <Button
@@ -7546,8 +8609,14 @@ export const HomePage = ({
               >
                 {t("common.cancel")}
               </Button>
-              <Button type="button" onClick={() => void saveEditedMarker()} disabled={editingMarkerSaving}>
-                {editingMarkerSaving ? t("home.householdMapPoiOverrideSaving") : t("common.save")}
+              <Button
+                type="button"
+                onClick={() => void saveEditedMarker()}
+                disabled={editingMarkerSaving}
+              >
+                {editingMarkerSaving
+                  ? t("home.householdMapPoiOverrideSaving")
+                  : t("common.save")}
               </Button>
             </div>
           </div>

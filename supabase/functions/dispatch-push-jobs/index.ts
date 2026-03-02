@@ -61,7 +61,8 @@ const buildMessage = (job: PushJob) => {
     title: "WG Update",
     body: "Neue Aktivität",
     data: {
-      type: event
+      type: event,
+      householdId: job.household_id
     } as Record<string, string>
   };
 
@@ -158,6 +159,12 @@ const buildMessage = (job: PushJob) => {
         ? ` für ${Math.floor(durationMinutes)} Minuten`
         : "";
     base.body = `${name} teilt den Live-Standort${durationText}.`;
+  } else if (event === "one_off_claim_created") {
+    base.title = "Neue Einmalige Aufgabe";
+    const title = String(payload.payload?.title ?? "Neue Aufgabe");
+    const requested = Number(payload.payload?.requestedPimpers ?? 0);
+    const requestedLabel = Number.isFinite(requested) && requested > 0 ? `${Math.floor(requested)} P` : "";
+    base.body = requestedLabel ? `${title} (${requestedLabel})` : title;
   } else if (event === "rent_updated") {
     base.title = "Mietkosten geändert";
     const name = String(payload.payload?.name ?? "Jemand");
@@ -177,7 +184,10 @@ const buildMessage = (job: PushJob) => {
   }
 
   const dataPayload = payload.payload ?? payload;
+  if (job.user_id) base.data.actorUserId = String(job.user_id);
   if (dataPayload?.taskId) base.data.taskId = String(dataPayload.taskId);
+  if (dataPayload?.claimId) base.data.claimId = String(dataPayload.claimId);
+  if (dataPayload?.requestedPimpers) base.data.requestedPimpers = String(dataPayload.requestedPimpers);
   if (dataPayload?.financeEntryId) base.data.financeEntryId = String(dataPayload.financeEntryId);
   if (dataPayload?.shoppingItemId) base.data.shoppingItemId = String(dataPayload.shoppingItemId);
   if (dataPayload?.bucketItemId) base.data.bucketItemId = String(dataPayload.bucketItemId);
@@ -295,13 +305,17 @@ serve(async (req) => {
     let successCount = 0;
 
     for (const tokenRow of (tokens ?? []) as PushTokenRow[]) {
+      const messageData = {
+        ...message.data,
+        recipientUserId: tokenRow.user_id
+      };
       const result = await sendFcmMessage({
         serviceAccount,
         projectId: fcmProjectId,
         token: tokenRow.token,
         title: message.title,
         body: message.body,
-        data: message.data
+        data: messageData
       });
 
       await supabase.from("push_log").insert({

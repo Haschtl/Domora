@@ -20,6 +20,7 @@ import { useTranslation } from "react-i18next";
 import { toast } from "react-toastify";
 import { setHouseholdTranslationOverrides } from "./i18n";
 import { isSupabaseConfigured } from "./lib/supabase";
+import { stopHouseholdLiveLocationShare, voteOneOffTaskClaim } from "./lib/api";
 import { useForegroundPush } from "./hooks/useForegroundPush";
 import { getForegroundPushRoute } from "./lib/push-navigation";
 import type { AppTab } from "./lib/types";
@@ -32,6 +33,7 @@ import { useTaskNotifications } from "./hooks/useTaskNotifications";
 import { useWorkspaceController } from "./hooks/useWorkspaceController";
 import { ensureHouseholdQueries } from "./lib/household-queries";
 import { applyHouseholdTheme } from "./lib/household-theme";
+import { queryKeys } from "./lib/query-keys";
 import { isMemberOnVacation } from "./lib/vacation-utils";
 
 const AuthView = lazy(() => import("./features/AuthView").then((module) => ({ default: module.AuthView })));
@@ -219,6 +221,76 @@ const AppLayout = () => {
     enabled: notificationPermission === "granted",
     onNavigate: handleForegroundPush
   });
+  const handledPushActionRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!session || !userId) return;
+
+    const params = new URLSearchParams(window.location.search);
+    const pushAction = params.get("pushAction");
+    if (!pushAction) return;
+
+    const actionKey = `${pushAction}:${params.toString()}`;
+    if (handledPushActionRef.current === actionKey) return;
+    handledPushActionRef.current = actionKey;
+
+    const cleanupActionParams = () => {
+      params.delete("pushAction");
+      params.delete("claimId");
+      params.delete("requestedPimpers");
+      params.delete("householdId");
+      params.delete("actorUserId");
+      const nextQuery = params.toString();
+      const nextUrl = `${window.location.pathname}${nextQuery ? `?${nextQuery}` : ""}${window.location.hash}`;
+      window.history.replaceState({}, "", nextUrl);
+    };
+
+    const run = async () => {
+      try {
+        if (pushAction === "oneoff_approve" || pushAction === "oneoff_reject" || pushAction === "oneoff_counter") {
+          const claimId = params.get("claimId");
+          if (claimId) {
+            if (pushAction === "oneoff_approve") {
+              await voteOneOffTaskClaim({ claimId, voteType: "approve" });
+            } else if (pushAction === "oneoff_reject") {
+              await voteOneOffTaskClaim({ claimId, voteType: "reject" });
+            } else {
+              const requestedRaw = Number(params.get("requestedPimpers"));
+              const counterPimpers = Number.isFinite(requestedRaw) && requestedRaw > 0 ? Math.round(requestedRaw) : 1;
+              await voteOneOffTaskClaim({ claimId, voteType: "counter", counterPimpers });
+            }
+            toast.success(t("common.saved"));
+          }
+          void navigate({ to: "/tasks/overview" });
+          return;
+        }
+
+        if (pushAction === "live_stop_share") {
+          const householdId = params.get("householdId");
+          const actorUserId = params.get("actorUserId");
+          if (householdId && actorUserId === userId) {
+            await stopHouseholdLiveLocationShare(householdId, userId);
+            await queryClient.invalidateQueries({ queryKey: queryKeys.householdLiveLocations(householdId) });
+            toast.success(t("home.householdMapLiveShareStopped"));
+          }
+          void navigate({ to: "/home/summary" });
+          return;
+        }
+
+        if (pushAction === "live_show_on_map") {
+          void navigate({ to: "/home/summary" });
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : t("common.error");
+        toast.error(message);
+      } finally {
+        cleanupActionParams();
+      }
+    };
+
+    void run();
+  }, [location, navigate, queryClient, session, t, userId]);
 
   const scrollPositionsRef = useRef<Record<string, number>>({});
   const lastPathRef = useRef<string | null>(null);
