@@ -359,6 +359,7 @@ const buildPublicAssetUrl = (relativePath: string) => {
 const LOCAL_TESSERACT_WORKER_PATH = buildPublicAssetUrl("tesseract/worker.min.js");
 const LOCAL_TESSERACT_CORE_PATH = buildPublicAssetUrl("tesseract/core");
 const LOCAL_TESSERACT_LANG_PATH = buildPublicAssetUrl("tesseract/lang");
+let openCvModulePromise: Promise<Record<string, unknown> | null> | null = null;
 
 const clamp01 = (value: number) => Math.max(0, Math.min(1, value));
 
@@ -405,7 +406,9 @@ const getOtsuThreshold = (pixels: Uint8ClampedArray) => {
   return threshold;
 };
 
-const preprocessOcrCanvas = (source: HTMLCanvasElement) => {
+type OcrPreprocessMode = "balanced" | "highContrast" | "grayscale";
+
+const preprocessOcrCanvas = (source: HTMLCanvasElement, mode: OcrPreprocessMode) => {
   const { width, height } = clampOcrSize(source.width, source.height);
   const canvas = document.createElement("canvas");
   canvas.width = width;
@@ -413,13 +416,22 @@ const preprocessOcrCanvas = (source: HTMLCanvasElement) => {
   const context = canvas.getContext("2d");
   if (!context) return source;
 
-  context.filter = "grayscale(1) contrast(1.4) brightness(1.05)";
+  const filtersByMode: Record<OcrPreprocessMode, string> = {
+    balanced: "grayscale(1) contrast(1.45) brightness(1.06)",
+    highContrast: "grayscale(1) contrast(1.95) brightness(1.08)",
+    grayscale: "grayscale(1) contrast(1.12) brightness(1.02)"
+  };
+  context.filter = filtersByMode[mode];
   context.drawImage(source, 0, 0, width, height);
   context.filter = "none";
 
+  if (mode === "grayscale") {
+    return canvas;
+  }
+
   const imageData = context.getImageData(0, 0, width, height);
   const { data } = imageData;
-  const threshold = getOtsuThreshold(data);
+  const threshold = getOtsuThreshold(data) + (mode === "highContrast" ? -12 : 0);
   for (let i = 0; i < data.length; i += 4) {
     const value = data[i] >= threshold ? 255 : 0;
     data[i] = value;
@@ -430,29 +442,226 @@ const preprocessOcrCanvas = (source: HTMLCanvasElement) => {
   return canvas;
 };
 
-const extractPriceFromOcrText = (text: string) => {
-  const normalized = text.replace(/\s/g, "");
-  const matches = [...normalized.matchAll(/(\d{1,4}(?:[.,]\d{2}))(?:€|EUR)?/gi)].map((entry) => entry[1] ?? "");
-  if (matches.length === 0) return null;
+const waitForOpenCvRuntime = async (cv: Record<string, unknown>) => {
+  const cvAny = cv as {
+    onRuntimeInitialized?: (() => void) | null;
+    getBuildInformation?: (() => string) | undefined;
+  };
+  if (typeof cvAny.getBuildInformation === "function") return;
+  if (!("onRuntimeInitialized" in cvAny)) return;
 
-  const candidate = matches[matches.length - 1].replace(",", ".");
-  const parsed = Number(candidate);
-  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+  await new Promise<void>((resolve) => {
+    const timeout = window.setTimeout(resolve, 2500);
+    cvAny.onRuntimeInitialized = () => {
+      window.clearTimeout(timeout);
+      resolve();
+    };
+  });
 };
 
-const extractProductFromOcrText = (text: string) => {
-  const blocked = new Set(["summe", "gesamt", "total", "mwst", "eur", "euro", "karte", "kasse", "beleg"]);
+const getOpenCvModule = async () => {
+  if (typeof window === "undefined") return null;
+  if (openCvModulePromise) return openCvModulePromise;
+
+  openCvModulePromise = (async () => {
+    try {
+      const moduleName = "@techstark/opencv-js";
+      const module = (await import(/* @vite-ignore */ moduleName)) as Record<string, unknown>;
+      const resolved = ((module.default as Record<string, unknown> | undefined) ?? module) as Record<string, unknown>;
+      if (!resolved || typeof resolved !== "object" || !("Mat" in resolved)) return null;
+      await waitForOpenCvRuntime(resolved);
+      return resolved;
+    } catch {
+      return null;
+    }
+  })();
+
+  return openCvModulePromise;
+};
+
+const preprocessOcrCanvasWithOpenCv = async (source: HTMLCanvasElement) => {
+  const cv = await getOpenCvModule();
+  if (!cv) return null;
+  const cvAny = cv as Record<string, unknown>;
+
+  const { width, height } = clampOcrSize(source.width, source.height);
+  const input = document.createElement("canvas");
+  input.width = width;
+  input.height = height;
+  const inputContext = input.getContext("2d");
+  if (!inputContext) return null;
+  inputContext.drawImage(source, 0, 0, width, height);
+
+  const src = (cvAny.imread as (canvas: HTMLCanvasElement) => { cols: number; rows: number; delete?: () => void })(input);
+  const gray = new (cvAny.Mat as new () => { delete?: () => void })();
+  const blurred = new (cvAny.Mat as new () => { delete?: () => void })();
+  const binary = new (cvAny.Mat as new () => { cols: number; rows: number; delete?: () => void })();
+  const cleaned = new (cvAny.Mat as new () => { cols: number; rows: number; delete?: () => void })();
+  const resized = new (cvAny.Mat as new () => { delete?: () => void })();
+  const kernel = (cvAny.getStructuringElement as (shape: number, size: unknown) => { delete?: () => void })(
+    cvAny.MORPH_RECT as number,
+    new (cvAny.Size as new (width: number, height: number) => unknown)(2, 2)
+  );
+
+  try {
+    (cvAny.cvtColor as (srcMat: unknown, dstMat: unknown, code: number, channels?: number) => void)(
+      src,
+      gray,
+      cvAny.COLOR_RGBA2GRAY as number,
+      0
+    );
+    (cvAny.GaussianBlur as (srcMat: unknown, dstMat: unknown, ksize: unknown, sx: number, sy: number, bt?: number) => void)(
+      gray,
+      blurred,
+      new (cvAny.Size as new (width: number, height: number) => unknown)(3, 3),
+      0,
+      0,
+      cvAny.BORDER_DEFAULT as number
+    );
+    (cvAny.adaptiveThreshold as (srcMat: unknown, dstMat: unknown, maxValue: number, adaptiveMethod: number, thresholdType: number, blockSize: number, c: number) => void)(
+      blurred,
+      binary,
+      255,
+      cvAny.ADAPTIVE_THRESH_GAUSSIAN_C as number,
+      cvAny.THRESH_BINARY as number,
+      31,
+      12
+    );
+    (cvAny.morphologyEx as (srcMat: unknown, dstMat: unknown, op: number, kernelMat: unknown) => void)(
+      binary,
+      cleaned,
+      cvAny.MORPH_CLOSE as number,
+      kernel
+    );
+
+    const upscale = Math.min(1.6, Math.max(1, 1500 / Math.max(cleaned.cols, 1)));
+    const targetWidth = Math.max(1, Math.round(cleaned.cols * upscale));
+    const targetHeight = Math.max(1, Math.round(cleaned.rows * upscale));
+    (cvAny.resize as (srcMat: unknown, dstMat: unknown, dsize: unknown, fx?: number, fy?: number, interpolation?: number) => void)(
+      cleaned,
+      resized,
+      new (cvAny.Size as new (width: number, height: number) => unknown)(targetWidth, targetHeight),
+      0,
+      0,
+      cvAny.INTER_CUBIC as number
+    );
+
+    const output = document.createElement("canvas");
+    output.width = targetWidth;
+    output.height = targetHeight;
+    (cvAny.imshow as (canvas: HTMLCanvasElement, mat: unknown) => void)(output, resized);
+    return output;
+  } catch {
+    return null;
+  } finally {
+    src.delete?.();
+    gray.delete?.();
+    blurred.delete?.();
+    binary.delete?.();
+    cleaned.delete?.();
+    resized.delete?.();
+    kernel.delete?.();
+  }
+};
+
+const OCR_BLOCKED_PRODUCT_WORDS = new Set([
+  "summe",
+  "gesamt",
+  "total",
+  "mwst",
+  "eur",
+  "euro",
+  "karte",
+  "kasse",
+  "beleg",
+  "zahlung",
+  "saldo",
+  "visa",
+  "mastercard",
+  "debit",
+  "change",
+  "cash"
+]);
+
+const OCR_TOTAL_KEYWORDS = [
+  "summe",
+  "gesamt",
+  "total",
+  "betrag",
+  "zu zahlen",
+  "endbetrag",
+  "kartenzahlung",
+  "ec",
+  "card"
+];
+
+const normalizePriceToken = (value: string) => {
+  const normalized = value
+    .replace(/\s/g, "")
+    .replace(/[Oo]/g, "0")
+    .replace(/[Il]/g, "1")
+    .replace(/€/g, "")
+    .replace(/EUR/gi, "");
+  const match = normalized.match(/(\d{1,5}(?:[.,]\d{2}))/);
+  if (!match?.[1]) return null;
+  const parsed = Number(match[1].replace(",", "."));
+  if (!Number.isFinite(parsed) || parsed < 0) return null;
+  return parsed.toFixed(2);
+};
+
+const parseAmountToken = (value: string) => {
+  const token = normalizePriceToken(value);
+  if (!token) return null;
+  const parsed = Number(token);
+  if (!Number.isFinite(parsed) || parsed < 0 || parsed > 100000) return null;
+  return parsed;
+};
+
+const extractPriceFromOcrText = (text: string) => {
   const lines = text
     .split(/\r?\n/)
     .map((line) => line.replace(/\s+/g, " ").trim())
-    .filter((line) => line.length >= 3)
+    .filter(Boolean);
+
+  const candidates: Array<{ value: number; score: number; index: number }> = [];
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    const lowered = line.toLocaleLowerCase();
+    const matches = [...line.matchAll(/\d[\dOoIl.,]{1,10}/g)];
+    if (matches.length === 0) continue;
+    for (const match of matches) {
+      const parsed = parseAmountToken(match[0] ?? "");
+      if (parsed === null) continue;
+      let score = 10;
+      if (parsed >= 1) score += 4;
+      if (parsed <= 3000) score += 2;
+      if (OCR_TOTAL_KEYWORDS.some((keyword) => lowered.includes(keyword))) score += 40;
+      if (/mwst|tax|ust/.test(lowered)) score -= 18;
+      if (/rabatt|discount|coupon/.test(lowered)) score -= 16;
+      score += Math.max(0, i - Math.floor(lines.length * 0.35));
+      candidates.push({ value: parsed, score, index: i });
+    }
+  }
+
+  if (candidates.length === 0) return null;
+  candidates.sort((left, right) => right.score - left.score || right.index - left.index || right.value - left.value);
+  return candidates[0]?.value ?? null;
+};
+
+const extractProductFromOcrText = (text: string) => {
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => line.replace(/\s+/g, " ").trim())
+    .filter((line) => line.length >= 2)
     .filter((line) => /[a-zA-ZäöüÄÖÜß]/.test(line))
-    .filter((line) => !/[0-9]{1,4}[.,][0-9]{2}/.test(line))
+    .filter((line) => !/\d{1,5}[.,]\d{2}/.test(line))
     .filter((line) => {
       const lowered = line.toLocaleLowerCase();
-      return ![...blocked].some((word) => lowered.includes(word));
+      return ![...OCR_BLOCKED_PRODUCT_WORDS].some((word) => lowered.includes(word));
     });
 
+  if (lines.length === 0) return null;
+  // On receipts the first meaningful alpha line is usually store/title and works better than random mid lines.
   return lines[0] ?? null;
 };
 
@@ -462,13 +671,20 @@ const normalizeOcrText = (value: string) =>
     .replace(/\s+/g, " ")
     .trim();
 
-const normalizePriceToken = (value: string) => {
-  const normalized = value.replace(/\s/g, "").replace(",", ".");
-  const match = normalized.match(/(\d{1,4}(?:\.\d{2}))/);
-  if (!match?.[1]) return null;
-  const parsed = Number(match[1]);
-  if (!Number.isFinite(parsed) || parsed < 0) return null;
-  return parsed.toFixed(2);
+const buildUniqueLinesText = (...texts: string[]) => {
+  const seen = new Set<string>();
+  const merged: string[] = [];
+  for (const chunk of texts) {
+    for (const line of chunk.split(/\r?\n/)) {
+      const normalized = line.replace(/\s+/g, " ").trim();
+      if (!normalized) continue;
+      const key = normalized.toLocaleLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      merged.push(normalized);
+    }
+  }
+  return merged.join("\n");
 };
 
 const classifyOcrBoxKind = (
@@ -514,7 +730,48 @@ const boxFromBbox = (
     width: clamp01(widthPx / width),
     height: clamp01(heightPx / height),
     text: text?.trim() || undefined
-  } satisfies OcrPreviewBox;
+  } as OcrPreviewBox;
+};
+
+const isDefined = <T,>(value: T | null | undefined): value is T => value !== null && value !== undefined;
+
+const mergeUniqueBoxes = (...boxGroups: OcrPreviewBox[][]) => {
+  const seen = new Set<string>();
+  const merged: OcrPreviewBox[] = [];
+  for (const group of boxGroups) {
+    for (const box of group) {
+      const key = `${box.left.toFixed(4)}:${box.top.toFixed(4)}:${box.width.toFixed(4)}:${box.height.toFixed(4)}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      merged.push(box);
+      if (merged.length >= OCR_MAX_PREVIEW_BOXES) return merged;
+    }
+  }
+  return merged;
+};
+
+const extractBoxesFromTesseractResult = (
+  result: Awaited<ReturnType<TesseractWorkerLike["recognize"]>>,
+  width: number,
+  height: number
+) => {
+  const words = (result.data.words ?? [])
+    .map((entry) => boxFromBbox(entry.bbox, width, height, entry.text))
+    .filter(isDefined);
+  if (words.length >= 6) return words.slice(0, OCR_MAX_PREVIEW_BOXES);
+
+  const lines = (result.data.lines ?? [])
+    .map((entry) => boxFromBbox(entry.bbox, width, height, entry.text))
+    .filter(isDefined);
+  if (lines.length >= 6) return mergeUniqueBoxes(words, lines).slice(0, OCR_MAX_PREVIEW_BOXES);
+
+  const blocks = (result.data.blocks ?? [])
+    .flatMap((entry) => [
+      boxFromBbox(entry.bbox, width, height, entry.text),
+      ...(entry.lines ?? []).map((line) => boxFromBbox(line.bbox, width, height, line.text))
+    ])
+    .filter(isDefined);
+  return mergeUniqueBoxes(words, lines, blocks).slice(0, OCR_MAX_PREVIEW_BOXES);
 };
 
 const runTextDetectorOcr = async (detectorCtor: TextDetectorConstructor, canvas: HTMLCanvasElement) => {
@@ -2615,70 +2872,128 @@ export const FinancesPage = ({
       context.drawImage(sourceBitmap, 0, 0, width, height);
       sourceBitmap.close?.();
       const previewImageUrl = canvas.toDataURL("image/jpeg", 0.88);
-      const processedCanvas = preprocessOcrCanvas(canvas);
+      const balancedCanvas = preprocessOcrCanvas(canvas, "balanced");
+      const highContrastCanvas = preprocessOcrCanvas(canvas, "highContrast");
+      const grayscaleCanvas = preprocessOcrCanvas(canvas, "grayscale");
+      const openCvCanvas = await preprocessOcrCanvasWithOpenCv(canvas);
 
       const detectorCtor = getTextDetectorConstructor();
-      let text = "";
-      let boxes: OcrPreviewBox[] = [];
+      let detectorText = "";
+      let detectorBoxes: OcrPreviewBox[] = [];
       if (detectorCtor) {
         try {
-          const detected = await runTextDetectorOcr(detectorCtor, processedCanvas);
-          text = detected.text;
-          boxes = detected.boxes;
+          const detected = await runTextDetectorOcr(detectorCtor, balancedCanvas);
+          detectorText = detected.text;
+          detectorBoxes = detected.boxes;
         } catch {
-          text = "";
-          boxes = [];
+          detectorText = "";
+          detectorBoxes = [];
         }
       }
 
-      if (text.trim().length < OCR_MIN_USEFUL_TEXT_LENGTH) {
-        const worker = await getOrCreateTesseractWorker();
-        const result = await worker.recognize(processedCanvas, undefined, { text: true, blocks: true });
-        const tesseractText = result.data.text.trim();
-        const tesseractBoxes: OcrPreviewBox[] = [];
-        const seen = new Set<string>();
-        const pushUniqueBox = (box: OcrPreviewBox | null) => {
-          if (!box) return;
-          const key = `${box.left.toFixed(4)}:${box.top.toFixed(4)}:${box.width.toFixed(4)}:${box.height.toFixed(4)}`;
-          if (seen.has(key)) return;
-          seen.add(key);
-          tesseractBoxes.push(box);
-        };
+      const worker = await getOrCreateTesseractWorker();
+      const runTesseractPass = async ({
+        source,
+        params,
+        rectangle,
+        withBoxes
+      }: {
+        source: HTMLCanvasElement;
+        params: Record<string, string>;
+        rectangle?: { left: number; top: number; width: number; height: number };
+        withBoxes?: boolean;
+      }) => {
+        await worker.setParameters(params);
+        const result = await worker.recognize(source, rectangle ? { rectangle } : undefined, { text: true, blocks: true });
+        const text = result.data.text.trim();
+        const boxes = withBoxes ? extractBoxesFromTesseractResult(result, source.width, source.height) : [];
+        return { text, boxes };
+      };
 
-        // Prefer precise word boxes.
-        for (const word of result.data.words ?? []) {
-          if (tesseractBoxes.length >= OCR_MAX_PREVIEW_BOXES) break;
-          pushUniqueBox(boxFromBbox(word.bbox, processedCanvas.width, processedCanvas.height, word.text));
-        }
-        // Fallback to line boxes when no/too few word boxes are provided.
-        if (tesseractBoxes.length < 6) {
-          for (const line of result.data.lines ?? []) {
-            if (tesseractBoxes.length >= OCR_MAX_PREVIEW_BOXES) break;
-            pushUniqueBox(boxFromBbox(line.bbox, processedCanvas.width, processedCanvas.height, line.text));
-          }
-        }
-        // Last fallback to block + nested line boxes.
-        if (tesseractBoxes.length < 6) {
-          for (const block of result.data.blocks ?? []) {
-            if (tesseractBoxes.length >= OCR_MAX_PREVIEW_BOXES) break;
-            pushUniqueBox(boxFromBbox(block.bbox, processedCanvas.width, processedCanvas.height, block.text));
-            for (const line of block.lines ?? []) {
-              if (tesseractBoxes.length >= OCR_MAX_PREVIEW_BOXES) break;
-              pushUniqueBox(boxFromBbox(line.bbox, processedCanvas.width, processedCanvas.height, line.text));
-            }
-          }
-        }
+      const numericSourceCanvas = openCvCanvas ?? highContrastCanvas;
+      const fullReceipt = {
+        left: 0,
+        top: 0,
+        width: numericSourceCanvas.width,
+        height: numericSourceCanvas.height
+      };
+      const lowerRegion = {
+        left: 0,
+        top: Math.floor(numericSourceCanvas.height * 0.45),
+        width: numericSourceCanvas.width,
+        height: Math.floor(numericSourceCanvas.height * 0.55)
+      };
 
-        if (tesseractText.length > text.trim().length) {
-          text = tesseractText;
-          boxes = tesseractBoxes;
-        } else if (boxes.length === 0 && tesseractBoxes.length > 0) {
-          // Keep detector text, but still show geometry from tesseract.
-          boxes = tesseractBoxes;
+      const mainPass = await runTesseractPass({
+        source: openCvCanvas ?? balancedCanvas,
+        withBoxes: true,
+        params: {
+          tessedit_pageseg_mode: "6",
+          preserve_interword_spaces: "1",
+          tessedit_char_whitelist: ""
         }
-      }
+      });
+      const sparsePass = await runTesseractPass({
+        source: grayscaleCanvas,
+        params: {
+          tessedit_pageseg_mode: "11",
+          preserve_interword_spaces: "1",
+          tessedit_char_whitelist: ""
+        }
+      });
+      const numericPass = await runTesseractPass({
+        source: numericSourceCanvas,
+        rectangle: fullReceipt,
+        params: {
+          tessedit_pageseg_mode: "6",
+          preserve_interword_spaces: "1",
+          tessedit_char_whitelist: "0123456789.,€EURSUMMETOTALGESAMTBETRAG"
+        }
+      });
+      const lowerNumericPass = await runTesseractPass({
+        source: numericSourceCanvas,
+        rectangle: lowerRegion,
+        params: {
+          tessedit_pageseg_mode: "11",
+          preserve_interword_spaces: "1",
+          tessedit_char_whitelist: "0123456789.,€EURSUMMETOTALGESAMTBETRAG"
+        }
+      });
+      const openCvSparsePass =
+        openCvCanvas !== null
+          ? await runTesseractPass({
+              source: openCvCanvas,
+              params: {
+                tessedit_pageseg_mode: "11",
+                preserve_interword_spaces: "1",
+                tessedit_char_whitelist: ""
+              }
+            })
+          : { text: "", boxes: [] as OcrPreviewBox[] };
+
+      await worker.setParameters({
+        tessedit_pageseg_mode: "6",
+        preserve_interword_spaces: "1",
+        tessedit_char_whitelist: ""
+      });
+
+      const text = buildUniqueLinesText(
+        detectorText,
+        mainPass.text,
+        sparsePass.text,
+        numericPass.text,
+        lowerNumericPass.text,
+        openCvSparsePass.text
+      );
+      const boxes = mergeUniqueBoxes(detectorBoxes, mainPass.boxes);
 
       if (!text.trim()) {
+        setOcrError(t("finances.ocrReadError"));
+        return;
+      }
+
+      const hasEnoughText = text.replace(/\s/g, "").length >= OCR_MIN_USEFUL_TEXT_LENGTH;
+      if (!hasEnoughText) {
         setOcrError(t("finances.ocrReadError"));
         return;
       }
