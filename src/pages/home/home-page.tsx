@@ -96,7 +96,6 @@ import {
   getHouseholdRoute,
   getNearbyPois,
   type ReachabilityGeoJson,
-  type ReachabilityTravelMode,
   type RouteGeoJson,
   startHouseholdLiveLocationShare,
   stopHouseholdLiveLocationShare,
@@ -167,6 +166,69 @@ import {
   getEffectiveLandingMarkdown,
   getSavedLandingMarkdown
  } from "../../features/home-landing.utils";
+import {
+  type HomeCalendarEntry,
+  type HomeCalendarVacationEntry,
+  type HomeCalendarVacationSpan,
+  MAX_CALENDAR_TOOLTIP_ITEMS
+} from "./modules/calendar";
+import {
+  LANDING_WIDGET_COMPONENTS,
+  type LandingContentSegment,
+  widgetTokenFromKey
+} from "./modules/landing-page";
+import {
+  type MapMeasureMode,
+  type MapMeasureResult,
+  type MapMobilityLayerToggles,
+  type MapReachabilityMode,
+  type MapSearchResult,
+  type MapSearchViewportBounds,
+  type MapSearchZoomRequest,
+  type MapStyleId,
+  type MapWeatherLayerToggles,
+  type ManualMarkerFilterMode,
+  ADDRESS_GEOCODE_DEBOUNCE_MS,
+  BIKE_NETWORK_ATTRIBUTION,
+  BIKE_NETWORK_TILE_URL,
+  DEFAULT_MANUAL_MARKER_COLOR,
+  DEFAULT_MAP_CENTER,
+  GEOCODE_CACHE_TTL_MS,
+  GEOCODE_NEGATIVE_CACHE_TTL_MS,
+  LIVE_LOCATION_DURATION_OPTIONS,
+  MANUAL_MARKER_ICON_OPTIONS,
+  MAP_STYLE_OPTIONS,
+  MAP_ZOOM_DEFAULT,
+  MAP_ZOOM_WITH_ADDRESS,
+  MAP_ZOOM_WITH_ADDRESS_FALLBACK,
+  MARKER_COLOR_HEX_PATTERN,
+  MIN_ADDRESS_LENGTH_FOR_GEOCODE,
+  POI_CATEGORY_OPTIONS,
+  POI_CLUSTER_GRID_PX_HIGH_ZOOM,
+  POI_CLUSTER_GRID_PX_LOW_ZOOM,
+  POI_CLUSTER_MIN_ZOOM,
+  POI_RADIUS_METERS,
+  REACHABILITY_MINUTES_DEFAULT,
+  REACHABILITY_OPTIONS,
+  TRAFFIC_LAYER_CACHE_TTL_MS,
+  TRAFFIC_LAYER_FETCH_CONCURRENCY,
+  TRAFFIC_LAYER_MAX_INCIDENTS,
+  TRAFFIC_LAYER_MAX_ROADS_PER_CYCLE,
+  TRAFFIC_LAYER_REFRESH_MS,
+  TRANSIT_LAYER_DEPARTURE_LIMIT,
+  TRANSIT_LAYER_FETCH_BACKOFF_MS,
+  TRANSIT_LAYER_FETCH_RETRIES,
+  TRANSIT_LAYER_RADIUS_METERS,
+  TRANSIT_LAYER_REFRESH_MS,
+  TRANSIT_LAYER_STOP_LIMIT,
+  readPersistedMapSettings,
+  writePersistedMapSettings
+} from "./modules/map";
+import { MAX_WHITEBOARD_BYTES } from "./modules/whiteboard";
+import {
+  type HouseholdWeatherDay,
+  type HouseholdWeatherHourlyPoint
+} from "./modules/weather";
 
 const MXEditorLazy = lazy(() =>
   import("../../components/mx-editor").then((module) => ({ default: module.MXEditor }))
@@ -209,136 +271,6 @@ interface HomePageProps {
   onCompleteTask: (task: TaskItem) => Promise<void>;
 }
 
-type LandingContentSegment = { type: "markdown"; content: string } | { type: "widget"; key: LandingWidgetKey };
-type HomeCalendarBucketVote = {
-  item: BucketItem;
-  date: string;
-  voters: string[];
-};
-type HomeCalendarShoppingEntry = {
-  id: string;
-  title: string;
-  userId: string | null;
-  at: string;
-};
-type HomeCalendarVacationEntry = {
-  id: string;
-  userId: string;
-  startDate: string;
-  endDate: string;
-  note: string | null;
-  manual?: boolean;
-};
-type HomeCalendarVacationSpan = HomeCalendarVacationEntry & {
-  kind: "single" | "start" | "middle" | "end";
-};
-type HomeCalendarDueTask = {
-  task: TaskItem;
-  status: "overdue" | "due" | "upcoming";
-};
-type HomeCalendarEntry = {
-  cleaningDueTasks: HomeCalendarDueTask[];
-  taskCompletions: TaskCompletion[];
-  financeEntries: FinanceEntry[];
-  bucketVotes: HomeCalendarBucketVote[];
-  shoppingEntries: HomeCalendarShoppingEntry[];
-  cashAudits: CashAuditRequest[];
-  vacations: HomeCalendarVacationEntry[];
-};
-type MapStyleId = "street" | "nature" | "satellite" | "light" | "dark";
-type MapStyleOption = {
-  id: MapStyleId;
-  labelKey: string;
-  tileUrl: string;
-  attribution: string;
-  subdomains?: string;
-  maxZoom?: number;
-};
-type MapWeatherLayerToggles = {
-  radar: boolean;
-  warnings: boolean;
-  lightning: boolean;
-};
-type MapMobilityLayerToggles = {
-  transitLive: boolean;
-  bikeNetwork: boolean;
-  trafficLive: boolean;
-};
-type ManualMarkerFilterMode = "all" | "mine" | "member" | "none";
-type MapMeasureMode = "smart";
-type MapMeasureResult = {
-  mode: "distance" | "area";
-  distanceMeters?: number;
-  areaSqm?: number;
-  anchor?: [number, number];
-};
-type MapReachabilityMode = ReachabilityTravelMode;
-type MapSearchViewportBounds = {
-  south: number;
-  west: number;
-  north: number;
-  east: number;
-};
-type MapSearchResult = {
-  id: string;
-  label: string;
-  lat: number;
-  lon: number;
-  bounds: MapSearchViewportBounds | null;
-};
-type MapSearchZoomRequest = {
-  token: number;
-  lat: number;
-  lon: number;
-  bounds: MapSearchViewportBounds | null;
-};
-type HouseholdWeatherDay = {
-  date: string;
-  weatherCode: number | null;
-  tempMaxC: number | null;
-  tempMinC: number | null;
-  precipitationMm: number | null;
-  precipitationProbabilityPercent: number | null;
-  windSpeedKmh: number | null;
-  windGustKmh: number | null;
-  windDirectionDeg: number | null;
-  uvIndexMax: number | null;
-  sunrise: string | null;
-  sunset: string | null;
-};
-type HouseholdWeatherHourlyPoint = {
-  time: string;
-  tempC: number | null;
-  apparentTempC: number | null;
-  precipitationMm: number | null;
-  snowfallCm: number | null;
-  precipitationProbabilityPercent: number | null;
-  cloudCoverPercent: number | null;
-  uvIndex: number | null;
-  windSpeedKmh: number | null;
-};
-
-const LANDING_WIDGET_COMPONENTS: Array<{ key: LandingWidgetKey; tag: string }> = [
-  { key: "tasks-overview", tag: "LandingWidgetTasksOverview" },
-  { key: "tasks-for-you", tag: "LandingWidgetTasksForYou" },
-  { key: "your-balance", tag: "LandingWidgetYourBalance" },
-  { key: "household-balance", tag: "LandingWidgetHouseholdBalance" },
-  { key: "recent-activity", tag: "LandingWidgetRecentActivity" },
-  { key: "bucket-short-list", tag: "LandingWidgetBucketShortList" },
-  { key: "member-of-month", tag: "LandingWidgetMemberOfMonth" },
-  { key: "fairness-score", tag: "LandingWidgetFairnessScore" },
-  { key: "reliability-score", tag: "LandingWidgetReliabilityScore" },
-  { key: "expenses-by-month", tag: "LandingWidgetExpensesByMonth" },
-  { key: "fairness-by-member", tag: "LandingWidgetFairnessByMember" },
-  { key: "reliability-by-member", tag: "LandingWidgetReliabilityByMember" },
-  { key: "household-calendar", tag: "LandingWidgetHouseholdCalendar" },
-  { key: "household-weather-daily", tag: "LandingWidgetHouseholdWeatherDaily" },
-  { key: "household-weather-plot", tag: "LandingWidgetHouseholdWeatherPlot" },
-  { key: "household-weather", tag: "LandingWidgetHouseholdWeather" },
-  { key: "household-whiteboard", tag: "LandingWidgetHouseholdWhiteboard" },
-  { key: "household-map", tag: "LandingWidgetHouseholdMap" }
-];
-
 ChartJS.register(
   CategoryScale,
   LinearScale,
@@ -350,149 +282,6 @@ ChartJS.register(
   Filler,
   zoomPlugin
 );
-
-const MAX_WHITEBOARD_BYTES = 10 * 1024 * 1024;
-const MAX_CALENDAR_TOOLTIP_ITEMS = 4;
-const DEFAULT_MAP_CENTER: [number, number] = [51.1657, 10.4515];
-const MAP_ZOOM_WITH_ADDRESS = 16;
-const MAP_ZOOM_WITH_ADDRESS_FALLBACK = 14;
-const MAP_ZOOM_DEFAULT = 5;
-const MIN_ADDRESS_LENGTH_FOR_GEOCODE = 5;
-const ADDRESS_GEOCODE_DEBOUNCE_MS = 650;
-const GEOCODE_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
-const GEOCODE_NEGATIVE_CACHE_TTL_MS = 10 * 60 * 1000;
-const POI_RADIUS_METERS = 1500;
-const POI_CLUSTER_MIN_ZOOM = 16;
-const POI_CLUSTER_GRID_PX_LOW_ZOOM = 64;
-const POI_CLUSTER_GRID_PX_HIGH_ZOOM = 52;
-const POI_CATEGORY_OPTIONS: Array<{ id: PoiCategory; labelKey: string; emoji: string }> = [
-  { id: "restaurant", labelKey: "home.householdMapPoiRestaurants", emoji: "🍽️" },
-  { id: "shop", labelKey: "home.householdMapPoiShops", emoji: "🛍️" },
-  { id: "supermarket", labelKey: "home.householdMapPoiSupermarkets", emoji: "🛒" },
-  { id: "fuel", labelKey: "home.householdMapPoiFuel", emoji: "⛽" }
-];
-const DEFAULT_MANUAL_MARKER_COLOR = "#0f766e";
-const MARKER_COLOR_HEX_PATTERN = /^#[0-9A-Fa-f]{6}$/;
-const MANUAL_MARKER_ICON_OPTIONS: Array<{ id: HouseholdMapMarkerIcon; labelKey: string }> = [
-  { id: "home", labelKey: "home.householdMapMarkerIconHome" },
-  { id: "shopping", labelKey: "home.householdMapMarkerIconShopping" },
-  { id: "restaurant", labelKey: "home.householdMapMarkerIconRestaurant" },
-  { id: "fuel", labelKey: "home.householdMapMarkerIconFuel" },
-  { id: "hospital", labelKey: "home.householdMapMarkerIconHospital" },
-  { id: "park", labelKey: "home.householdMapMarkerIconPark" },
-  { id: "work", labelKey: "home.householdMapMarkerIconWork" },
-  { id: "star", labelKey: "home.householdMapMarkerIconStar" },
-  { id: "school", labelKey: "home.householdMapMarkerIconSchool" },
-  { id: "cafe", labelKey: "home.householdMapMarkerIconCafe" },
-  { id: "bar", labelKey: "home.householdMapMarkerIconBar" },
-  { id: "pharmacy", labelKey: "home.householdMapMarkerIconPharmacy" },
-  { id: "gym", labelKey: "home.householdMapMarkerIconGym" },
-  { id: "parking", labelKey: "home.householdMapMarkerIconParking" },
-  { id: "transit", labelKey: "home.householdMapMarkerIconTransit" }
-];
-const LIVE_LOCATION_DURATION_OPTIONS = [5, 15, 30, 60] as const;
-const REACHABILITY_MINUTES_DEFAULT = 20;
-const MAP_SETTINGS_STORAGE_KEY_PREFIX = "domora:home-map-settings:v1";
-const TRANSIT_LAYER_RADIUS_METERS = 1500;
-const TRANSIT_LAYER_STOP_LIMIT = 10;
-const TRANSIT_LAYER_DEPARTURE_LIMIT = 3;
-const TRANSIT_LAYER_REFRESH_MS = 60 * 1000;
-const TRANSIT_LAYER_FETCH_RETRIES = 2;
-const TRANSIT_LAYER_FETCH_BACKOFF_MS = 450;
-const TRAFFIC_LAYER_CACHE_TTL_MS = 5 * 60 * 1000;
-const TRAFFIC_LAYER_REFRESH_MS = 3 * 60 * 1000;
-const TRAFFIC_LAYER_MAX_ROADS_PER_CYCLE = 200;
-const TRAFFIC_LAYER_FETCH_CONCURRENCY = 8;
-const TRAFFIC_LAYER_MAX_INCIDENTS = 120;
-const BIKE_NETWORK_TILE_URL = "https://{s}.tile-cyclosm.openstreetmap.fr/cyclosm/{z}/{x}/{y}.png";
-const BIKE_NETWORK_ATTRIBUTION =
-  '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, style <a href="https://cyclosm.org/">CyclOSM</a>';
-const REACHABILITY_OPTIONS: Array<{ id: MapReachabilityMode; labelKey: string }> = [
-  { id: "walk", labelKey: "home.householdMapReachabilityModeWalk" },
-  { id: "bike", labelKey: "home.householdMapReachabilityModeBike" },
-  { id: "car", labelKey: "home.householdMapReachabilityModeCar" },
-  { id: "transit", labelKey: "home.householdMapReachabilityModeTransit" }
-];
-const MAP_STYLE_OPTIONS: MapStyleOption[] = [
-  {
-    id: "street",
-    labelKey: "home.householdMapStyleStreet",
-    tileUrl: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-    subdomains: "abc",
-    maxZoom: 19
-  },
-  {
-    id: "nature",
-    labelKey: "home.householdMapStyleNature",
-    tileUrl: "https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png",
-    attribution:
-      'Map data: &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, SRTM | Map style: &copy; <a href="https://opentopomap.org">OpenTopoMap</a>',
-    subdomains: "abc",
-    maxZoom: 17
-  },
-  {
-    id: "satellite",
-    labelKey: "home.householdMapStyleSatellite",
-    tileUrl: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-    attribution: 'Tiles &copy; <a href="https://www.esri.com">Esri</a>',
-    maxZoom: 18
-  },
-  {
-    id: "light",
-    labelKey: "home.householdMapStyleLight",
-    tileUrl: "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
-    attribution:
-      '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
-    subdomains: "abcd",
-    maxZoom: 20
-  },
-  {
-    id: "dark",
-    labelKey: "home.householdMapStyleDark",
-    tileUrl: "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
-    attribution:
-      '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
-    subdomains: "abcd",
-    maxZoom: 20
-  }
-];
-
-type PersistedMapSettings = {
-  mapTravelMode: MapReachabilityMode;
-  mapWeatherLayers: MapWeatherLayerToggles;
-  mapMobilityLayers: MapMobilityLayerToggles;
-  manualMarkerFilterMode: ManualMarkerFilterMode;
-  manualMarkerFilterMemberId: string;
-  poiCategoriesEnabled: Record<PoiCategory, boolean>;
-};
-
-const canUseLocalStorage = () => typeof window !== "undefined" && "localStorage" in window;
-
-const getMapSettingsStorageKey = (householdId: string) =>
-  `${MAP_SETTINGS_STORAGE_KEY_PREFIX}:${householdId}`;
-
-const readPersistedMapSettings = (householdId: string): Partial<PersistedMapSettings> | null => {
-  if (!canUseLocalStorage()) return null;
-  try {
-    const raw = window.localStorage.getItem(getMapSettingsStorageKey(householdId));
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as Partial<PersistedMapSettings>;
-    return parsed && typeof parsed === "object" ? parsed : null;
-  } catch {
-    return null;
-  }
-};
-
-const writePersistedMapSettings = (householdId: string, value: PersistedMapSettings) => {
-  if (!canUseLocalStorage()) return;
-  try {
-    window.localStorage.setItem(getMapSettingsStorageKey(householdId), JSON.stringify(value));
-  } catch {
-    // ignore quota/storage errors
-  }
-};
-const widgetTokenFromKey = (key: LandingWidgetKey) => `{{widget:${key}}}`;
 
 let leafletMarkerConfigured = false;
 const ensureLeafletMarkerIcon = () => {
