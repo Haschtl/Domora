@@ -162,7 +162,8 @@ serve(async (req) => {
       {
         id: "origin",
         tm,
-        w: { lat, lng: lon }
+        lat,
+        lng: lon
       }
     ],
     polygon: {
@@ -192,7 +193,7 @@ serve(async (req) => {
     }
     if (!response.ok) {
       return new Response(JSON.stringify({ error: "Targomo request failed", details: parsed }), {
-        status: 502,
+        status: Math.max(400, Math.min(599, response.status || 502)),
         headers: { "content-type": "application/json", ...corsHeaders }
       });
     }

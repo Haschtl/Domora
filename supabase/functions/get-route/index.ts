@@ -23,23 +23,59 @@ type RouteGeoJson = {
 const isValidTravelMode = (value: unknown): value is RouteTravelMode =>
   value === "walk" || value === "bike" || value === "car" || value === "transit";
 
+const WEB_MERCATOR_RADIUS = 6378137;
+
+const mercatorToWgs84 = (x: number, y: number): [number, number] => {
+  const lon = (x / WEB_MERCATOR_RADIUS) * (180 / Math.PI);
+  const lat =
+    (2 * Math.atan(Math.exp(y / WEB_MERCATOR_RADIUS)) - Math.PI / 2) * (180 / Math.PI);
+  return [lon, lat];
+};
+
 const normalizeRouteGeoJson = (raw: unknown): RouteGeoJson | null => {
   const asRecord = (value: unknown) =>
     value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+  const asCoordinate = (value: unknown): [number, number] | null => {
+    if (!Array.isArray(value) || value.length < 2) return null;
+    const x = Number(value[0]);
+    const y = Number(value[1]);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+    return [x, y];
+  };
 
   const root = asRecord(raw);
   if (!root) return null;
   const data = asRecord(root.data) ?? root;
 
-  let featureCollection: { features: unknown[] } | null = null;
+  let featureCollection: { features: unknown[]; usesWebMercator: boolean } | null = null;
   if (data.type === "FeatureCollection" && Array.isArray(data.features)) {
-    featureCollection = { features: data.features };
+    const crsName = asRecord(asRecord(data.crs)?.properties)?.name;
+    featureCollection = {
+      features: data.features,
+      usesWebMercator: typeof crsName === "string" && crsName.includes("3857")
+    };
   } else if (data.type === "Feature" && data.geometry) {
-    featureCollection = { features: [data] };
+    featureCollection = { features: [data], usesWebMercator: false };
   } else if (Array.isArray(data.features)) {
-    featureCollection = { features: data.features };
+    featureCollection = { features: data.features, usesWebMercator: false };
+  } else if (Array.isArray(data.routes) && data.routes.length > 0) {
+    const routeCollections = data.routes
+      .map((entry) => asRecord(entry))
+      .filter((entry): entry is Record<string, unknown> => entry !== null)
+      .filter((entry) => Array.isArray(entry.features));
+    if (routeCollections.length > 0) {
+      const first = routeCollections[0]!;
+      const crsName = asRecord(asRecord(first.crs)?.properties)?.name;
+      const mergedFeatures = routeCollections.flatMap((entry) =>
+        Array.isArray(entry.features) ? entry.features : []
+      );
+      featureCollection = {
+        features: mergedFeatures,
+        usesWebMercator: typeof crsName === "string" && crsName.includes("3857")
+      };
+    }
   } else if (Array.isArray(raw)) {
-    featureCollection = { features: raw };
+    featureCollection = { features: raw, usesWebMercator: false };
   }
   if (!featureCollection) return null;
 
@@ -52,12 +88,45 @@ const normalizeRouteGeoJson = (raw: unknown): RouteGeoJson | null => {
       const geometryType = geometry.type;
       if (geometryType !== "LineString" && geometryType !== "MultiLineString") return null;
       if (!Array.isArray(geometry.coordinates)) return null;
+
+      const mapCoordinate = (tuple: unknown): [number, number] | null => {
+        const value = asCoordinate(tuple);
+        if (!value) return null;
+        if (featureCollection.usesWebMercator) {
+          return mercatorToWgs84(value[0], value[1]);
+        }
+        return value;
+      };
+
+      let normalizedCoordinates: number[][] | number[][][] | null = null;
+      if (geometryType === "LineString") {
+        const line = geometry.coordinates
+          .map((tuple) => mapCoordinate(tuple))
+          .filter((tuple): tuple is [number, number] => tuple !== null)
+          .map((tuple) => [tuple[0], tuple[1]]);
+        if (line.length < 2) return null;
+        normalizedCoordinates = line;
+      } else {
+        const lines = geometry.coordinates
+          .map((line) =>
+            Array.isArray(line)
+              ? line
+                .map((tuple) => mapCoordinate(tuple))
+                .filter((tuple): tuple is [number, number] => tuple !== null)
+                .map((tuple) => [tuple[0], tuple[1]])
+              : []
+          )
+          .filter((line) => line.length >= 2);
+        if (lines.length === 0) return null;
+        normalizedCoordinates = lines;
+      }
+
       return {
         type: "Feature" as const,
         properties: asRecord(feature.properties) ?? {},
         geometry: {
           type: geometryType,
-          coordinates: geometry.coordinates as number[][] | number[][][]
+          coordinates: normalizedCoordinates
         }
       };
     })
@@ -162,15 +231,19 @@ serve(async (req) => {
   })();
 
   const requestBody = {
-    source: {
-      id: "from",
-      tm,
-      w: { lat: fromLat, lng: fromLon }
-    },
+    sources: [
+      {
+        id: "from",
+        tm,
+        lat: fromLat,
+        lng: fromLon
+      }
+    ],
     targets: [
       {
         id: "to",
-        w: { lat: toLat, lng: toLon }
+        lat: toLat,
+        lng: toLon
       }
     ],
     pathSerializer: "geojson"
@@ -196,7 +269,7 @@ serve(async (req) => {
     }
     if (!response.ok) {
       return new Response(JSON.stringify({ error: "Targomo request failed", details: parsed }), {
-        status: 502,
+        status: Math.max(400, Math.min(599, response.status || 502)),
         headers: { "content-type": "application/json", ...corsHeaders }
       });
     }

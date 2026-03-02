@@ -3369,6 +3369,40 @@ const routeGeoJsonSchema = z.object({
 });
 export type RouteGeoJson = z.infer<typeof routeGeoJsonSchema>;
 
+const extractFunctionInvokeErrorMessage = async (
+  error: unknown,
+  fallbackMessage: string
+): Promise<string> => {
+  if (!(error instanceof Error)) return fallbackMessage;
+
+  const context = (error as { context?: { json?: () => Promise<unknown> } }).context;
+  if (!context?.json) return error.message || fallbackMessage;
+
+  try {
+    const payload = await context.json();
+    if (payload && typeof payload === "object") {
+      const maybeError = (payload as { error?: unknown }).error;
+      const maybeDetails = (payload as { details?: unknown }).details;
+      if (typeof maybeError === "string" && maybeError.trim().length > 0) {
+        if (typeof maybeDetails === "string" && maybeDetails.trim().length > 0) {
+          return `${maybeError}: ${maybeDetails}`;
+        }
+        if (maybeDetails && typeof maybeDetails === "object") {
+          return `${maybeError}: ${JSON.stringify(maybeDetails)}`;
+        }
+        return maybeError;
+      }
+      if (typeof maybeDetails === "string" && maybeDetails.trim().length > 0) {
+        return maybeDetails;
+      }
+    }
+  } catch {
+    // ignore response parse errors and fall back to default handling
+  }
+
+  return error.message || fallbackMessage;
+};
+
 export const getNearbyPois = async (input: {
   householdId: string;
   lat: number;
@@ -3396,7 +3430,10 @@ export const getNearbyPois = async (input: {
     }
   });
 
-  if (error) throw error;
+  if (error) {
+    const message = await extractFunctionInvokeErrorMessage(error, "Failed to load POIs");
+    throw new Error(message);
+  }
   const parsedResponse = z.object({
     rows: z.array(nearbyPoiSchema).default([]),
     cached: z.coerce.boolean().default(false),
@@ -3435,7 +3472,10 @@ export const getHouseholdReachability = async (input: {
     }
   });
 
-  if (error) throw error;
+  if (error) {
+    const message = await extractFunctionInvokeErrorMessage(error, "Failed to calculate reachability");
+    throw new Error(message);
+  }
   const parsedResponse = z.object({
     geojson: reachabilityGeoJsonSchema
   }).parse(data);
@@ -3474,7 +3514,10 @@ export const getHouseholdRoute = async (input: {
     }
   });
 
-  if (error) throw error;
+  if (error) {
+    const message = await extractFunctionInvokeErrorMessage(error, "Failed to calculate route");
+    throw new Error(message);
+  }
   const parsedResponse = z.object({
     geojson: routeGeoJsonSchema
   }).parse(data);

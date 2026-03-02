@@ -159,7 +159,8 @@ serve(async (req) => {
     .eq("cache_key", cacheKey)
     .maybeSingle();
 
-  let response: Response | null = null;
+  let parsedOverpassBody: { elements?: OverpassElement[] } | null = null;
+  let upstreamFailureMessage: string | null = null;
   for (const endpoint of overpassEndpoints) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 20_000);
@@ -170,18 +171,36 @@ serve(async (req) => {
         body: buildOverpassQuery(lat, lon, radiusMeters, categories),
         signal: controller.signal
       });
-      if (candidate.ok) {
-        response = candidate;
-        break;
+      if (!candidate.ok) {
+        upstreamFailureMessage = `Endpoint ${endpoint} returned ${candidate.status}`;
+        continue;
       }
-    } catch {
-      // Try next endpoint.
+
+      const rawText = await candidate.text();
+      let parsed: unknown;
+      try {
+        parsed = rawText ? JSON.parse(rawText) : null;
+      } catch {
+        upstreamFailureMessage = `Endpoint ${endpoint} returned non-JSON response`;
+        continue;
+      }
+
+      if (!parsed || typeof parsed !== "object") {
+        upstreamFailureMessage = `Endpoint ${endpoint} returned invalid payload`;
+        continue;
+      }
+
+      parsedOverpassBody = parsed as { elements?: OverpassElement[] };
+      break;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "request_failed";
+      upstreamFailureMessage = `Endpoint ${endpoint} failed: ${message}`;
     } finally {
       clearTimeout(timeout);
     }
   }
 
-  if (!response) {
+  if (!parsedOverpassBody) {
     if (staleCachedRow && Array.isArray((staleCachedRow as { payload?: unknown }).payload)) {
       const row = staleCachedRow as { payload: unknown[]; expires_at: string };
       return new Response(
@@ -196,11 +215,19 @@ serve(async (req) => {
         }
       );
     }
-    return new Response("Failed to reach Overpass", { status: 502, headers: corsHeaders });
+    return new Response(
+      JSON.stringify({
+        error: "Failed to reach Overpass",
+        details: upstreamFailureMessage
+      }),
+      {
+        status: 502,
+        headers: { "content-type": "application/json", ...corsHeaders }
+      }
+    );
   }
 
-  const body = (await response.json()) as { elements?: OverpassElement[] };
-  const elements = Array.isArray(body.elements) ? body.elements : [];
+  const elements = Array.isArray(parsedOverpassBody.elements) ? parsedOverpassBody.elements : [];
   const seen = new Set<string>();
   const rows = elements
     .map((element) => {

@@ -766,11 +766,13 @@ const LocateControlBridge = ({
 const GeomanMeasureBridge = ({
   enabled,
   mode,
+  clearToken,
   onModeChange,
   onMeasured
 }: {
   enabled: boolean;
   mode: MapMeasureMode | null;
+  clearToken: number;
   onModeChange: (nextMode: MapMeasureMode | null) => void;
   onMeasured: (result: MapMeasureResult) => void;
 }) => {
@@ -783,8 +785,18 @@ const GeomanMeasureBridge = ({
   }, [mode]);
 
   useEffect(() => {
+    if (!enabled) return;
+    if (!lastLayerRef.current) return;
+    map.removeLayer(lastLayerRef.current);
+    lastLayerRef.current = null;
+  }, [clearToken, enabled, map]);
+
+  useEffect(() => {
     const mapWithPm = map as MapWithPm;
-    if (!enabled || !mapWithPm.pm || !mode) return;
+    if (!enabled || !mapWithPm.pm || !mode) {
+      mapWithPm.pm?.disableDraw();
+      return;
+    }
 
     mapWithPm.pm.enableDraw(mode === "distance" ? "Line" : "Polygon", {
       continueDrawing: false,
@@ -1013,11 +1025,76 @@ const RouteLayerBridge = ({
 }) => {
   const map = useMap();
   const layerRef = useRef<L.GeoJSON | null>(null);
+  const infoMarkerRef = useRef<L.Marker | null>(null);
+
+  const getRouteDisplayInfo = (value: RouteGeoJson) => {
+    let travelTimeSeconds: number | null = null;
+    let lengthMeters: number | null = null;
+    let anchor: [number, number] | null = null;
+    let fallbackCoords: Array<[number, number]> = [];
+
+    for (const feature of value.features) {
+      if (feature.geometry.type === "LineString") {
+        const coords = feature.geometry.coordinates as number[][];
+        const normalized = coords
+          .map((pair) => [Number(pair[0]), Number(pair[1])] as [number, number])
+          .filter(([lon, lat]) => Number.isFinite(lat) && Number.isFinite(lon));
+        if (normalized.length >= 2) {
+          fallbackCoords = normalized;
+          if (!anchor) {
+            const midIndex = Math.floor(normalized.length / 2);
+            const mid = normalized[midIndex]!;
+            anchor = [mid[1], mid[0]];
+          }
+        }
+      }
+      const properties = feature.properties as { travelTime?: unknown; length?: unknown } | undefined;
+      if (travelTimeSeconds === null && properties && Number.isFinite(Number(properties.travelTime))) {
+        travelTimeSeconds = Number(properties.travelTime);
+      }
+      if (lengthMeters === null && properties && Number.isFinite(Number(properties.length))) {
+        lengthMeters = Number(properties.length);
+      }
+    }
+
+    if (lengthMeters === null && fallbackCoords.length >= 2) {
+      let sum = 0;
+      for (let index = 1; index < fallbackCoords.length; index += 1) {
+        const prev = fallbackCoords[index - 1]!;
+        const next = fallbackCoords[index]!;
+        sum += L.latLng(prev[1], prev[0]).distanceTo(L.latLng(next[1], next[0]));
+      }
+      lengthMeters = sum;
+    }
+
+    if (!anchor) return null;
+
+    const durationLabel =
+      travelTimeSeconds !== null
+        ? travelTimeSeconds >= 3600
+          ? `${(travelTimeSeconds / 3600).toFixed(1)} h`
+          : `${Math.max(1, Math.round(travelTimeSeconds / 60))} min`
+        : null;
+    const distanceLabel =
+      lengthMeters !== null
+        ? lengthMeters >= 1000
+          ? `${(lengthMeters / 1000).toFixed(1)} km`
+          : `${Math.round(lengthMeters)} m`
+        : null;
+    const label = [durationLabel, distanceLabel].filter((entry): entry is string => Boolean(entry)).join(" · ");
+    if (!label) return null;
+
+    return { anchor, label };
+  };
 
   useEffect(() => {
     if (layerRef.current) {
       map.removeLayer(layerRef.current);
       layerRef.current = null;
+    }
+    if (infoMarkerRef.current) {
+      map.removeLayer(infoMarkerRef.current);
+      infoMarkerRef.current = null;
     }
     if (!geojson) return;
     const layer = L.geoJSON(geojson as unknown as GeoJSON.GeoJsonObject, {
@@ -1030,10 +1107,30 @@ const RouteLayerBridge = ({
     });
     layer.addTo(map);
     layerRef.current = layer;
+
+    const routeInfo = getRouteDisplayInfo(geojson);
+    if (routeInfo) {
+      const marker = L.marker(routeInfo.anchor, {
+        interactive: false,
+        icon: L.divIcon({
+          className: "domora-route-inline-info-icon",
+          html: `<div class="domora-route-inline-info">${routeInfo.label}</div>`,
+          iconSize: [0, 0],
+          iconAnchor: [0, 0]
+        })
+      });
+      marker.addTo(map);
+      infoMarkerRef.current = marker;
+    }
+
     return () => {
       if (!layerRef.current) return;
       map.removeLayer(layerRef.current);
       layerRef.current = null;
+      if (infoMarkerRef.current) {
+        map.removeLayer(infoMarkerRef.current);
+        infoMarkerRef.current = null;
+      }
     };
   }, [color, geojson, map]);
 
@@ -1571,6 +1668,22 @@ const getSearchResultMarkerIcon = () => {
     popupAnchor: [0, -20]
   });
   searchDivIconCache.set(cacheKey, divIcon);
+  return divIcon;
+};
+
+const routePointDivIconCache = new Map<string, L.DivIcon>();
+const getRoutePointMarkerIcon = (color: string) => {
+  const cacheKey = color;
+  const cached = routePointDivIconCache.get(cacheKey);
+  if (cached) return cached;
+  const divIcon = L.divIcon({
+    className: "domora-map-route-point-icon",
+    html: `<div style="position:relative;width:28px;height:36px;display:flex;align-items:flex-start;justify-content:center"><div style="background:${color};border:2px solid #fff;width:24px;height:24px;border-radius:999px;box-shadow:0 2px 8px rgba(0,0,0,.33)"></div><div style="position:absolute;top:21px;left:50%;transform:translateX(-50%);width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-top:11px solid ${color};filter:drop-shadow(0 2px 4px rgba(0,0,0,.25))"></div></div>`,
+    iconSize: [28, 36],
+    iconAnchor: [14, 36],
+    popupAnchor: [0, -32]
+  });
+  routePointDivIconCache.set(cacheKey, divIcon);
   return divIcon;
 };
 
@@ -2308,6 +2421,7 @@ export const HomePage = ({
   const [mapMeasureMode, setMapMeasureMode] = useState<MapMeasureMode | null>(null);
   const [mapMeasureResult, setMapMeasureResult] = useState<string | null>(null);
   const [mapMeasureResultAnchor, setMapMeasureResultAnchor] = useState<[number, number] | null>(null);
+  const [mapMeasureClearToken, setMapMeasureClearToken] = useState(0);
   const [mapRenderVersion, setMapRenderVersion] = useState(0);
   const [mapDeleteConfirm, setMapDeleteConfirm] = useState<{
     nextMarkers: HouseholdMapMarker[];
@@ -2319,6 +2433,9 @@ export const HomePage = ({
   const [mapReachabilityLoading, setMapReachabilityLoading] = useState(false);
   const [mapReachabilityError, setMapReachabilityError] = useState<string | null>(null);
   const [mapReachabilityPanelOpen, setMapReachabilityPanelOpen] = useState(false);
+  const [mapReachabilityOrigin, setMapReachabilityOrigin] = useState<[number, number] | null>(null);
+  const [mapReachabilityOriginManual, setMapReachabilityOriginManual] = useState(false);
+  const [mapReachabilityPickOriginActive, setMapReachabilityPickOriginActive] = useState(false);
   const [mapReachabilityFitRequestToken, setMapReachabilityFitRequestToken] = useState(0);
   const [mapRoutePanelOpen, setMapRoutePanelOpen] = useState(false);
   const [mapRouteMode, setMapRouteMode] = useState<MapReachabilityMode>("walk");
@@ -3781,7 +3898,7 @@ export const HomePage = ({
   }, [t]);
 
   const runReachability = useCallback(async () => {
-    const origin = myLocationCenter ?? addressMapCenter;
+    const origin = mapReachabilityOrigin;
     if (!origin) {
       setMapReachabilityError(t("home.householdMapReachabilityNeedsOrigin"));
       return;
@@ -3804,34 +3921,31 @@ export const HomePage = ({
     } finally {
       setMapReachabilityLoading(false);
     }
-  }, [addressMapCenter, household.id, mapReachabilityMinutes, mapReachabilityMode, myLocationCenter, t]);
+  }, [household.id, mapReachabilityMinutes, mapReachabilityMode, mapReachabilityOrigin, t]);
 
   const clearReachability = useCallback(() => {
     setMapReachabilityGeoJson(null);
     setMapReachabilityError(null);
     setMapReachabilityLoading(false);
+    setMapReachabilityPickOriginActive(false);
   }, []);
 
   const mapReachabilityColor = useMemo(() => {
-    switch (mapReachabilityMode) {
-      case "walk":
-        return "#16a34a";
-      case "bike":
-        return "#0891b2";
-      case "car":
-        return "#f97316";
-      case "transit":
-        return "#7c3aed";
-      default:
-        return "#0f766e";
-    }
-  }, [mapReachabilityMode]);
+    return "#f97316";
+  }, []);
 
   const mapRouteOrigin = useMemo<[number, number] | null>(() => {
     if (myLocationCenter) return myLocationCenter;
     if (addressMapCenter) return addressMapCenter;
     return null;
   }, [addressMapCenter, myLocationCenter]);
+
+  useEffect(() => {
+    if (mapReachabilityOrigin) return;
+    if (!mapRouteOrigin) return;
+    setMapReachabilityOrigin(mapRouteOrigin);
+    setMapReachabilityOriginManual(false);
+  }, [mapReachabilityOrigin, mapRouteOrigin]);
 
   const runRoutePlanning = useCallback(async () => {
     if (!mapRouteOrigin) {
@@ -4167,12 +4281,18 @@ export const HomePage = ({
     },
     [t]
   );
+  const clearMeasureResultAndLayer = useCallback(() => {
+    setMapMeasureMode(null);
+    setMapMeasureResult(null);
+    setMapMeasureResultAnchor(null);
+    setMapMeasureClearToken((current) => current + 1);
+  }, []);
   const dismissMapPanelsOnMapClick = useCallback(() => {
-    if (mapRoutePickTargetActive) return;
+    if (mapRoutePickTargetActive || mapReachabilityPickOriginActive) return;
     setMapReachabilityPanelOpen(false);
     setMapRoutePanelOpen(false);
     setMapMeasurePanelOpen(false);
-  }, [mapRoutePickTargetActive]);
+  }, [mapReachabilityPickOriginActive, mapRoutePickTargetActive]);
   const renderHouseholdMapSurface = useCallback(
     (containerClassName: string, isFullscreen: boolean) => (
       <div className={containerClassName}>
@@ -4387,7 +4507,7 @@ export const HomePage = ({
               aria-label={t("home.householdMapReachability")}
               title={t("home.householdMapReachability")}
             >
-              <Route className="h-4 w-4" />
+              <MapIcon className="h-4 w-4" />
             </Button>
           </div>
         ) : null}
@@ -4415,6 +4535,7 @@ export const HomePage = ({
           <GeomanMeasureBridge
             enabled={isFullscreen}
             mode={mapMeasureMode}
+            clearToken={mapMeasureClearToken}
             onModeChange={setMapMeasureMode}
             onMeasured={onMeasuredWithGeoman}
           />
@@ -4427,6 +4548,15 @@ export const HomePage = ({
             onPick={(lat, lon) => {
               setMapRouteTarget([lat, lon]);
               setMapRoutePickTargetActive(false);
+            }}
+          />
+          <RouteTargetPickBridge
+            enabled={isFullscreen && mapReachabilityPanelOpen && mapReachabilityPickOriginActive}
+            onPick={(lat, lon) => {
+              setMapReachabilityOrigin([lat, lon]);
+              setMapReachabilityOriginManual(true);
+              setMapReachabilityPickOriginActive(false);
+              setMapReachabilityError(null);
             }}
           />
           <MapOverlayDismissBridge
@@ -4529,13 +4659,28 @@ export const HomePage = ({
             <Marker
               key={`route-target-${mapRouteTarget[0]}-${mapRouteTarget[1]}`}
               position={mapRouteTarget}
-              icon={getSearchResultMarkerIcon()}
+              icon={getRoutePointMarkerIcon(mapRouteColor)}
               pmIgnore
             >
               <Popup>
                 <div className="space-y-1">
                   <p className="text-xs font-semibold">{t("home.householdMapRouteTarget")}</p>
                   {renderOpenInMapsButton(mapRouteTarget[0], mapRouteTarget[1])}
+                </div>
+              </Popup>
+            </Marker>
+          ) : null}
+          {isFullscreen && mapReachabilityOrigin && mapReachabilityOriginManual ? (
+            <Marker
+              key={`reachability-origin-${mapReachabilityOrigin[0]}-${mapReachabilityOrigin[1]}`}
+              position={mapReachabilityOrigin}
+              icon={getRoutePointMarkerIcon(mapReachabilityColor)}
+              pmIgnore
+            >
+              <Popup>
+                <div className="space-y-1">
+                  <p className="text-xs font-semibold">{t("home.householdMapReachabilityOriginLabel")}</p>
+                  {renderOpenInMapsButton(mapReachabilityOrigin[0], mapReachabilityOrigin[1])}
                 </div>
               </Popup>
             </Marker>
@@ -4846,7 +4991,7 @@ export const HomePage = ({
           </div>
         ) : null}
         {isFullscreen && mapReachabilityPanelOpen ? (
-          <div className="absolute bottom-[11rem] left-2 z-[1000] w-[min(320px,calc(100%-1rem))] rounded-xl border border-slate-200/85 bg-white/95 p-2 shadow-sm backdrop-blur dark:border-slate-600/80 dark:bg-slate-900/95">
+          <div className="absolute bottom-2 left-2 right-2 z-[1100] rounded-xl border border-slate-200/85 bg-white/95 p-2 shadow-sm backdrop-blur dark:border-slate-600/80 dark:bg-slate-900/95 sm:bottom-[11rem] sm:right-auto sm:w-[min(320px,calc(100%-1rem))]">
             <div className="grid grid-cols-1 gap-2">
               <div className="grid grid-cols-2 items-center gap-2">
                 <Label className="text-xs">{t("home.householdMapReachabilityModeLabel")}</Label>
@@ -4885,6 +5030,27 @@ export const HomePage = ({
                   className="h-8 text-xs"
                 />
               </div>
+              <div className="text-[11px] text-slate-600 dark:text-slate-300">
+                {mapReachabilityOrigin
+                  ? t("home.householdMapReachabilityOriginReady", {
+                      lat: mapReachabilityOrigin[0].toFixed(5),
+                      lon: mapReachabilityOrigin[1].toFixed(5)
+                    })
+                  : t("home.householdMapReachabilityNeedsOrigin")}
+              </div>
+              <Button
+                type="button"
+                size="sm"
+                variant={mapReachabilityPickOriginActive ? "default" : "outline"}
+                className="h-8"
+                onClick={() => {
+                  setMapReachabilityPickOriginActive((current) => !current);
+                }}
+              >
+                {mapReachabilityPickOriginActive
+                  ? t("home.householdMapReachabilityPickOriginActive")
+                  : t("home.householdMapReachabilityPickOrigin")}
+              </Button>
               <div className="flex items-center gap-2">
                 <Button
                   type="button"
@@ -4928,6 +5094,7 @@ export const HomePage = ({
                 onClick={() => {
                   setMapMeasureResult(null);
                   setMapMeasureResultAnchor(null);
+                  setMapMeasureClearToken((current) => current + 1);
                   setMapMeasureMode((current) => (current === "distance" ? null : "distance"));
                 }}
               >
@@ -4942,6 +5109,7 @@ export const HomePage = ({
                 onClick={() => {
                   setMapMeasureResult(null);
                   setMapMeasureResultAnchor(null);
+                  setMapMeasureClearToken((current) => current + 1);
                   setMapMeasureMode((current) => (current === "area" ? null : "area"));
                 }}
               >
@@ -4954,9 +5122,7 @@ export const HomePage = ({
                 variant="outline"
                 className="h-8 justify-start"
                 onClick={() => {
-                  setMapMeasureMode(null);
-                  setMapMeasureResult(null);
-                  setMapMeasureResultAnchor(null);
+                  clearMeasureResultAndLayer();
                 }}
               >
                 <X className="mr-2 h-4 w-4" />
@@ -4966,7 +5132,7 @@ export const HomePage = ({
           </div>
         ) : null}
         {isFullscreen && mapRoutePanelOpen ? (
-          <div className="absolute bottom-[11rem] right-2 z-[1000] w-[min(340px,calc(100%-1rem))] rounded-xl border border-slate-200/85 bg-white/95 p-2 shadow-sm backdrop-blur dark:border-slate-600/80 dark:bg-slate-900/95">
+          <div className="absolute bottom-2 left-2 right-2 z-[1100] rounded-xl border border-slate-200/85 bg-white/95 p-2 shadow-sm backdrop-blur dark:border-slate-600/80 dark:bg-slate-900/95 sm:bottom-[11rem] sm:left-auto sm:w-[min(340px,calc(100%-1rem))]">
             <div className="grid grid-cols-1 gap-2">
               <div className="grid grid-cols-2 items-center gap-2">
                 <Label className="text-xs">{t("home.householdMapRouteModeLabel")}</Label>
@@ -5105,6 +5271,8 @@ export const HomePage = ({
       mapReachabilityLoading,
       mapReachabilityMinutes,
       mapReachabilityMode,
+      mapReachabilityOrigin,
+      mapReachabilityPickOriginActive,
       mapReachabilityPanelOpen,
       mapSearchError,
       mapSearchInputFocused,
@@ -5125,6 +5293,7 @@ export const HomePage = ({
       onLocateControlFound,
       onLocateControlReady,
       onMeasuredWithGeoman,
+      clearMeasureResultAndLayer,
       clearReachability,
       clearRoutePlanning,
       cancelMapDeletion,
