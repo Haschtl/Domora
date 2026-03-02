@@ -16,14 +16,97 @@ export type HouseholdMapMarkerIcon =
   | "work"
   | "star";
 
-export interface HouseholdMapMarker {
+export interface HouseholdMapMarkerPoint {
   id: string;
-  lat: number;
-  lon: number;
+  type: "point";
   icon: HouseholdMapMarkerIcon;
   title: string;
   description: string;
-  image_url: string | null;
+  image_b64: string | null;
+  poi_ref: string | null;
+  created_by: string | null;
+  created_at: string;
+  last_edited_by: string | null;
+  last_edited_at: string;
+  lat: number;
+  lon: number;
+}
+
+export interface HouseholdMapMarkerVector {
+  id: string;
+  type: "vector";
+  icon: HouseholdMapMarkerIcon;
+  title: string;
+  description: string;
+  image_b64: string | null;
+  poi_ref: string | null;
+  created_by: string | null;
+  created_at: string;
+  last_edited_by: string | null;
+  last_edited_at: string;
+  points: Array<{
+    lat: number;
+    lon: number;
+  }>;
+}
+
+export interface HouseholdMapMarkerCircle {
+  id: string;
+  type: "circle";
+  icon: HouseholdMapMarkerIcon;
+  title: string;
+  description: string;
+  image_b64: string | null;
+  poi_ref: string | null;
+  created_by: string | null;
+  created_at: string;
+  last_edited_by: string | null;
+  last_edited_at: string;
+  center: {
+    lat: number;
+    lon: number;
+  };
+  radius_meters: number;
+}
+
+export interface HouseholdMapMarkerRectangle {
+  id: string;
+  type: "rectangle";
+  icon: HouseholdMapMarkerIcon;
+  title: string;
+  description: string;
+  image_b64: string | null;
+  poi_ref: string | null;
+  created_by: string | null;
+  created_at: string;
+  last_edited_by: string | null;
+  last_edited_at: string;
+  bounds: {
+    south: number;
+    west: number;
+    north: number;
+    east: number;
+  };
+}
+
+export type HouseholdMapMarker =
+  | HouseholdMapMarkerPoint
+  | HouseholdMapMarkerVector
+  | HouseholdMapMarkerCircle
+  | HouseholdMapMarkerRectangle;
+
+export type PoiCategory = "restaurant" | "shop" | "supermarket" | "fuel";
+
+export interface NearbyPoi {
+  id: string;
+  source: "overpass";
+  osm_type: "node" | "way" | "relation";
+  osm_id: number;
+  lat: number;
+  lon: number;
+  name: string | null;
+  category: PoiCategory;
+  tags: Record<string, string>;
 }
 
 export interface Household {

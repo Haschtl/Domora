@@ -24,8 +24,10 @@ import type {
   HouseholdMemberPimpers,
   NewFinanceSubscriptionInput,
   NewTaskInput,
+  NearbyPoi,
   OneOffTaskClaim,
   OneOffTaskClaimVote,
+  PoiCategory,
   UpdateHouseholdInput,
   PushPreferences,
   ShoppingRecurrenceUnit,
@@ -106,15 +108,110 @@ const householdMapMarkerIconSchema = z.enum([
   "work",
   "star"
 ]);
-const householdMapMarkerSchema = z.object({
+const markerImageB64Schema = z
+  .string()
+  .regex(/^data:image\/[A-Za-z0-9.+-]+;base64,[A-Za-z0-9+/=]+$/)
+  .nullable()
+  .optional();
+const markerPoiRefSchema = z.string().trim().min(1).max(200).nullable().optional();
+const markerUserRefSchema = z.string().uuid().nullable().optional();
+const markerTimestampSchema = z.string().trim().min(1).default(() => new Date().toISOString());
+const householdMapMarkerPointSchema = z.object({
   id: z.string().min(1).max(64),
-  lat: z.coerce.number().finite().min(-90).max(90),
-  lon: z.coerce.number().finite().min(-180).max(180),
+  type: z.literal("point"),
   icon: householdMapMarkerIconSchema,
   title: z.string().trim().min(1).max(120),
   description: z.string().trim().max(600).default(""),
-  image_url: z.string().nullable().optional().transform((value) => value ?? null)
+  image_b64: markerImageB64Schema.transform((value) => value ?? null),
+  poi_ref: markerPoiRefSchema.transform((value) => value ?? null),
+  created_by: markerUserRefSchema.transform((value) => value ?? null),
+  created_at: markerTimestampSchema,
+  last_edited_by: markerUserRefSchema.transform((value) => value ?? null),
+  last_edited_at: markerTimestampSchema,
+  lat: z.coerce.number().finite().min(-90).max(90),
+  lon: z.coerce.number().finite().min(-180).max(180)
 });
+const householdMapMarkerVectorSchema = z.object({
+  id: z.string().min(1).max(64),
+  type: z.literal("vector"),
+  icon: householdMapMarkerIconSchema,
+  title: z.string().trim().min(1).max(120),
+  description: z.string().trim().max(600).default(""),
+  image_b64: markerImageB64Schema.transform((value) => value ?? null),
+  poi_ref: markerPoiRefSchema.transform((value) => value ?? null),
+  created_by: markerUserRefSchema.transform((value) => value ?? null),
+  created_at: markerTimestampSchema,
+  last_edited_by: markerUserRefSchema.transform((value) => value ?? null),
+  last_edited_at: markerTimestampSchema,
+  points: z
+    .array(
+      z.object({
+        lat: z.coerce.number().finite().min(-90).max(90),
+        lon: z.coerce.number().finite().min(-180).max(180)
+      })
+    )
+    .min(2)
+});
+const householdMapMarkerCircleSchema = z.object({
+  id: z.string().min(1).max(64),
+  type: z.literal("circle"),
+  icon: householdMapMarkerIconSchema,
+  title: z.string().trim().min(1).max(120),
+  description: z.string().trim().max(600).default(""),
+  image_b64: markerImageB64Schema.transform((value) => value ?? null),
+  poi_ref: markerPoiRefSchema.transform((value) => value ?? null),
+  created_by: markerUserRefSchema.transform((value) => value ?? null),
+  created_at: markerTimestampSchema,
+  last_edited_by: markerUserRefSchema.transform((value) => value ?? null),
+  last_edited_at: markerTimestampSchema,
+  center: z.object({
+    lat: z.coerce.number().finite().min(-90).max(90),
+    lon: z.coerce.number().finite().min(-180).max(180)
+  }),
+  radius_meters: z.coerce.number().finite().positive()
+});
+const householdMapMarkerRectangleSchema = z
+  .object({
+    id: z.string().min(1).max(64),
+    type: z.literal("rectangle"),
+    icon: householdMapMarkerIconSchema,
+    title: z.string().trim().min(1).max(120),
+    description: z.string().trim().max(600).default(""),
+    image_b64: markerImageB64Schema.transform((value) => value ?? null),
+    poi_ref: markerPoiRefSchema.transform((value) => value ?? null),
+    created_by: markerUserRefSchema.transform((value) => value ?? null),
+    created_at: markerTimestampSchema,
+    last_edited_by: markerUserRefSchema.transform((value) => value ?? null),
+    last_edited_at: markerTimestampSchema,
+    bounds: z.object({
+      south: z.coerce.number().finite().min(-90).max(90),
+      west: z.coerce.number().finite().min(-180).max(180),
+      north: z.coerce.number().finite().min(-90).max(90),
+      east: z.coerce.number().finite().min(-180).max(180)
+    })
+  })
+  .refine((marker) => marker.bounds.north >= marker.bounds.south, "Rectangle north must be >= south");
+const householdMapMarkerUnionSchema = z.discriminatedUnion("type", [
+  householdMapMarkerPointSchema,
+  householdMapMarkerVectorSchema,
+  householdMapMarkerCircleSchema,
+  householdMapMarkerRectangleSchema
+]);
+const householdMapMarkerSchema = z.preprocess((raw) => {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return raw;
+  const marker = raw as Record<string, unknown>;
+  const normalized: Record<string, unknown> =
+    typeof marker.type !== "string" ? { ...marker, type: "point" } : { ...marker };
+  if (typeof normalized.image_b64 !== "string" && typeof normalized.image_url === "string") {
+    normalized.image_b64 = normalized.image_url;
+  }
+  if (typeof normalized.poi_ref !== "string") normalized.poi_ref = null;
+  if (typeof normalized.created_at !== "string") normalized.created_at = new Date().toISOString();
+  if (typeof normalized.last_edited_at !== "string") normalized.last_edited_at = normalized.created_at;
+  if (typeof normalized.created_by !== "string") normalized.created_by = null;
+  if (typeof normalized.last_edited_by !== "string") normalized.last_edited_by = normalized.created_by;
+  return normalized;
+}, householdMapMarkerUnionSchema);
 const vacationDateSchema = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/);
@@ -3078,4 +3175,58 @@ export const deleteFinanceSubscription = async (
       }
     });
   }
+};
+
+const poiCategorySchema = z.enum(["restaurant", "shop", "supermarket", "fuel"]);
+const nearbyPoiSchema = z.object({
+  id: z.string().min(1),
+  source: z.literal("overpass"),
+  osm_type: z.enum(["node", "way", "relation"]),
+  osm_id: z.coerce.number().int().nonnegative(),
+  lat: z.coerce.number().finite().min(-90).max(90),
+  lon: z.coerce.number().finite().min(-180).max(180),
+  name: z.string().nullable().optional().transform((value) => value ?? null),
+  category: poiCategorySchema,
+  tags: z.record(z.string(), z.string()).default({})
+});
+
+export const getNearbyPois = async (input: {
+  householdId: string;
+  lat: number;
+  lon: number;
+  radiusMeters?: number;
+  categories?: PoiCategory[];
+}): Promise<{ rows: NearbyPoi[]; cached: boolean; expiresAt: string | null }> => {
+  const parsedInput = z.object({
+    householdId: z.string().uuid(),
+    lat: z.coerce.number().finite().min(-90).max(90),
+    lon: z.coerce.number().finite().min(-180).max(180),
+    radiusMeters: z.coerce.number().int().min(100).max(5000).default(1500),
+    categories: z.array(poiCategorySchema).min(1).max(10).default(["restaurant", "shop", "supermarket", "fuel"])
+  }).parse(input);
+
+  const deduplicatedCategories = parsedInput.categories.filter((entry, index, all) => all.indexOf(entry) === index);
+
+  const { data, error } = await supabase.functions.invoke("get-poi", {
+    body: {
+      householdId: parsedInput.householdId,
+      lat: parsedInput.lat,
+      lon: parsedInput.lon,
+      radiusMeters: parsedInput.radiusMeters,
+      categories: deduplicatedCategories
+    }
+  });
+
+  if (error) throw error;
+  const parsedResponse = z.object({
+    rows: z.array(nearbyPoiSchema).default([]),
+    cached: z.coerce.boolean().default(false),
+    expiresAt: z.string().datetime().nullable().optional().transform((value) => value ?? null)
+  }).parse(data);
+
+  return {
+    rows: parsedResponse.rows as NearbyPoi[],
+    cached: parsedResponse.cached,
+    expiresAt: parsedResponse.expiresAt
+  };
 };

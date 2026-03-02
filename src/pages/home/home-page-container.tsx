@@ -39,7 +39,8 @@ export const HomePageContainer = ({ section }: HomePageContainerProps) => {
     onDeleteBucketItem,
     onToggleBucketDateVote,
     onCompleteTask,
-    onUpdateHouseholdWhiteboard
+    onUpdateHouseholdWhiteboard,
+    onUpdateHousehold
   } = useWorkspace();
 
   const homeBatchQuery = useHouseholdHomeBatch(activeHousehold?.id ?? null);
@@ -100,6 +101,7 @@ export const HomePageContainer = ({ section }: HomePageContainerProps) => {
       }}
       onSaveLandingMarkdown={onUpdateHomeMarkdown}
       onSaveWhiteboard={onUpdateHouseholdWhiteboard}
+      onUpdateHousehold={onUpdateHousehold}
       onAddBucketItem={onAddBucketItem}
       onToggleBucketItem={onToggleBucketItem}
       onUpdateBucketItem={onUpdateBucketItem}

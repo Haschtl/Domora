@@ -52,15 +52,110 @@ const householdMapMarkerIconSchema = z.enum([
   "work",
   "star"
 ]);
-const householdMapMarkerSchema = z.object({
+const markerImageB64Schema = z
+  .string()
+  .regex(/^data:image\/[A-Za-z0-9.+-]+;base64,[A-Za-z0-9+/=]+$/)
+  .nullable()
+  .optional();
+const markerPoiRefSchema = z.string().trim().min(1).max(200).nullable().optional();
+const markerUserRefSchema = z.string().uuid().nullable().optional();
+const markerTimestampSchema = z.string().trim().min(1).default(() => new Date().toISOString());
+const householdMapMarkerPointSchema = z.object({
   id: z.string().min(1).max(64),
-  lat: z.coerce.number().finite().min(-90).max(90),
-  lon: z.coerce.number().finite().min(-180).max(180),
+  type: z.literal("point"),
   icon: householdMapMarkerIconSchema,
   title: z.string().trim().min(1).max(120),
   description: z.string().trim().max(600).default(""),
-  image_url: z.string().nullable().optional().transform((value) => value ?? null)
+  image_b64: markerImageB64Schema.transform((value) => value ?? null),
+  poi_ref: markerPoiRefSchema.transform((value) => value ?? null),
+  created_by: markerUserRefSchema.transform((value) => value ?? null),
+  created_at: markerTimestampSchema,
+  last_edited_by: markerUserRefSchema.transform((value) => value ?? null),
+  last_edited_at: markerTimestampSchema,
+  lat: z.coerce.number().finite().min(-90).max(90),
+  lon: z.coerce.number().finite().min(-180).max(180)
 });
+const householdMapMarkerVectorSchema = z.object({
+  id: z.string().min(1).max(64),
+  type: z.literal("vector"),
+  icon: householdMapMarkerIconSchema,
+  title: z.string().trim().min(1).max(120),
+  description: z.string().trim().max(600).default(""),
+  image_b64: markerImageB64Schema.transform((value) => value ?? null),
+  poi_ref: markerPoiRefSchema.transform((value) => value ?? null),
+  created_by: markerUserRefSchema.transform((value) => value ?? null),
+  created_at: markerTimestampSchema,
+  last_edited_by: markerUserRefSchema.transform((value) => value ?? null),
+  last_edited_at: markerTimestampSchema,
+  points: z
+    .array(
+      z.object({
+        lat: z.coerce.number().finite().min(-90).max(90),
+        lon: z.coerce.number().finite().min(-180).max(180)
+      })
+    )
+    .min(2)
+});
+const householdMapMarkerCircleSchema = z.object({
+  id: z.string().min(1).max(64),
+  type: z.literal("circle"),
+  icon: householdMapMarkerIconSchema,
+  title: z.string().trim().min(1).max(120),
+  description: z.string().trim().max(600).default(""),
+  image_b64: markerImageB64Schema.transform((value) => value ?? null),
+  poi_ref: markerPoiRefSchema.transform((value) => value ?? null),
+  created_by: markerUserRefSchema.transform((value) => value ?? null),
+  created_at: markerTimestampSchema,
+  last_edited_by: markerUserRefSchema.transform((value) => value ?? null),
+  last_edited_at: markerTimestampSchema,
+  center: z.object({
+    lat: z.coerce.number().finite().min(-90).max(90),
+    lon: z.coerce.number().finite().min(-180).max(180)
+  }),
+  radius_meters: z.coerce.number().finite().positive()
+});
+const householdMapMarkerRectangleSchema = z
+  .object({
+    id: z.string().min(1).max(64),
+    type: z.literal("rectangle"),
+    icon: householdMapMarkerIconSchema,
+    title: z.string().trim().min(1).max(120),
+    description: z.string().trim().max(600).default(""),
+    image_b64: markerImageB64Schema.transform((value) => value ?? null),
+    poi_ref: markerPoiRefSchema.transform((value) => value ?? null),
+    created_by: markerUserRefSchema.transform((value) => value ?? null),
+    created_at: markerTimestampSchema,
+    last_edited_by: markerUserRefSchema.transform((value) => value ?? null),
+    last_edited_at: markerTimestampSchema,
+    bounds: z.object({
+      south: z.coerce.number().finite().min(-90).max(90),
+      west: z.coerce.number().finite().min(-180).max(180),
+      north: z.coerce.number().finite().min(-90).max(90),
+      east: z.coerce.number().finite().min(-180).max(180)
+    })
+  })
+  .refine((marker) => marker.bounds.north >= marker.bounds.south, "Rectangle north must be >= south");
+const householdMapMarkerUnionSchema = z.discriminatedUnion("type", [
+  householdMapMarkerPointSchema,
+  householdMapMarkerVectorSchema,
+  householdMapMarkerCircleSchema,
+  householdMapMarkerRectangleSchema
+]);
+const householdMapMarkerSchema = z.preprocess((raw) => {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return raw;
+  const marker = raw as Record<string, unknown>;
+  const normalized: Record<string, unknown> =
+    typeof marker.type !== "string" ? { ...marker, type: "point" } : { ...marker };
+  if (typeof normalized.image_b64 !== "string" && typeof normalized.image_url === "string") {
+    normalized.image_b64 = normalized.image_url;
+  }
+  if (typeof normalized.poi_ref !== "string") normalized.poi_ref = null;
+  if (typeof normalized.created_at !== "string") normalized.created_at = new Date().toISOString();
+  if (typeof normalized.last_edited_at !== "string") normalized.last_edited_at = normalized.created_at;
+  if (typeof normalized.created_by !== "string") normalized.created_by = null;
+  if (typeof normalized.last_edited_by !== "string") normalized.last_edited_by = normalized.created_by;
+  return normalized;
+}, householdMapMarkerUnionSchema);
 
 const householdSchema = z.object({
   id: z.string().uuid(),

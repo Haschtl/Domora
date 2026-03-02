@@ -1,5 +1,6 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useLocation, useNavigate } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
 import L from "leaflet";
 import markerIcon2xUrl from "leaflet/dist/images/marker-icon-2x.png";
 import markerIconUrl from "leaflet/dist/images/marker-icon.png";
@@ -14,6 +15,7 @@ import {
   GripVertical,
   CircleDot,
   Loader2,
+  Maximize2,
   MoreHorizontal,
   Pencil,
   Plus,
@@ -34,10 +36,11 @@ import {
   type MDXEditorMethods,
   useLexicalNodeRemove
 } from "@mdxeditor/editor";
-import { MapContainer, Marker, Popup, TileLayer, useMap } from "react-leaflet";
+import { Circle, MapContainer, Marker, Polyline, Popup, Rectangle, TileLayer, Tooltip as LeafletTooltip, useMap } from "react-leaflet";
 import { createTrianglifyBannerBackground } from "../../lib/banner";
 import { formatDateOnly, formatDateTime, formatShortDay, getLastMonthRange } from "../../lib/date";
 import { suggestCategoryLabel } from "../../lib/category-heuristics";
+import { getNearbyPois } from "../../lib/api";
 import { createMemberLabelGetter } from "../../lib/member-label";
 import { createDiceBearAvatarDataUri, getMemberAvatarSeed } from "../../lib/avatar";
 import { calculateBalancesByMember } from "../../lib/finance-math";
@@ -57,7 +60,11 @@ import type {
   Household,
   HouseholdMember,
   HouseholdMemberVacation,
+  NearbyPoi,
+  PoiCategory,
+  HouseholdMapMarker,
   HouseholdMapMarkerIcon,
+  UpdateHouseholdInput,
   TaskCompletion,
   TaskItem
 } from "../../lib/types";
@@ -117,6 +124,7 @@ interface HomePageProps {
   onSelectHousehold: (householdId: string) => void;
   onSaveLandingMarkdown: (markdown: string) => Promise<void>;
   onSaveWhiteboard: (sceneJson: string) => Promise<void>;
+  onUpdateHousehold: (input: UpdateHouseholdInput) => Promise<void>;
   onAddBucketItem: (input: { title: string; descriptionMarkdown: string; suggestedDates: string[] }) => Promise<void>;
   onToggleBucketItem: (item: BucketItem) => Promise<void>;
   onUpdateBucketItem: (item: BucketItem, input: { title: string; descriptionMarkdown: string; suggestedDates: string[] }) => Promise<void>;
@@ -161,6 +169,15 @@ type HomeCalendarEntry = {
   cashAudits: CashAuditRequest[];
   vacations: HomeCalendarVacationEntry[];
 };
+type MapStyleId = "street" | "nature" | "satellite" | "light" | "dark";
+type MapStyleOption = {
+  id: MapStyleId;
+  labelKey: string;
+  tileUrl: string;
+  attribution: string;
+  subdomains?: string;
+  maxZoom?: number;
+};
 
 const LANDING_WIDGET_COMPONENTS: Array<{ key: LandingWidgetKey; tag: string }> = [
   { key: "tasks-overview", tag: "LandingWidgetTasksOverview" },
@@ -181,9 +198,61 @@ const MAX_WHITEBOARD_BYTES = 10 * 1024 * 1024;
 const MAX_CALENDAR_TOOLTIP_ITEMS = 4;
 const DEFAULT_MAP_CENTER: [number, number] = [51.1657, 10.4515];
 const MAP_ZOOM_WITH_ADDRESS = 16;
+const MAP_ZOOM_WITH_ADDRESS_FALLBACK = 14;
 const MAP_ZOOM_DEFAULT = 5;
 const MIN_ADDRESS_LENGTH_FOR_GEOCODE = 5;
 const ADDRESS_GEOCODE_DEBOUNCE_MS = 650;
+const POI_RADIUS_METERS = 1500;
+const POI_CATEGORY_OPTIONS: Array<{ id: PoiCategory; labelKey: string; emoji: string }> = [
+  { id: "restaurant", labelKey: "home.householdMapPoiRestaurants", emoji: "🍽️" },
+  { id: "shop", labelKey: "home.householdMapPoiShops", emoji: "🛍️" },
+  { id: "supermarket", labelKey: "home.householdMapPoiSupermarkets", emoji: "🛒" },
+  { id: "fuel", labelKey: "home.householdMapPoiFuel", emoji: "⛽" }
+];
+const MAP_STYLE_OPTIONS: MapStyleOption[] = [
+  {
+    id: "street",
+    labelKey: "home.householdMapStyleStreet",
+    tileUrl: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    subdomains: "abc",
+    maxZoom: 19
+  },
+  {
+    id: "nature",
+    labelKey: "home.householdMapStyleNature",
+    tileUrl: "https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png",
+    attribution:
+      'Map data: &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, SRTM | Map style: &copy; <a href="https://opentopomap.org">OpenTopoMap</a>',
+    subdomains: "abc",
+    maxZoom: 17
+  },
+  {
+    id: "satellite",
+    labelKey: "home.householdMapStyleSatellite",
+    tileUrl: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+    attribution: 'Tiles &copy; <a href="https://www.esri.com">Esri</a>',
+    maxZoom: 18
+  },
+  {
+    id: "light",
+    labelKey: "home.householdMapStyleLight",
+    tileUrl: "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
+    attribution:
+      '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+    subdomains: "abcd",
+    maxZoom: 20
+  },
+  {
+    id: "dark",
+    labelKey: "home.householdMapStyleDark",
+    tileUrl: "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
+    attribution:
+      '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+    subdomains: "abcd",
+    maxZoom: 20
+  }
+];
 const widgetTokenFromKey = (key: LandingWidgetKey) => `{{widget:${key}}}`;
 
 let leafletMarkerConfigured = false;
@@ -208,6 +277,23 @@ const AddressMapView = ({ center }: { center: [number, number] }) => {
   useEffect(() => {
     map.setView(center, map.getZoom(), { animate: false });
   }, [center, map]);
+  return null;
+};
+
+const RecenterMapOnRequest = ({
+  center,
+  zoom,
+  requestToken
+}: {
+  center: [number, number];
+  zoom: number;
+  requestToken: number;
+}) => {
+  const map = useMap();
+  useEffect(() => {
+    if (requestToken <= 0) return;
+    map.setView(center, zoom, { animate: true });
+  }, [center, map, requestToken, zoom]);
   return null;
 };
 
@@ -246,6 +332,97 @@ const getManualMarkerIcon = (icon: HouseholdMapMarkerIcon) => {
     popupAnchor: [0, -28]
   });
   markerDivIconCache.set(icon, divIcon);
+  return divIcon;
+};
+
+const getHouseholdMarkerCenter = (marker: HouseholdMapMarker): [number, number] | null => {
+  switch (marker.type) {
+    case "point":
+      return [marker.lat, marker.lon];
+    case "vector":
+      return marker.points.length > 0 ? [marker.points[0]!.lat, marker.points[0]!.lon] : null;
+    case "circle":
+      return [marker.center.lat, marker.center.lon];
+    case "rectangle":
+      return [
+        (marker.bounds.south + marker.bounds.north) / 2,
+        (marker.bounds.west + marker.bounds.east) / 2
+      ];
+    default:
+      return null;
+  }
+};
+
+const renderHouseholdMarkerTooltip = (marker: HouseholdMapMarker) => (
+  <LeafletTooltip>
+    <div className="space-y-1">
+      <p className="font-semibold">
+        {getMarkerEmoji(marker.icon)} {marker.title}
+      </p>
+      {marker.description ? <p className="text-xs">{marker.description}</p> : null}
+    </div>
+  </LeafletTooltip>
+);
+
+const renderHouseholdMarkerPopup = (marker: HouseholdMapMarker) => (
+  <Popup>
+    <div className="space-y-1">
+      <p className="font-semibold">
+        {getMarkerEmoji(marker.icon)} {marker.title}
+      </p>
+      {marker.description ? <p className="text-xs">{marker.description}</p> : null}
+      {marker.image_b64 ? (
+        <img
+          src={marker.image_b64}
+          alt={marker.title}
+          className="max-h-32 w-full rounded object-cover"
+        />
+      ) : null}
+    </div>
+  </Popup>
+);
+
+const poiDivIconCache = new Map<string, L.DivIcon>();
+const getPoiEmoji = (category: PoiCategory) => {
+  switch (category) {
+    case "restaurant":
+      return "🍽️";
+    case "shop":
+      return "🛍️";
+    case "supermarket":
+      return "🛒";
+    case "fuel":
+      return "⛽";
+    default:
+      return "📍";
+  }
+};
+
+const getMarkerIconFromPoiCategory = (category: PoiCategory): HouseholdMapMarkerIcon => {
+  switch (category) {
+    case "restaurant":
+      return "restaurant";
+    case "fuel":
+      return "fuel";
+    case "shop":
+    case "supermarket":
+      return "shopping";
+    default:
+      return "star";
+  }
+};
+
+const getPoiMarkerIcon = (category: PoiCategory) => {
+  const cached = poiDivIconCache.get(category);
+  if (cached) return cached;
+  const divIcon = L.divIcon({
+    className: "domora-map-poi-icon",
+    html: `<div style="background:#1e293b;border:2px solid #fff;color:#fff;width:26px;height:26px;border-radius:999px;display:flex;align-items:center;justify-content:center;font-size:13px;box-shadow:0 2px 7px rgba(0,0,0,.28)">${getPoiEmoji(category)}</div>`,
+    iconSize: [26, 26],
+    iconAnchor: [13, 26],
+    popupAnchor: [0, -23]
+  });
+  poiDivIconCache.set(category, divIcon);
   return divIcon;
 };
 
@@ -550,6 +727,7 @@ export const HomePage = ({
   onSelectHousehold,
   onSaveLandingMarkdown,
   onSaveWhiteboard,
+  onUpdateHousehold,
   onAddBucketItem,
   onToggleBucketItem,
   onUpdateBucketItem,
@@ -674,14 +852,52 @@ export const HomePage = ({
   const [whiteboardStatus, setWhiteboardStatus] = useState<"idle" | "saving" | "saved" | "unsaved" | "error">("idle");
   const [addressMapCenter, setAddressMapCenter] = useState<[number, number] | null>(null);
   const [addressMapLabel, setAddressMapLabel] = useState<string | null>(null);
+  const [mapRecenterRequestToken, setMapRecenterRequestToken] = useState(0);
+  const [myLocationCenter, setMyLocationCenter] = useState<[number, number] | null>(null);
+  const [myLocationRecenterRequestToken, setMyLocationRecenterRequestToken] = useState(0);
+  const [myLocationStatus, setMyLocationStatus] = useState<"idle" | "loading" | "error">("idle");
+  const [myLocationError, setMyLocationError] = useState<string | null>(null);
+  const [poiOverrideDrafts, setPoiOverrideDrafts] = useState<Record<string, { title: string; description: string }>>({});
+  const [poiOverrideSavingId, setPoiOverrideSavingId] = useState<string | null>(null);
+  const [poiOverrideError, setPoiOverrideError] = useState<string | null>(null);
+  const [mapStyle, setMapStyle] = useState<MapStyleId>("street");
+  const [poiCategoriesEnabled, setPoiCategoriesEnabled] = useState<Record<PoiCategory, boolean>>({
+    restaurant: true,
+    shop: true,
+    supermarket: true,
+    fuel: true
+  });
   const whiteboardSaveTimerRef = useRef<number | null>(null);
   const lastSavedWhiteboardRef = useRef(whiteboardSceneJson);
   const isWhiteboardFullscreenOpen = location.pathname === "/home/summary/whiteboard";
+  const isMapFullscreenOpen = location.pathname === "/home/summary/map";
   const openWhiteboardFullscreen = useCallback(() => {
     if (isWhiteboardFullscreenOpen) return;
     void navigate({ to: "/home/summary/whiteboard" });
   }, [isWhiteboardFullscreenOpen, navigate]);
+  const openMapFullscreen = useCallback(() => {
+    if (isMapFullscreenOpen) return;
+    void navigate({ to: "/home/summary/map" });
+  }, [isMapFullscreenOpen, navigate]);
   const closeWhiteboardFullscreen = useCallback(() => {
+    if (typeof window !== "undefined" && window.history.length > 1) {
+      let didHandlePop = false;
+      const onPopState = () => {
+        didHandlePop = true;
+        void navigate({ to: "/home/summary", replace: true });
+      };
+      window.addEventListener("popstate", onPopState, { once: true });
+      window.history.back();
+      window.setTimeout(() => {
+        if (didHandlePop) return;
+        window.removeEventListener("popstate", onPopState);
+        void navigate({ to: "/home/summary", replace: true });
+      }, 220);
+      return;
+    }
+    void navigate({ to: "/home/summary", replace: true });
+  }, [navigate]);
+  const closeMapFullscreen = useCallback(() => {
     if (typeof window !== "undefined" && window.history.length > 1) {
       let didHandlePop = false;
       const onPopState = () => {
@@ -711,11 +927,575 @@ export const HomePage = ({
   );
   const language = i18n.resolvedLanguage ?? i18n.language;
   const addressInput = household.address.trim();
-  const mapCenter = addressMapCenter ?? DEFAULT_MAP_CENTER;
+  const firstManualMarkerCenter = useMemo(() => {
+    for (const marker of household.household_map_markers) {
+      const center = getHouseholdMarkerCenter(marker);
+      if (center) return center;
+    }
+    return null;
+  }, [household.household_map_markers]);
+  const mapCenter = addressMapCenter
+    ?? firstManualMarkerCenter
+    ?? DEFAULT_MAP_CENTER;
   const mapHasPin = Boolean(addressMapCenter);
+  const mapZoom = mapHasPin ? MAP_ZOOM_WITH_ADDRESS : addressInput ? MAP_ZOOM_WITH_ADDRESS_FALLBACK : MAP_ZOOM_DEFAULT;
   const mapLink = addressMapCenter
     ? openStreetMapPinUrl(addressMapCenter[0], addressMapCenter[1])
     : openStreetMapSearchUrl(addressInput);
+  const selectedPoiCategories = useMemo(
+    () =>
+      POI_CATEGORY_OPTIONS.map((entry) => entry.id).filter((category) => poiCategoriesEnabled[category]),
+    [poiCategoriesEnabled]
+  );
+  const activeMapStyle = useMemo(
+    () => MAP_STYLE_OPTIONS.find((option) => option.id === mapStyle) ?? MAP_STYLE_OPTIONS[0],
+    [mapStyle]
+  );
+  const nearbyPoiQuery = useQuery({
+    queryKey: [
+      "map-poi",
+      household.id,
+      mapHasPin ? addressMapCenter?.[0] : null,
+      mapHasPin ? addressMapCenter?.[1] : null,
+      POI_RADIUS_METERS,
+      selectedPoiCategories
+    ],
+    queryFn: () =>
+      getNearbyPois({
+        householdId: household.id,
+        lat: addressMapCenter![0],
+        lon: addressMapCenter![1],
+        radiusMeters: POI_RADIUS_METERS,
+        categories: selectedPoiCategories
+      }),
+    enabled: mapHasPin && selectedPoiCategories.length > 0,
+    staleTime: 5 * 60 * 1000
+  });
+  const nearbyPois = (nearbyPoiQuery.data?.rows ?? []) as NearbyPoi[];
+  const isHouseholdOwner = currentMember?.role === "owner";
+  const poiOverrideMarkersByRef = useMemo(() => {
+    const byRef = new Map<string, HouseholdMapMarker>();
+    for (const marker of household.household_map_markers) {
+      if (!marker.poi_ref) continue;
+      const existing = byRef.get(marker.poi_ref);
+      if (!existing) {
+        byRef.set(marker.poi_ref, marker);
+        continue;
+      }
+      const existingAt = Date.parse(existing.last_edited_at);
+      const currentAt = Date.parse(marker.last_edited_at);
+      if (!Number.isFinite(existingAt) || currentAt > existingAt) {
+        byRef.set(marker.poi_ref, marker);
+      }
+    }
+    return byRef;
+  }, [household.household_map_markers]);
+  const onSaveExistingPoiOverride = useCallback(
+    async (marker: HouseholdMapMarker) => {
+      if (marker.type !== "point") return;
+      if (!marker.poi_ref) return;
+      if (!isHouseholdOwner) {
+        setPoiOverrideError(t("home.householdMapPoiOverrideOwnerOnly"));
+        return;
+      }
+      const draft = poiOverrideDrafts[marker.poi_ref];
+      const title = (draft?.title ?? marker.title).trim();
+      if (!title) {
+        setPoiOverrideError(t("home.householdMapPoiOverrideTitleRequired"));
+        return;
+      }
+      const nowIso = new Date().toISOString();
+      const nextMarker: HouseholdMapMarker = {
+        ...marker,
+        title,
+        description: (draft?.description ?? marker.description).trim(),
+        last_edited_by: userId,
+        last_edited_at: nowIso
+      };
+      const nextMarkers = household.household_map_markers.map((entry) =>
+        entry.id === marker.id ? nextMarker : entry
+      );
+      try {
+        setPoiOverrideSavingId(marker.poi_ref);
+        setPoiOverrideError(null);
+        await onUpdateHousehold(buildHouseholdUpdatePayload(nextMarkers));
+      } catch (error) {
+        const message = error instanceof Error ? error.message : t("app.unknownError");
+        setPoiOverrideError(message);
+      } finally {
+        setPoiOverrideSavingId(null);
+      }
+    },
+    [
+      buildHouseholdUpdatePayload,
+      household.household_map_markers,
+      isHouseholdOwner,
+      onUpdateHousehold,
+      poiOverrideDrafts,
+      t,
+      userId
+    ]
+  );
+  const requestMyLocation = useCallback(() => {
+    if (typeof window === "undefined" || !("geolocation" in navigator)) {
+      setMyLocationStatus("error");
+      setMyLocationError(t("home.householdMapMyLocationUnavailable"));
+      return;
+    }
+
+    setMyLocationStatus("loading");
+    setMyLocationError(null);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const lat = position.coords.latitude;
+        const lon = position.coords.longitude;
+        if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+          setMyLocationStatus("error");
+          setMyLocationError(t("home.householdMapMyLocationError"));
+          return;
+        }
+        setMyLocationCenter([lat, lon]);
+        setMyLocationRecenterRequestToken((current) => current + 1);
+        setMyLocationStatus("idle");
+      },
+      (error) => {
+        if (error.code === error.PERMISSION_DENIED) {
+          setMyLocationError(t("home.householdMapMyLocationDenied"));
+        } else if (error.code === error.TIMEOUT) {
+          setMyLocationError(t("home.householdMapMyLocationTimeout"));
+        } else {
+          setMyLocationError(t("home.householdMapMyLocationError"));
+        }
+        setMyLocationStatus("error");
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 60000
+      }
+    );
+  }, [t]);
+  const buildHouseholdUpdatePayload = useCallback(
+    (markers: HouseholdMapMarker[]): UpdateHouseholdInput => ({
+      name: household.name,
+      imageUrl: household.image_url ?? "",
+      address: household.address,
+      currency: household.currency,
+      apartmentSizeSqm: household.apartment_size_sqm,
+      coldRentMonthly: household.cold_rent_monthly,
+      utilitiesMonthly: household.utilities_monthly,
+      utilitiesOnRoomSqmPercent: household.utilities_on_room_sqm_percent,
+      taskLazinessEnabled: household.task_laziness_enabled,
+      vacationTasksExcludeEnabled: household.vacation_tasks_exclude_enabled,
+      vacationFinancesExcludeEnabled: household.vacation_finances_exclude_enabled,
+      taskSkipEnabled: household.task_skip_enabled,
+      featureBucketEnabled: household.feature_bucket_enabled,
+      featureShoppingEnabled: household.feature_shopping_enabled,
+      featureTasksEnabled: household.feature_tasks_enabled,
+      featureOneOffTasksEnabled: household.feature_one_off_tasks_enabled,
+      featureFinancesEnabled: household.feature_finances_enabled,
+      oneOffClaimTimeoutHours: household.one_off_claim_timeout_hours,
+      oneOffClaimMaxPimpers: household.one_off_claim_max_pimpers,
+      themePrimaryColor: household.theme_primary_color,
+      themeAccentColor: household.theme_accent_color,
+      themeFontFamily: household.theme_font_family,
+      themeRadiusScale: household.theme_radius_scale,
+      translationOverrides: household.translation_overrides,
+      householdMapMarkers: markers
+    }),
+    [household]
+  );
+  const onSavePoiOverride = useCallback(
+    async (poi: NearbyPoi) => {
+      if (!isHouseholdOwner) {
+        setPoiOverrideError(t("home.householdMapPoiOverrideOwnerOnly"));
+        return;
+      }
+
+      const existing = poiOverrideMarkersByRef.get(poi.id);
+      const draft = poiOverrideDrafts[poi.id];
+      const title = (draft?.title ?? existing?.title ?? poi.name ?? t("home.householdMapPoiUnnamed")).trim();
+      if (!title) {
+        setPoiOverrideError(t("home.householdMapPoiOverrideTitleRequired"));
+        return;
+      }
+
+      const description = (draft?.description ?? existing?.description ?? "").trim();
+      const nowIso = new Date().toISOString();
+      const overrideMarker: HouseholdMapMarker = {
+        id: existing?.id ?? `poi:${poi.id}`,
+        type: "point",
+        icon: getMarkerIconFromPoiCategory(poi.category),
+        title,
+        description,
+        image_b64: existing?.image_b64 ?? null,
+        poi_ref: poi.id,
+        created_by: existing?.created_by ?? userId,
+        created_at: existing?.created_at ?? nowIso,
+        last_edited_by: userId,
+        last_edited_at: nowIso,
+        lat: poi.lat,
+        lon: poi.lon
+      };
+
+      const nextMarkers = [
+        ...household.household_map_markers.filter(
+          (marker) => marker.id !== overrideMarker.id && marker.poi_ref !== poi.id
+        ),
+        overrideMarker
+      ];
+
+      try {
+        setPoiOverrideSavingId(poi.id);
+        setPoiOverrideError(null);
+        await onUpdateHousehold(buildHouseholdUpdatePayload(nextMarkers));
+      } catch (error) {
+        const message = error instanceof Error ? error.message : t("app.unknownError");
+        setPoiOverrideError(message);
+      } finally {
+        setPoiOverrideSavingId(null);
+      }
+    },
+    [
+      buildHouseholdUpdatePayload,
+      household.household_map_markers,
+      isHouseholdOwner,
+      onUpdateHousehold,
+      poiOverrideDrafts,
+      poiOverrideMarkersByRef,
+      t,
+      userId
+    ]
+  );
+  const renderHouseholdMapSurface = useCallback(
+    (containerClassName: string) => (
+      <div className={containerClassName}>
+        <div className="absolute left-2 top-2 z-[1000] flex flex-col gap-2">
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="h-8 border-slate-200/80 bg-white/95 px-2.5 backdrop-blur dark:border-slate-600/80 dark:bg-slate-900/95"
+            onClick={() => setMapRecenterRequestToken((current) => current + 1)}
+          >
+            {t("home.householdMapBackToWg")}
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="h-8 gap-2 border-slate-200/80 bg-white/95 px-2.5 backdrop-blur dark:border-slate-600/80 dark:bg-slate-900/95"
+            onClick={requestMyLocation}
+            disabled={myLocationStatus === "loading"}
+          >
+            {myLocationStatus === "loading" ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+            <span>{t("home.householdMapMyLocation")}</span>
+          </Button>
+        </div>
+        <div className="absolute right-2 top-2 z-[1000]">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-8 gap-2 border-slate-200/80 bg-white/95 px-2.5 backdrop-blur dark:border-slate-600/80 dark:bg-slate-900/95"
+              >
+                <SlidersHorizontal className="h-4 w-4" />
+                <span>
+                  {t("home.calendarFilterAction")} ({selectedPoiCategories.length})
+                </span>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="min-w-[220px]">
+              {POI_CATEGORY_OPTIONS.map((option) => (
+                <DropdownMenuCheckboxItem
+                  key={option.id}
+                  checked={poiCategoriesEnabled[option.id]}
+                  onCheckedChange={(checked) =>
+                    setPoiCategoriesEnabled((current) => ({
+                      ...current,
+                      [option.id]: Boolean(checked)
+                    }))
+                  }
+                >
+                  <span className="inline-flex items-center gap-2">
+                    <span>{option.emoji}</span>
+                    <span>{t(option.labelKey as never)}</span>
+                  </span>
+                </DropdownMenuCheckboxItem>
+              ))}
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel>{t("home.householdMapStyleLabel")}</DropdownMenuLabel>
+              {MAP_STYLE_OPTIONS.map((option) => (
+                <DropdownMenuCheckboxItem
+                  key={option.id}
+                  checked={mapStyle === option.id}
+                  onCheckedChange={(checked) => {
+                    if (!checked) return;
+                    setMapStyle(option.id);
+                  }}
+                >
+                  {t(option.labelKey as never)}
+                </DropdownMenuCheckboxItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+        <MapContainer
+          center={mapCenter}
+          zoom={mapZoom}
+          scrollWheelZoom
+          style={{ height: "100%", width: "100%" }}
+        >
+          <AddressMapView center={mapCenter} />
+          <RecenterMapOnRequest
+            center={mapCenter}
+            zoom={mapZoom}
+            requestToken={mapRecenterRequestToken}
+          />
+          {myLocationCenter ? (
+            <RecenterMapOnRequest
+              center={myLocationCenter}
+              zoom={MAP_ZOOM_WITH_ADDRESS}
+              requestToken={myLocationRecenterRequestToken}
+            />
+          ) : null}
+          <TileLayer
+            key={activeMapStyle.id}
+            attribution={activeMapStyle.attribution}
+            url={activeMapStyle.tileUrl}
+            subdomains={activeMapStyle.subdomains}
+            maxZoom={activeMapStyle.maxZoom}
+          />
+          {mapHasPin ? (
+            <Marker position={mapCenter}>
+              <Popup>{addressMapLabel ?? addressInput}</Popup>
+            </Marker>
+          ) : null}
+          {myLocationCenter ? (
+            <Marker position={myLocationCenter}>
+              <Popup>{t("home.householdMapMyLocation")}</Popup>
+            </Marker>
+          ) : null}
+          {household.household_map_markers.map((marker) => {
+            if (marker.type === "point") {
+              return (
+                <Marker
+                  key={marker.id}
+                  position={[marker.lat, marker.lon]}
+                  icon={getManualMarkerIcon(marker.icon)}
+                >
+                  {renderHouseholdMarkerTooltip(marker)}
+                  {marker.poi_ref ? (
+                    <Popup>
+                      <div className="space-y-2">
+                        <p className="font-semibold">
+                          {getMarkerEmoji(marker.icon)} {marker.title}
+                        </p>
+                        <Input
+                          value={poiOverrideDrafts[marker.poi_ref]?.title ?? marker.title}
+                          onChange={(event) =>
+                            setPoiOverrideDrafts((current) => ({
+                              ...current,
+                              [marker.poi_ref!]: {
+                                title: event.target.value,
+                                description: current[marker.poi_ref!]?.description ?? marker.description
+                              }
+                            }))
+                          }
+                          placeholder={t("home.householdMapPoiOverrideTitlePlaceholder")}
+                        />
+                        <Input
+                          value={poiOverrideDrafts[marker.poi_ref]?.description ?? marker.description}
+                          onChange={(event) =>
+                            setPoiOverrideDrafts((current) => ({
+                              ...current,
+                              [marker.poi_ref!]: {
+                                title: current[marker.poi_ref!]?.title ?? marker.title,
+                                description: event.target.value
+                              }
+                            }))
+                          }
+                          placeholder={t("home.householdMapPoiOverrideDescriptionPlaceholder")}
+                        />
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="h-8 w-full"
+                          onClick={() => {
+                            void onSaveExistingPoiOverride(marker);
+                          }}
+                          disabled={!isHouseholdOwner || poiOverrideSavingId === marker.poi_ref}
+                        >
+                          {poiOverrideSavingId === marker.poi_ref
+                            ? t("home.householdMapPoiOverrideSaving")
+                            : t("home.householdMapPoiOverrideSave")}
+                        </Button>
+                        {marker.image_b64 ? (
+                          <img
+                            src={marker.image_b64}
+                            alt={marker.title}
+                            className="max-h-32 w-full rounded object-cover"
+                          />
+                        ) : null}
+                      </div>
+                    </Popup>
+                  ) : (
+                    renderHouseholdMarkerPopup(marker)
+                  )}
+                </Marker>
+              );
+            }
+
+            if (marker.type === "vector") {
+              return (
+                <Polyline
+                  key={marker.id}
+                  positions={marker.points.map((point) => [point.lat, point.lon])}
+                  pathOptions={{ color: "#0f766e", weight: 5, opacity: 0.85 }}
+                >
+                  {renderHouseholdMarkerTooltip(marker)}
+                  {renderHouseholdMarkerPopup(marker)}
+                </Polyline>
+              );
+            }
+
+            if (marker.type === "circle") {
+              return (
+                <Circle
+                  key={marker.id}
+                  center={[marker.center.lat, marker.center.lon]}
+                  radius={marker.radius_meters}
+                  pathOptions={{ color: "#0f766e", fillColor: "#14b8a6", fillOpacity: 0.2, weight: 3 }}
+                >
+                  {renderHouseholdMarkerTooltip(marker)}
+                  {renderHouseholdMarkerPopup(marker)}
+                </Circle>
+              );
+            }
+
+            return (
+              <Rectangle
+                key={marker.id}
+                bounds={[
+                  [marker.bounds.south, marker.bounds.west],
+                  [marker.bounds.north, marker.bounds.east]
+                ]}
+                pathOptions={{ color: "#0f766e", fillColor: "#14b8a6", fillOpacity: 0.2, weight: 3 }}
+              >
+                {renderHouseholdMarkerTooltip(marker)}
+                {renderHouseholdMarkerPopup(marker)}
+              </Rectangle>
+            );
+          })}
+          {nearbyPois.map((poi) => (
+            <Marker key={poi.id} position={[poi.lat, poi.lon]} icon={getPoiMarkerIcon(poi.category)}>
+              <Popup>
+                <div className="space-y-1">
+                  <p className="font-semibold">
+                    {getPoiEmoji(poi.category)} {poi.name ?? t("home.householdMapPoiUnnamed")}
+                  </p>
+                  <p className="text-xs text-slate-500 dark:text-slate-300">
+                    {t(`home.householdMapPoiCategory.${poi.category}` as never)}
+                  </p>
+                  {typeof poi.tags["addr:street"] === "string" ? (
+                    <p className="text-xs">
+                      {poi.tags["addr:street"]}
+                      {typeof poi.tags["addr:housenumber"] === "string" ? ` ${poi.tags["addr:housenumber"]}` : ""}
+                    </p>
+                  ) : null}
+                  <div className="space-y-1 pt-1">
+                    <Input
+                      value={
+                        poiOverrideDrafts[poi.id]?.title
+                        ?? poiOverrideMarkersByRef.get(poi.id)?.title
+                        ?? (poi.name ?? "")
+                      }
+                      onChange={(event) =>
+                        setPoiOverrideDrafts((current) => ({
+                          ...current,
+                          [poi.id]: {
+                            title: event.target.value,
+                            description:
+                              current[poi.id]?.description
+                              ?? poiOverrideMarkersByRef.get(poi.id)?.description
+                              ?? ""
+                          }
+                        }))
+                      }
+                      placeholder={t("home.householdMapPoiOverrideTitlePlaceholder")}
+                    />
+                    <Input
+                      value={
+                        poiOverrideDrafts[poi.id]?.description
+                        ?? poiOverrideMarkersByRef.get(poi.id)?.description
+                        ?? ""
+                      }
+                      onChange={(event) =>
+                        setPoiOverrideDrafts((current) => ({
+                          ...current,
+                          [poi.id]: {
+                            title:
+                              current[poi.id]?.title
+                              ?? poiOverrideMarkersByRef.get(poi.id)?.title
+                              ?? poi.name
+                              ?? "",
+                            description: event.target.value
+                          }
+                        }))
+                      }
+                      placeholder={t("home.householdMapPoiOverrideDescriptionPlaceholder")}
+                    />
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="h-8 w-full"
+                      onClick={() => {
+                        void onSavePoiOverride(poi);
+                      }}
+                      disabled={!isHouseholdOwner || poiOverrideSavingId === poi.id}
+                    >
+                      {poiOverrideSavingId === poi.id
+                        ? t("home.householdMapPoiOverrideSaving")
+                        : t("home.householdMapPoiOverrideSave")}
+                    </Button>
+                  </div>
+                </div>
+              </Popup>
+            </Marker>
+          ))}
+        </MapContainer>
+      </div>
+    ),
+    [
+      activeMapStyle.attribution,
+      activeMapStyle.id,
+      activeMapStyle.maxZoom,
+      activeMapStyle.subdomains,
+      activeMapStyle.tileUrl,
+      addressInput,
+      addressMapLabel,
+      household.household_map_markers,
+      mapCenter,
+      mapHasPin,
+      mapRecenterRequestToken,
+      mapZoom,
+      myLocationCenter,
+      myLocationRecenterRequestToken,
+      myLocationStatus,
+      nearbyPois,
+      onSaveExistingPoiOverride,
+      onSavePoiOverride,
+      poiOverrideDrafts,
+      poiOverrideMarkersByRef,
+      poiOverrideSavingId,
+      requestMyLocation,
+      selectedPoiCategories.length,
+      isHouseholdOwner,
+      t
+    ]
+  );
 
   useEffect(() => {
     ensureLeafletMarkerIcon();
@@ -3433,61 +4213,49 @@ export const HomePage = ({
                   <CardTitle>{t("home.householdMapTitle")}</CardTitle>
                   <CardDescription>{t("home.householdMapDescription")}</CardDescription>
                 </div>
-                {addressInput ? (
-                  <a
-                    href={mapLink}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-xs font-medium text-brand-700 underline decoration-brand-300 underline-offset-2 hover:text-brand-900 dark:text-brand-300 dark:hover:text-brand-200"
+                <div className="flex items-center gap-2">
+                  {addressInput ? (
+                    <a
+                      href={mapLink}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-xs font-medium text-brand-700 underline decoration-brand-300 underline-offset-2 hover:text-brand-900 dark:text-brand-300 dark:hover:text-brand-200"
+                    >
+                      {t("home.householdMapOpen")}
+                    </a>
+                  ) : null}
+                  <button
+                    type="button"
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-xl text-slate-700 hover:bg-slate-200/80 dark:text-brand-100 dark:hover:bg-slate-800"
+                    onClick={openMapFullscreen}
+                    aria-label={t("home.householdMapFullscreen")}
+                    title={t("home.householdMapFullscreen")}
                   >
-                    {t("home.householdMapOpen")}
-                  </a>
-                ) : null}
+                    <Maximize2 className="h-4 w-4" />
+                  </button>
+                </div>
               </div>
             </CardHeader>
             <CardContent className="pt-2">
-              <div className="h-72 overflow-hidden rounded-lg border border-brand-100 dark:border-slate-700">
-                <MapContainer
-                  center={mapCenter}
-                  zoom={mapHasPin ? MAP_ZOOM_WITH_ADDRESS : MAP_ZOOM_DEFAULT}
-                  scrollWheelZoom
-                  style={{ height: "100%", width: "100%" }}
-                >
-                  <AddressMapView center={mapCenter} />
-                  <TileLayer
-                    attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                  />
-                  {mapHasPin ? (
-                    <Marker position={mapCenter}>
-                      <Popup>{addressMapLabel ?? addressInput}</Popup>
-                    </Marker>
-                  ) : null}
-                  {household.household_map_markers.map((marker) => (
-                    <Marker
-                      key={marker.id}
-                      position={[marker.lat, marker.lon]}
-                      icon={getManualMarkerIcon(marker.icon)}
-                    >
-                      <Popup>
-                        <div className="space-y-1">
-                          <p className="font-semibold">
-                            {getMarkerEmoji(marker.icon)} {marker.title}
-                          </p>
-                          {marker.description ? <p className="text-xs">{marker.description}</p> : null}
-                          {marker.image_url ? (
-                            <img
-                              src={marker.image_url}
-                              alt={marker.title}
-                              className="max-h-32 w-full rounded object-cover"
-                            />
-                          ) : null}
-                        </div>
-                      </Popup>
-                    </Marker>
-                  ))}
-                </MapContainer>
+              {renderHouseholdMapSurface("relative h-72 overflow-hidden rounded-lg border border-brand-100 dark:border-slate-700")}
+              <div className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                {!mapHasPin
+                  ? t("home.householdMapPoiNeedsAddress")
+                  : nearbyPoiQuery.isFetching
+                    ? t("home.householdMapPoiLoading")
+                    : nearbyPoiQuery.isError
+                      ? t("home.householdMapPoiError")
+                      : t("home.householdMapPoiCount", { count: nearbyPois.length })}
               </div>
+              {myLocationStatus === "loading" ? (
+                <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">{t("home.householdMapLocating")}</div>
+              ) : null}
+              {myLocationError ? (
+                <div className="mt-1 text-xs text-rose-600 dark:text-rose-400">{myLocationError}</div>
+              ) : null}
+              {poiOverrideError ? (
+                <div className="mt-1 text-xs text-rose-600 dark:text-rose-400">{poiOverrideError}</div>
+              ) : null}
             </CardContent>
           </Card>
 
@@ -3538,6 +4306,33 @@ export const HomePage = ({
                     fullHeight
                   />
                 </Suspense>
+              </div>
+            </DialogContent>
+          </Dialog>
+
+          <Dialog
+            open={isMapFullscreenOpen}
+            onOpenChange={(open) => {
+              if (!open) closeMapFullscreen();
+            }}
+          >
+            <DialogContent className="inset-0 left-0 top-0 flex h-[100dvh] w-[100vw] max-w-none -translate-x-0 -translate-y-0 flex-col overflow-hidden rounded-none border-0 p-0 [padding-bottom:var(--safe-area-bottom)] [padding-left:var(--safe-area-left)] [padding-right:var(--safe-area-right)] [padding-top:var(--safe-area-top)]">
+              <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 dark:border-slate-700">
+                <div>
+                  <DialogTitle>{t("home.householdMapTitle")}</DialogTitle>
+                  <DialogDescription>{t("home.householdMapDescription")}</DialogDescription>
+                </div>
+                <button
+                  type="button"
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-xl text-slate-700 hover:bg-slate-200/80 dark:text-brand-100 dark:hover:bg-slate-800"
+                  onClick={closeMapFullscreen}
+                  aria-label={t("common.close")}
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              <div className="flex-1">
+                {renderHouseholdMapSurface("relative h-full overflow-hidden border-brand-100 dark:border-slate-700")}
               </div>
             </DialogContent>
           </Dialog>
