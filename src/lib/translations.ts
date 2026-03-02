@@ -1086,6 +1086,14 @@ export const resources = {
         householdThemeAccentLabel: "Akzentfarbe",
         householdThemeFontLabel: "Schriftart",
         householdThemeRadiusLabel: "Rundungen",
+        householdTranslationOverridesTitle: "Begriffe ersetzen",
+        householdTranslationOverridesDescription:
+          "Hauptmieter können Wörter in der UI global ersetzen (Find/Replace).",
+        householdTranslationOverridesEmpty: "Noch keine Ersetzungen konfiguriert.",
+        householdTranslationOverridesFindPlaceholder: "Suchen (z. B. Aufgabe)",
+        householdTranslationOverridesReplacePlaceholder:
+          "Ersetzen durch (z. B. Spass)",
+        householdTranslationOverridesAdd: "Ersetzung hinzufügen",
         householdImageLabel: "WG-Banner URL",
         householdImagePlaceholder: "https://...",
         householdNameLabel: "WG-Name",
@@ -2269,6 +2277,14 @@ export const resources = {
         householdThemeAccentLabel: "Accent color",
         householdThemeFontLabel: "Font family",
         householdThemeRadiusLabel: "Corner radius",
+        householdTranslationOverridesTitle: "Replace UI terms",
+        householdTranslationOverridesDescription:
+          "Household owners can replace terms globally in the UI (find/replace).",
+        householdTranslationOverridesEmpty: "No replacements configured yet.",
+        householdTranslationOverridesFindPlaceholder: "Find (for example Task)",
+        householdTranslationOverridesReplacePlaceholder:
+          "Replace with (for example Fun)",
+        householdTranslationOverridesAdd: "Add replacement",
         householdImageLabel: "Household image URL",
         householdImagePlaceholder: "https://...",
         householdNameLabel: "Household name",

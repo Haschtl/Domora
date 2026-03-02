@@ -18,6 +18,7 @@ import {
 import type { LucideIcon } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { toast } from "react-toastify";
+import { setHouseholdTranslationOverrides } from "./i18n";
 import { isSupabaseConfigured } from "./lib/supabase";
 import { useForegroundPush } from "./hooks/useForegroundPush";
 import { getForegroundPushRoute } from "./lib/push-navigation";
@@ -605,6 +606,10 @@ const AppLayout = () => {
     activeHousehold?.theme_font_family,
     activeHousehold?.theme_radius_scale
   ]);
+
+  useEffect(() => {
+    setHouseholdTranslationOverrides(activeHousehold?.translation_overrides ?? []);
+  }, [activeHousehold?.id, activeHousehold?.translation_overrides]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;

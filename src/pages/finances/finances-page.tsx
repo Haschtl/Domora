@@ -358,6 +358,7 @@ const buildPublicAssetUrl = (relativePath: string) => {
 };
 const LOCAL_TESSERACT_WORKER_PATH = buildPublicAssetUrl("tesseract/worker.min.js");
 const LOCAL_TESSERACT_CORE_PATH = buildPublicAssetUrl("tesseract/core");
+const LOCAL_TESSERACT_LANG_PATH = buildPublicAssetUrl("tesseract/lang");
 
 const clamp01 = (value: number) => Math.max(0, Math.min(1, value));
 
@@ -964,7 +965,8 @@ export const FinancesPage = ({
         themePrimaryColor: household.theme_primary_color ?? "#1f8a7f",
         themeAccentColor: household.theme_accent_color ?? "#14b8a6",
         themeFontFamily: household.theme_font_family ?? '"Space Grotesk", "Segoe UI", sans-serif',
-        themeRadiusScale: household.theme_radius_scale ?? 1
+        themeRadiusScale: household.theme_radius_scale ?? 1,
+        translationOverrides: household.translation_overrides ?? []
       });
     }
   });
@@ -2553,7 +2555,8 @@ export const FinancesPage = ({
       worker = (await tesseractModule.createWorker(["deu", "eng"], tesseractModule.OEM.LSTM_ONLY, {
         logger: () => undefined,
         workerPath: LOCAL_TESSERACT_WORKER_PATH,
-        corePath: LOCAL_TESSERACT_CORE_PATH
+        corePath: LOCAL_TESSERACT_CORE_PATH,
+        langPath: LOCAL_TESSERACT_LANG_PATH
       })) as unknown as TesseractWorkerLike;
     } catch {
       // Fallback to default remote paths if local assets are unavailable.

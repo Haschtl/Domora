@@ -9,6 +9,7 @@ import type {
   Household,
   HouseholdMember,
   HouseholdMemberVacation,
+  HouseholdTranslationOverride,
   PushPreferences,
   TaskItem,
   UpdateHouseholdInput
@@ -132,6 +133,16 @@ const normalizeUserColor = (value: string) => {
   return /^#[0-9a-f]{6}$/.test(trimmed) ? trimmed : "#4f46e5";
 };
 
+const normalizeTranslationOverrides = (overrides: HouseholdTranslationOverride[]): HouseholdTranslationOverride[] => {
+  const deduplicated = new Map<string, string>();
+  for (const override of overrides) {
+    const find = override.find.trim();
+    if (!find) continue;
+    deduplicated.set(find, override.replace.trim());
+  }
+  return [...deduplicated.entries()].map(([find, replace]) => ({ find, replace }));
+};
+
 const serializePushPreferences = (prefs: PushPreferences) => {
   const topics = [...(prefs.topics ?? [])].sort();
   const quiet = prefs.quiet_hours ?? {};
@@ -200,6 +211,9 @@ export const SettingsPage = ({
   const [vacationFormNote, setVacationFormNote] = useState("");
   const [vacationFormError, setVacationFormError] = useState<string | null>(null);
   const [editingVacationId, setEditingVacationId] = useState<string | null>(null);
+  const [translationOverridesDraft, setTranslationOverridesDraft] = useState<HouseholdTranslationOverride[]>(
+    () => household.translation_overrides ?? []
+  );
   const dueTasksAssignedToYou = useMemo(() => {
     if (!userId) return [];
     return tasks.filter(
@@ -249,6 +263,9 @@ export const SettingsPage = ({
     setVacationFormNote("");
     setVacationFormError(null);
   }, [editingVacation, todayIso]);
+  useEffect(() => {
+    setTranslationOverridesDraft(household.translation_overrides ?? []);
+  }, [household.id, household.translation_overrides]);
   const [pushPreferences, setPushPreferences] = useState<PushPreferences | null>(null);
   const [pushPreferencesSnapshot, setPushPreferencesSnapshot] = useState<string | null>(null);
   const [pushPreferencesBusy, setPushPreferencesBusy] = useState(false);
@@ -430,7 +447,8 @@ export const SettingsPage = ({
         themePrimaryColor: value.themePrimaryColor,
         themeAccentColor: value.themeAccentColor,
         themeFontFamily: value.themeFontFamily,
-        themeRadiusScale: normalizeThemeRadiusScale(value.themeRadiusScale)
+        themeRadiusScale: normalizeThemeRadiusScale(value.themeRadiusScale),
+        translationOverrides: normalizeTranslationOverrides(translationOverridesDraft)
       });
     }
   });
@@ -593,7 +611,8 @@ export const SettingsPage = ({
         themePrimaryColor: householdForm.state.values.themePrimaryColor,
         themeAccentColor: householdForm.state.values.themeAccentColor,
         themeFontFamily: householdForm.state.values.themeFontFamily,
-        themeRadiusScale: normalizeThemeRadiusScale(householdForm.state.values.themeRadiusScale)
+        themeRadiusScale: normalizeThemeRadiusScale(householdForm.state.values.themeRadiusScale),
+        translationOverrides: normalizeTranslationOverrides(translationOverridesDraft)
       });
       setHouseholdUploadError(null);
     } catch {
@@ -628,12 +647,31 @@ export const SettingsPage = ({
         themePrimaryColor: householdForm.state.values.themePrimaryColor,
         themeAccentColor: householdForm.state.values.themeAccentColor,
         themeFontFamily: householdForm.state.values.themeFontFamily,
-        themeRadiusScale: normalizeThemeRadiusScale(householdForm.state.values.themeRadiusScale)
+        themeRadiusScale: normalizeThemeRadiusScale(householdForm.state.values.themeRadiusScale),
+        translationOverrides: normalizeTranslationOverrides(translationOverridesDraft)
       });
       setHouseholdUploadError(null);
     } catch {
       setHouseholdUploadError(t("settings.householdUploadError"));
     }
+  };
+
+  const onAddTranslationOverride = () => {
+    setTranslationOverridesDraft((current) => [...current, { find: "", replace: "" }]);
+  };
+
+  const onUpdateTranslationOverride = (
+    index: number,
+    key: "find" | "replace",
+    nextValue: string
+  ) => {
+    setTranslationOverridesDraft((current) =>
+      current.map((entry, entryIndex) => (entryIndex === index ? { ...entry, [key]: nextValue } : entry))
+    );
+  };
+
+  const onRemoveTranslationOverride = (index: number) => {
+    setTranslationOverridesDraft((current) => current.filter((_, entryIndex) => entryIndex !== index));
   };
 
   const profileImageUrl = profileForm.state.values.profileImageUrl.trim();
@@ -2961,6 +2999,65 @@ export const SettingsPage = ({
                   </div>
                 )}
               />
+            </div>
+            <div className="space-y-2 rounded-xl border border-brand-200 p-3 dark:border-slate-700">
+              <div className="space-y-1">
+                <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                  {t("settings.householdTranslationOverridesTitle")}
+                </p>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  {t("settings.householdTranslationOverridesDescription")}
+                </p>
+              </div>
+              <div className="space-y-2">
+                {translationOverridesDraft.length === 0 ? (
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    {t("settings.householdTranslationOverridesEmpty")}
+                  </p>
+                ) : (
+                  translationOverridesDraft.map((override, index) => (
+                    <div key={`translation-override-${index}`} className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
+                      <Input
+                        value={override.find}
+                        disabled={busy || !isOwner}
+                        onChange={(event) => {
+                          onUpdateTranslationOverride(index, "find", event.target.value);
+                        }}
+                        placeholder={t("settings.householdTranslationOverridesFindPlaceholder")}
+                      />
+                      <Input
+                        value={override.replace}
+                        disabled={busy || !isOwner}
+                        onChange={(event) => {
+                          onUpdateTranslationOverride(index, "replace", event.target.value);
+                        }}
+                        placeholder={t("settings.householdTranslationOverridesReplacePlaceholder")}
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        disabled={busy || !isOwner}
+                        onClick={() => {
+                          onRemoveTranslationOverride(index);
+                        }}
+                        aria-label={t("common.delete")}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ))
+                )}
+              </div>
+              <div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={busy || !isOwner}
+                  onClick={onAddTranslationOverride}
+                >
+                  {t("settings.householdTranslationOverridesAdd")}
+                </Button>
+              </div>
             </div>
             <div className="flex justify-end">
               <Button

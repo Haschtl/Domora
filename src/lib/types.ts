@@ -1,6 +1,10 @@
 export type AppTab = "home" | "shopping" | "tasks" | "finances" | "settings";
 export type ShoppingRecurrenceUnit = "days" | "weeks" | "months";
 export type FinanceSubscriptionRecurrence = "weekly" | "monthly" | "quarterly";
+export interface HouseholdTranslationOverride {
+  find: string;
+  replace: string;
+}
 
 export interface Household {
   id: string;
@@ -27,6 +31,7 @@ export interface Household {
   theme_accent_color: string;
   theme_font_family: string;
   theme_radius_scale: number;
+  translation_overrides: HouseholdTranslationOverride[];
   landing_page_markdown: string;
   invite_code: string;
   created_by: string;
@@ -57,6 +62,7 @@ export interface UpdateHouseholdInput {
   themeAccentColor: string;
   themeFontFamily: string;
   themeRadiusScale: number;
+  translationOverrides: HouseholdTranslationOverride[];
 }
 
 export interface HouseholdMember {

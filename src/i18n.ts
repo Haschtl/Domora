@@ -1,8 +1,22 @@
 import i18n from "i18next";
 import { initReactI18next } from "react-i18next";
 import { defaultLanguage, resources, supportedLanguages, type SupportedLanguage } from "./lib/translations";
+import type { HouseholdTranslationOverride } from "./lib/types";
 
 const STORAGE_KEY = "domora-language";
+let householdTranslationOverrides: HouseholdTranslationOverride[] = [];
+
+const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const applyHouseholdTranslationOverrides = (value: string) => {
+  if (householdTranslationOverrides.length === 0) return value;
+  let next = value;
+  for (const override of householdTranslationOverrides) {
+    if (!override.find) continue;
+    next = next.replace(new RegExp(escapeRegExp(override.find), "g"), override.replace);
+  }
+  return next;
+};
 
 const toLanguage = (value: string | null | undefined): SupportedLanguage | null => {
   if (!value) return null;
@@ -43,7 +57,20 @@ export const persistLanguagePreference = (language: SupportedLanguage) => {
   window.localStorage.setItem(STORAGE_KEY, language);
 };
 
-void i18n.use(initReactI18next).init({
+export const setHouseholdTranslationOverrides = (overrides: HouseholdTranslationOverride[]) => {
+  householdTranslationOverrides = overrides;
+};
+
+void i18n
+  .use({
+    type: "postProcessor",
+    name: "householdReplace",
+    process(value: unknown) {
+      return typeof value === "string" ? applyHouseholdTranslationOverrides(value) : value;
+    }
+  })
+  .use(initReactI18next)
+  .init({
   resources,
   lng: resolveInitialLanguage(),
   fallbackLng: defaultLanguage,
@@ -51,8 +78,9 @@ void i18n.use(initReactI18next).init({
     escapeValue: false
   },
   showSupportNotice:false,
-  returnNull: false
-});
+  returnNull: false,
+  postProcess: ["householdReplace"]
+  });
 
 export const getDateLocale = (language: string) => (language.startsWith("de") ? "de-DE" : "en-GB");
 

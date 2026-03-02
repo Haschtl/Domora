@@ -38,6 +38,10 @@ export const nonNegativeOptionalNumberSchema = optionalNumberSchema.refine(
 export const percentageNumberSchema = z.coerce.number().finite().min(0).max(100);
 
 export const shoppingRecurrenceUnitSchema = z.enum(["days", "weeks", "months"]);
+const householdTranslationOverrideSchema = z.object({
+  find: z.string().trim().min(1).max(120),
+  replace: z.string().trim().max(120)
+});
 
 const householdSchema = z.object({
   id: z.string().uuid(),
@@ -70,6 +74,7 @@ const householdSchema = z.object({
     .default("#14b8a6"),
   theme_font_family: z.string().min(1).default('"Space Grotesk", "Segoe UI", sans-serif'),
   theme_radius_scale: z.coerce.number().min(0.5).max(1.5).default(1),
+  translation_overrides: z.array(householdTranslationOverrideSchema).default([]),
   landing_page_markdown: z.string().default(""),
   invite_code: z.string().min(1),
   created_by: z.string().uuid(),

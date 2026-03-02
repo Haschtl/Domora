@@ -27,6 +27,7 @@ create table if not exists households (
   theme_accent_color text not null default '#14b8a6',
   theme_font_family text not null default '"Space Grotesk", "Segoe UI", sans-serif',
   theme_radius_scale numeric(4, 2) not null default 1,
+  translation_overrides jsonb not null default '[]'::jsonb,
   landing_page_markdown text not null default '',
   invite_code text not null unique,
   created_by uuid not null references auth.users(id) on delete cascade,
@@ -399,6 +400,7 @@ alter table households add column if not exists theme_primary_color text not nul
 alter table households add column if not exists theme_accent_color text not null default '#14b8a6';
 alter table households add column if not exists theme_font_family text not null default '"Space Grotesk", "Segoe UI", sans-serif';
 alter table households add column if not exists theme_radius_scale numeric(4, 2) not null default 1;
+alter table households add column if not exists translation_overrides jsonb not null default '[]'::jsonb;
 alter table households add column if not exists landing_page_markdown text not null default '';
 
 update households
@@ -433,6 +435,11 @@ set theme_radius_scale = 1
 where theme_radius_scale is null
    or theme_radius_scale <= 0;
 
+update households
+set translation_overrides = '[]'::jsonb
+where translation_overrides is null
+   or jsonb_typeof(translation_overrides) <> 'array';
+
 alter table households
 alter column utilities_on_room_sqm_percent set not null;
 
@@ -450,6 +457,9 @@ alter column theme_font_family set not null;
 
 alter table households
 alter column theme_radius_scale set not null;
+
+alter table households
+alter column translation_overrides set not null;
 
 alter table tasks add column if not exists last_due_notification_at timestamptz;
 
