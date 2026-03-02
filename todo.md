@@ -7,6 +7,4 @@ TEsten:
 - Finance OCR testen
 
 
-bei routenplanung-popup start und ende anzeigen
-
 POI ist immeronch weg

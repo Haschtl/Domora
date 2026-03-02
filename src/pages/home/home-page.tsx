@@ -1114,6 +1114,11 @@ const ReachabilityLayerBridge = ({
 }) => {
   const map = useMap();
   const layerRef = useRef<L.GeoJSON | null>(null);
+  const onSaveReachabilityRef = useRef<(() => void) | null>(onSaveReachability ?? null);
+
+  useEffect(() => {
+    onSaveReachabilityRef.current = onSaveReachability ?? null;
+  }, [onSaveReachability]);
 
   useEffect(() => {
     if (layerRef.current) {
@@ -1149,7 +1154,7 @@ const ReachabilityLayerBridge = ({
             domEvent.preventDefault();
             domEvent.stopPropagation();
             if (saveButton.disabled) return;
-            onSaveReachability?.();
+            onSaveReachabilityRef.current?.();
           };
           saveButton.onclick = saveHandler as (this: GlobalEventHandlers, ev: MouseEvent) => unknown;
           saveButton.onpointerdown = saveHandler as (this: GlobalEventHandlers, ev: PointerEvent) => unknown;
@@ -1177,7 +1182,7 @@ const ReachabilityLayerBridge = ({
       map.removeLayer(layerRef.current);
       layerRef.current = null;
     };
-  }, [color, geojson, map, onSaveReachability, tooltipHtml]);
+  }, [color, geojson, map, tooltipHtml]);
 
   return null;
 };
@@ -1219,6 +1224,12 @@ const RouteLayerBridge = ({
 }) => {
   const map = useMap();
   const layerRef = useRef<L.GeoJSON | null>(null);
+  const pathLayersRef = useRef<L.Path[]>([]);
+  const onSaveRouteRef = useRef<(() => void) | null>(onSaveRoute ?? null);
+
+  useEffect(() => {
+    onSaveRouteRef.current = onSaveRoute ?? null;
+  }, [onSaveRoute]);
 
   const getRouteDisplayLabel = (value: RouteGeoJson) => {
     let travelTimeSeconds: number | null = null;
@@ -1276,6 +1287,7 @@ const RouteLayerBridge = ({
       map.removeLayer(layerRef.current);
       layerRef.current = null;
     }
+    pathLayersRef.current = [];
     if (!geojson) return;
     const layer = L.geoJSON(geojson as unknown as GeoJSON.GeoJsonObject, {
       style: () => ({
@@ -1308,7 +1320,7 @@ const RouteLayerBridge = ({
             domEvent.preventDefault();
             domEvent.stopPropagation();
             if (saveButton.disabled) return;
-            onSaveRoute?.();
+            onSaveRouteRef.current?.();
           };
           saveButton.onclick = saveHandler as (this: GlobalEventHandlers, ev: MouseEvent) => unknown;
           saveButton.onpointerdown = saveHandler as (this: GlobalEventHandlers, ev: PointerEvent) => unknown;
@@ -1331,21 +1343,25 @@ const RouteLayerBridge = ({
     }
     layer.addTo(map);
     layerRef.current = layer;
-    if (tooltipContent && (openTooltipToken ?? 0) > 0) {
-      const firstPath = pathLayers[0];
-      if (firstPath) {
-        window.setTimeout(() => {
-          firstPath.openTooltip();
-        }, 0);
-      }
-    }
+    pathLayersRef.current = pathLayers;
 
     return () => {
       if (!layerRef.current) return;
       map.removeLayer(layerRef.current);
       layerRef.current = null;
+      pathLayersRef.current = [];
     };
-  }, [color, geojson, map, onSaveRoute, openTooltipToken, tooltipHtml]);
+  }, [color, geojson, map, tooltipHtml]);
+
+  useEffect(() => {
+    if ((openTooltipToken ?? 0) <= 0) return;
+    const firstPath = pathLayersRef.current[0];
+    if (!firstPath) return;
+    const frame = window.requestAnimationFrame(() => {
+      firstPath.openTooltip();
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [openTooltipToken]);
 
   return null;
 };
@@ -3192,6 +3208,18 @@ export const HomePage = ({
       lat: result.lat,
       lon: result.lon,
       bounds: result.bounds
+    });
+  }, []);
+  const handleMapSearchViewportBoundsChange = useCallback((nextBounds: MapSearchViewportBounds) => {
+    setMapSearchViewportBounds((current) => {
+      if (!current) return nextBounds;
+      const epsilon = 1e-5;
+      const isSame =
+        Math.abs(current.south - nextBounds.south) < epsilon
+        && Math.abs(current.west - nextBounds.west) < epsilon
+        && Math.abs(current.north - nextBounds.north) < epsilon
+        && Math.abs(current.east - nextBounds.east) < epsilon;
+      return isSame ? current : nextBounds;
     });
   }, []);
 
@@ -5855,8 +5883,8 @@ export const HomePage = ({
             />
           ) : null}
           <FullscreenMapViewportBridge
-            enabled={isFullscreen}
-            onBoundsChange={setMapSearchViewportBounds}
+            enabled={isFullscreen && (mapSearchInputFocused || mapSearchQuery.trim().length >= 2)}
+            onBoundsChange={handleMapSearchViewportBoundsChange}
           />
           <MapSearchZoomBridge request={mapSearchZoomRequest} />
           <MapClosePopupBridge requestToken={mapClosePopupRequestToken} />
