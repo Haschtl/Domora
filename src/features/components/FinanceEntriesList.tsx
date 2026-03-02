@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { FinanceEntry } from "../../lib/types";
@@ -62,9 +62,25 @@ export const FinanceEntriesList = ({
   busy = false,
   virtualized = false,
   virtualHeight = 420,
-  virtualLayout = "absolute"
+  virtualLayout
 }: FinanceEntriesListProps) => {
-  const parentRef = useRef<HTMLDivElement>(null);
+
+  const [isMobileViewport, setIsMobileViewport] = useState(() =>
+    typeof window !== "undefined"
+      ? window.matchMedia("(max-width: 639px)").matches
+      : false,
+  );
+    useEffect(() => {
+      if (typeof window === "undefined") return;
+      const mediaQuery = window.matchMedia("(max-width: 639px)");
+      const onChange = (event: MediaQueryListEvent) => setIsMobileViewport(event.matches);
+      mediaQuery.addEventListener("change", onChange);
+      return () => mediaQuery.removeEventListener("change", onChange);
+    }, []);
+    if (isMobileViewport&&virtualLayout==null){
+      virtualLayout=isMobileViewport?"absolute":"inline"
+    }
+     const parentRef = useRef<HTMLDivElement>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewTitle, setPreviewTitle] = useState<string | null>(null);
   const virtualItemGap = 12;
@@ -185,8 +201,8 @@ export const FinanceEntriesList = ({
 
   const virtualContainerClassName =
     virtualLayout === "inline"
-      ? "relative w-full overflow-auto rounded-xl border border-brand-100 bg-white/90 p-3 dark:border-slate-700 dark:bg-slate-900"
-      : "w-[100vw] sm:w-full left-0 p-4 pt-8 pb-20 absolute sm:relative sm:h-full sm:w-full overflow-auto -translate-y-8 sm:translate-y-0";
+      ? "relative w-full overflow-auto rounded-xl border border-brand-100 bg-white/90 p-3 dark:border-slate-700"
+      : "w-full max-sm:w-[100vw] left-0 p-4 pt-8 pb-20 max-sm:absolute relative sm:h-full sm:w-full overflow-auto -translate-y-8 sm:translate-y-0";
 
   return (
     <div

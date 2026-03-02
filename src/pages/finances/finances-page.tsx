@@ -332,6 +332,33 @@ type OcrPassResult = {
   region: "full" | "lower";
   numericFocused: boolean;
 };
+type OcrRankedAmountCandidate = {
+  token: string;
+  value: number;
+  totalScore: number;
+  maxScore: number;
+  count: number;
+  lastIndex: number;
+};
+type OcrDebugInfo = {
+  sharpness: number;
+  effectiveSharpness: number;
+  passes: Array<{
+    source: OcrPassResult["source"];
+    region: OcrPassResult["region"];
+    numericFocused: boolean;
+    meanConfidence: number;
+    textLength: number;
+  }>;
+  topAmountCandidates: OcrRankedAmountCandidate[];
+};
+type OcrCandidate = {
+  description: string;
+  amount: string;
+  fullText: string;
+  boxes: OcrPreviewBox[];
+  debug?: OcrDebugInfo;
+};
 type TextDetectorLike = { detect: (input: ImageBitmapSource) => Promise<OcrDetectionResult[]> };
 type TextDetectorConstructor = new (options?: { languages?: string[] }) => TextDetectorLike;
 type TesseractWorkerLike = {
@@ -366,6 +393,7 @@ const OCR_MIN_USEFUL_TEXT_LENGTH = 16;
 const OCR_MAX_ANALYSIS_DIMENSION = 1800;
 const OCR_MAX_PREVIEW_BOXES = 48;
 const OCR_MIN_SHARPNESS_SCORE = 28;
+const OCR_DEBUG_LOCALSTORAGE_KEY = "domora.ocr.debug-overlay.enabled";
 const buildPublicAssetUrl = (relativePath: string) => {
   const basePath = import.meta.env.BASE_URL || "/";
   const normalizedBase = basePath.endsWith("/") ? basePath : `${basePath}/`;
@@ -809,7 +837,7 @@ const normalizePriceToken = (value: string) => {
     .replace(/€/g, "")
     .replace(/EUR/gi, "")
     .replace(/[^\d,.-]/g, "");
-  const match = normalized.match(/-?\d[\d,.\-]{1,16}/);
+  const match = normalized.match(/-?\d[\d,.-]{1,16}/);
   if (!match?.[0]) return null;
   const raw = match[0].replace(/(?!^)-/g, "");
   const lastComma = raw.lastIndexOf(",");
@@ -888,7 +916,12 @@ const extractPriceCandidatesFromOcrText = (
 };
 
 const pickBestAmountFromCandidates = (candidates: OcrAmountCandidate[]) => {
-  if (candidates.length === 0) return null;
+  const ranked = rankAmountCandidates(candidates);
+  return ranked[0]?.value ?? null;
+};
+
+const rankAmountCandidates = (candidates: OcrAmountCandidate[]): OcrRankedAmountCandidate[] => {
+  if (candidates.length === 0) return [];
   const aggregated = new Map<string, { value: number; score: number; maxScore: number; count: number; lastIndex: number }>();
   for (const candidate of candidates) {
     const current = aggregated.get(candidate.token);
@@ -907,21 +940,37 @@ const pickBestAmountFromCandidates = (candidates: OcrAmountCandidate[]) => {
     current.count += 1;
     current.lastIndex = Math.max(current.lastIndex, candidate.index);
   }
-  const ranked = [...aggregated.values()].sort(
-    (left, right) =>
-      right.maxScore - left.maxScore ||
-      right.score - left.score ||
-      right.count - left.count ||
-      right.lastIndex - left.lastIndex ||
-      right.value - left.value
-  );
-  return ranked[0]?.value ?? null;
+  return [...aggregated.entries()]
+    .map(([token, value]) => ({
+      token,
+      value: value.value,
+      totalScore: value.score,
+      maxScore: value.maxScore,
+      count: value.count,
+      lastIndex: value.lastIndex
+    }))
+    .sort(
+      (left, right) =>
+        right.maxScore - left.maxScore ||
+        right.totalScore - left.totalScore ||
+        right.count - left.count ||
+        right.lastIndex - left.lastIndex ||
+        right.value - left.value
+    );
+};
+
+const pickBestAmountFromCandidatesDetailed = (candidates: OcrAmountCandidate[]) => {
+  const ranked = rankAmountCandidates(candidates);
+  return {
+    value: ranked[0]?.value ?? null,
+    ranked
+  };
 };
 
 const extractPriceFromOcrText = (text: string) => pickBestAmountFromCandidates(extractPriceCandidatesFromOcrText(text));
 
-const extractPriceFromOcrPasses = (passes: OcrPassResult[]) =>
-  pickBestAmountFromCandidates(
+const extractPriceFromOcrPassesDetailed = (passes: OcrPassResult[]) =>
+  pickBestAmountFromCandidatesDetailed(
     passes.flatMap((pass) =>
       extractPriceCandidatesFromOcrText(pass.text, {
         baseWeight:
@@ -1173,7 +1222,11 @@ export const FinancesPage = ({
   const [ocrConfirmDialogOpen, setOcrConfirmDialogOpen] = useState(false);
   const [ocrBusy, setOcrBusy] = useState(false);
   const [ocrError, setOcrError] = useState<string | null>(null);
-  const [ocrCandidate, setOcrCandidate] = useState<{ description: string; amount: string; fullText: string; boxes: OcrPreviewBox[] } | null>(null);
+  const [ocrCandidate, setOcrCandidate] = useState<OcrCandidate | null>(null);
+  const [ocrDebugOverlayEnabled, setOcrDebugOverlayEnabled] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return window.localStorage.getItem(OCR_DEBUG_LOCALSTORAGE_KEY) === "1";
+  });
   const [ocrPreviewImageUrl, setOcrPreviewImageUrl] = useState<string | null>(null);
   const [ocrTorchSupported, setOcrTorchSupported] = useState(false);
   const [ocrTorchEnabled, setOcrTorchEnabled] = useState(false);
@@ -3020,6 +3073,11 @@ export const FinancesPage = ({
   }, [archiveGroups, householdMemberIds]);
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(OCR_DEBUG_LOCALSTORAGE_KEY, ocrDebugOverlayEnabled ? "1" : "0");
+  }, [ocrDebugOverlayEnabled]);
+
+  useEffect(() => {
     const updateWidth = () => {
       const next =
         addEntryComposerContainerRef.current?.getBoundingClientRect().width ??
@@ -3348,17 +3406,30 @@ export const FinancesPage = ({
         return;
       }
 
-      const recognizedPrice = extractPriceFromOcrPasses(passes) ?? extractPriceFromOcrText(text);
+      const amountFromPasses = extractPriceFromOcrPassesDetailed(passes);
+      const recognizedPrice = amountFromPasses.value ?? extractPriceFromOcrText(text);
       const recognizedProduct = extractProductFromOcrText(text);
       const classifiedBoxes = boxes.map((box) => ({
         ...box,
         kind: classifyOcrBoxKind(box.text, recognizedProduct, recognizedPrice)
       }));
-      const candidate = {
+      const candidate: OcrCandidate = {
         description: recognizedProduct ?? "",
         amount: recognizedPrice !== null ? recognizedPrice.toFixed(2) : "",
         fullText: text,
-        boxes: classifiedBoxes
+        boxes: classifiedBoxes,
+        debug: {
+          sharpness: sharpnessScore,
+          effectiveSharpness,
+          passes: passes.map((pass) => ({
+            source: pass.source,
+            region: pass.region,
+            numericFocused: pass.numericFocused,
+            meanConfidence: pass.meanConfidence,
+            textLength: pass.text.length
+          })),
+          topAmountCandidates: amountFromPasses.ranked.slice(0, 8)
+        }
       };
       setOcrPreviewImageUrl(previewImageUrl);
       setOcrCandidate(candidate);
@@ -4244,7 +4315,6 @@ export const FinancesPage = ({
               formatMoney={moneyLabel}
               virtualized
               virtualHeight={420}
-              virtualLayout="inline"
               onEdit={group.isEditable ? onStartEditEntry : undefined}
               onDelete={
                 group.isEditable
@@ -5355,7 +5425,6 @@ export const FinancesPage = ({
               busy={busy}
               virtualized
               virtualHeight={isMobileAddEntryComposer ? mobileOverviewListHeight : 520}
-              virtualLayout="inline"
             />
           ) : entriesSinceLastAudit.length === 0 ? (
             isMobileAddEntryComposer ? (
@@ -5740,6 +5809,81 @@ export const FinancesPage = ({
                   {ocrCandidate.fullText}
                 </pre>
               </details>
+            ) : null}
+            <div className="flex items-center justify-between rounded-lg border border-brand-100 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900">
+              <span className="text-xs font-medium text-slate-600 dark:text-slate-300">
+                {t("finances.ocrDebugOverlayToggle")}
+              </span>
+              <Switch
+                checked={ocrDebugOverlayEnabled}
+                onCheckedChange={(checked) => setOcrDebugOverlayEnabled(checked)}
+                aria-label={t("finances.ocrDebugOverlayToggle")}
+              />
+            </div>
+            {ocrDebugOverlayEnabled && ocrCandidate?.debug ? (
+              <div className="space-y-2 rounded-lg border border-brand-100 bg-white p-3 text-xs dark:border-slate-700 dark:bg-slate-900">
+                <p className="font-semibold text-slate-700 dark:text-slate-200">{t("finances.ocrDebugOverlayTitle")}</p>
+                <p className="text-slate-600 dark:text-slate-300">
+                  {t("finances.ocrDebugSharpness", {
+                    raw: ocrCandidate.debug.sharpness.toFixed(1),
+                    effective: ocrCandidate.debug.effectiveSharpness.toFixed(1)
+                  })}
+                </p>
+                <details>
+                  <summary className="cursor-pointer text-slate-600 dark:text-slate-300">
+                    {t("finances.ocrDebugPasses")}
+                  </summary>
+                  <div className="mt-2 overflow-x-auto">
+                    <table className="w-full min-w-[420px] border-collapse">
+                      <thead>
+                        <tr className="text-left text-slate-500 dark:text-slate-400">
+                          <th className="px-1 py-1">{t("finances.ocrDebugPassSource")}</th>
+                          <th className="px-1 py-1">{t("finances.ocrDebugPassRegion")}</th>
+                          <th className="px-1 py-1">{t("finances.ocrDebugPassConfidence")}</th>
+                          <th className="px-1 py-1">{t("finances.ocrDebugPassLength")}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {ocrCandidate.debug.passes.map((pass, index) => (
+                          <tr key={`${pass.source}-${pass.region}-${index}`} className="border-t border-brand-100 dark:border-slate-800">
+                            <td className="px-1 py-1">{pass.source}{pass.numericFocused ? " *" : ""}</td>
+                            <td className="px-1 py-1">{pass.region}</td>
+                            <td className="px-1 py-1">{pass.meanConfidence.toFixed(1)}</td>
+                            <td className="px-1 py-1">{pass.textLength}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </details>
+                <details>
+                  <summary className="cursor-pointer text-slate-600 dark:text-slate-300">
+                    {t("finances.ocrDebugCandidates")}
+                  </summary>
+                  <div className="mt-2 overflow-x-auto">
+                    <table className="w-full min-w-[420px] border-collapse">
+                      <thead>
+                        <tr className="text-left text-slate-500 dark:text-slate-400">
+                          <th className="px-1 py-1">{t("finances.ocrDebugCandidateToken")}</th>
+                          <th className="px-1 py-1">{t("finances.ocrDebugCandidateValue")}</th>
+                          <th className="px-1 py-1">{t("finances.ocrDebugCandidateScore")}</th>
+                          <th className="px-1 py-1">{t("finances.ocrDebugCandidateCount")}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {ocrCandidate.debug.topAmountCandidates.map((entry) => (
+                          <tr key={entry.token} className="border-t border-brand-100 dark:border-slate-800">
+                            <td className="px-1 py-1">{entry.token}</td>
+                            <td className="px-1 py-1">{entry.value.toFixed(2)}</td>
+                            <td className="px-1 py-1">{entry.maxScore.toFixed(1)} / {entry.totalScore.toFixed(1)}</td>
+                            <td className="px-1 py-1">{entry.count}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </details>
+              </div>
             ) : null}
             <div className="flex justify-end gap-2">
               <DialogClose asChild>
