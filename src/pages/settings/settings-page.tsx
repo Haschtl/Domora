@@ -1,12 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useForm } from "@tanstack/react-form";
 import imageCompression from "browser-image-compression";
-import L from "leaflet";
-import markerIcon2xUrl from "leaflet/dist/images/marker-icon-2x.png";
-import markerIconUrl from "leaflet/dist/images/marker-icon.png";
-import markerShadowUrl from "leaflet/dist/images/marker-shadow.png";
 import { Camera, Check, Crown, Share2, UserMinus, X } from "lucide-react";
-import { MapContainer, Marker, Popup, TileLayer, useMap } from "react-leaflet";
 import { useTranslation } from "react-i18next";
 import QRCode from "react-qr-code";
 import { isSupported } from "firebase/messaging";
@@ -109,36 +104,13 @@ const findCurrencyOption = (code: string) => CURRENCY_OPTIONS.find((entry) => en
 const MAX_IMAGE_DIMENSION = 1600;
 const MAX_IMAGE_SIZE_MB = 0.9;
 const IMAGE_QUALITY = 0.78;
-const DEFAULT_MAP_CENTER: [number, number] = [51.1657, 10.4515];
-const MAP_ZOOM_WITH_ADDRESS = 16;
-const MAP_ZOOM_DEFAULT = 5;
 const MIN_ADDRESS_LENGTH_FOR_GEOCODE = 5;
 const ADDRESS_GEOCODE_DEBOUNCE_MS = 650;
-
-let leafletMarkerConfigured = false;
-const ensureLeafletMarkerIcon = () => {
-  if (leafletMarkerConfigured) return;
-  leafletMarkerConfigured = true;
-  delete (L.Icon.Default.prototype as unknown as { _getIconUrl?: () => string })._getIconUrl;
-  L.Icon.Default.mergeOptions({
-    iconRetinaUrl: markerIcon2xUrl,
-    iconUrl: markerIconUrl,
-    shadowUrl: markerShadowUrl
-  });
-};
 
 const openStreetMapSearchUrl = (query: string) =>
   `https://www.openstreetmap.org/search?query=${encodeURIComponent(query)}`;
 const openStreetMapPinUrl = (lat: number, lon: number) =>
   `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lon}#map=17/${lat}/${lon}`;
-
-const AddressMapView = ({ center }: { center: [number, number] }) => {
-  const map = useMap();
-  useEffect(() => {
-    map.setView(center, map.getZoom(), { animate: false });
-  }, [center, map]);
-  return null;
-};
 
 const readBlobAsDataUrl = (blob: Blob) =>
   new Promise<string>((resolve, reject) => {
@@ -491,7 +463,8 @@ export const SettingsPage = ({
         themeAccentColor: value.themeAccentColor,
         themeFontFamily: value.themeFontFamily,
         themeRadiusScale: normalizeThemeRadiusScale(value.themeRadiusScale),
-        translationOverrides: normalizeTranslationOverrides(translationOverridesDraft)
+        translationOverrides: normalizeTranslationOverrides(translationOverridesDraft),
+        householdMapMarkers: household.household_map_markers ?? []
       });
     }
   });
@@ -655,7 +628,8 @@ export const SettingsPage = ({
         themeAccentColor: householdForm.state.values.themeAccentColor,
         themeFontFamily: householdForm.state.values.themeFontFamily,
         themeRadiusScale: normalizeThemeRadiusScale(householdForm.state.values.themeRadiusScale),
-        translationOverrides: normalizeTranslationOverrides(translationOverridesDraft)
+        translationOverrides: normalizeTranslationOverrides(translationOverridesDraft),
+        householdMapMarkers: household.household_map_markers ?? []
       });
       setHouseholdUploadError(null);
     } catch {
@@ -691,7 +665,8 @@ export const SettingsPage = ({
         themeAccentColor: householdForm.state.values.themeAccentColor,
         themeFontFamily: householdForm.state.values.themeFontFamily,
         themeRadiusScale: normalizeThemeRadiusScale(householdForm.state.values.themeRadiusScale),
-        translationOverrides: normalizeTranslationOverrides(translationOverridesDraft)
+        translationOverrides: normalizeTranslationOverrides(translationOverridesDraft),
+        householdMapMarkers: household.household_map_markers ?? []
       });
       setHouseholdUploadError(null);
     } catch {
@@ -1013,15 +988,9 @@ export const SettingsPage = ({
   const showHousehold = section === "household";
   const addressInput = householdForm.state.values.address.trim();
   const addressCoords = addressMapCenter;
-  const mapCenter = addressMapCenter ?? DEFAULT_MAP_CENTER;
-  const mapHasPin = Boolean(addressMapCenter);
   const mapLink = addressCoords
     ? openStreetMapPinUrl(addressCoords[0], addressCoords[1])
     : openStreetMapSearchUrl(addressInput);
-
-  useEffect(() => {
-    ensureLeafletMarkerIcon();
-  }, []);
 
   useEffect(() => {
     const query = addressInput.trim();
@@ -2079,25 +2048,6 @@ export const SettingsPage = ({
                         {t("settings.householdAddressMapOpen")}
                       </a>
                     ) : null}
-                  </div>
-                  <div className="h-64 overflow-hidden rounded-lg border border-brand-100 dark:border-slate-700">
-                    <MapContainer
-                      center={mapCenter}
-                      zoom={mapHasPin ? MAP_ZOOM_WITH_ADDRESS : MAP_ZOOM_DEFAULT}
-                      scrollWheelZoom
-                      style={{ height: "100%", width: "100%" }}
-                    >
-                      <AddressMapView center={mapCenter} />
-                      <TileLayer
-                        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-                        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                      />
-                      {mapHasPin ? (
-                        <Marker position={mapCenter}>
-                          <Popup>{addressMapLabel ?? addressInput}</Popup>
-                        </Marker>
-                      ) : null}
-                    </MapContainer>
                   </div>
                 </div>
               </div>

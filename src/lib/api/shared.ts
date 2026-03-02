@@ -42,6 +42,25 @@ const householdTranslationOverrideSchema = z.object({
   find: z.string().trim().min(1).max(120),
   replace: z.string().trim().max(120)
 });
+const householdMapMarkerIconSchema = z.enum([
+  "home",
+  "shopping",
+  "restaurant",
+  "fuel",
+  "hospital",
+  "park",
+  "work",
+  "star"
+]);
+const householdMapMarkerSchema = z.object({
+  id: z.string().min(1).max(64),
+  lat: z.coerce.number().finite().min(-90).max(90),
+  lon: z.coerce.number().finite().min(-180).max(180),
+  icon: householdMapMarkerIconSchema,
+  title: z.string().trim().min(1).max(120),
+  description: z.string().trim().max(600).default(""),
+  image_url: z.string().nullable().optional().transform((value) => value ?? null)
+});
 
 const householdSchema = z.object({
   id: z.string().uuid(),
@@ -75,6 +94,7 @@ const householdSchema = z.object({
   theme_font_family: z.string().min(1).default('"Space Grotesk", "Segoe UI", sans-serif'),
   theme_radius_scale: z.coerce.number().min(0.5).max(1.5).default(1),
   translation_overrides: z.array(householdTranslationOverrideSchema).default([]),
+  household_map_markers: z.array(householdMapMarkerSchema).default([]),
   landing_page_markdown: z.string().default(""),
   invite_code: z.string().min(1),
   created_by: z.string().uuid(),

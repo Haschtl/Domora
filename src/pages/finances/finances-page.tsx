@@ -1571,7 +1571,8 @@ export const FinancesPage = ({
         themeAccentColor: household.theme_accent_color ?? "#14b8a6",
         themeFontFamily: household.theme_font_family ?? '"Space Grotesk", "Segoe UI", sans-serif',
         themeRadiusScale: household.theme_radius_scale ?? 1,
-        translationOverrides: household.translation_overrides ?? []
+        translationOverrides: household.translation_overrides ?? [],
+        householdMapMarkers: household.household_map_markers ?? []
       });
     }
   });

@@ -6,6 +6,26 @@ export interface HouseholdTranslationOverride {
   replace: string;
 }
 
+export type HouseholdMapMarkerIcon =
+  | "home"
+  | "shopping"
+  | "restaurant"
+  | "fuel"
+  | "hospital"
+  | "park"
+  | "work"
+  | "star";
+
+export interface HouseholdMapMarker {
+  id: string;
+  lat: number;
+  lon: number;
+  icon: HouseholdMapMarkerIcon;
+  title: string;
+  description: string;
+  image_url: string | null;
+}
+
 export interface Household {
   id: string;
   name: string;
@@ -32,6 +52,7 @@ export interface Household {
   theme_font_family: string;
   theme_radius_scale: number;
   translation_overrides: HouseholdTranslationOverride[];
+  household_map_markers: HouseholdMapMarker[];
   landing_page_markdown: string;
   invite_code: string;
   created_by: string;
@@ -63,6 +84,7 @@ export interface UpdateHouseholdInput {
   themeFontFamily: string;
   themeRadiusScale: number;
   translationOverrides: HouseholdTranslationOverride[];
+  householdMapMarkers: HouseholdMapMarker[];
 }
 
 export interface HouseholdMember {

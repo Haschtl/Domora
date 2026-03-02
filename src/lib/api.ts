@@ -38,7 +38,7 @@ import type {
 const buildInviteCode = () => Math.random().toString(36).slice(2, 8).toUpperCase();
 
 const SELECT_HOUSEHOLD_FIELDS =
-  "id,name,image_url,address,currency,apartment_size_sqm,cold_rent_monthly,utilities_monthly,utilities_on_room_sqm_percent,task_laziness_enabled,vacation_tasks_exclude_enabled,vacation_finances_exclude_enabled,task_skip_enabled,feature_bucket_enabled,feature_shopping_enabled,feature_tasks_enabled,feature_one_off_tasks_enabled,feature_finances_enabled,one_off_claim_timeout_hours,one_off_claim_max_pimpers,theme_primary_color,theme_accent_color,theme_font_family,theme_radius_scale,translation_overrides,landing_page_markdown,invite_code,created_by,created_at";
+  "id,name,image_url,address,currency,apartment_size_sqm,cold_rent_monthly,utilities_monthly,utilities_on_room_sqm_percent,task_laziness_enabled,vacation_tasks_exclude_enabled,vacation_finances_exclude_enabled,task_skip_enabled,feature_bucket_enabled,feature_shopping_enabled,feature_tasks_enabled,feature_one_off_tasks_enabled,feature_finances_enabled,one_off_claim_timeout_hours,one_off_claim_max_pimpers,theme_primary_color,theme_accent_color,theme_font_family,theme_radius_scale,translation_overrides,household_map_markers,landing_page_markdown,invite_code,created_by,created_at";
 const SELECT_HOUSEHOLD_MEMBER_FIELDS =
   "household_id,user_id,role,room_size_sqm,common_area_factor,task_laziness_factor,vacation_mode,created_at";
 const SELECT_HOUSEHOLD_MEMBER_WITH_PROFILE_FIELDS =
@@ -96,6 +96,25 @@ const householdTranslationOverrideSchema = z.object({
   find: z.string().trim().min(1).max(120),
   replace: z.string().trim().max(120)
 });
+const householdMapMarkerIconSchema = z.enum([
+  "home",
+  "shopping",
+  "restaurant",
+  "fuel",
+  "hospital",
+  "park",
+  "work",
+  "star"
+]);
+const householdMapMarkerSchema = z.object({
+  id: z.string().min(1).max(64),
+  lat: z.coerce.number().finite().min(-90).max(90),
+  lon: z.coerce.number().finite().min(-180).max(180),
+  icon: householdMapMarkerIconSchema,
+  title: z.string().trim().min(1).max(120),
+  description: z.string().trim().max(600).default(""),
+  image_url: z.string().nullable().optional().transform((value) => value ?? null)
+});
 const vacationDateSchema = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/);
@@ -142,6 +161,7 @@ const householdSchema = z.object({
   theme_font_family: z.string().min(1).default('"Space Grotesk", "Segoe UI", sans-serif'),
   theme_radius_scale: z.coerce.number().min(0.5).max(1.5).default(1),
   translation_overrides: z.array(householdTranslationOverrideSchema).default([]),
+  household_map_markers: z.array(householdMapMarkerSchema).default([]),
   landing_page_markdown: z.string().default(""),
   invite_code: z.string().min(1),
   created_by: z.string().uuid(),
@@ -885,7 +905,8 @@ export const updateHouseholdSettings = async (
     themeAccentColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/),
     themeFontFamily: z.string().min(1),
     themeRadiusScale: z.coerce.number().min(0.5).max(1.5),
-    translationOverrides: z.array(householdTranslationOverrideSchema).default([])
+    translationOverrides: z.array(householdTranslationOverrideSchema).default([]),
+    householdMapMarkers: z.array(householdMapMarkerSchema).default([])
   }).parse(input);
 
   const { data, error } = await supabase
@@ -914,7 +935,8 @@ export const updateHouseholdSettings = async (
       theme_accent_color: parsedInput.themeAccentColor,
       theme_font_family: parsedInput.themeFontFamily,
       theme_radius_scale: parsedInput.themeRadiusScale,
-      translation_overrides: parsedInput.translationOverrides
+      translation_overrides: parsedInput.translationOverrides,
+      household_map_markers: parsedInput.householdMapMarkers
     })
     .eq("id", validatedHouseholdId)
     .select(SELECT_HOUSEHOLD_FIELDS)

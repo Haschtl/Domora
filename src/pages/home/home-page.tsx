@@ -1,5 +1,9 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useLocation, useNavigate } from "@tanstack/react-router";
+import L from "leaflet";
+import markerIcon2xUrl from "leaflet/dist/images/marker-icon-2x.png";
+import markerIconUrl from "leaflet/dist/images/marker-icon.png";
+import markerShadowUrl from "leaflet/dist/images/marker-shadow.png";
 import {
   CalendarCheck2,
   Check,
@@ -30,6 +34,7 @@ import {
   type MDXEditorMethods,
   useLexicalNodeRemove
 } from "@mdxeditor/editor";
+import { MapContainer, Marker, Popup, TileLayer, useMap } from "react-leaflet";
 import { createTrianglifyBannerBackground } from "../../lib/banner";
 import { formatDateOnly, formatDateTime, formatShortDay, getLastMonthRange } from "../../lib/date";
 import { suggestCategoryLabel } from "../../lib/category-heuristics";
@@ -52,6 +57,7 @@ import type {
   Household,
   HouseholdMember,
   HouseholdMemberVacation,
+  HouseholdMapMarkerIcon,
   TaskCompletion,
   TaskItem
 } from "../../lib/types";
@@ -173,7 +179,75 @@ const LANDING_WIDGET_COMPONENTS: Array<{ key: LandingWidgetKey; tag: string }> =
 
 const MAX_WHITEBOARD_BYTES = 10 * 1024 * 1024;
 const MAX_CALENDAR_TOOLTIP_ITEMS = 4;
+const DEFAULT_MAP_CENTER: [number, number] = [51.1657, 10.4515];
+const MAP_ZOOM_WITH_ADDRESS = 16;
+const MAP_ZOOM_DEFAULT = 5;
+const MIN_ADDRESS_LENGTH_FOR_GEOCODE = 5;
+const ADDRESS_GEOCODE_DEBOUNCE_MS = 650;
 const widgetTokenFromKey = (key: LandingWidgetKey) => `{{widget:${key}}}`;
+
+let leafletMarkerConfigured = false;
+const ensureLeafletMarkerIcon = () => {
+  if (leafletMarkerConfigured) return;
+  leafletMarkerConfigured = true;
+  delete (L.Icon.Default.prototype as unknown as { _getIconUrl?: () => string })._getIconUrl;
+  L.Icon.Default.mergeOptions({
+    iconRetinaUrl: markerIcon2xUrl,
+    iconUrl: markerIconUrl,
+    shadowUrl: markerShadowUrl
+  });
+};
+
+const openStreetMapSearchUrl = (query: string) =>
+  `https://www.openstreetmap.org/search?query=${encodeURIComponent(query)}`;
+const openStreetMapPinUrl = (lat: number, lon: number) =>
+  `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lon}#map=17/${lat}/${lon}`;
+
+const AddressMapView = ({ center }: { center: [number, number] }) => {
+  const map = useMap();
+  useEffect(() => {
+    map.setView(center, map.getZoom(), { animate: false });
+  }, [center, map]);
+  return null;
+};
+
+const getMarkerEmoji = (icon: HouseholdMapMarkerIcon) => {
+  switch (icon) {
+    case "home":
+      return "🏠";
+    case "shopping":
+      return "🛒";
+    case "restaurant":
+      return "🍽️";
+    case "fuel":
+      return "⛽";
+    case "hospital":
+      return "🏥";
+    case "park":
+      return "🌳";
+    case "work":
+      return "💼";
+    case "star":
+      return "⭐";
+    default:
+      return "📍";
+  }
+};
+
+const markerDivIconCache = new Map<string, L.DivIcon>();
+const getManualMarkerIcon = (icon: HouseholdMapMarkerIcon) => {
+  const cached = markerDivIconCache.get(icon);
+  if (cached) return cached;
+  const divIcon = L.divIcon({
+    className: "domora-map-marker-icon",
+    html: `<div style="background:#0f766e;border:2px solid #fff;color:#fff;width:30px;height:30px;border-radius:999px;display:flex;align-items:center;justify-content:center;font-size:16px;box-shadow:0 2px 8px rgba(0,0,0,.35)">${getMarkerEmoji(icon)}</div>`,
+    iconSize: [30, 30],
+    iconAnchor: [15, 30],
+    popupAnchor: [0, -28]
+  });
+  markerDivIconCache.set(icon, divIcon);
+  return divIcon;
+};
 
 const convertLandingTokensToEditorJsx = (markdown: string) => {
   const segments = splitLandingContentSegments(markdown);
@@ -598,6 +672,8 @@ export const HomePage = ({
   const [whiteboardDraft, setWhiteboardDraft] = useState(whiteboardSceneJson);
   const [whiteboardError, setWhiteboardError] = useState<string | null>(null);
   const [whiteboardStatus, setWhiteboardStatus] = useState<"idle" | "saving" | "saved" | "unsaved" | "error">("idle");
+  const [addressMapCenter, setAddressMapCenter] = useState<[number, number] | null>(null);
+  const [addressMapLabel, setAddressMapLabel] = useState<string | null>(null);
   const whiteboardSaveTimerRef = useRef<number | null>(null);
   const lastSavedWhiteboardRef = useRef(whiteboardSceneJson);
   const isWhiteboardFullscreenOpen = location.pathname === "/home/summary/whiteboard";
@@ -634,6 +710,59 @@ export const HomePage = ({
     [household.name, householdImageUrl]
   );
   const language = i18n.resolvedLanguage ?? i18n.language;
+  const addressInput = household.address.trim();
+  const mapCenter = addressMapCenter ?? DEFAULT_MAP_CENTER;
+  const mapHasPin = Boolean(addressMapCenter);
+  const mapLink = addressMapCenter
+    ? openStreetMapPinUrl(addressMapCenter[0], addressMapCenter[1])
+    : openStreetMapSearchUrl(addressInput);
+
+  useEffect(() => {
+    ensureLeafletMarkerIcon();
+  }, []);
+
+  useEffect(() => {
+    const query = addressInput.trim();
+    if (query.length < MIN_ADDRESS_LENGTH_FOR_GEOCODE) {
+      setAddressMapCenter(null);
+      setAddressMapLabel(null);
+      return;
+    }
+
+    let active = true;
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&q=${encodeURIComponent(query)}`;
+          const response = await fetch(url, {
+            method: "GET",
+            headers: { Accept: "application/json" },
+            signal: controller.signal
+          });
+          if (!response.ok) throw new Error("geocode_failed");
+          const payload = (await response.json()) as Array<{ lat?: string; lon?: string; display_name?: string }>;
+          const first = payload[0];
+          const lat = first?.lat ? Number(first.lat) : Number.NaN;
+          const lon = first?.lon ? Number(first.lon) : Number.NaN;
+          if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
+          if (!active) return;
+          setAddressMapCenter([lat, lon]);
+          setAddressMapLabel(first?.display_name?.trim() || query);
+        } catch {
+          if (!active || controller.signal.aborted) return;
+          setAddressMapCenter(null);
+          setAddressMapLabel(null);
+        }
+      })();
+    }, ADDRESS_GEOCODE_DEBOUNCE_MS);
+
+    return () => {
+      active = false;
+      controller.abort();
+      window.clearTimeout(timer);
+    };
+  }, [addressInput]);
   const insertTextPlaceholder = t("home.widgetTextPlaceholder");
   const insertTextBeforeLabel = t("home.widgetInsertTextBefore");
   const insertTextAfterLabel = t("home.widgetInsertTextAfter");
@@ -2802,9 +2931,15 @@ export const HomePage = ({
                       bucketCount,
                       shoppingCount,
                       vacationCount,
-                      totalCount,
                     } = getCalendarCounts(entry);
-                    const hasEntries = totalCount > 0;
+                    const hasEntries =
+                      cleaningCount +
+                        completionCount +
+                        financeCount +
+                        cashAuditCount +
+                        bucketCount +
+                        shoppingCount >
+                      0;
                     const showVacationSpans = calendarFilters.vacations && vacationSpans.length > 0;
                     const cellHeightClass = isCalendarDense
                       ? "min-h-[52px]"
@@ -2895,10 +3030,6 @@ export const HomePage = ({
                                     "bg-slate-500",
                                   )}
                                   {renderDenseStack(
-                                    vacationCount,
-                                    "bg-violet-500",
-                                  )}
-                                  {renderDenseStack(
                                     bucketCount,
                                     "bg-indigo-500",
                                   )}
@@ -2943,12 +3074,6 @@ export const HomePage = ({
                                     <span className="inline-flex items-center gap-1 rounded-full bg-slate-200 px-1.5 py-0.5 text-slate-700 dark:bg-slate-700 dark:text-slate-200">
                                       <span className="h-1.5 w-1.5 rounded-full bg-slate-500" />
                                       {cashAuditCount}
-                                    </span>
-                                  ) : null}
-                                  {vacationCount > 0 ? (
-                                    <span className="inline-flex items-center gap-1 rounded-full bg-violet-100 px-1.5 py-0.5 text-violet-800 dark:bg-violet-900/30 dark:text-violet-200">
-                                      <span className="h-1.5 w-1.5 rounded-full bg-violet-500" />
-                                      {vacationCount}
                                     </span>
                                   ) : null}
                                   {bucketCount > 0 ? (
@@ -3298,6 +3423,71 @@ export const HomePage = ({
                   </div>
                 </Suspense>
               </ErrorBoundary>
+            </CardContent>
+          </Card>
+
+          <Card className="mt-6 rounded-xl border border-slate-300 bg-white/90 p-3 text-slate-800 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-100">
+            <CardHeader className="gap-1">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <CardTitle>{t("home.householdMapTitle")}</CardTitle>
+                  <CardDescription>{t("home.householdMapDescription")}</CardDescription>
+                </div>
+                {addressInput ? (
+                  <a
+                    href={mapLink}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-xs font-medium text-brand-700 underline decoration-brand-300 underline-offset-2 hover:text-brand-900 dark:text-brand-300 dark:hover:text-brand-200"
+                  >
+                    {t("home.householdMapOpen")}
+                  </a>
+                ) : null}
+              </div>
+            </CardHeader>
+            <CardContent className="pt-2">
+              <div className="h-72 overflow-hidden rounded-lg border border-brand-100 dark:border-slate-700">
+                <MapContainer
+                  center={mapCenter}
+                  zoom={mapHasPin ? MAP_ZOOM_WITH_ADDRESS : MAP_ZOOM_DEFAULT}
+                  scrollWheelZoom
+                  style={{ height: "100%", width: "100%" }}
+                >
+                  <AddressMapView center={mapCenter} />
+                  <TileLayer
+                    attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                  />
+                  {mapHasPin ? (
+                    <Marker position={mapCenter}>
+                      <Popup>{addressMapLabel ?? addressInput}</Popup>
+                    </Marker>
+                  ) : null}
+                  {household.household_map_markers.map((marker) => (
+                    <Marker
+                      key={marker.id}
+                      position={[marker.lat, marker.lon]}
+                      icon={getManualMarkerIcon(marker.icon)}
+                    >
+                      <Popup>
+                        <div className="space-y-1">
+                          <p className="font-semibold">
+                            {getMarkerEmoji(marker.icon)} {marker.title}
+                          </p>
+                          {marker.description ? <p className="text-xs">{marker.description}</p> : null}
+                          {marker.image_url ? (
+                            <img
+                              src={marker.image_url}
+                              alt={marker.title}
+                              className="max-h-32 w-full rounded object-cover"
+                            />
+                          ) : null}
+                        </div>
+                      </Popup>
+                    </Marker>
+                  ))}
+                </MapContainer>
+              </div>
             </CardContent>
           </Card>
 
