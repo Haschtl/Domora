@@ -113,7 +113,7 @@ const normalizeRouteGeoJson = (raw: unknown): RouteGeoJson | null => {
         return value;
       };
 
-      let normalizedCoordinates: number[][] | number[][][] | null = null;
+      let normalizedCoordinates: number[][] | number[][][] | null|undefined;
       if (geometryType === "LineString") {
         const line = geometry.coordinates
           .map((tuple) => mapCoordinate(tuple))

@@ -23,6 +23,20 @@ type ReachabilityGeoJson = {
 const isValidTravelMode = (value: unknown): value is ReachabilityTravelMode =>
   value === "walk" || value === "bike" || value === "car" || value === "transit";
 
+const buildReachabilityBandSeconds = (minutes: number) => {
+  const safeMinutes = Math.max(1, Math.min(180, Math.round(minutes)));
+  const rawBands = [
+    Math.round(safeMinutes * 0.25),
+    Math.round(safeMinutes * 0.5),
+    Math.round(safeMinutes * 0.75),
+    safeMinutes
+  ];
+  const uniqueMinutes = Array.from(
+    new Set(rawBands.map((value) => Math.max(1, Math.min(safeMinutes, value))))
+  ).sort((a, b) => a - b);
+  return uniqueMinutes.map((value) => value * 60);
+};
+
 const normalizeGeoJson = (raw: unknown): ReachabilityGeoJson | null => {
   const asRecord = (value: unknown) =>
     value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
@@ -139,7 +153,8 @@ serve(async (req) => {
     return new Response("Forbidden", { status: 403, headers: corsHeaders });
   }
 
-  const seconds = Math.round(minutes * 60);
+  const reachabilityBandSeconds = buildReachabilityBandSeconds(minutes);
+  const maxSeconds = reachabilityBandSeconds[reachabilityBandSeconds.length - 1] ?? Math.round(minutes * 60);
   const now = new Date();
   const nowIso = now.toISOString();
   const tm = (() => {
@@ -152,7 +167,7 @@ serve(async (req) => {
           time: nowIso,
           date: nowIso.slice(0, 10)
         },
-        maxEdgeWeight: seconds
+        maxEdgeWeight: maxSeconds
       }
     };
   })();
@@ -169,7 +184,7 @@ serve(async (req) => {
     polygon: {
       serializer: "geojson",
       srid: 4326,
-      values: [seconds],
+      values: reachabilityBandSeconds,
       intersectionMode: "union"
     }
   };
@@ -204,6 +219,17 @@ serve(async (req) => {
         status: 502,
         headers: { "content-type": "application/json", ...corsHeaders }
       });
+    }
+
+    if (geojson.features.length === reachabilityBandSeconds.length) {
+      geojson.features = geojson.features.map((feature, index) => ({
+        ...feature,
+        properties: {
+          ...(feature.properties ?? {}),
+          domora_reachability_seconds: reachabilityBandSeconds[index],
+          domora_reachability_minutes: Math.round((reachabilityBandSeconds[index] ?? 0) / 60)
+        }
+      }));
     }
 
     return new Response(JSON.stringify({ geojson }), {

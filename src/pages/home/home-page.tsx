@@ -1,12 +1,14 @@
 import {
   Suspense,
   lazy,
+  memo,
   useCallback,
   useEffect,
   useMemo,
   useRef,
   useState,
   type FormEvent,
+  type ReactNode,
   type TouchEvent as ReactTouchEvent
 } from "react";
 import { useLocation, useNavigate } from "@tanstack/react-router";
@@ -257,6 +259,11 @@ type MapWeatherLayerToggles = {
   warnings: boolean;
   lightning: boolean;
 };
+type MapMobilityLayerToggles = {
+  transitLive: boolean;
+  bikeNetwork: boolean;
+  trafficLive: boolean;
+};
 type ManualMarkerFilterMode = "all" | "mine" | "member" | "none";
 type MapMeasureMode = "smart";
 type MapMeasureResult = {
@@ -352,7 +359,12 @@ const MAP_ZOOM_WITH_ADDRESS_FALLBACK = 14;
 const MAP_ZOOM_DEFAULT = 5;
 const MIN_ADDRESS_LENGTH_FOR_GEOCODE = 5;
 const ADDRESS_GEOCODE_DEBOUNCE_MS = 650;
+const GEOCODE_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+const GEOCODE_NEGATIVE_CACHE_TTL_MS = 10 * 60 * 1000;
 const POI_RADIUS_METERS = 1500;
+const POI_CLUSTER_MIN_ZOOM = 16;
+const POI_CLUSTER_GRID_PX_LOW_ZOOM = 64;
+const POI_CLUSTER_GRID_PX_HIGH_ZOOM = 52;
 const POI_CATEGORY_OPTIONS: Array<{ id: PoiCategory; labelKey: string; emoji: string }> = [
   { id: "restaurant", labelKey: "home.householdMapPoiRestaurants", emoji: "🍽️" },
   { id: "shop", labelKey: "home.householdMapPoiShops", emoji: "🛍️" },
@@ -381,6 +393,18 @@ const MANUAL_MARKER_ICON_OPTIONS: Array<{ id: HouseholdMapMarkerIcon; labelKey: 
 const LIVE_LOCATION_DURATION_OPTIONS = [5, 15, 30, 60] as const;
 const REACHABILITY_MINUTES_DEFAULT = 20;
 const MAP_SETTINGS_STORAGE_KEY_PREFIX = "domora:home-map-settings:v1";
+const TRANSIT_LAYER_RADIUS_METERS = 1500;
+const TRANSIT_LAYER_STOP_LIMIT = 10;
+const TRANSIT_LAYER_DEPARTURE_LIMIT = 3;
+const TRANSIT_LAYER_REFRESH_MS = 60 * 1000;
+const TRAFFIC_LAYER_CACHE_TTL_MS = 5 * 60 * 1000;
+const TRAFFIC_LAYER_REFRESH_MS = 3 * 60 * 1000;
+const TRAFFIC_LAYER_MAX_ROADS_PER_CYCLE = 36;
+const TRAFFIC_LAYER_FETCH_CONCURRENCY = 8;
+const TRAFFIC_LAYER_MAX_INCIDENTS = 120;
+const BIKE_NETWORK_TILE_URL = "https://{s}.tile-cyclosm.openstreetmap.fr/cyclosm/{z}/{x}/{y}.png";
+const BIKE_NETWORK_ATTRIBUTION =
+  '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, style <a href="https://cyclosm.org/">CyclOSM</a>';
 const REACHABILITY_OPTIONS: Array<{ id: MapReachabilityMode; labelKey: string }> = [
   { id: "walk", labelKey: "home.householdMapReachabilityModeWalk" },
   { id: "bike", labelKey: "home.householdMapReachabilityModeBike" },
@@ -435,6 +459,7 @@ const MAP_STYLE_OPTIONS: MapStyleOption[] = [
 type PersistedMapSettings = {
   mapTravelMode: MapReachabilityMode;
   mapWeatherLayers: MapWeatherLayerToggles;
+  mapMobilityLayers: MapMobilityLayerToggles;
   manualMarkerFilterMode: ManualMarkerFilterMode;
   manualMarkerFilterMemberId: string;
   poiCategoriesEnabled: Record<PoiCategory, boolean>;
@@ -1086,6 +1111,27 @@ const MapSearchZoomBridge = ({
   return null;
 };
 
+const MapZoomBridge = ({
+  onZoomChange
+}: {
+  onZoomChange: (zoom: number) => void;
+}) => {
+  const map = useMap();
+
+  useEffect(() => {
+    const emit = () => {
+      onZoomChange(map.getZoom());
+    };
+    emit();
+    map.on("zoomend", emit);
+    return () => {
+      map.off("zoomend", emit);
+    };
+  }, [map, onZoomChange]);
+
+  return null;
+};
+
 const MapClosePopupBridge = ({
   requestToken
 }: {
@@ -1120,19 +1166,73 @@ const ReachabilityLayerBridge = ({
     onSaveReachabilityRef.current = onSaveReachability ?? null;
   }, [onSaveReachability]);
 
+  const reachabilityPalette = useMemo(
+    () => ["#22c55e", "#84cc16", "#facc15", "#f97316", "#ef4444"],
+    []
+  );
+
   useEffect(() => {
     if (layerRef.current) {
       map.removeLayer(layerRef.current);
       layerRef.current = null;
     }
     if (!geojson) return;
-    const layer = L.geoJSON(geojson as unknown as GeoJSON.GeoJsonObject, {
-      style: () => ({
-        color,
-        weight: 2,
-        fillColor: color,
-        fillOpacity: 0.22
-      }),
+    const secondsForFeature = (feature: ReachabilityGeoJson["features"][number]) => {
+      const props = feature.properties ?? {};
+      const tagged = Number(props.domora_reachability_seconds);
+      if (Number.isFinite(tagged) && tagged > 0) return tagged;
+      const fallback = Number(props.value);
+      if (Number.isFinite(fallback) && fallback > 0) return fallback;
+      return null;
+    };
+
+    const sortableFeatures = geojson.features.map((feature, index) => ({
+      feature,
+      index,
+      seconds: secondsForFeature(feature)
+    }));
+
+    const ordered = [...sortableFeatures].sort((a, b) => {
+      const aScore = a.seconds ?? Number.POSITIVE_INFINITY;
+      const bScore = b.seconds ?? Number.POSITIVE_INFINITY;
+      if (aScore === bScore) return a.index - b.index;
+      return bScore - aScore;
+    });
+
+    const maxLevel = Math.max(0, ordered.length - 1);
+
+    const styledGeoJson: ReachabilityGeoJson = {
+      type: "FeatureCollection",
+      features: ordered.map((entry, level) => ({
+        ...entry.feature,
+        properties: {
+          ...(entry.feature.properties ?? {}),
+          domora_reachability_level: level
+        }
+      }))
+    };
+
+    const layer = L.geoJSON(styledGeoJson as unknown as GeoJSON.GeoJsonObject, {
+      style: (feature) => {
+        const rawLevel = Number((feature as GeoJSON.Feature | undefined)?.properties?.domora_reachability_level ?? 0);
+        const level = Number.isFinite(rawLevel) ? rawLevel : 0;
+        const ratio = maxLevel > 0 ? Math.min(1, Math.max(0, level / maxLevel)) : 0;
+        const paletteIndex = Math.min(
+          reachabilityPalette.length - 1,
+          Math.max(0, Math.round(ratio * (reachabilityPalette.length - 1)))
+        );
+        const fillColor = reachabilityPalette[paletteIndex] ?? color;
+        const haloWeight = 8 + (1 - ratio) * 8;
+        return {
+          color: fillColor,
+          weight: haloWeight,
+          opacity: 0.22 + (1 - ratio) * 0.16,
+          fillColor,
+          fillOpacity: 0.1 + ratio * 0.2,
+          lineCap: "round",
+          lineJoin: "round"
+        };
+      },
       interactive: true
     });
     if (tooltipHtml) {
@@ -1920,6 +2020,380 @@ const getPoiMarkerIcon = (category: PoiCategory) => {
   poiDivIconCache.set(category, divIcon);
   return divIcon;
 };
+const poiClusterDivIconCache = new Map<string, L.DivIcon>();
+const getPoiClusterMarkerIcon = (count: number) => {
+  const cacheKey = String(Math.max(1, Math.min(999, Math.round(count))));
+  const cached = poiClusterDivIconCache.get(cacheKey);
+  if (cached) return cached;
+  const divIcon = L.divIcon({
+    className: "domora-map-poi-cluster-icon",
+    html: `<div style="background:#0f172a;border:2px solid #fff;color:#fff;min-width:30px;height:30px;padding:0 8px;border-radius:999px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;box-shadow:0 2px 8px rgba(0,0,0,.35)">${escapeHtmlText(cacheKey)}</div>`,
+    iconSize: [36, 30],
+    iconAnchor: [18, 30],
+    popupAnchor: [0, -26]
+  });
+  poiClusterDivIconCache.set(cacheKey, divIcon);
+  return divIcon;
+};
+type RenderMapPopupActionsFn = (args: {
+  lat: number;
+  lon: number;
+  onEdit?: () => void;
+  editLabelKey?: "home.householdMapMarkerEditAction" | "home.householdMapQuickPinCreate";
+}) => ReactNode;
+
+type BucketMapEntry = {
+  item: BucketItem;
+  lat: number;
+  lon: number;
+  label: string;
+};
+
+const BucketMapMarker = memo(({
+  entry,
+  userId,
+  busy,
+  onToggleBucketDateVote,
+  formatSuggestedDate,
+  renderMapPopupActions
+}: {
+  entry: BucketMapEntry;
+  userId: string;
+  busy: boolean;
+  onToggleBucketDateVote: (item: BucketItem, suggestedDate: string, voted: boolean) => Promise<void>;
+  formatSuggestedDate: (value: string) => string;
+  renderMapPopupActions: RenderMapPopupActionsFn;
+}) => {
+  const { t } = useTranslation();
+  const [popupHydrated, setPopupHydrated] = useState(false);
+  const item = entry.item;
+  return (
+    <Marker
+      position={[entry.lat, entry.lon]}
+      icon={getBucketMapMarkerIcon()}
+      pmIgnore
+      eventHandlers={{
+        popupopen: () => {
+          setPopupHydrated(true);
+        }
+      }}
+    >
+      <Popup>
+        {!popupHydrated ? (
+          <div className="space-y-1">
+            <p className="font-semibold">🪣 {item.title}</p>
+            <p className="text-xs text-slate-500 dark:text-slate-300">{entry.label}</p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <p className="font-semibold">🪣 {item.title}</p>
+            <p className="text-xs text-slate-500 dark:text-slate-300">{entry.label}</p>
+            {item.description_markdown.trim().length > 0 ? (
+              <div className="prose prose-xs max-w-none text-xs dark:prose-invert prose-p:my-1 prose-ul:my-1 prose-ol:my-1 prose-li:my-0">
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>{item.description_markdown}</ReactMarkdown>
+              </div>
+            ) : null}
+            {item.suggested_dates.length > 0 ? (
+              <div className="space-y-1">
+                <p className="text-xs font-medium text-slate-600 dark:text-slate-300">
+                  {t("home.bucketSuggestedDatesTitle")}
+                </p>
+                <ul className="space-y-1">
+                  {item.suggested_dates.map((dateValue) => {
+                    const voters = item.votes_by_date[dateValue] ?? [];
+                    const hasVoted = voters.includes(userId);
+                    return (
+                      <li
+                        key={`bucket-map-vote-${item.id}-${dateValue}`}
+                        className="flex items-center justify-between gap-2 rounded-md border border-slate-200 bg-slate-50/80 px-2 py-1 dark:border-slate-700 dark:bg-slate-800/70"
+                      >
+                        <span className="text-[11px] text-slate-700 dark:text-slate-300">
+                          {formatSuggestedDate(dateValue)}
+                        </span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                            {t("home.bucketVotes", { count: voters.length })}
+                          </span>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant={hasVoted ? "default" : "outline"}
+                            className="h-6 px-2 text-[10px]"
+                            disabled={busy}
+                            onClick={() => {
+                              void onToggleBucketDateVote(item, dateValue, !hasVoted);
+                            }}
+                          >
+                            {hasVoted ? t("home.bucketVotedAction") : t("home.bucketVoteAction")}
+                          </Button>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            ) : null}
+            {renderMapPopupActions({
+              lat: entry.lat,
+              lon: entry.lon
+            })}
+          </div>
+        )}
+      </Popup>
+    </Marker>
+  );
+});
+BucketMapMarker.displayName = "BucketMapMarker";
+
+const PoiMapMarker = memo(({
+  poi,
+  isHouseholdOwner,
+  activePoiEditorId,
+  setActivePoiEditorId,
+  poiOverrideDrafts,
+  poiOverrideMarkersByRef,
+  setPoiOverrideDrafts,
+  poiOverrideSavingId,
+  onSavePoiOverride,
+  renderMapPopupActions
+}: {
+  poi: NearbyPoi;
+  isHouseholdOwner: boolean;
+  activePoiEditorId: string | null;
+  setActivePoiEditorId: (updater: string | null | ((current: string | null) => string | null)) => void;
+  poiOverrideDrafts: Record<string, { title: string; description: string }>;
+  poiOverrideMarkersByRef: Map<string, HouseholdMapMarker>;
+  setPoiOverrideDrafts: (
+    updater: (
+      current: Record<string, { title: string; description: string }>
+    ) => Record<string, { title: string; description: string }>
+  ) => void;
+  poiOverrideSavingId: string | null;
+  onSavePoiOverride: (poi: NearbyPoi) => Promise<void>;
+  renderMapPopupActions: RenderMapPopupActionsFn;
+}) => {
+  const { t } = useTranslation();
+  const [popupHydrated, setPopupHydrated] = useState(false);
+  return (
+    <Marker
+      position={[poi.lat, poi.lon]}
+      icon={getPoiMarkerIcon(poi.category)}
+      pmIgnore
+      eventHandlers={{
+        popupopen: () => {
+          setPopupHydrated(true);
+        }
+      }}
+    >
+      <Popup>
+        {!popupHydrated ? (
+          <div className="space-y-1">
+            <p className="font-semibold">
+              {getPoiEmoji(poi.category)} {poi.name ?? t("home.householdMapPoiUnnamed")}
+            </p>
+            <p className="text-xs text-slate-500 dark:text-slate-300">
+              {t(`home.householdMapPoiCategory.${poi.category}` as never)}
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-1">
+            <p className="font-semibold">
+              {getPoiEmoji(poi.category)} {poi.name ?? t("home.householdMapPoiUnnamed")}
+            </p>
+            <p className="text-xs text-slate-500 dark:text-slate-300">
+              {t(`home.householdMapPoiCategory.${poi.category}` as never)}
+            </p>
+            {typeof poi.tags["addr:street"] === "string" ? (
+              <p className="text-xs">
+                {poi.tags["addr:street"]}
+                {typeof poi.tags["addr:housenumber"] === "string" ? ` ${poi.tags["addr:housenumber"]}` : ""}
+              </p>
+            ) : null}
+            {renderMapPopupActions({
+              lat: poi.lat,
+              lon: poi.lon,
+              onEdit: isHouseholdOwner
+                ? () => setActivePoiEditorId((current) => (current === poi.id ? null : poi.id))
+                : undefined
+            })}
+            {activePoiEditorId === poi.id ? (
+              <div className="space-y-1 pt-1">
+                <Input
+                  value={
+                    poiOverrideDrafts[poi.id]?.title
+                    ?? poiOverrideMarkersByRef.get(poi.id)?.title
+                    ?? (poi.name ?? "")
+                  }
+                  onChange={(event) =>
+                    setPoiOverrideDrafts((current) => ({
+                      ...current,
+                      [poi.id]: {
+                        title: event.target.value,
+                        description:
+                          current[poi.id]?.description
+                          ?? poiOverrideMarkersByRef.get(poi.id)?.description
+                          ?? ""
+                      }
+                    }))
+                  }
+                  placeholder={t("home.householdMapPoiOverrideTitlePlaceholder")}
+                />
+                <Input
+                  value={
+                    poiOverrideDrafts[poi.id]?.description
+                    ?? poiOverrideMarkersByRef.get(poi.id)?.description
+                    ?? ""
+                  }
+                  onChange={(event) =>
+                    setPoiOverrideDrafts((current) => ({
+                      ...current,
+                      [poi.id]: {
+                        title:
+                          current[poi.id]?.title
+                          ?? poiOverrideMarkersByRef.get(poi.id)?.title
+                          ?? poi.name
+                          ?? "",
+                        description: event.target.value
+                      }
+                    }))
+                  }
+                  placeholder={t("home.householdMapPoiOverrideDescriptionPlaceholder")}
+                />
+                <Button
+                  type="button"
+                  size="sm"
+                  className="h-8 w-full"
+                  onClick={() => {
+                    void onSavePoiOverride(poi);
+                  }}
+                  disabled={!isHouseholdOwner || poiOverrideSavingId === poi.id}
+                >
+                  {poiOverrideSavingId === poi.id
+                    ? t("home.householdMapPoiOverrideSaving")
+                    : t("home.householdMapPoiOverrideSave")}
+                </Button>
+              </div>
+            ) : null}
+          </div>
+        )}
+      </Popup>
+    </Marker>
+  );
+});
+PoiMapMarker.displayName = "PoiMapMarker";
+
+const ManualMarkerPopup = memo(({
+  marker,
+  isHouseholdOwner,
+  openMarkerEdit,
+  renderMapPopupActions
+}: {
+  marker: HouseholdMapMarker;
+  isHouseholdOwner: boolean;
+  openMarkerEdit: (marker: HouseholdMapMarker) => void;
+  renderMapPopupActions: RenderMapPopupActionsFn;
+}) => {
+  const { t } = useTranslation();
+  const [popupHydrated, setPopupHydrated] = useState(false);
+
+  const center = useMemo(() => getHouseholdMarkerCenter(marker), [marker]);
+  const markerGeometry = useMemo(() => {
+    let summary: { area: string; perimeter: string } | null = null;
+    let circleCompact: string | null = null;
+
+    if (marker.type === "circle") {
+      const radius = Math.max(0, marker.radius_meters);
+      const diameter = radius * 2;
+      const perimeter = 2 * Math.PI * radius;
+      const area = Math.PI * radius * radius;
+      summary = {
+        area: formatAreaShort(area),
+        perimeter: formatDistanceShort(perimeter)
+      };
+      circleCompact = `⌀ ${formatDistanceCompact(diameter)} (r=${formatDistanceCompact(radius)})`;
+    } else if (marker.type === "rectangle") {
+      const southWest = L.latLng(marker.bounds.south, marker.bounds.west);
+      const southEast = L.latLng(marker.bounds.south, marker.bounds.east);
+      const northWest = L.latLng(marker.bounds.north, marker.bounds.west);
+      const width = southWest.distanceTo(southEast);
+      const height = southWest.distanceTo(northWest);
+      const perimeter = Math.max(0, 2 * (width + height));
+      const area = Math.max(0, width * height);
+      summary = {
+        area: formatAreaShort(area),
+        perimeter: formatDistanceShort(perimeter)
+      };
+    } else if (marker.type === "vector") {
+      const latLngPoints = marker.points.map((point) => L.latLng(point.lat, point.lon));
+      if (isClosedVectorPath(latLngPoints)) {
+        const first = latLngPoints[0];
+        const last = latLngPoints[latLngPoints.length - 1];
+        const closeDistance = first && last ? first.distanceTo(last) : 0;
+        if (first && last) {
+          const baseLength = calculatePolylineDistanceMetersFromLatLngs(latLngPoints);
+          const perimeter = closeDistance > 0.001 ? baseLength + closeDistance : baseLength;
+          const area = calculatePolygonAreaSqm(latLngPoints);
+          summary = {
+            area: formatAreaShort(area),
+            perimeter: formatDistanceShort(perimeter)
+          };
+        }
+      }
+    }
+
+    return { summary, circleCompact };
+  }, [marker]);
+
+  return (
+    <Popup
+      eventHandlers={{
+        open: () => setPopupHydrated(true)
+      }}
+    >
+      {!popupHydrated ? (
+        <div className="space-y-1">
+          <p className="font-semibold">
+            {getMarkerEmoji(marker.icon)} {marker.title}
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-1">
+          <p className="font-semibold">
+            {getMarkerEmoji(marker.icon)} {marker.title}
+          </p>
+          {marker.description ? (
+            <div className="prose prose-xs max-w-none text-xs dark:prose-invert prose-p:my-1 prose-ul:my-1 prose-ol:my-1 prose-li:my-0">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{marker.description}</ReactMarkdown>
+            </div>
+          ) : null}
+          {marker.image_b64 ? (
+            <img
+              src={marker.image_b64}
+              alt={marker.title}
+              className="max-h-32 w-full rounded object-cover"
+            />
+          ) : null}
+          {markerGeometry.summary ? (
+            <div className="mt-0.5 space-y-0.5 border-t border-slate-200 pt-0.5 text-[11px] leading-tight text-slate-700 dark:border-slate-700 dark:text-slate-300">
+              <p>
+                {t("home.householdMapMarkerMetricArea")}: {markerGeometry.summary.area} · {t("home.householdMapMarkerMetricPerimeter")}: {markerGeometry.summary.perimeter}
+              </p>
+              {markerGeometry.circleCompact ? <p>{markerGeometry.circleCompact}</p> : null}
+            </div>
+          ) : null}
+          {center
+            ? renderMapPopupActions({
+                lat: center[0],
+                lon: center[1],
+                onEdit: isHouseholdOwner ? () => openMarkerEdit(marker) : undefined
+              })
+            : null}
+        </div>
+      )}
+    </Popup>
+  );
+});
+ManualMarkerPopup.displayName = "ManualMarkerPopup";
 
 const bucketMapDivIconCache = new Map<string, L.DivIcon>();
 const getBucketMapMarkerIcon = () => {
@@ -1968,6 +2442,96 @@ const getRoutePointMarkerIcon = (color: string) => {
   routePointDivIconCache.set(cacheKey, divIcon);
   return divIcon;
 };
+const mobilityMarkerDivIconCache = new Map<string, L.DivIcon>();
+const getMobilityMarkerIcon = (tone: "transit" | "traffic") => {
+  const cacheKey = tone;
+  const cached = mobilityMarkerDivIconCache.get(cacheKey);
+  if (cached) return cached;
+  const color = tone === "transit" ? "#0f766e" : "#b91c1c";
+  const glyph = tone === "transit" ? "🚍" : "🚗";
+  const divIcon = L.divIcon({
+    className: "domora-map-mobility-icon",
+    html: `<div style="position:relative;width:28px;height:36px;display:flex;align-items:flex-start;justify-content:center"><div style="background:${color};border:2px solid #fff;color:#fff;width:24px;height:24px;border-radius:999px;display:flex;align-items:center;justify-content:center;font-size:12px;box-shadow:0 2px 8px rgba(0,0,0,.33)">${glyph}</div><div style="position:absolute;top:21px;left:50%;transform:translateX(-50%);width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-top:11px solid ${color};filter:drop-shadow(0 2px 4px rgba(0,0,0,.25))"></div></div>`,
+    iconSize: [28, 36],
+    iconAnchor: [14, 36],
+    popupAnchor: [0, -30]
+  });
+  mobilityMarkerDivIconCache.set(cacheKey, divIcon);
+  return divIcon;
+};
+const parseTrafficCoordinate = (value: unknown): [number, number] | null => {
+  if (!value) return null;
+  if (typeof value === "string") {
+    const parts = value.split(",").map((entry) => Number(entry.trim()));
+    if (parts.length >= 2 && Number.isFinite(parts[0]) && Number.isFinite(parts[1])) {
+      return [parts[0]!, parts[1]!];
+    }
+    return null;
+  }
+  if (typeof value === "object" && value !== null) {
+    const candidate = value as {
+      lat?: unknown;
+      long?: unknown;
+      lon?: unknown;
+      latitude?: unknown;
+      longitude?: unknown;
+      coordinates?: unknown;
+    };
+    const lat = Number(candidate.lat ?? candidate.latitude);
+    const lon = Number(candidate.long ?? candidate.lon ?? candidate.longitude);
+    if (Number.isFinite(lat) && Number.isFinite(lon)) {
+      return [lat, lon];
+    }
+    if (Array.isArray(candidate.coordinates) && candidate.coordinates.length >= 2) {
+      if (Array.isArray(candidate.coordinates[0])) {
+        const firstPair = candidate.coordinates[0] as unknown[];
+        const maybeLon = Number(firstPair[0]);
+        const maybeLat = Number(firstPair[1]);
+        if (Number.isFinite(maybeLat) && Number.isFinite(maybeLon)) {
+          return [maybeLat, maybeLon];
+        }
+      }
+      const maybeLon = Number(candidate.coordinates[0]);
+      const maybeLat = Number(candidate.coordinates[1]);
+      if (Number.isFinite(maybeLat) && Number.isFinite(maybeLon)) {
+        return [maybeLat, maybeLon];
+      }
+    }
+  }
+  return null;
+};
+const parseTrafficIncident = (road: string, raw: unknown): TrafficLiveIncident | null => {
+  if (!raw || typeof raw !== "object") return null;
+  const item = raw as Record<string, unknown>;
+  const coordinate =
+    parseTrafficCoordinate(item.coordinate)
+    ?? parseTrafficCoordinate(item.point)
+    ?? parseTrafficCoordinate(item.extent)
+    ?? parseTrafficCoordinate(item.geometry);
+  if (!coordinate) return null;
+  const title = typeof item.title === "string" ? item.title.trim() : "";
+  if (!title) return null;
+  const subtitle = typeof item.subtitle === "string" ? item.subtitle.trim() : "";
+  const averageSpeedRaw = Number(item.averageSpeed);
+  const averageSpeedKmh = Number.isFinite(averageSpeedRaw) ? Math.round(averageSpeedRaw) : null;
+  const incidentIdRaw = typeof item.identifier === "string" ? item.identifier.trim() : "";
+  const fallbackId = `${road}:${coordinate[0].toFixed(5)}:${coordinate[1].toFixed(5)}:${title}`;
+  const updatedAtIso =
+    typeof item.startTimestamp === "string" && item.startTimestamp.trim().length > 0
+      ? item.startTimestamp
+      : null;
+  return {
+    id: incidentIdRaw || fallbackId,
+    road,
+    title,
+    subtitle,
+    lat: coordinate[0],
+    lon: coordinate[1],
+    abnormalTrafficType: typeof item.abnormalTrafficType === "string" ? item.abnormalTrafficType : null,
+    averageSpeedKmh,
+    updatedAtIso
+  };
+};
 
 type RouteSummary = {
   anchor: [number, number];
@@ -1986,6 +2550,60 @@ type ReachabilitySummary = {
   polygonCount: number;
   pointCount: number;
 };
+type GeocodeCandidateResult = {
+  lat: number;
+  lon: number;
+  label: string;
+} | null;
+type MapPoiDisplayEntry =
+  | {
+      type: "poi";
+      poi: NearbyPoi;
+    }
+  | {
+      type: "cluster";
+      id: string;
+      lat: number;
+      lon: number;
+      count: number;
+      pois: NearbyPoi[];
+      categoryCounts: Partial<Record<PoiCategory, number>>;
+    };
+type TransitLiveDeparture = {
+  id: string;
+  lineName: string;
+  direction: string;
+  departureIso: string | null;
+  plannedIso: string | null;
+  delaySeconds: number | null;
+};
+type TransitLiveStop = {
+  id: string;
+  name: string;
+  lat: number;
+  lon: number;
+  distanceMeters: number | null;
+  departures: TransitLiveDeparture[];
+};
+type TrafficLiveIncident = {
+  id: string;
+  road: string;
+  title: string;
+  subtitle: string;
+  lat: number;
+  lon: number;
+  abnormalTrafficType: string | null;
+  averageSpeedKmh: number | null;
+  updatedAtIso: string | null;
+};
+
+const geocodeCandidateCache = new Map<string, { value: GeocodeCandidateResult; expiresAt: number }>();
+const geocodeCandidateInflight = new Map<string, Promise<GeocodeCandidateResult>>();
+const trafficRoadsCache = {
+  roads: [] as string[],
+  fetchedAt: 0
+};
+const trafficWarningCache = new Map<string, { fetchedAt: number; incidents: TrafficLiveIncident[] }>();
 
 const extractReachabilitySummary = (geojson: ReachabilityGeoJson | null): ReachabilitySummary | null => {
   if (!geojson) return null;
@@ -2143,25 +2761,61 @@ const extractRouteSummary = (geojson: RouteGeoJson | null): RouteSummary | null 
 };
 
 const geocodeAddressCandidate = async (query: string, signal?: AbortSignal) => {
-  const response = await fetch(
-    `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&q=${encodeURIComponent(query)}`,
-    {
-      method: "GET",
-      headers: { Accept: "application/json" },
-      signal
-    }
-  );
-  if (!response.ok) throw new Error("geocode_failed");
-  const payload = (await response.json()) as Array<{ lat?: string; lon?: string; display_name?: string }>;
-  const first = payload[0];
-  const lat = first?.lat ? Number(first.lat) : Number.NaN;
-  const lon = first?.lon ? Number(first.lon) : Number.NaN;
-  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
-  return {
-    lat,
-    lon,
-    label: first?.display_name?.trim() || query
-  };
+  const normalizedQuery = query.trim();
+  if (normalizedQuery.length === 0) return null;
+  const cacheKey = normalizedQuery.toLowerCase();
+  const now = Date.now();
+  const cached = geocodeCandidateCache.get(cacheKey);
+  if (cached && cached.expiresAt > now) {
+    return cached.value;
+  }
+
+  const inflight = geocodeCandidateInflight.get(cacheKey);
+  if (inflight) {
+    return inflight;
+  }
+
+  const request = (async () => {
+    const response = await fetch(
+      `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&q=${encodeURIComponent(normalizedQuery)}`,
+      {
+        method: "GET",
+        headers: { Accept: "application/json" },
+        signal
+      }
+    );
+    if (!response.ok) throw new Error("geocode_failed");
+    const payload = (await response.json()) as Array<{ lat?: string; lon?: string; display_name?: string }>;
+    const first = payload[0];
+    const lat = first?.lat ? Number(first.lat) : Number.NaN;
+    const lon = first?.lon ? Number(first.lon) : Number.NaN;
+    const result: GeocodeCandidateResult =
+      Number.isFinite(lat) && Number.isFinite(lon)
+        ? {
+            lat,
+            lon,
+            label: first?.display_name?.trim() || normalizedQuery
+          }
+        : null;
+    const ttl = result ? GEOCODE_CACHE_TTL_MS : GEOCODE_NEGATIVE_CACHE_TTL_MS;
+    geocodeCandidateCache.set(cacheKey, { value: result, expiresAt: Date.now() + ttl });
+    return result;
+  })();
+
+  geocodeCandidateInflight.set(cacheKey, request);
+  try {
+    return await request;
+  } finally {
+    geocodeCandidateInflight.delete(cacheKey);
+  }
+};
+
+const projectToWorldPixel = (lat: number, lon: number, zoom: number) => {
+  const sinLat = Math.sin((lat * Math.PI) / 180);
+  const scale = 256 * 2 ** zoom;
+  const x = ((lon + 180) / 360) * scale;
+  const y = (0.5 - Math.log((1 + sinLat) / (1 - sinLat)) / (4 * Math.PI)) * scale;
+  return { x, y };
 };
 
 const mapMeasureAnchorIcon = L.divIcon({
@@ -2916,6 +3570,11 @@ export const HomePage = ({
     warnings: true,
     lightning: false
   });
+  const [mapMobilityLayers, setMapMobilityLayers] = useState<MapMobilityLayerToggles>({
+    transitLive: false,
+    bikeNetwork: false,
+    trafficLive: false
+  });
   const [mapMeasureMode, setMapMeasureMode] = useState<MapMeasureMode | null>(null);
   const [mapMeasureResult, setMapMeasureResult] = useState<string | null>(null);
   const [mapMeasureResultAnchor, setMapMeasureResultAnchor] = useState<[number, number] | null>(null);
@@ -2930,8 +3589,8 @@ export const HomePage = ({
   const [mapReachabilityGeoJson, setMapReachabilityGeoJson] = useState<ReachabilityGeoJson | null>(null);
   const [mapReachabilityLoading, setMapReachabilityLoading] = useState(false);
   const [mapReachabilityError, setMapReachabilityError] = useState<string | null>(null);
-  const [mapReachabilitySaveError, setMapReachabilitySaveError] = useState<string | null>(null);
-  const [mapReachabilitySavedAt, setMapReachabilitySavedAt] = useState<number | null>(null);
+  const [, setMapReachabilitySaveError] = useState<string | null>(null);
+  const [, setMapReachabilitySavedAt] = useState<number | null>(null);
   const [mapReachabilitySaving, setMapReachabilitySaving] = useState(false);
   const [mapReachabilityPanelOpen, setMapReachabilityPanelOpen] = useState(false);
   const [mapReachabilityOrigin, setMapReachabilityOrigin] = useState<[number, number] | null>(null);
@@ -2961,6 +3620,7 @@ export const HomePage = ({
   const [mapSearchInputFocused, setMapSearchInputFocused] = useState(false);
   const [mapSearchViewportBounds, setMapSearchViewportBounds] = useState<MapSearchViewportBounds | null>(null);
   const [mapSearchZoomRequest, setMapSearchZoomRequest] = useState<MapSearchZoomRequest | null>(null);
+  const [mapViewportZoom, setMapViewportZoom] = useState(MAP_ZOOM_DEFAULT);
   const [manualMarkerFilterMode, setManualMarkerFilterMode] = useState<ManualMarkerFilterMode>("all");
   const [manualMarkerFilterMemberId, setManualMarkerFilterMemberId] = useState<string>("");
   const [poiCategoriesEnabled, setPoiCategoriesEnabled] = useState<Record<PoiCategory, boolean>>({
@@ -3001,6 +3661,14 @@ export const HomePage = ({
       });
     }
 
+    if (persisted.mapMobilityLayers && typeof persisted.mapMobilityLayers === "object") {
+      setMapMobilityLayers({
+        transitLive: Boolean(persisted.mapMobilityLayers.transitLive),
+        bikeNetwork: Boolean(persisted.mapMobilityLayers.bikeNetwork),
+        trafficLive: Boolean(persisted.mapMobilityLayers.trafficLive)
+      });
+    }
+
     if (
       persisted.manualMarkerFilterMode === "all"
       || persisted.manualMarkerFilterMode === "mine"
@@ -3029,6 +3697,7 @@ export const HomePage = ({
     writePersistedMapSettings(household.id, {
       mapTravelMode,
       mapWeatherLayers,
+      mapMobilityLayers,
       manualMarkerFilterMode,
       manualMarkerFilterMemberId,
       poiCategoriesEnabled
@@ -3037,6 +3706,7 @@ export const HomePage = ({
     household.id,
     manualMarkerFilterMemberId,
     manualMarkerFilterMode,
+    mapMobilityLayers,
     mapTravelMode,
     mapWeatherLayers,
     poiCategoriesEnabled
@@ -3210,6 +3880,9 @@ export const HomePage = ({
       bounds: result.bounds
     });
   }, []);
+  const handleMapZoomChange = useCallback((nextZoom: number) => {
+    setMapViewportZoom((current) => (Math.abs(current - nextZoom) < 0.001 ? current : nextZoom));
+  }, []);
   const handleMapSearchViewportBoundsChange = useCallback((nextBounds: MapSearchViewportBounds) => {
     setMapSearchViewportBounds((current) => {
       if (!current) return nextBounds;
@@ -3364,6 +4037,268 @@ export const HomePage = ({
     staleTime: 5 * 60 * 1000
   });
   const nearbyPois = (nearbyPoiQuery.data?.rows ?? []) as NearbyPoi[];
+  const mapPoiDisplayEntries = useMemo<MapPoiDisplayEntry[]>(() => {
+    if (nearbyPois.length === 0) return [];
+    if (mapViewportZoom >= POI_CLUSTER_MIN_ZOOM || nearbyPois.length <= 1) {
+      return nearbyPois.map((poi) => ({ type: "poi", poi }));
+    }
+
+    const gridSizePx = mapViewportZoom < 12 ? POI_CLUSTER_GRID_PX_LOW_ZOOM : POI_CLUSTER_GRID_PX_HIGH_ZOOM;
+    const groups = new Map<string, NearbyPoi[]>();
+
+    for (const poi of nearbyPois) {
+      const projected = projectToWorldPixel(poi.lat, poi.lon, mapViewportZoom);
+      const key = `${Math.floor(projected.x / gridSizePx)}:${Math.floor(projected.y / gridSizePx)}`;
+      const existing = groups.get(key);
+      if (existing) {
+        existing.push(poi);
+      } else {
+        groups.set(key, [poi]);
+      }
+    }
+
+    const entries: MapPoiDisplayEntry[] = [];
+    for (const [groupKey, groupPois] of groups.entries()) {
+      if (groupPois.length === 1) {
+        entries.push({ type: "poi", poi: groupPois[0]! });
+        continue;
+      }
+
+      const centroid = groupPois.reduce(
+        (acc, poi) => ({ lat: acc.lat + poi.lat, lon: acc.lon + poi.lon }),
+        { lat: 0, lon: 0 }
+      );
+      const categoryCounts = groupPois.reduce((acc, poi) => {
+        acc[poi.category] = (acc[poi.category] ?? 0) + 1;
+        return acc;
+      }, {} as Partial<Record<PoiCategory, number>>);
+
+      entries.push({
+        type: "cluster",
+        id: `poi-cluster:${groupKey}`,
+        lat: centroid.lat / groupPois.length,
+        lon: centroid.lon / groupPois.length,
+        count: groupPois.length,
+        pois: groupPois,
+        categoryCounts
+      });
+    }
+
+    return entries;
+  }, [mapViewportZoom, nearbyPois]);
+  const hasGermanMapCenter = mapCenter[0] >= 47 && mapCenter[0] <= 56 && mapCenter[1] >= 5 && mapCenter[1] <= 16;
+  const transitLiveQuery = useQuery({
+    queryKey: [
+      "map-transit-live",
+      household.id,
+      mapMobilityLayers.transitLive ? mapCenter[0].toFixed(3) : null,
+      mapMobilityLayers.transitLive ? mapCenter[1].toFixed(3) : null
+    ],
+    enabled: isMapFullscreenOpen && mapMobilityLayers.transitLive,
+    staleTime: Math.floor(TRANSIT_LAYER_REFRESH_MS * 0.5),
+    refetchInterval: TRANSIT_LAYER_REFRESH_MS,
+    queryFn: async () => {
+      const nearbyParams = new URLSearchParams({
+        latitude: String(mapCenter[0]),
+        longitude: String(mapCenter[1]),
+        distance: String(TRANSIT_LAYER_RADIUS_METERS),
+        results: String(TRANSIT_LAYER_STOP_LIMIT)
+      });
+      const nearbyResponse = await fetch(`https://v6.db.transport.rest/locations/nearby?${nearbyParams.toString()}`, {
+        method: "GET",
+        headers: { Accept: "application/json" }
+      });
+      if (!nearbyResponse.ok) {
+        throw new Error("transit_nearby_failed");
+      }
+      const nearbyPayload = (await nearbyResponse.json()) as unknown;
+      const nearbyRows = Array.isArray(nearbyPayload) ? nearbyPayload : [];
+      const stops = nearbyRows
+        .map((entry) => {
+          if (!entry || typeof entry !== "object") return null;
+          const candidate = entry as {
+            id?: unknown;
+            name?: unknown;
+            location?: { latitude?: unknown; longitude?: unknown };
+            distance?: unknown;
+          };
+          const id = typeof candidate.id === "string" ? candidate.id.trim() : "";
+          const name = typeof candidate.name === "string" ? candidate.name.trim() : "";
+          const lat = Number(candidate.location?.latitude);
+          const lon = Number(candidate.location?.longitude);
+          if (!id || !name || !Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+          const distance = Number(candidate.distance);
+          return {
+            id,
+            name,
+            lat,
+            lon,
+            distanceMeters: Number.isFinite(distance) ? Math.round(distance) : null
+          };
+        })
+        .filter((entry): entry is { id: string; name: string; lat: number; lon: number; distanceMeters: number | null } => Boolean(entry));
+      if (stops.length === 0) return [] as TransitLiveStop[];
+
+      const stopsWithDepartures = await Promise.all(
+        stops.map(async (stop) => {
+          try {
+            const departuresParams = new URLSearchParams({
+              duration: "60",
+              results: String(TRANSIT_LAYER_DEPARTURE_LIMIT)
+            });
+            const departuresResponse = await fetch(
+              `https://v6.db.transport.rest/stops/${encodeURIComponent(stop.id)}/departures?${departuresParams.toString()}`,
+              {
+                method: "GET",
+                headers: { Accept: "application/json" }
+              }
+            );
+            if (!departuresResponse.ok) {
+              return null;
+            }
+            const departuresPayload = (await departuresResponse.json()) as { departures?: unknown[] };
+            const departures = (Array.isArray(departuresPayload.departures) ? departuresPayload.departures : [])
+              .map((departureRaw) => {
+                if (!departureRaw || typeof departureRaw !== "object") return null;
+                const departure = departureRaw as {
+                  tripId?: unknown;
+                  when?: unknown;
+                  plannedWhen?: unknown;
+                  delay?: unknown;
+                  direction?: unknown;
+                  line?: { name?: unknown; productName?: unknown };
+                };
+                const tripId = typeof departure.tripId === "string" ? departure.tripId : "";
+                const lineNameRaw =
+                  typeof departure.line?.name === "string"
+                    ? departure.line.name
+                    : typeof departure.line?.productName === "string"
+                      ? departure.line.productName
+                      : "";
+                const direction = typeof departure.direction === "string" ? departure.direction.trim() : "";
+                if (!lineNameRaw) return null;
+                const delay = Number(departure.delay);
+                return {
+                  id: tripId || `${stop.id}:${lineNameRaw}:${String(departure.when ?? departure.plannedWhen ?? "")}`,
+                  lineName: lineNameRaw.trim(),
+                  direction,
+                  departureIso: typeof departure.when === "string" ? departure.when : null,
+                  plannedIso: typeof departure.plannedWhen === "string" ? departure.plannedWhen : null,
+                  delaySeconds: Number.isFinite(delay) ? Math.round(delay) : null
+                } satisfies TransitLiveDeparture;
+              })
+              .filter((entry): entry is TransitLiveDeparture => Boolean(entry));
+            return {
+              ...stop,
+              departures
+            } satisfies TransitLiveStop;
+          } catch {
+            return null;
+          }
+        })
+      );
+
+      return stopsWithDepartures
+        .filter((entry): entry is TransitLiveStop => Boolean(entry))
+        .filter((entry) => entry.departures.length > 0)
+        .sort((a, b) => {
+          const distanceA = a.distanceMeters ?? Number.MAX_SAFE_INTEGER;
+          const distanceB = b.distanceMeters ?? Number.MAX_SAFE_INTEGER;
+          return distanceA - distanceB;
+        });
+    }
+  });
+  const trafficLiveQuery = useQuery({
+    queryKey: [
+      "map-traffic-live",
+      household.id,
+      mapMobilityLayers.trafficLive,
+      hasGermanMapCenter
+    ],
+    enabled: isMapFullscreenOpen && mapMobilityLayers.trafficLive && hasGermanMapCenter,
+    staleTime: Math.floor(TRAFFIC_LAYER_REFRESH_MS * 0.5),
+    refetchInterval: TRAFFIC_LAYER_REFRESH_MS,
+    queryFn: async () => {
+      const now = Date.now();
+      if (trafficRoadsCache.fetchedAt + 24 * 60 * 60 * 1000 < now || trafficRoadsCache.roads.length === 0) {
+        const roadsResponse = await fetch("https://verkehr.autobahn.de/o/autobahn/", {
+          method: "GET",
+          headers: { Accept: "application/json" }
+        });
+        if (!roadsResponse.ok) {
+          throw new Error("traffic_roads_failed");
+        }
+        const roadsPayload = (await roadsResponse.json()) as { roads?: unknown[] };
+        const roads = (Array.isArray(roadsPayload.roads) ? roadsPayload.roads : [])
+          .map((entry) => (typeof entry === "string" ? entry.trim() : ""))
+          .filter((entry) => entry.length > 0);
+        trafficRoadsCache.roads = Array.from(new Set(roads));
+        trafficRoadsCache.fetchedAt = now;
+      }
+      const roads = trafficRoadsCache.roads;
+      if (roads.length === 0) return [] as TrafficLiveIncident[];
+
+      const cycleKey = Math.floor(now / TRAFFIC_LAYER_CACHE_TTL_MS);
+      const offset = cycleKey % roads.length;
+      const rotated = roads.slice(offset).concat(roads.slice(0, offset));
+      const selectedRoads = rotated.slice(0, Math.min(TRAFFIC_LAYER_MAX_ROADS_PER_CYCLE, rotated.length));
+      const incidents: TrafficLiveIncident[] = [];
+
+      for (let index = 0; index < selectedRoads.length; index += TRAFFIC_LAYER_FETCH_CONCURRENCY) {
+        const batch = selectedRoads.slice(index, index + TRAFFIC_LAYER_FETCH_CONCURRENCY);
+        const batchRows = await Promise.all(
+          batch.map(async (road) => {
+            const cached = trafficWarningCache.get(road);
+            if (cached && cached.fetchedAt + TRAFFIC_LAYER_CACHE_TTL_MS > now) {
+              return cached.incidents;
+            }
+            try {
+              const response = await fetch(
+                `https://verkehr.autobahn.de/o/autobahn/${encodeURIComponent(road)}/services/warning`,
+                {
+                  method: "GET",
+                  headers: { Accept: "application/json" }
+                }
+              );
+              if (!response.ok) {
+                return [] as TrafficLiveIncident[];
+              }
+              const payload = (await response.json()) as { warning?: unknown[] };
+              const rows = (Array.isArray(payload.warning) ? payload.warning : [])
+                .map((entry) => parseTrafficIncident(road, entry))
+                .filter((entry): entry is TrafficLiveIncident => Boolean(entry));
+              trafficWarningCache.set(road, {
+                fetchedAt: Date.now(),
+                incidents: rows
+              });
+              return rows;
+            } catch {
+              return [] as TrafficLiveIncident[];
+            }
+          })
+        );
+        for (const row of batchRows) {
+          incidents.push(...row);
+          if (incidents.length >= TRAFFIC_LAYER_MAX_INCIDENTS) {
+            break;
+          }
+        }
+        if (incidents.length >= TRAFFIC_LAYER_MAX_INCIDENTS) {
+          break;
+        }
+      }
+
+      const deduped = new Map<string, TrafficLiveIncident>();
+      for (const incident of incidents) {
+        if (!deduped.has(incident.id)) {
+          deduped.set(incident.id, incident);
+        }
+      }
+      return Array.from(deduped.values());
+    }
+  });
+  const transitLiveStops = transitLiveQuery.data ?? [];
+  const trafficLiveIncidents = trafficLiveQuery.data ?? [];
   const householdWeatherQuery = useQuery<{ days: HouseholdWeatherDay[]; hourly: HouseholdWeatherHourlyPoint[] }>({
     queryKey: [
       "household-weather",
@@ -5332,90 +6267,6 @@ export const HomePage = ({
     ),
     [buildExternalMapsHref, runRouteToTarget, t]
   );
-  const renderManualHouseholdMarkerPopup = useCallback(
-    (marker: HouseholdMapMarker) => {
-      const center = getHouseholdMarkerCenter(marker);
-      let markerGeometrySummary: { area: string; perimeter: string } | null = null;
-      let markerGeometryCircleCompact: string | null = null;
-      if (marker.type === "circle") {
-        const radius = Math.max(0, marker.radius_meters);
-        const diameter = radius * 2;
-        const perimeter = 2 * Math.PI * radius;
-        const area = Math.PI * radius * radius;
-        markerGeometrySummary = {
-          area: formatAreaShort(area),
-          perimeter: formatDistanceShort(perimeter)
-        };
-        markerGeometryCircleCompact = `⌀ ${formatDistanceCompact(diameter)} (r=${formatDistanceCompact(radius)})`;
-      } else if (marker.type === "rectangle") {
-        const southWest = L.latLng(marker.bounds.south, marker.bounds.west);
-        const southEast = L.latLng(marker.bounds.south, marker.bounds.east);
-        const northWest = L.latLng(marker.bounds.north, marker.bounds.west);
-        const width = southWest.distanceTo(southEast);
-        const height = southWest.distanceTo(northWest);
-        const perimeter = Math.max(0, 2 * (width + height));
-        const area = Math.max(0, width * height);
-        markerGeometrySummary = {
-          area: formatAreaShort(area),
-          perimeter: formatDistanceShort(perimeter)
-        };
-      } else if (marker.type === "vector") {
-        const latLngPoints = marker.points.map((point) => L.latLng(point.lat, point.lon));
-        if (isClosedVectorPath(latLngPoints)) {
-          const first = latLngPoints[0];
-          const last = latLngPoints[latLngPoints.length - 1];
-          const closeDistance = first && last ? first.distanceTo(last) : 0;
-          if (first && last) {
-            const baseLength = calculatePolylineDistanceMetersFromLatLngs(latLngPoints);
-            const perimeter =
-              closeDistance > 0.001 ? baseLength + closeDistance : baseLength;
-            const area = calculatePolygonAreaSqm(latLngPoints);
-            markerGeometrySummary = {
-              area: formatAreaShort(area),
-              perimeter: formatDistanceShort(perimeter)
-            };
-          }
-        }
-      }
-      return (
-        <Popup>
-          <div className="space-y-1">
-          <p className="font-semibold">
-            {getMarkerEmoji(marker.icon)} {marker.title}
-          </p>
-          {marker.description ? (
-            <div className="prose prose-xs max-w-none text-xs dark:prose-invert prose-p:my-1 prose-ul:my-1 prose-ol:my-1 prose-li:my-0">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>{marker.description}</ReactMarkdown>
-            </div>
-          ) : null}
-          {marker.image_b64 ? (
-            <img
-              src={marker.image_b64}
-              alt={marker.title}
-              className="max-h-32 w-full rounded object-cover"
-            />
-          ) : null}
-          {markerGeometrySummary ? (
-            <div className="mt-0.5 space-y-0.5 border-t border-slate-200 pt-0.5 text-[11px] leading-tight text-slate-700 dark:border-slate-700 dark:text-slate-300">
-              <p>
-                {t("home.householdMapMarkerMetricArea")}: {markerGeometrySummary.area} · {t("home.householdMapMarkerMetricPerimeter")}: {markerGeometrySummary.perimeter}
-              </p>
-              {markerGeometryCircleCompact ? <p>{markerGeometryCircleCompact}</p> : null}
-            </div>
-          ) : null}
-          {center
-            ? renderMapPopupActions({
-                lat: center[0],
-                lon: center[1],
-                onEdit: isHouseholdOwner ? () => openMarkerEdit(marker) : undefined
-              })
-            : null}
-          </div>
-        </Popup>
-      );
-    },
-    [isHouseholdOwner, openMarkerEdit, renderMapPopupActions, t]
-  );
   const editingMarkerMeta = useMemo(
     () =>
       editingMarkerDraft
@@ -5734,9 +6585,64 @@ export const HomePage = ({
               >
                 {t("home.householdMapWeatherLayerLightning")}
               </DropdownMenuCheckboxItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel>{t("home.householdMapMobilityLayers")}</DropdownMenuLabel>
+              <DropdownMenuCheckboxItem
+                checked={mapMobilityLayers.transitLive}
+                onCheckedChange={(checked) =>
+                  setMapMobilityLayers((current) => ({ ...current, transitLive: Boolean(checked) }))
+                }
+              >
+                {t("home.householdMapMobilityLayerTransit")}
+              </DropdownMenuCheckboxItem>
+              <DropdownMenuCheckboxItem
+                checked={mapMobilityLayers.bikeNetwork}
+                onCheckedChange={(checked) =>
+                  setMapMobilityLayers((current) => ({ ...current, bikeNetwork: Boolean(checked) }))
+                }
+              >
+                {t("home.householdMapMobilityLayerBike")}
+              </DropdownMenuCheckboxItem>
+              <DropdownMenuCheckboxItem
+                checked={mapMobilityLayers.trafficLive}
+                onCheckedChange={(checked) =>
+                  setMapMobilityLayers((current) => ({ ...current, trafficLive: Boolean(checked) }))
+                }
+              >
+                {t("home.householdMapMobilityLayerTraffic")}
+              </DropdownMenuCheckboxItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
+        {isFullscreen ? (
+          <div className="absolute right-2 top-12 z-[1000] flex max-w-[280px] flex-col gap-1">
+            {mapMobilityLayers.transitLive && transitLiveQuery.isLoading ? (
+              <div className="rounded-md border border-slate-200/85 bg-white/95 px-2 py-1 text-xs text-slate-600 shadow-sm backdrop-blur dark:border-slate-600/80 dark:bg-slate-900/95 dark:text-slate-300">
+                {t("home.householdMapMobilityTransitLoading")}
+              </div>
+            ) : null}
+            {mapMobilityLayers.transitLive && transitLiveQuery.isError ? (
+              <div className="rounded-md border border-rose-200/85 bg-rose-50/95 px-2 py-1 text-xs text-rose-700 shadow-sm backdrop-blur dark:border-rose-900/80 dark:bg-rose-950/70 dark:text-rose-200">
+                {t("home.householdMapMobilityTransitError")}
+              </div>
+            ) : null}
+            {mapMobilityLayers.trafficLive && !hasGermanMapCenter ? (
+              <div className="rounded-md border border-amber-200/85 bg-amber-50/95 px-2 py-1 text-xs text-amber-700 shadow-sm backdrop-blur dark:border-amber-900/80 dark:bg-amber-950/60 dark:text-amber-200">
+                {t("home.householdMapMobilityTrafficOutsideGermany")}
+              </div>
+            ) : null}
+            {mapMobilityLayers.trafficLive && hasGermanMapCenter && trafficLiveQuery.isLoading ? (
+              <div className="rounded-md border border-slate-200/85 bg-white/95 px-2 py-1 text-xs text-slate-600 shadow-sm backdrop-blur dark:border-slate-600/80 dark:bg-slate-900/95 dark:text-slate-300">
+                {t("home.householdMapMobilityTrafficLoading")}
+              </div>
+            ) : null}
+            {mapMobilityLayers.trafficLive && hasGermanMapCenter && trafficLiveQuery.isError ? (
+              <div className="rounded-md border border-rose-200/85 bg-rose-50/95 px-2 py-1 text-xs text-rose-700 shadow-sm backdrop-blur dark:border-rose-900/80 dark:bg-rose-950/70 dark:text-rose-200">
+                {t("home.householdMapMobilityTrafficError")}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
         {isFullscreen ? (
           <div className="absolute bottom-[7.5rem] left-2 right-auto z-[1000] flex flex-col gap-2">
             {isHouseholdOwner ? (
@@ -5887,6 +6793,7 @@ export const HomePage = ({
             onBoundsChange={handleMapSearchViewportBoundsChange}
           />
           <MapSearchZoomBridge request={mapSearchZoomRequest} />
+          <MapZoomBridge onZoomChange={handleMapZoomChange} />
           <MapClosePopupBridge requestToken={mapClosePopupRequestToken} />
           <TileLayer
             key={activeMapStyle.id}
@@ -5899,6 +6806,96 @@ export const HomePage = ({
             keepBuffer={4}
             detectRetina
           />
+          {mapMobilityLayers.bikeNetwork ? (
+            <TileLayer
+              key="bike-network-layer"
+              attribution={BIKE_NETWORK_ATTRIBUTION}
+              url={BIKE_NETWORK_TILE_URL}
+              subdomains="abc"
+              maxZoom={20}
+              opacity={0.75}
+              updateWhenIdle={false}
+              updateWhenZooming
+              keepBuffer={3}
+            />
+          ) : null}
+          {mapMobilityLayers.transitLive
+            ? transitLiveStops.map((stop) => (
+                <Marker
+                  key={`transit-stop-${stop.id}`}
+                  position={[stop.lat, stop.lon]}
+                  icon={getMobilityMarkerIcon("transit")}
+                  pmIgnore
+                >
+                  <Popup>
+                    <div className="space-y-1.5">
+                      <p className="font-semibold">{stop.name}</p>
+                      {stop.distanceMeters !== null ? (
+                        <p className="text-xs text-slate-500 dark:text-slate-300">
+                          {t("home.householdMapMobilityDistance", { meters: stop.distanceMeters })}
+                        </p>
+                      ) : null}
+                      <div className="space-y-1 text-xs">
+                        {stop.departures.map((departure) => {
+                          const departureAt = departure.departureIso ?? departure.plannedIso;
+                          return (
+                            <div key={`departure-${stop.id}-${departure.id}`} className="rounded border border-slate-200 px-2 py-1 dark:border-slate-700">
+                              <p className="font-medium">
+                                {departure.lineName}
+                                {departure.direction ? ` → ${departure.direction}` : ""}
+                              </p>
+                              <p className="text-slate-500 dark:text-slate-300">
+                                {departureAt
+                                  ? formatDateTime(departureAt, language, departureAt)
+                                  : t("home.householdMapRouteInfoUnknownValue")}
+                                {typeof departure.delaySeconds === "number" && departure.delaySeconds !== 0
+                                  ? ` · ${departure.delaySeconds > 0 ? "+" : ""}${Math.round(departure.delaySeconds / 60)} min`
+                                  : ""}
+                              </p>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      {renderOpenInMapsButton(stop.lat, stop.lon)}
+                    </div>
+                  </Popup>
+                </Marker>
+              ))
+            : null}
+          {mapMobilityLayers.trafficLive
+            ? trafficLiveIncidents.map((incident) => (
+                <Marker
+                  key={`traffic-incident-${incident.id}`}
+                  position={[incident.lat, incident.lon]}
+                  icon={getMobilityMarkerIcon("traffic")}
+                  pmIgnore
+                >
+                  <Popup>
+                    <div className="space-y-1.5">
+                      <p className="font-semibold">{incident.title}</p>
+                      <p className="text-xs text-slate-500 dark:text-slate-300">
+                        {incident.road}
+                        {incident.subtitle ? ` · ${incident.subtitle}` : ""}
+                      </p>
+                      <p className="text-xs text-slate-500 dark:text-slate-300">
+                        {incident.abnormalTrafficType ?? t("home.householdMapRouteInfoUnknownValue")}
+                        {incident.averageSpeedKmh !== null
+                          ? ` · ${t("home.householdMapMobilityAvgSpeed", { speed: incident.averageSpeedKmh })}`
+                          : ""}
+                      </p>
+                      {incident.updatedAtIso ? (
+                        <p className="text-xs text-slate-500 dark:text-slate-300">
+                          {t("home.householdMapMobilityUpdatedAt", {
+                            at: formatDateTime(incident.updatedAtIso, language, incident.updatedAtIso)
+                          })}
+                        </p>
+                      ) : null}
+                      {renderOpenInMapsButton(incident.lat, incident.lon)}
+                    </div>
+                  </Popup>
+                </Marker>
+              ))
+            : null}
           {mapHasPin ? (
             <Marker position={mapCenter} icon={getManualMarkerIcon("home")} pmIgnore>
               <LeafletTooltip interactive>
@@ -6039,65 +7036,6 @@ export const HomePage = ({
               </Popup>
             </Marker>
           ) : null}
-          {isFullscreen && mapReachabilitySummary ? (
-            <Marker
-              key={`reachability-summary-${mapReachabilitySummary.anchor[0]}-${mapReachabilitySummary.anchor[1]}-${mapReachabilitySummary.polygonCount}`}
-              position={mapReachabilitySummary.anchor}
-              icon={getRoutePointMarkerIcon(mapReachabilityColor)}
-              pmIgnore
-            >
-              <LeafletTooltip direction="top" offset={[0, -30]} opacity={0.95}>
-                <div className="text-[11px] font-medium">
-                  {mapReachabilityAreaLabel} · {mapReachabilityMinutes} min
-                </div>
-              </LeafletTooltip>
-              <Popup>
-                <div className="space-y-2">
-                  <p className="text-xs font-semibold">{t("home.householdMapReachabilityInfoTitle")}</p>
-                  <div className="space-y-1 text-[11px] text-slate-700 dark:text-slate-200">
-                    <p>
-                      {t("home.householdMapRouteInfoMode")}: {mapRouteModeLabel}
-                    </p>
-                    <p>
-                      {t("home.householdMapReachabilityDurationLabel")}: {mapReachabilityMinutes} min
-                    </p>
-                    <p>
-                      {t("home.householdMapReachabilityInfoArea")}: {mapReachabilityAreaLabel}
-                    </p>
-                    <p>
-                      {t("home.householdMapReachabilityInfoRadius")}: {mapReachabilityRadiusLabel}
-                    </p>
-                    <p>
-                      {t("home.householdMapReachabilityInfoPolygons")}: {mapReachabilitySummary.polygonCount}
-                    </p>
-                    <p>
-                      {t("home.householdMapReachabilityInfoPoints")}: {mapReachabilitySummary.pointCount}
-                    </p>
-                  </div>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    className="h-7 w-full text-[11px]"
-                    onClick={() => {
-                      void saveReachabilityToHouseholdMarkers();
-                    }}
-                    disabled={mapReachabilitySaving || !isHouseholdOwner}
-                  >
-                    {mapReachabilitySaving ? t("home.householdMapReachabilitySaving") : t("home.householdMapReachabilitySave")}
-                  </Button>
-                  {mapReachabilitySavedAt ? (
-                    <p className="text-[11px] text-emerald-700 dark:text-emerald-400">
-                      {t("home.householdMapReachabilitySaveSuccess")}
-                    </p>
-                  ) : null}
-                  {mapReachabilitySaveError ? (
-                    <p className="text-[11px] text-rose-600 dark:text-rose-400">{mapReachabilitySaveError}</p>
-                  ) : null}
-                </div>
-              </Popup>
-            </Marker>
-          ) : null}
           {isFullscreen
             ? mapSearchResults.map((result) => (
                 <Marker
@@ -6134,73 +7072,17 @@ export const HomePage = ({
                 </Marker>
               ))
             : null}
-          {bucketMapEntries.map((entry) => {
-            const item = entry.item;
-            return (
-              <Marker
-                key={`bucket-map-${item.id}`}
-                position={[entry.lat, entry.lon]}
-                icon={getBucketMapMarkerIcon()}
-                pmIgnore
-              >
-                <Popup>
-                  <div className="space-y-2">
-                    <p className="font-semibold">🪣 {item.title}</p>
-                    <p className="text-xs text-slate-500 dark:text-slate-300">{entry.label}</p>
-                    {item.description_markdown.trim().length > 0 ? (
-                      <div className="prose prose-xs max-w-none text-xs dark:prose-invert prose-p:my-1 prose-ul:my-1 prose-ol:my-1 prose-li:my-0">
-                        <ReactMarkdown remarkPlugins={[remarkGfm]}>{item.description_markdown}</ReactMarkdown>
-                      </div>
-                    ) : null}
-                    {item.suggested_dates.length > 0 ? (
-                      <div className="space-y-1">
-                        <p className="text-xs font-medium text-slate-600 dark:text-slate-300">
-                          {t("home.bucketSuggestedDatesTitle")}
-                        </p>
-                        <ul className="space-y-1">
-                          {item.suggested_dates.map((dateValue) => {
-                            const voters = item.votes_by_date[dateValue] ?? [];
-                            const hasVoted = voters.includes(userId);
-                            return (
-                              <li
-                                key={`bucket-map-vote-${item.id}-${dateValue}`}
-                                className="flex items-center justify-between gap-2 rounded-md border border-slate-200 bg-slate-50/80 px-2 py-1 dark:border-slate-700 dark:bg-slate-800/70"
-                              >
-                                <span className="text-[11px] text-slate-700 dark:text-slate-300">
-                                  {formatSuggestedDate(dateValue)}
-                                </span>
-                                <div className="flex items-center gap-1.5">
-                                  <span className="text-[11px] text-slate-500 dark:text-slate-400">
-                                    {t("home.bucketVotes", { count: voters.length })}
-                                  </span>
-                                  <Button
-                                    type="button"
-                                    size="sm"
-                                    variant={hasVoted ? "default" : "outline"}
-                                    className="h-6 px-2 text-[10px]"
-                                    disabled={busy}
-                                    onClick={() => {
-                                      void onToggleBucketDateVote(item, dateValue, !hasVoted);
-                                    }}
-                                  >
-                                    {hasVoted ? t("home.bucketVotedAction") : t("home.bucketVoteAction")}
-                                  </Button>
-                                </div>
-                              </li>
-                            );
-                          })}
-                        </ul>
-                      </div>
-                    ) : null}
-                    {renderMapPopupActions({
-                      lat: entry.lat,
-                      lon: entry.lon
-                    })}
-                  </div>
-                </Popup>
-              </Marker>
-            );
-          })}
+          {bucketMapEntries.map((entry) => (
+            <BucketMapMarker
+              key={`bucket-map-${entry.item.id}`}
+              entry={entry}
+              userId={userId}
+              busy={busy}
+              onToggleBucketDateVote={onToggleBucketDateVote}
+              formatSuggestedDate={formatSuggestedDate}
+              renderMapPopupActions={renderMapPopupActions}
+            />
+          ))}
           {filteredHouseholdMarkers.map((marker, markerIndex) => {
             const markerRenderKey = `${marker.type}:${marker.id}:${markerIndex}`;
             if (marker.type === "point") {
@@ -6287,7 +7169,12 @@ export const HomePage = ({
                       </div>
                     </Popup>
                   ) : (
-                    renderManualHouseholdMarkerPopup(marker)
+                    <ManualMarkerPopup
+                      marker={marker}
+                      isHouseholdOwner={isHouseholdOwner}
+                      openMarkerEdit={openMarkerEdit}
+                      renderMapPopupActions={renderMapPopupActions}
+                    />
                   )}
                 </Marker>
               );
@@ -6316,7 +7203,12 @@ export const HomePage = ({
                       }
                     }}
                   >
-                    {renderManualHouseholdMarkerPopup(marker)}
+                    <ManualMarkerPopup
+                      marker={marker}
+                      isHouseholdOwner={isHouseholdOwner}
+                      openMarkerEdit={openMarkerEdit}
+                      renderMapPopupActions={renderMapPopupActions}
+                    />
                   </Polygon>
                 );
               }
@@ -6333,7 +7225,12 @@ export const HomePage = ({
                     }
                   }}
                 >
-                  {renderManualHouseholdMarkerPopup(marker)}
+                  <ManualMarkerPopup
+                    marker={marker}
+                    isHouseholdOwner={isHouseholdOwner}
+                    openMarkerEdit={openMarkerEdit}
+                    renderMapPopupActions={renderMapPopupActions}
+                  />
                 </Polyline>
               );
             }
@@ -6353,7 +7250,12 @@ export const HomePage = ({
                     }
                   }}
                 >
-                  {renderManualHouseholdMarkerPopup(marker)}
+                  <ManualMarkerPopup
+                    marker={marker}
+                    isHouseholdOwner={isHouseholdOwner}
+                    openMarkerEdit={openMarkerEdit}
+                    renderMapPopupActions={renderMapPopupActions}
+                  />
                 </Circle>
               );
             }
@@ -6374,95 +7276,68 @@ export const HomePage = ({
                   }
                 }}
               >
-                {renderManualHouseholdMarkerPopup(marker)}
+                <ManualMarkerPopup
+                  marker={marker}
+                  isHouseholdOwner={isHouseholdOwner}
+                  openMarkerEdit={openMarkerEdit}
+                  renderMapPopupActions={renderMapPopupActions}
+                />
               </Rectangle>
             );
           })}
-          {nearbyPois.map((poi) => (
-            <Marker key={poi.id} position={[poi.lat, poi.lon]} icon={getPoiMarkerIcon(poi.category)} pmIgnore>
-              <Popup>
+          {mapPoiDisplayEntries.map((entry) =>
+            entry.type === "cluster" ? (
+              <Marker
+                key={entry.id}
+                position={[entry.lat, entry.lon]}
+                icon={getPoiClusterMarkerIcon(entry.count)}
+                pmIgnore
+                eventHandlers={{
+                  click: (event) => {
+                    const marker = event.target as L.Marker;
+                    const markerMap = (marker as unknown as { _map?: L.Map })._map;
+                    if (!markerMap) return;
+                    markerMap.setView(marker.getLatLng(), Math.min(markerMap.getZoom() + 2, 19), { animate: true });
+                  }
+                }}
+              >
+                <Popup>
                   <div className="space-y-1">
-                  <p className="font-semibold">
-                    {getPoiEmoji(poi.category)} {poi.name ?? t("home.householdMapPoiUnnamed")}
-                  </p>
-                  <p className="text-xs text-slate-500 dark:text-slate-300">
-                    {t(`home.householdMapPoiCategory.${poi.category}` as never)}
-                  </p>
-                  {typeof poi.tags["addr:street"] === "string" ? (
-                    <p className="text-xs">
-                      {poi.tags["addr:street"]}
-                      {typeof poi.tags["addr:housenumber"] === "string" ? ` ${poi.tags["addr:housenumber"]}` : ""}
+                    <p className="font-semibold">{t("home.householdMapPoiCount", { count: entry.count })}</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-300">
+                      {Object.entries(entry.categoryCounts)
+                        .map(([category, count]) => `${getPoiEmoji(category as PoiCategory)} ${count}`)
+                        .join(" · ")}
                     </p>
-                  ) : null}
-                  {renderMapPopupActions({
-                    lat: poi.lat,
-                    lon: poi.lon,
-                    onEdit: isHouseholdOwner
-                      ? () => setActivePoiEditorId((current) => (current === poi.id ? null : poi.id))
-                      : undefined
-                  })}
-                  {activePoiEditorId === poi.id ? (
-                    <div className="space-y-1 pt-1">
-                      <Input
-                        value={
-                          poiOverrideDrafts[poi.id]?.title
-                          ?? poiOverrideMarkersByRef.get(poi.id)?.title
-                          ?? (poi.name ?? "")
-                        }
-                        onChange={(event) =>
-                          setPoiOverrideDrafts((current) => ({
-                            ...current,
-                            [poi.id]: {
-                              title: event.target.value,
-                              description:
-                                current[poi.id]?.description
-                                ?? poiOverrideMarkersByRef.get(poi.id)?.description
-                                ?? ""
-                            }
-                          }))
-                        }
-                        placeholder={t("home.householdMapPoiOverrideTitlePlaceholder")}
-                      />
-                      <Input
-                        value={
-                          poiOverrideDrafts[poi.id]?.description
-                          ?? poiOverrideMarkersByRef.get(poi.id)?.description
-                          ?? ""
-                        }
-                        onChange={(event) =>
-                          setPoiOverrideDrafts((current) => ({
-                            ...current,
-                            [poi.id]: {
-                              title:
-                                current[poi.id]?.title
-                                ?? poiOverrideMarkersByRef.get(poi.id)?.title
-                                ?? poi.name
-                                ?? "",
-                              description: event.target.value
-                            }
-                          }))
-                        }
-                        placeholder={t("home.householdMapPoiOverrideDescriptionPlaceholder")}
-                      />
-                      <Button
-                        type="button"
-                        size="sm"
-                        className="h-8 w-full"
-                        onClick={() => {
-                          void onSavePoiOverride(poi);
-                        }}
-                        disabled={!isHouseholdOwner || poiOverrideSavingId === poi.id}
-                      >
-                        {poiOverrideSavingId === poi.id
-                          ? t("home.householdMapPoiOverrideSaving")
-                          : t("home.householdMapPoiOverrideSave")}
-                      </Button>
+                    <div className="max-h-28 space-y-0.5 overflow-auto text-xs text-slate-700 dark:text-slate-300">
+                      {entry.pois.slice(0, 8).map((poi) => (
+                        <p key={`poi-cluster-item-${entry.id}-${poi.id}`}>
+                          {getPoiEmoji(poi.category)} {poi.name ?? t("home.householdMapPoiUnnamed")}
+                        </p>
+                      ))}
+                      {entry.pois.length > 8 ? (
+                        <p className="text-slate-500 dark:text-slate-400">+{entry.pois.length - 8}</p>
+                      ) : null}
                     </div>
-                  ) : null}
-                </div>
-              </Popup>
-            </Marker>
-          ))}
+                  </div>
+                </Popup>
+              </Marker>
+            ) : (
+              <PoiMapMarker
+                key={entry.poi.id}
+                poi={entry.poi}
+                isHouseholdOwner={isHouseholdOwner}
+                activePoiEditorId={activePoiEditorId}
+                setActivePoiEditorId={setActivePoiEditorId}
+                poiOverrideDrafts={poiOverrideDrafts}
+                poiOverrideMarkersByRef={poiOverrideMarkersByRef}
+                setPoiOverrideDrafts={setPoiOverrideDrafts}
+                poiOverrideSavingId={poiOverrideSavingId}
+                onSavePoiOverride={onSavePoiOverride}
+                renderMapPopupActions={renderMapPopupActions}
+              />
+            )
+          )}
           {isFullscreen && mapMeasureResult && mapMeasureResultAnchor ? (
             <Marker
               position={mapMeasureResultAnchor}
@@ -6772,6 +7647,7 @@ export const HomePage = ({
       mapRouteAverageSpeedLabel,
       mapTravelMode,
       mapWeatherLayers,
+      mapMobilityLayers,
       mapGeomanControlsOpen,
       dismissMapPanelsOnMapClick,
       mapReachabilityColor,
@@ -6785,8 +7661,6 @@ export const HomePage = ({
       mapReachabilityPickOriginActive,
       mapReachabilityPanelOpen,
       mapReachabilityRadiusLabel,
-      mapReachabilitySaveError,
-      mapReachabilitySavedAt,
       mapReachabilitySaving,
       mapReachabilitySummary,
       bucketMapEntries,
@@ -6797,6 +7671,7 @@ export const HomePage = ({
       mapSearchQuery,
       mapSearchResults,
       mapSearchZoomRequest,
+      handleMapZoomChange,
       memberOptionsForMarkerFilter,
       activePoiEditorId,
       isHouseholdOwner,
@@ -6808,7 +7683,14 @@ export const HomePage = ({
       myLocationRecenterRequestToken,
       myLocationStatus,
       otherActiveLiveLocations,
-      nearbyPois,
+      mapPoiDisplayEntries,
+      transitLiveStops,
+      transitLiveQuery.isLoading,
+      transitLiveQuery.isError,
+      trafficLiveIncidents,
+      trafficLiveQuery.isLoading,
+      trafficLiveQuery.isError,
+      hasGermanMapCenter,
       onGeomanMarkersChanged,
       onLocateControlError,
       onLocateControlFound,
@@ -6827,6 +7709,7 @@ export const HomePage = ({
       applyMapSearchResult,
       onSaveExistingPoiOverride,
       onSavePoiOverride,
+      openMarkerEdit,
       onToggleBucketDateVote,
       poiOverrideDrafts,
       poiOverrideMarkersByRef,
