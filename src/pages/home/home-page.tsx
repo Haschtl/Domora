@@ -397,9 +397,11 @@ const TRANSIT_LAYER_RADIUS_METERS = 1500;
 const TRANSIT_LAYER_STOP_LIMIT = 10;
 const TRANSIT_LAYER_DEPARTURE_LIMIT = 3;
 const TRANSIT_LAYER_REFRESH_MS = 60 * 1000;
+const TRANSIT_LAYER_FETCH_RETRIES = 2;
+const TRANSIT_LAYER_FETCH_BACKOFF_MS = 450;
 const TRAFFIC_LAYER_CACHE_TTL_MS = 5 * 60 * 1000;
 const TRAFFIC_LAYER_REFRESH_MS = 3 * 60 * 1000;
-const TRAFFIC_LAYER_MAX_ROADS_PER_CYCLE = 36;
+const TRAFFIC_LAYER_MAX_ROADS_PER_CYCLE = 200;
 const TRAFFIC_LAYER_FETCH_CONCURRENCY = 8;
 const TRAFFIC_LAYER_MAX_INCIDENTS = 120;
 const BIKE_NETWORK_TILE_URL = "https://{s}.tile-cyclosm.openstreetmap.fr/cyclosm/{z}/{x}/{y}.png";
@@ -2448,10 +2450,13 @@ const getMobilityMarkerIcon = (tone: "transit" | "traffic") => {
   const cached = mobilityMarkerDivIconCache.get(cacheKey);
   if (cached) return cached;
   const color = tone === "transit" ? "#0f766e" : "#b91c1c";
-  const glyph = tone === "transit" ? "🚍" : "🚗";
+  const innerHtml =
+    tone === "transit"
+      ? '<div style="background:#facc15;border:2px solid #065f46;color:#065f46;width:24px;height:24px;border-radius:999px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;line-height:1;box-shadow:0 2px 8px rgba(0,0,0,.33)">H</div>'
+      : '<div style="background:#b91c1c;border:2px solid #fff;color:#fff;width:24px;height:24px;border-radius:999px;display:flex;align-items:center;justify-content:center;font-size:12px;box-shadow:0 2px 8px rgba(0,0,0,.33)">🚗</div>';
   const divIcon = L.divIcon({
     className: "domora-map-mobility-icon",
-    html: `<div style="position:relative;width:28px;height:36px;display:flex;align-items:flex-start;justify-content:center"><div style="background:${color};border:2px solid #fff;color:#fff;width:24px;height:24px;border-radius:999px;display:flex;align-items:center;justify-content:center;font-size:12px;box-shadow:0 2px 8px rgba(0,0,0,.33)">${glyph}</div><div style="position:absolute;top:21px;left:50%;transform:translateX(-50%);width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-top:11px solid ${color};filter:drop-shadow(0 2px 4px rgba(0,0,0,.25))"></div></div>`,
+    html: `<div style="position:relative;width:28px;height:36px;display:flex;align-items:flex-start;justify-content:center">${innerHtml}<div style="position:absolute;top:21px;left:50%;transform:translateX(-50%);width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-top:11px solid ${color};filter:drop-shadow(0 2px 4px rgba(0,0,0,.25))"></div></div>`,
     iconSize: [28, 36],
     iconAnchor: [14, 36],
     popupAnchor: [0, -30]
@@ -2599,6 +2604,36 @@ type TrafficLiveIncident = {
 
 const geocodeCandidateCache = new Map<string, { value: GeocodeCandidateResult; expiresAt: number }>();
 const geocodeCandidateInflight = new Map<string, Promise<GeocodeCandidateResult>>();
+const delayMs = (ms: number) =>
+  new Promise<void>((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
+const fetchJsonWithRetry = async <T,>(
+  url: string,
+  init: RequestInit,
+  retries = 0,
+  backoffMs = 250
+) => {
+  let lastError: Error | null = null;
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
+    try {
+      const response = await fetch(url, init);
+      if (response.ok) {
+        return (await response.json()) as T;
+      }
+      const isRetryable = response.status === 429 || response.status === 503 || response.status >= 500;
+      if (!isRetryable || attempt >= retries) {
+        throw new Error(`http_${response.status}`);
+      }
+      await delayMs(backoffMs * (attempt + 1));
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error("fetch_failed");
+      if (attempt >= retries) break;
+      await delayMs(backoffMs * (attempt + 1));
+    }
+  }
+  throw lastError ?? new Error("fetch_failed");
+};
 const trafficRoadsCache = {
   roads: [] as string[],
   fetchedAt: 0
@@ -2897,6 +2932,17 @@ const getWindDirectionLabel = (degrees: number | null) => {
   const labels = ["N", "NO", "O", "SO", "S", "SW", "W", "NW"];
   const index = Math.round(normalized / 45) % 8;
   return labels[index] ?? "—";
+};
+
+const formatTransitDepartureTimeLabel = (iso: string, language: string) => {
+  const parsed = new Date(iso);
+  if (Number.isNaN(parsed.getTime())) return iso;
+  const base = new Intl.DateTimeFormat(language, {
+    weekday: "long",
+    hour: "numeric",
+    minute: "2-digit"
+  }).format(parsed);
+  return language.toLowerCase().startsWith("de") ? `${base} Uhr` : base;
 };
 
 const getDailyWeatherWarnings = (day: HouseholdWeatherDay) => {
@@ -3621,13 +3667,14 @@ export const HomePage = ({
   const [mapSearchViewportBounds, setMapSearchViewportBounds] = useState<MapSearchViewportBounds | null>(null);
   const [mapSearchZoomRequest, setMapSearchZoomRequest] = useState<MapSearchZoomRequest | null>(null);
   const [mapViewportZoom, setMapViewportZoom] = useState(MAP_ZOOM_DEFAULT);
+  const [transitDialogStop, setTransitDialogStop] = useState<TransitLiveStop | null>(null);
   const [manualMarkerFilterMode, setManualMarkerFilterMode] = useState<ManualMarkerFilterMode>("all");
   const [manualMarkerFilterMemberId, setManualMarkerFilterMemberId] = useState<string>("");
   const [poiCategoriesEnabled, setPoiCategoriesEnabled] = useState<Record<PoiCategory, boolean>>({
-    restaurant: true,
-    shop: true,
-    supermarket: true,
-    fuel: true
+    restaurant: false,
+    shop: false,
+    supermarket: false,
+    fuel: false
   });
   const whiteboardSaveTimerRef = useRef<number | null>(null);
   const mapMarkerSaveTimerRef = useRef<number | null>(null);
@@ -3685,10 +3732,10 @@ export const HomePage = ({
     if (persisted.poiCategoriesEnabled && typeof persisted.poiCategoriesEnabled === "object") {
       const persistedPoi = persisted.poiCategoriesEnabled as Partial<Record<PoiCategory, unknown>>;
       setPoiCategoriesEnabled({
-        restaurant: typeof persistedPoi.restaurant === "boolean" ? persistedPoi.restaurant : true,
-        shop: typeof persistedPoi.shop === "boolean" ? persistedPoi.shop : true,
-        supermarket: typeof persistedPoi.supermarket === "boolean" ? persistedPoi.supermarket : true,
-        fuel: typeof persistedPoi.fuel === "boolean" ? persistedPoi.fuel : true
+        restaurant: typeof persistedPoi.restaurant === "boolean" ? persistedPoi.restaurant : false,
+        shop: typeof persistedPoi.shop === "boolean" ? persistedPoi.shop : false,
+        supermarket: typeof persistedPoi.supermarket === "boolean" ? persistedPoi.supermarket : false,
+        fuel: typeof persistedPoi.fuel === "boolean" ? persistedPoi.fuel : false
       });
     }
   }, [household.id]);
@@ -4004,6 +4051,7 @@ export const HomePage = ({
       setMapRoutePanelOpen(false);
       setMapRoutePickOriginActive(false);
       setMapRoutePickTargetActive(false);
+      setTransitDialogStop(null);
     }
   }, [isMapFullscreenOpen]);
 
@@ -4104,16 +4152,17 @@ export const HomePage = ({
         distance: String(TRANSIT_LAYER_RADIUS_METERS),
         results: String(TRANSIT_LAYER_STOP_LIMIT)
       });
-      const nearbyResponse = await fetch(`https://v6.db.transport.rest/locations/nearby?${nearbyParams.toString()}`, {
-        method: "GET",
-        headers: { Accept: "application/json" }
-      });
-      if (!nearbyResponse.ok) {
-        throw new Error("transit_nearby_failed");
-      }
-      const nearbyPayload = (await nearbyResponse.json()) as unknown;
+      const nearbyPayload = await fetchJsonWithRetry<unknown>(
+        `https://v6.db.transport.rest/locations/nearby?${nearbyParams.toString()}`,
+        {
+          method: "GET",
+          headers: { Accept: "application/json" }
+        },
+        TRANSIT_LAYER_FETCH_RETRIES,
+        TRANSIT_LAYER_FETCH_BACKOFF_MS
+      );
       const nearbyRows = Array.isArray(nearbyPayload) ? nearbyPayload : [];
-      const stops = nearbyRows
+      const parsedStops = nearbyRows
         .map((entry) => {
           if (!entry || typeof entry !== "object") return null;
           const candidate = entry as {
@@ -4137,6 +4186,20 @@ export const HomePage = ({
           };
         })
         .filter((entry): entry is { id: string; name: string; lat: number; lon: number; distanceMeters: number | null } => Boolean(entry));
+      const stopById = new Map<string, { id: string; name: string; lat: number; lon: number; distanceMeters: number | null }>();
+      for (const stop of parsedStops) {
+        const existing = stopById.get(stop.id);
+        if (!existing) {
+          stopById.set(stop.id, stop);
+          continue;
+        }
+        const currentDistance = stop.distanceMeters ?? Number.MAX_SAFE_INTEGER;
+        const existingDistance = existing.distanceMeters ?? Number.MAX_SAFE_INTEGER;
+        if (currentDistance < existingDistance) {
+          stopById.set(stop.id, stop);
+        }
+      }
+      const stops = Array.from(stopById.values());
       if (stops.length === 0) return [] as TransitLiveStop[];
 
       const stopsWithDepartures = await Promise.all(
@@ -4146,17 +4209,15 @@ export const HomePage = ({
               duration: "60",
               results: String(TRANSIT_LAYER_DEPARTURE_LIMIT)
             });
-            const departuresResponse = await fetch(
+            const departuresPayload = await fetchJsonWithRetry<{ departures?: unknown[] }>(
               `https://v6.db.transport.rest/stops/${encodeURIComponent(stop.id)}/departures?${departuresParams.toString()}`,
               {
                 method: "GET",
                 headers: { Accept: "application/json" }
-              }
+              },
+              1,
+              TRANSIT_LAYER_FETCH_BACKOFF_MS
             );
-            if (!departuresResponse.ok) {
-              return null;
-            }
-            const departuresPayload = (await departuresResponse.json()) as { departures?: unknown[] };
             const departures = (Array.isArray(departuresPayload.departures) ? departuresPayload.departures : [])
               .map((departureRaw) => {
                 if (!departureRaw || typeof departureRaw !== "object") return null;
@@ -4178,8 +4239,9 @@ export const HomePage = ({
                 const direction = typeof departure.direction === "string" ? departure.direction.trim() : "";
                 if (!lineNameRaw) return null;
                 const delay = Number(departure.delay);
+                const departureRef = String(departure.when ?? departure.plannedWhen ?? "");
                 return {
-                  id: tripId || `${stop.id}:${lineNameRaw}:${String(departure.when ?? departure.plannedWhen ?? "")}`,
+                  id: tripId || `${stop.id}:${lineNameRaw}:${direction}:${departureRef}`,
                   lineName: lineNameRaw.trim(),
                   direction,
                   departureIso: typeof departure.when === "string" ? departure.when : null,
@@ -4188,9 +4250,15 @@ export const HomePage = ({
                 } satisfies TransitLiveDeparture;
               })
               .filter((entry): entry is TransitLiveDeparture => Boolean(entry));
+            const departureById = new Map<string, TransitLiveDeparture>();
+            for (const departure of departures) {
+              if (!departureById.has(departure.id)) {
+                departureById.set(departure.id, departure);
+              }
+            }
             return {
               ...stop,
-              departures
+              departures: Array.from(departureById.values())
             } satisfies TransitLiveStop;
           } catch {
             return null;
@@ -4200,7 +4268,6 @@ export const HomePage = ({
 
       return stopsWithDepartures
         .filter((entry): entry is TransitLiveStop => Boolean(entry))
-        .filter((entry) => entry.departures.length > 0)
         .sort((a, b) => {
           const distanceA = a.distanceMeters ?? Number.MAX_SAFE_INTEGER;
           const distanceB = b.distanceMeters ?? Number.MAX_SAFE_INTEGER;
@@ -4299,6 +4366,48 @@ export const HomePage = ({
   });
   const transitLiveStops = transitLiveQuery.data ?? [];
   const trafficLiveIncidents = trafficLiveQuery.data ?? [];
+  const transitDialogDepartureGroups = useMemo(() => {
+    if (!transitDialogStop) return [] as Array<{
+      key: string;
+      lineName: string;
+      direction: string;
+      departures: TransitLiveDeparture[];
+      earliestTs: number;
+    }>;
+    const groups = new Map<string, { key: string; lineName: string; direction: string; departures: TransitLiveDeparture[] }>();
+    for (const departure of transitDialogStop.departures) {
+      const groupKey = `${departure.lineName}::${departure.direction}`;
+      const existing = groups.get(groupKey);
+      if (existing) {
+        existing.departures.push(departure);
+      } else {
+        groups.set(groupKey, {
+          key: groupKey,
+          lineName: departure.lineName,
+          direction: departure.direction,
+          departures: [departure]
+        });
+      }
+    }
+    return Array.from(groups.values())
+      .map((group) => {
+        const sortedDepartures = [...group.departures].sort((a, b) => {
+          const aIso = a.departureIso ?? a.plannedIso ?? "";
+          const bIso = b.departureIso ?? b.plannedIso ?? "";
+          const aTs = aIso ? new Date(aIso).getTime() : Number.POSITIVE_INFINITY;
+          const bTs = bIso ? new Date(bIso).getTime() : Number.POSITIVE_INFINITY;
+          return aTs - bTs;
+        });
+        const firstIso = sortedDepartures[0]?.departureIso ?? sortedDepartures[0]?.plannedIso ?? "";
+        const earliestTs = firstIso ? new Date(firstIso).getTime() : Number.POSITIVE_INFINITY;
+        return {
+          ...group,
+          departures: sortedDepartures,
+          earliestTs
+        };
+      })
+      .sort((a, b) => a.earliestTs - b.earliestTs);
+  }, [transitDialogStop]);
   const householdWeatherQuery = useQuery<{ days: HouseholdWeatherDay[]; hourly: HouseholdWeatherHourlyPoint[] }>({
     queryKey: [
       "household-weather",
@@ -6626,6 +6735,11 @@ export const HomePage = ({
                 {t("home.householdMapMobilityTransitError")}
               </div>
             ) : null}
+            {mapMobilityLayers.transitLive && !transitLiveQuery.isLoading && !transitLiveQuery.isError && transitLiveStops.length === 0 ? (
+              <div className="rounded-md border border-slate-200/85 bg-white/95 px-2 py-1 text-xs text-slate-600 shadow-sm backdrop-blur dark:border-slate-600/80 dark:bg-slate-900/95 dark:text-slate-300">
+                {t("home.householdMapMobilityTransitEmpty")}
+              </div>
+            ) : null}
             {mapMobilityLayers.trafficLive && !hasGermanMapCenter ? (
               <div className="rounded-md border border-amber-200/85 bg-amber-50/95 px-2 py-1 text-xs text-amber-700 shadow-sm backdrop-blur dark:border-amber-900/80 dark:bg-amber-950/60 dark:text-amber-200">
                 {t("home.householdMapMobilityTrafficOutsideGermany")}
@@ -6639,6 +6753,11 @@ export const HomePage = ({
             {mapMobilityLayers.trafficLive && hasGermanMapCenter && trafficLiveQuery.isError ? (
               <div className="rounded-md border border-rose-200/85 bg-rose-50/95 px-2 py-1 text-xs text-rose-700 shadow-sm backdrop-blur dark:border-rose-900/80 dark:bg-rose-950/70 dark:text-rose-200">
                 {t("home.householdMapMobilityTrafficError")}
+              </div>
+            ) : null}
+            {mapMobilityLayers.trafficLive && hasGermanMapCenter && !trafficLiveQuery.isLoading && !trafficLiveQuery.isError && trafficLiveIncidents.length === 0 ? (
+              <div className="rounded-md border border-slate-200/85 bg-white/95 px-2 py-1 text-xs text-slate-600 shadow-sm backdrop-blur dark:border-slate-600/80 dark:bg-slate-900/95 dark:text-slate-300">
+                {t("home.householdMapMobilityTrafficEmpty")}
               </div>
             ) : null}
           </div>
@@ -6825,41 +6944,13 @@ export const HomePage = ({
                   key={`transit-stop-${stop.id}`}
                   position={[stop.lat, stop.lon]}
                   icon={getMobilityMarkerIcon("transit")}
+                  eventHandlers={{
+                    click: () => {
+                      setTransitDialogStop(stop);
+                    }
+                  }}
                   pmIgnore
-                >
-                  <Popup>
-                    <div className="space-y-1.5">
-                      <p className="font-semibold">{stop.name}</p>
-                      {stop.distanceMeters !== null ? (
-                        <p className="text-xs text-slate-500 dark:text-slate-300">
-                          {t("home.householdMapMobilityDistance", { meters: stop.distanceMeters })}
-                        </p>
-                      ) : null}
-                      <div className="space-y-1 text-xs">
-                        {stop.departures.map((departure) => {
-                          const departureAt = departure.departureIso ?? departure.plannedIso;
-                          return (
-                            <div key={`departure-${stop.id}-${departure.id}`} className="rounded border border-slate-200 px-2 py-1 dark:border-slate-700">
-                              <p className="font-medium">
-                                {departure.lineName}
-                                {departure.direction ? ` → ${departure.direction}` : ""}
-                              </p>
-                              <p className="text-slate-500 dark:text-slate-300">
-                                {departureAt
-                                  ? formatDateTime(departureAt, language, departureAt)
-                                  : t("home.householdMapRouteInfoUnknownValue")}
-                                {typeof departure.delaySeconds === "number" && departure.delaySeconds !== 0
-                                  ? ` · ${departure.delaySeconds > 0 ? "+" : ""}${Math.round(departure.delaySeconds / 60)} min`
-                                  : ""}
-                              </p>
-                            </div>
-                          );
-                        })}
-                      </div>
-                      {renderOpenInMapsButton(stop.lat, stop.lon)}
-                    </div>
-                  </Popup>
-                </Marker>
+                />
               ))
             : null}
           {mapMobilityLayers.trafficLive
@@ -7602,6 +7693,67 @@ export const HomePage = ({
             </div>
           </div>
         ) : null}
+        <Dialog
+          open={transitDialogStop !== null}
+          onOpenChange={(open) => {
+            if (!open) setTransitDialogStop(null);
+          }}
+        >
+          <DialogContent className="flex max-h-[80vh] flex-col overflow-hidden sm:max-w-lg">
+            <DialogHeader>
+              <DialogTitle>{transitDialogStop?.name ?? t("home.householdMapMobilityLayerTransit")}</DialogTitle>
+              <DialogDescription>
+                {transitDialogStop?.distanceMeters !== null && transitDialogStop
+                  ? t("home.householdMapMobilityDistance", { meters: transitDialogStop.distanceMeters })
+                  : t("home.householdMapMobilityLayerTransit")}
+              </DialogDescription>
+            </DialogHeader>
+            {transitDialogStop ? (
+              <div className="min-h-0 max-h-[60vh] space-y-2 overflow-y-auto pr-1">
+                {transitDialogDepartureGroups.length === 0 ? (
+                  <p className="text-sm text-slate-600 dark:text-slate-300">
+                    {t("home.householdMapMobilityTransitNoDepartures")}
+                  </p>
+                ) : (
+                  transitDialogDepartureGroups.map((group) => {
+                    return (
+                      <div
+                        key={`transit-dialog-group-${transitDialogStop.id}-${group.key}`}
+                        className="rounded-lg border border-slate-200 px-3 py-2 text-sm dark:border-slate-700"
+                      >
+                        <p className="font-medium">
+                          {group.lineName}
+                          {group.direction ? ` → ${group.direction}` : ""}
+                        </p>
+                        <div className="mt-1 flex flex-wrap gap-1.5">
+                          {group.departures.map((departure) => {
+                            const departureAt = departure.departureIso ?? departure.plannedIso;
+                            return (
+                              <span
+                                key={`transit-dialog-time-${transitDialogStop.id}-${group.key}-${departure.id}`}
+                                className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-xs text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                              >
+                                {departureAt
+                                  ? formatTransitDepartureTimeLabel(departureAt, language)
+                                  : t("home.householdMapRouteInfoUnknownValue")}
+                                {typeof departure.delaySeconds === "number" && departure.delaySeconds !== 0
+                                  ? ` · ${departure.delaySeconds > 0 ? "+" : ""}${Math.round(departure.delaySeconds / 60)} min`
+                                  : ""}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+                <div className="pt-1">
+                  {renderOpenInMapsButton(transitDialogStop.lat, transitDialogStop.lon)}
+                </div>
+              </div>
+            ) : null}
+          </DialogContent>
+        </Dialog>
       </div>
     ),
     [
@@ -7684,6 +7836,8 @@ export const HomePage = ({
       myLocationStatus,
       otherActiveLiveLocations,
       mapPoiDisplayEntries,
+      transitDialogStop,
+      transitDialogDepartureGroups,
       transitLiveStops,
       transitLiveQuery.isLoading,
       transitLiveQuery.isError,
