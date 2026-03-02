@@ -457,7 +457,7 @@ export const useWorkspaceController = () => {
   );
 
   const onAddBucketItem = useCallback(
-    async (input: { title: string; descriptionMarkdown: string; suggestedDates: string[] }) => {
+    async (input: { title: string; descriptionMarkdown: string; address: string; suggestedDates: string[] }) => {
       if (!activeHousehold || !userId) return;
 
       const nowIso = new Date().toISOString();
@@ -466,6 +466,7 @@ export const useWorkspaceController = () => {
         household_id: activeHousehold.id,
         title: input.title,
         description_markdown: input.descriptionMarkdown,
+        address: input.address.trim(),
         suggested_dates: [...new Set(input.suggestedDates)].sort(),
         votes_by_date: {},
         done: false,
@@ -526,7 +527,7 @@ export const useWorkspaceController = () => {
   );
 
   const onUpdateBucketItem = useCallback(
-    async (item: BucketItem, input: { title: string; descriptionMarkdown: string; suggestedDates: string[] }) => {
+    async (item: BucketItem, input: { title: string; descriptionMarkdown: string; address: string; suggestedDates: string[] }) => {
       if (!activeHousehold) return;
 
       await runWithOptimisticUpdate({
@@ -541,6 +542,7 @@ export const useWorkspaceController = () => {
                       ...entry,
                       title: input.title,
                       description_markdown: input.descriptionMarkdown,
+                      address: input.address.trim(),
                       suggested_dates: [...new Set(input.suggestedDates)].sort()
                     }
                   : entry

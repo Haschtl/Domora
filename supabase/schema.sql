@@ -93,6 +93,7 @@ create table if not exists bucket_items (
   household_id uuid not null references households(id) on delete cascade,
   title text not null,
   description_markdown text not null default '',
+  address text not null default '',
   suggested_dates date[] not null default '{}',
   done boolean not null default false,
   done_at timestamptz,
@@ -1064,9 +1065,9 @@ begin
     return false;
   end if;
 
-  if not (p_marker ? 'icon') or (p_marker->>'icon') not in (
-    'home', 'shopping', 'restaurant', 'fuel', 'hospital', 'park', 'work', 'star'
-  ) then
+  if not (p_marker ? 'icon')
+    or jsonb_typeof(p_marker->'icon') <> 'string'
+    or char_length(trim(p_marker->>'icon')) = 0 then
     return false;
   end if;
 
@@ -1325,6 +1326,7 @@ alter table shopping_items add column if not exists recurrence_interval_value in
 alter table shopping_items add column if not exists recurrence_interval_unit text;
 alter table bucket_items add column if not exists title text;
 alter table bucket_items add column if not exists description_markdown text not null default '';
+alter table bucket_items add column if not exists address text not null default '';
 alter table bucket_items add column if not exists suggested_dates date[] not null default '{}';
 alter table bucket_items add column if not exists done boolean not null default false;
 alter table shopping_items add column if not exists done_at timestamptz;

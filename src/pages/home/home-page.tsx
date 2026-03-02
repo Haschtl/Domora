@@ -84,7 +84,7 @@ import {
   type MDXEditorMethods,
   useLexicalNodeRemove
 } from "@mdxeditor/editor";
-import { Circle, MapContainer, Marker, Polyline, Popup, Rectangle, TileLayer, Tooltip as LeafletTooltip, useMap, useMapEvents } from "react-leaflet";
+import { Circle, MapContainer, Marker, Polygon, Polyline, Popup, Rectangle, TileLayer, Tooltip as LeafletTooltip, useMap, useMapEvents } from "react-leaflet";
 import { createTrianglifyBannerBackground } from "../../lib/banner";
 import { formatDateOnly, formatDateTime, formatShortDay, getLastMonthRange } from "../../lib/date";
 import { suggestCategoryLabel } from "../../lib/category-heuristics";
@@ -196,9 +196,12 @@ interface HomePageProps {
   onSaveLandingMarkdown: (markdown: string) => Promise<void>;
   onSaveWhiteboard: (sceneJson: string) => Promise<void>;
   onUpdateHousehold: (input: UpdateHouseholdInput) => Promise<void>;
-  onAddBucketItem: (input: { title: string; descriptionMarkdown: string; suggestedDates: string[] }) => Promise<void>;
+  onAddBucketItem: (input: { title: string; descriptionMarkdown: string; address: string; suggestedDates: string[] }) => Promise<void>;
   onToggleBucketItem: (item: BucketItem) => Promise<void>;
-  onUpdateBucketItem: (item: BucketItem, input: { title: string; descriptionMarkdown: string; suggestedDates: string[] }) => Promise<void>;
+  onUpdateBucketItem: (
+    item: BucketItem,
+    input: { title: string; descriptionMarkdown: string; address: string; suggestedDates: string[] }
+  ) => Promise<void>;
   onDeleteBucketItem: (item: BucketItem) => Promise<void>;
   onToggleBucketDateVote: (item: BucketItem, suggestedDate: string, voted: boolean) => Promise<void>;
   onCompleteTask: (task: TaskItem) => Promise<void>;
@@ -356,6 +359,8 @@ const POI_CATEGORY_OPTIONS: Array<{ id: PoiCategory; labelKey: string; emoji: st
   { id: "supermarket", labelKey: "home.householdMapPoiSupermarkets", emoji: "🛒" },
   { id: "fuel", labelKey: "home.householdMapPoiFuel", emoji: "⛽" }
 ];
+const DEFAULT_MANUAL_MARKER_COLOR = "#0f766e";
+const MARKER_COLOR_HEX_PATTERN = /^#[0-9A-Fa-f]{6}$/;
 const MANUAL_MARKER_ICON_OPTIONS: Array<{ id: HouseholdMapMarkerIcon; labelKey: string }> = [
   { id: "home", labelKey: "home.householdMapMarkerIconHome" },
   { id: "shopping", labelKey: "home.householdMapMarkerIconShopping" },
@@ -375,7 +380,6 @@ const MANUAL_MARKER_ICON_OPTIONS: Array<{ id: HouseholdMapMarkerIcon; labelKey: 
 ];
 const LIVE_LOCATION_DURATION_OPTIONS = [5, 15, 30, 60] as const;
 const REACHABILITY_MINUTES_DEFAULT = 20;
-const ROUTE_MAX_MINUTES_DEFAULT = 45;
 const MAP_SETTINGS_STORAGE_KEY_PREFIX = "domora:home-map-settings:v1";
 const REACHABILITY_OPTIONS: Array<{ id: MapReachabilityMode; labelKey: string }> = [
   { id: "walk", labelKey: "home.householdMapReachabilityModeWalk" },
@@ -523,6 +527,43 @@ const calculatePolygonAreaSqm = (points: L.LatLng[]) => {
   return Math.abs((area * earthRadius * earthRadius) / 2);
 };
 
+const calculatePolylineDistanceMetersFromLatLngs = (points: L.LatLng[]) => {
+  let total = 0;
+  for (let i = 1; i < points.length; i += 1) {
+    const prev = points[i - 1];
+    const next = points[i];
+    if (!prev || !next) continue;
+    total += prev.distanceTo(next);
+  }
+  return total;
+};
+
+const isClosedVectorPath = (points: L.LatLng[], thresholdMeters = 30) => {
+  if (points.length < 3) return false;
+  const first = points[0];
+  const last = points[points.length - 1];
+  if (!first || !last) return false;
+  return first.distanceTo(last) <= thresholdMeters;
+};
+
+const formatDistanceShort = (meters: number) => {
+  if (!Number.isFinite(meters) || meters <= 0) return "0 m";
+  if (meters >= 1000) return `${(meters / 1000).toFixed(2)} km`;
+  return `${Math.round(meters)} m`;
+};
+
+const formatAreaShort = (sqm: number) => {
+  if (!Number.isFinite(sqm) || sqm <= 0) return "0 m²";
+  if (sqm >= 1_000_000) return `${(sqm / 1_000_000).toFixed(2)} km²`;
+  return `${Math.round(sqm)} m²`;
+};
+
+const formatDistanceCompact = (meters: number) => {
+  if (!Number.isFinite(meters) || meters <= 0) return "0m";
+  if (meters >= 1000) return `${(meters / 1000).toFixed(2)}km`;
+  return `${Math.round(meters)}m`;
+};
+
 const toFixedCoordinate = (value: number) => Number(value.toFixed(6));
 const toFixedRadius = (value: number) => Number(value.toFixed(2));
 const createMarkerId = () => {
@@ -530,6 +571,21 @@ const createMarkerId = () => {
     return `marker:${crypto.randomUUID()}`;
   }
   return `marker:${Date.now()}:${Math.floor(Math.random() * 100_000)}`;
+};
+
+const dedupeHouseholdMarkers = (markers: HouseholdMapMarker[]) => {
+  const byId = new Map<string, HouseholdMapMarker>();
+  for (const marker of markers) {
+    byId.set(marker.id, marker);
+  }
+  return Array.from(byId.values());
+};
+
+const normalizeMarkerColor = (value: string | null | undefined) => {
+  if (typeof value !== "string") return DEFAULT_MANUAL_MARKER_COLOR;
+  const trimmed = value.trim();
+  if (!MARKER_COLOR_HEX_PATTERN.test(trimmed)) return DEFAULT_MANUAL_MARKER_COLOR;
+  return trimmed.toLowerCase();
 };
 
 const serializeHouseholdLayer = (
@@ -542,6 +598,7 @@ const serializeHouseholdLayer = (
   const base = {
     id: existing?.id ?? createMarkerId(),
     icon: existing?.icon ?? ("star" as HouseholdMapMarkerIcon),
+    color: normalizeMarkerColor(existing?.color),
     title: existing?.title?.trim() || defaultTitle,
     description: existing?.description ?? "",
     image_b64: existing?.image_b64 ?? null,
@@ -659,12 +716,16 @@ const GeomanEditorBridge = ({
     const emitMarkers = () => {
       const nextMarkers: HouseholdMapMarker[] = [];
       map.eachLayer((layer) => {
-        const domoraLayer = layer as DomoraLeafletLayer;
+        const domoraLayer = layer as DomoraLeafletLayer & {
+          _pmTempLayer?: boolean;
+          _pmHelperLayer?: boolean;
+        };
+        if (domoraLayer._pmTempLayer || domoraLayer._pmHelperLayer) return;
         if (!domoraLayer._domoraMeta) return;
         const serialized = serializeHouseholdLayer(domoraLayer, userId, defaultTitle);
         if (serialized) nextMarkers.push(serialized);
       });
-      onMarkersChange(nextMarkers);
+      onMarkersChange(dedupeHouseholdMarkers(nextMarkers));
     };
 
     const handleCreate = (event: { layer?: L.Layer }) => {
@@ -678,6 +739,7 @@ const GeomanEditorBridge = ({
           id: createMarkerId(),
           type: "point",
           icon: "star",
+          color: DEFAULT_MANUAL_MARKER_COLOR,
           title: defaultTitle,
           description: "",
           image_b64: null,
@@ -692,7 +754,12 @@ const GeomanEditorBridge = ({
       }
       if (createdLayer instanceof L.Marker) {
         const markerLayer = createdLayer as DomoraLeafletLayer & L.Marker;
-        markerLayer.setIcon(getManualMarkerIcon(markerLayer._domoraMeta?.icon ?? "star"));
+        markerLayer.setIcon(
+          getManualMarkerIcon(
+            markerLayer._domoraMeta?.icon ?? "star",
+            markerLayer._domoraMeta?.color
+          )
+        );
       }
       emitMarkers();
     };
@@ -933,8 +1000,12 @@ const GeomanMeasureBridge = ({
 const AddressMapView = ({ center }: { center: [number, number] }) => {
   const map = useMap();
   useEffect(() => {
+    const current = map.getCenter();
+    const sameLat = Math.abs(current.lat - center[0]) < 1e-7;
+    const sameLon = Math.abs(current.lng - center[1]) < 1e-7;
+    if (sameLat && sameLon) return;
     map.setView(center, map.getZoom(), { animate: false });
-  }, [center, map]);
+  }, [center[0], center[1], map]);
   return null;
 };
 
@@ -1032,10 +1103,14 @@ const MapClosePopupBridge = ({
 
 const ReachabilityLayerBridge = ({
   geojson,
-  color
+  color,
+  tooltipHtml,
+  onSaveReachability
 }: {
   geojson: ReachabilityGeoJson | null;
   color: string;
+  tooltipHtml?: string | null;
+  onSaveReachability?: (() => void) | null;
 }) => {
   const map = useMap();
   const layerRef = useRef<L.GeoJSON | null>(null);
@@ -1053,8 +1128,48 @@ const ReachabilityLayerBridge = ({
         fillColor: color,
         fillOpacity: 0.22
       }),
-      interactive: false
+      interactive: true
     });
+    if (tooltipHtml) {
+      layer.eachLayer((entry) => {
+        if (!(entry instanceof L.Path)) return;
+        entry.bindTooltip(tooltipHtml, {
+          direction: "top",
+          sticky: true,
+          opacity: 0.95,
+          interactive: true,
+          className: "domora-map-route-line-tooltip"
+        });
+        const handleTooltipOpen = (evt: { tooltip?: L.Tooltip }) => {
+          const tooltipElement = evt.tooltip?.getElement();
+          if (!tooltipElement) return;
+          const saveButton = tooltipElement.querySelector<HTMLButtonElement>(".domora-reachability-tooltip-save");
+          if (!saveButton) return;
+          const saveHandler = (domEvent: MouseEvent | PointerEvent | TouchEvent) => {
+            domEvent.preventDefault();
+            domEvent.stopPropagation();
+            if (saveButton.disabled) return;
+            onSaveReachability?.();
+          };
+          saveButton.onclick = saveHandler as (this: GlobalEventHandlers, ev: MouseEvent) => unknown;
+          saveButton.onpointerdown = saveHandler as (this: GlobalEventHandlers, ev: PointerEvent) => unknown;
+          saveButton.onmousedown = saveHandler as (this: GlobalEventHandlers, ev: MouseEvent) => unknown;
+          saveButton.ontouchstart = saveHandler as (this: GlobalEventHandlers, ev: TouchEvent) => unknown;
+        };
+        const handleTooltipClose = (evt: { tooltip?: L.Tooltip }) => {
+          const tooltipElement = evt.tooltip?.getElement();
+          if (!tooltipElement) return;
+          const saveButton = tooltipElement.querySelector<HTMLButtonElement>(".domora-reachability-tooltip-save");
+          if (!saveButton) return;
+          saveButton.onclick = null;
+          saveButton.onpointerdown = null;
+          saveButton.onmousedown = null;
+          saveButton.ontouchstart = null;
+        };
+        entry.on("tooltipopen", handleTooltipOpen as L.LeafletEventHandlerFn);
+        entry.on("tooltipclose", handleTooltipClose as L.LeafletEventHandlerFn);
+      });
+    }
     layer.addTo(map);
     layerRef.current = layer;
     return () => {
@@ -1062,7 +1177,7 @@ const ReachabilityLayerBridge = ({
       map.removeLayer(layerRef.current);
       layerRef.current = null;
     };
-  }, [color, geojson, map]);
+  }, [color, geojson, map, onSaveReachability, tooltipHtml]);
 
   return null;
 };
@@ -1687,17 +1802,19 @@ const getMarkerEmoji = (icon: HouseholdMapMarkerIcon) => {
 };
 
 const markerDivIconCache = new Map<string, L.DivIcon>();
-const getManualMarkerIcon = (icon: HouseholdMapMarkerIcon) => {
-  const cached = markerDivIconCache.get(icon);
+const getManualMarkerIcon = (icon: HouseholdMapMarkerIcon, color?: string | null) => {
+  const normalizedColor = normalizeMarkerColor(color);
+  const cacheKey = `${icon}|${normalizedColor}`;
+  const cached = markerDivIconCache.get(cacheKey);
   if (cached) return cached;
   const divIcon = L.divIcon({
     className: "domora-map-marker-icon",
-    html: `<div style="position:relative;width:34px;height:44px;display:flex;align-items:flex-start;justify-content:center"><div style="background:#0f766e;border:2px solid #fff;color:#fff;width:30px;height:30px;border-radius:999px;display:flex;align-items:center;justify-content:center;font-size:16px;box-shadow:0 2px 8px rgba(0,0,0,.35)">${getMarkerEmoji(icon)}</div><div style="position:absolute;top:27px;left:50%;transform:translateX(-50%);width:0;height:0;border-left:7px solid transparent;border-right:7px solid transparent;border-top:13px solid #0f766e;filter:drop-shadow(0 2px 4px rgba(0,0,0,.28))"></div></div>`,
+    html: `<div style="position:relative;width:34px;height:44px;display:flex;align-items:flex-start;justify-content:center"><div style="background:${normalizedColor};border:2px solid #fff;color:#fff;width:30px;height:30px;border-radius:999px;display:flex;align-items:center;justify-content:center;font-size:16px;box-shadow:0 2px 8px rgba(0,0,0,.35)">${getMarkerEmoji(icon)}</div><div style="position:absolute;top:27px;left:50%;transform:translateX(-50%);width:0;height:0;border-left:7px solid transparent;border-right:7px solid transparent;border-top:13px solid ${normalizedColor};filter:drop-shadow(0 2px 4px rgba(0,0,0,.28))"></div></div>`,
     iconSize: [34, 44],
     iconAnchor: [17, 44],
     popupAnchor: [0, -40]
   });
-  markerDivIconCache.set(icon, divIcon);
+  markerDivIconCache.set(cacheKey, divIcon);
   return divIcon;
 };
 
@@ -1788,6 +1905,22 @@ const getPoiMarkerIcon = (category: PoiCategory) => {
   return divIcon;
 };
 
+const bucketMapDivIconCache = new Map<string, L.DivIcon>();
+const getBucketMapMarkerIcon = () => {
+  const cacheKey = "default";
+  const cached = bucketMapDivIconCache.get(cacheKey);
+  if (cached) return cached;
+  const divIcon = L.divIcon({
+    className: "domora-map-bucket-icon",
+    html: '<div style="position:relative;width:30px;height:38px;display:flex;align-items:flex-start;justify-content:center"><div style="background:#2563eb;border:2px solid #fff;color:#fff;width:24px;height:24px;border-radius:999px;display:flex;align-items:center;justify-content:center;font-size:12px;box-shadow:0 2px 8px rgba(0,0,0,.33)">🪣</div><div style="position:absolute;top:21px;left:50%;transform:translateX(-50%);width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-top:11px solid #2563eb;filter:drop-shadow(0 2px 4px rgba(0,0,0,.25))"></div></div>',
+    iconSize: [30, 38],
+    iconAnchor: [15, 38],
+    popupAnchor: [0, -34]
+  });
+  bucketMapDivIconCache.set(cacheKey, divIcon);
+  return divIcon;
+};
+
 const searchDivIconCache = new Map<string, L.DivIcon>();
 const getSearchResultMarkerIcon = () => {
   const cacheKey = "default";
@@ -1795,10 +1928,10 @@ const getSearchResultMarkerIcon = () => {
   if (cached) return cached;
   const divIcon = L.divIcon({
     className: "domora-map-search-icon",
-    html: '<div style="background:#1d4ed8;border:2px solid #fff;color:#fff;width:22px;height:22px;border-radius:999px;display:flex;align-items:center;justify-content:center;font-size:11px;box-shadow:0 2px 6px rgba(0,0,0,.28)">🔎</div>',
-    iconSize: [22, 22],
-    iconAnchor: [11, 22],
-    popupAnchor: [0, -20]
+    html: '<div style="position:relative;width:28px;height:36px;display:flex;align-items:flex-start;justify-content:center"><div style="background:#1d4ed8;border:2px solid #fff;color:#fff;width:24px;height:24px;border-radius:999px;display:flex;align-items:center;justify-content:center;font-size:11px;box-shadow:0 2px 8px rgba(0,0,0,.33)">🔎</div><div style="position:absolute;top:21px;left:50%;transform:translateX(-50%);width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-top:11px solid #1d4ed8;filter:drop-shadow(0 2px 4px rgba(0,0,0,.25))"></div></div>',
+    iconSize: [28, 36],
+    iconAnchor: [14, 36],
+    popupAnchor: [0, -32]
   });
   searchDivIconCache.set(cacheKey, divIcon);
   return divIcon;
@@ -1990,6 +2123,28 @@ const extractRouteSummary = (geojson: RouteGeoJson | null): RouteSummary | null 
     distanceMeters,
     travelType,
     segmentCount
+  };
+};
+
+const geocodeAddressCandidate = async (query: string, signal?: AbortSignal) => {
+  const response = await fetch(
+    `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&q=${encodeURIComponent(query)}`,
+    {
+      method: "GET",
+      headers: { Accept: "application/json" },
+      signal
+    }
+  );
+  if (!response.ok) throw new Error("geocode_failed");
+  const payload = (await response.json()) as Array<{ lat?: string; lon?: string; display_name?: string }>;
+  const first = payload[0];
+  const lat = first?.lat ? Number(first.lat) : Number.NaN;
+  const lon = first?.lon ? Number(first.lon) : Number.NaN;
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+  return {
+    lat,
+    lon,
+    label: first?.display_name?.trim() || query
   };
 };
 
@@ -2689,10 +2844,15 @@ export const HomePage = ({
   );
   const [bucketTitle, setBucketTitle] = useState("");
   const [bucketDescriptionMarkdown, setBucketDescriptionMarkdown] = useState("");
+  const [bucketAddress, setBucketAddress] = useState("");
   const [bucketSuggestedDates, setBucketSuggestedDates] = useState<string[]>([]);
+  const [bucketAddressGeocodes, setBucketAddressGeocodes] = useState<
+    Record<string, { lat: number; lon: number; label: string } | null>
+  >({});
   const [bucketItemBeingEdited, setBucketItemBeingEdited] = useState<BucketItem | null>(null);
   const [bucketEditTitle, setBucketEditTitle] = useState("");
   const [bucketEditDescriptionMarkdown, setBucketEditDescriptionMarkdown] = useState("");
+  const [bucketEditAddress, setBucketEditAddress] = useState("");
   const [bucketEditSuggestedDates, setBucketEditSuggestedDates] = useState<string[]>([]);
   const [bucketItemPendingDelete, setBucketItemPendingDelete] = useState<BucketItem | null>(null);
   const [showCompletedBucketItems, setShowCompletedBucketItems] = useState(false);
@@ -2730,6 +2890,7 @@ export const HomePage = ({
     title: string;
     description: string;
     icon: HouseholdMapMarkerIcon;
+    color: string;
   } | null>(null);
   const [editingMarkerError, setEditingMarkerError] = useState<string | null>(null);
   const [editingMarkerSaving, setEditingMarkerSaving] = useState(false);
@@ -2763,8 +2924,10 @@ export const HomePage = ({
   const [mapReachabilityFitRequestToken, setMapReachabilityFitRequestToken] = useState(0);
   const [mapGeomanControlsOpen, setMapGeomanControlsOpen] = useState(false);
   const [mapRoutePanelOpen, setMapRoutePanelOpen] = useState(false);
-  const [mapRouteMaxMinutes, setMapRouteMaxMinutes] = useState<number | null>(ROUTE_MAX_MINUTES_DEFAULT);
+  const [mapRouteMaxMinutes, setMapRouteMaxMinutes] = useState<number | null>(null);
+  const [mapRouteOriginManual, setMapRouteOriginManual] = useState<[number, number] | null>(null);
   const [mapRouteTarget, setMapRouteTarget] = useState<[number, number] | null>(null);
+  const [mapRoutePickOriginActive, setMapRoutePickOriginActive] = useState(false);
   const [mapRoutePickTargetActive, setMapRoutePickTargetActive] = useState(false);
   const [mapRouteGeoJson, setMapRouteGeoJson] = useState<RouteGeoJson | null>(null);
   const [mapRouteLoading, setMapRouteLoading] = useState(false);
@@ -2836,11 +2999,12 @@ export const HomePage = ({
     }
 
     if (persisted.poiCategoriesEnabled && typeof persisted.poiCategoriesEnabled === "object") {
+      const persistedPoi = persisted.poiCategoriesEnabled as Partial<Record<PoiCategory, unknown>>;
       setPoiCategoriesEnabled({
-        restaurant: Boolean(persisted.poiCategoriesEnabled.restaurant),
-        shop: Boolean(persisted.poiCategoriesEnabled.shop),
-        supermarket: Boolean(persisted.poiCategoriesEnabled.supermarket),
-        fuel: Boolean(persisted.poiCategoriesEnabled.fuel)
+        restaurant: typeof persistedPoi.restaurant === "boolean" ? persistedPoi.restaurant : true,
+        shop: typeof persistedPoi.shop === "boolean" ? persistedPoi.shop : true,
+        supermarket: typeof persistedPoi.supermarket === "boolean" ? persistedPoi.supermarket : true,
+        fuel: typeof persistedPoi.fuel === "boolean" ? persistedPoi.fuel : true
       });
     }
   }, [household.id]);
@@ -2956,6 +3120,8 @@ export const HomePage = ({
     ?? firstManualMarkerCenter
     ?? DEFAULT_MAP_CENTER;
   const mapHasPin = Boolean(addressMapCenter);
+  const poiQueryCenter = addressMapCenter ?? firstManualMarkerCenter ?? null;
+  const hasPoiQueryCenter = Boolean(poiQueryCenter);
   const mapZoom = mapHasPin ? MAP_ZOOM_WITH_ADDRESS : addressInput ? MAP_ZOOM_WITH_ADDRESS_FALLBACK : MAP_ZOOM_DEFAULT;
   const selectedPoiCategories = useMemo(
     () =>
@@ -3135,6 +3301,7 @@ export const HomePage = ({
       setMapSearchLoading(false);
       setMapReachabilityPanelOpen(false);
       setMapRoutePanelOpen(false);
+      setMapRoutePickOriginActive(false);
       setMapRoutePickTargetActive(false);
     }
   }, [isMapFullscreenOpen]);
@@ -3152,20 +3319,20 @@ export const HomePage = ({
     queryKey: [
       "map-poi",
       household.id,
-      mapHasPin ? addressMapCenter?.[0] : null,
-      mapHasPin ? addressMapCenter?.[1] : null,
+      hasPoiQueryCenter ? poiQueryCenter?.[0] : null,
+      hasPoiQueryCenter ? poiQueryCenter?.[1] : null,
       POI_RADIUS_METERS,
       selectedPoiCategories
     ],
     queryFn: () =>
       getNearbyPois({
         householdId: household.id,
-        lat: addressMapCenter![0],
-        lon: addressMapCenter![1],
+        lat: poiQueryCenter![0],
+        lon: poiQueryCenter![1],
         radiusMeters: POI_RADIUS_METERS,
         categories: selectedPoiCategories
       }),
-    enabled: mapHasPin && selectedPoiCategories.length > 0,
+    enabled: hasPoiQueryCenter && selectedPoiCategories.length > 0,
     staleTime: 5 * 60 * 1000
   });
   const nearbyPois = (nearbyPoiQuery.data?.rows ?? []) as NearbyPoi[];
@@ -4126,7 +4293,8 @@ export const HomePage = ({
         id: marker.id,
         title: marker.title,
         description: marker.description,
-        icon: marker.icon
+        icon: marker.icon,
+        color: normalizeMarkerColor(marker.color)
       });
     },
     [isHouseholdOwner]
@@ -4152,6 +4320,7 @@ export const HomePage = ({
       title,
       description: editingMarkerDraft.description.trim(),
       icon: editingMarkerDraft.icon,
+      color: normalizeMarkerColor(editingMarkerDraft.color),
       last_edited_by: userId,
       last_edited_at: nowIso
     };
@@ -4387,18 +4556,31 @@ export const HomePage = ({
     return "#f97316";
   }, []);
 
-  const mapRouteOrigin = useMemo<[number, number] | null>(() => {
+  const mapRouteAutoOrigin = useMemo<[number, number] | null>(() => {
     if (myLocationCenter) return myLocationCenter;
     if (addressMapCenter) return addressMapCenter;
     return null;
   }, [addressMapCenter, myLocationCenter]);
+  const mapRouteOrigin = mapRouteOriginManual ?? mapRouteAutoOrigin;
+  const mapRouteOriginLabel = useMemo(() => {
+    if (mapRouteOriginManual) {
+      return `${mapRouteOriginManual[0].toFixed(5)}, ${mapRouteOriginManual[1].toFixed(5)}`;
+    }
+    if (myLocationCenter) return t("home.householdMapMyLocation");
+    if (addressInput.trim().length > 0) return addressInput.trim();
+    return t("home.householdMapRouteNeedsOrigin");
+  }, [addressInput, mapRouteOriginManual, myLocationCenter, t]);
+  const mapRouteTargetLabel = useMemo(() => {
+    if (!mapRouteTarget) return t("home.householdMapRouteNeedsTarget");
+    return `${mapRouteTarget[0].toFixed(5)}, ${mapRouteTarget[1].toFixed(5)}`;
+  }, [mapRouteTarget, t]);
 
   useEffect(() => {
     if (mapReachabilityOrigin) return;
-    if (!mapRouteOrigin) return;
-    setMapReachabilityOrigin(mapRouteOrigin);
+    if (!mapRouteAutoOrigin) return;
+    setMapReachabilityOrigin(mapRouteAutoOrigin);
     setMapReachabilityOriginManual(false);
-  }, [mapReachabilityOrigin, mapRouteOrigin]);
+  }, [mapReachabilityOrigin, mapRouteAutoOrigin]);
 
   const runRoutePlanning = useCallback(async () => {
     if (!mapRouteOrigin) {
@@ -4495,6 +4677,7 @@ export const HomePage = ({
       id: createMarkerId(),
       type: "point",
       icon: "star",
+      color: DEFAULT_MANUAL_MARKER_COLOR,
       title: t("home.householdMapMarkerPending"),
       description: "",
       image_b64: null,
@@ -4539,6 +4722,7 @@ export const HomePage = ({
         id: createMarkerId(),
         type: "point",
         icon: "star",
+        color: DEFAULT_MANUAL_MARKER_COLOR,
         title,
         description,
         image_b64: null,
@@ -4561,7 +4745,8 @@ export const HomePage = ({
             id: newMarker.id,
             title,
             description,
-            icon: newMarker.icon
+            icon: newMarker.icon,
+            color: newMarker.color
           });
         }
       } catch {
@@ -4619,6 +4804,31 @@ export const HomePage = ({
     }
     return `${Math.round(radius)} m`;
   }, [mapReachabilitySummary, t]);
+  const mapReachabilityTooltipHtml = useMemo(() => {
+    if (!mapReachabilitySummary) return null;
+    const lines = [
+      `${mapReachabilityMinutes} min · ${mapReachabilityAreaLabel}`,
+      `${t("home.householdMapRouteInfoMode")}: ${mapRouteModeLabel}`,
+      `${t("home.householdMapReachabilityInfoRadius")}: ${mapReachabilityRadiusLabel}`,
+      `${t("home.householdMapReachabilityInfoPolygons")}: ${mapReachabilitySummary.polygonCount}`,
+      `${t("home.householdMapReachabilityInfoPoints")}: ${mapReachabilitySummary.pointCount}`
+    ];
+    const saveButtonHtml = `<button type="button" class="domora-route-tooltip-save domora-reachability-tooltip-save" ${
+      mapReachabilitySaving || !isHouseholdOwner ? "disabled" : ""
+    }>${escapeHtmlText(mapReachabilitySaving ? t("home.householdMapReachabilitySaving") : t("home.householdMapReachabilitySave"))}</button>`;
+    return `<div class="domora-route-tooltip-inner">${lines
+      .map((line) => `<div class="domora-route-tooltip-line">${escapeHtmlText(line)}</div>`)
+      .join("")}<div class="domora-route-tooltip-actions">${saveButtonHtml}</div></div>`;
+  }, [
+    isHouseholdOwner,
+    mapReachabilityAreaLabel,
+    mapReachabilityMinutes,
+    mapReachabilityRadiusLabel,
+    mapReachabilitySaving,
+    mapReachabilitySummary,
+    mapRouteModeLabel,
+    t
+  ]);
 
   const mapRouteDurationLabel = useMemo(() => {
     if (!mapRouteSummary?.durationSeconds || mapRouteSummary.durationSeconds <= 0) {
@@ -4688,6 +4898,7 @@ export const HomePage = ({
       id: createMarkerId(),
       type: "vector",
       icon: "transit",
+      color: mapRouteColor,
       title: t("home.householdMapRouteSavedDefaultTitle", { mode: mapRouteModeLabel }),
       description: [
         `- ${t("home.householdMapRouteInfoMode")}: ${mapRouteModeLabel}`,
@@ -4727,6 +4938,7 @@ export const HomePage = ({
     isHouseholdOwner,
     mapRouteDistanceLabel,
     mapRouteDurationLabel,
+    mapRouteColor,
     mapRouteModeLabel,
     mapRouteSummary,
     onUpdateHousehold,
@@ -4753,6 +4965,7 @@ export const HomePage = ({
       id: createMarkerId(),
       type: "vector",
       icon: "transit",
+      color: mapRouteColor,
       title: t("home.householdMapReachabilitySavedDefaultTitle", {
         mode: mapRouteModeLabel,
         minutes: mapReachabilityMinutes
@@ -4779,6 +4992,7 @@ export const HomePage = ({
       setMapReachabilitySaveError(null);
       const nextMarkers = [...household.household_map_markers, areaMarker];
       await onUpdateHousehold(buildHouseholdUpdatePayload(nextMarkers));
+      setMapReachabilityGeoJson(null);
       setMapReachabilitySavedAt(Date.now());
     } catch (error) {
       const message = error instanceof Error ? error.message : t("home.householdMapReachabilitySaveError");
@@ -4793,6 +5007,7 @@ export const HomePage = ({
     mapReachabilityAreaLabel,
     mapReachabilityMinutes,
     mapReachabilitySummary,
+    mapRouteColor,
     mapRouteModeLabel,
     onUpdateHousehold,
     t,
@@ -4804,6 +5019,7 @@ export const HomePage = ({
   }, [mapRouteGeoJson]);
 
   useEffect(() => {
+    if (!mapReachabilityGeoJson) return;
     setMapReachabilitySaveError(null);
     setMapReachabilitySavedAt(null);
   }, [mapReachabilityGeoJson]);
@@ -4941,6 +5157,7 @@ export const HomePage = ({
         id: existing?.id ?? `poi:${poi.id}`,
         type: "point",
         icon: getMarkerIconFromPoiCategory(poi.category),
+        color: normalizeMarkerColor(existing?.color),
         title,
         description,
         image_b64: existing?.image_b64 ?? null,
@@ -5090,6 +5307,48 @@ export const HomePage = ({
   const renderManualHouseholdMarkerPopup = useCallback(
     (marker: HouseholdMapMarker) => {
       const center = getHouseholdMarkerCenter(marker);
+      let markerGeometrySummary: { area: string; perimeter: string } | null = null;
+      let markerGeometryCircleCompact: string | null = null;
+      if (marker.type === "circle") {
+        const radius = Math.max(0, marker.radius_meters);
+        const diameter = radius * 2;
+        const perimeter = 2 * Math.PI * radius;
+        const area = Math.PI * radius * radius;
+        markerGeometrySummary = {
+          area: formatAreaShort(area),
+          perimeter: formatDistanceShort(perimeter)
+        };
+        markerGeometryCircleCompact = `⌀ ${formatDistanceCompact(diameter)} (r=${formatDistanceCompact(radius)})`;
+      } else if (marker.type === "rectangle") {
+        const southWest = L.latLng(marker.bounds.south, marker.bounds.west);
+        const southEast = L.latLng(marker.bounds.south, marker.bounds.east);
+        const northWest = L.latLng(marker.bounds.north, marker.bounds.west);
+        const width = southWest.distanceTo(southEast);
+        const height = southWest.distanceTo(northWest);
+        const perimeter = Math.max(0, 2 * (width + height));
+        const area = Math.max(0, width * height);
+        markerGeometrySummary = {
+          area: formatAreaShort(area),
+          perimeter: formatDistanceShort(perimeter)
+        };
+      } else if (marker.type === "vector") {
+        const latLngPoints = marker.points.map((point) => L.latLng(point.lat, point.lon));
+        if (isClosedVectorPath(latLngPoints)) {
+          const first = latLngPoints[0];
+          const last = latLngPoints[latLngPoints.length - 1];
+          const closeDistance = first && last ? first.distanceTo(last) : 0;
+          if (first && last) {
+            const baseLength = calculatePolylineDistanceMetersFromLatLngs(latLngPoints);
+            const perimeter =
+              closeDistance > 0.001 ? baseLength + closeDistance : baseLength;
+            const area = calculatePolygonAreaSqm(latLngPoints);
+            markerGeometrySummary = {
+              area: formatAreaShort(area),
+              perimeter: formatDistanceShort(perimeter)
+            };
+          }
+        }
+      }
       return (
         <Popup>
           <div className="space-y-1">
@@ -5107,6 +5366,14 @@ export const HomePage = ({
               alt={marker.title}
               className="max-h-32 w-full rounded object-cover"
             />
+          ) : null}
+          {markerGeometrySummary ? (
+            <div className="mt-0.5 space-y-0.5 border-t border-slate-200 pt-0.5 text-[11px] leading-tight text-slate-700 dark:border-slate-700 dark:text-slate-300">
+              <p>
+                {t("home.householdMapMarkerMetricArea")}: {markerGeometrySummary.area} · {t("home.householdMapMarkerMetricPerimeter")}: {markerGeometrySummary.perimeter}
+              </p>
+              {markerGeometryCircleCompact ? <p>{markerGeometryCircleCompact}</p> : null}
+            </div>
           ) : null}
           {center
             ? renderMapPopupActions({
@@ -5157,16 +5424,56 @@ export const HomePage = ({
     setMapMeasureClearToken((current) => current + 1);
   }, []);
   const dismissMapPanelsOnMapClick = useCallback(() => {
-    if (mapRoutePickTargetActive || mapReachabilityPickOriginActive) return;
+    if (mapRoutePickOriginActive || mapRoutePickTargetActive || mapReachabilityPickOriginActive) return;
     setMapReachabilityPanelOpen(false);
     setMapRoutePanelOpen(false);
-  }, [mapReachabilityPickOriginActive, mapRoutePickTargetActive]);
+  }, [mapReachabilityPickOriginActive, mapRoutePickOriginActive, mapRoutePickTargetActive]);
 
   useEffect(() => {
     if (!isMapFullscreenOpen) {
       setMapGeomanControlsOpen(false);
     }
   }, [isMapFullscreenOpen]);
+  const bucketAddressCandidates = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          bucketItems
+            .map((item) => (item.address ?? "").trim())
+            .filter((address) => address.length >= MIN_ADDRESS_LENGTH_FOR_GEOCODE)
+        )
+      ),
+    [bucketItems]
+  );
+  const bucketMapEntries = useMemo(
+    () =>
+      bucketItems.flatMap((item) => {
+        const address = (item.address ?? "").trim();
+        if (address.length < MIN_ADDRESS_LENGTH_FOR_GEOCODE) return [];
+        const geocoded = bucketAddressGeocodes[address];
+        if (!geocoded) return [];
+        return [
+          {
+            item,
+            lat: geocoded.lat,
+            lon: geocoded.lon,
+            label: geocoded.label
+          }
+        ];
+      }),
+    [bucketAddressGeocodes, bucketItems]
+  );
+  const formatSuggestedDate = useMemo(
+    () => (value: string) => {
+      const parsed = new Date(`${value}T12:00:00`);
+      if (Number.isNaN(parsed.getTime())) return value;
+      return new Intl.DateTimeFormat(language, { dateStyle: "medium" }).format(
+        parsed,
+      );
+    },
+    [language],
+  );
+  
   const renderHouseholdMapSurface = useCallback(
     (containerClassName: string, isFullscreen: boolean) => (
       <div className={containerClassName}>
@@ -5325,21 +5632,23 @@ export const HomePage = ({
               >
                 {t("home.householdMapManualFilterNone")}
               </DropdownMenuCheckboxItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuLabel>{t("home.householdMapManualFilterByMember")}</DropdownMenuLabel>
-              {memberOptionsForMarkerFilter.map((memberOption) => (
-                <DropdownMenuCheckboxItem
-                  key={memberOption.id}
-                  checked={manualMarkerFilterMode === "member" && manualMarkerFilterMemberId === memberOption.id}
-                  onCheckedChange={(checked) => {
-                    if (!checked) return;
-                    setManualMarkerFilterMode("member");
-                    setManualMarkerFilterMemberId(memberOption.id);
-                  }}
-                >
-                  {memberOption.label}
-                </DropdownMenuCheckboxItem>
-              ))}
+              <div className="hidden md:block">
+                <DropdownMenuSeparator />
+                <DropdownMenuLabel>{t("home.householdMapManualFilterByMember")}</DropdownMenuLabel>
+                {memberOptionsForMarkerFilter.map((memberOption) => (
+                  <DropdownMenuCheckboxItem
+                    key={memberOption.id}
+                    checked={manualMarkerFilterMode === "member" && manualMarkerFilterMemberId === memberOption.id}
+                    onCheckedChange={(checked) => {
+                      if (!checked) return;
+                      setManualMarkerFilterMode("member");
+                      setManualMarkerFilterMemberId(memberOption.id);
+                    }}
+                  >
+                    {memberOption.label}
+                  </DropdownMenuCheckboxItem>
+                ))}
+              </div>
             </DropdownMenuContent>
           </DropdownMenu>
           <DropdownMenu>
@@ -5397,10 +5706,6 @@ export const HomePage = ({
               >
                 {t("home.householdMapWeatherLayerLightning")}
               </DropdownMenuCheckboxItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuLabel className="text-[11px] font-normal text-slate-500 dark:text-slate-400">
-                {t("home.householdMapWeatherLayersHint")}
-              </DropdownMenuLabel>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
@@ -5445,7 +5750,7 @@ export const HomePage = ({
               aria-label={t("home.householdMapReachability")}
               title={t("home.householdMapReachability")}
             >
-              <MapIcon className="h-4 w-4" />
+              <CircleDot className="h-4 w-4" />
             </Button>
           </div>
         ) : null}
@@ -5482,6 +5787,13 @@ export const HomePage = ({
             layers={mapWeatherLayers}
           />
           <RouteTargetPickBridge
+            enabled={isFullscreen && mapRoutePanelOpen && mapRoutePickOriginActive}
+            onPick={(lat, lon) => {
+              setMapRouteOriginManual([lat, lon]);
+              setMapRoutePickOriginActive(false);
+            }}
+          />
+          <RouteTargetPickBridge
             enabled={isFullscreen && mapRoutePanelOpen && mapRoutePickTargetActive}
             onPick={(lat, lon) => {
               setMapRouteTarget([lat, lon]);
@@ -5498,7 +5810,7 @@ export const HomePage = ({
             }}
           />
           <QuickPinDropBridge
-            enabled={!mapRoutePickTargetActive && !mapReachabilityPickOriginActive && mapMeasureMode === null}
+            enabled={!mapRoutePickOriginActive && !mapRoutePickTargetActive && !mapReachabilityPickOriginActive && mapMeasureMode === null}
             onDrop={(lat, lon) => {
               setMapQuickPin([lat, lon]);
               setMapReachabilityOrigin([lat, lon]);
@@ -5519,7 +5831,12 @@ export const HomePage = ({
             openTooltipToken={mapRouteTooltipOpenToken}
           />
           <RouteFitBoundsBridge geojson={mapRouteGeoJson} requestToken={mapRouteFitRequestToken} />
-          <ReachabilityLayerBridge geojson={mapReachabilityGeoJson} color={mapReachabilityColor} />
+          <ReachabilityLayerBridge
+            geojson={mapReachabilityGeoJson}
+            color={mapReachabilityColor}
+            tooltipHtml={mapReachabilityTooltipHtml}
+            onSaveReachability={mapReachabilitySummary ? () => { void saveReachabilityToHouseholdMarkers(); } : null}
+          />
           <ReachabilityFitBoundsBridge
             geojson={mapReachabilityGeoJson}
             requestToken={mapReachabilityFitRequestToken}
@@ -5615,6 +5932,7 @@ export const HomePage = ({
               key={`route-target-${mapRouteTarget[0]}-${mapRouteTarget[1]}`}
               position={mapRouteTarget}
               icon={getRoutePointMarkerIcon(mapRouteColor)}
+              zIndexOffset={-1000}
               pmIgnore
             >
               <Popup>
@@ -5788,6 +6106,73 @@ export const HomePage = ({
                 </Marker>
               ))
             : null}
+          {bucketMapEntries.map((entry) => {
+            const item = entry.item;
+            return (
+              <Marker
+                key={`bucket-map-${item.id}`}
+                position={[entry.lat, entry.lon]}
+                icon={getBucketMapMarkerIcon()}
+                pmIgnore
+              >
+                <Popup>
+                  <div className="space-y-2">
+                    <p className="font-semibold">🪣 {item.title}</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-300">{entry.label}</p>
+                    {item.description_markdown.trim().length > 0 ? (
+                      <div className="prose prose-xs max-w-none text-xs dark:prose-invert prose-p:my-1 prose-ul:my-1 prose-ol:my-1 prose-li:my-0">
+                        <ReactMarkdown remarkPlugins={[remarkGfm]}>{item.description_markdown}</ReactMarkdown>
+                      </div>
+                    ) : null}
+                    {item.suggested_dates.length > 0 ? (
+                      <div className="space-y-1">
+                        <p className="text-xs font-medium text-slate-600 dark:text-slate-300">
+                          {t("home.bucketSuggestedDatesTitle")}
+                        </p>
+                        <ul className="space-y-1">
+                          {item.suggested_dates.map((dateValue) => {
+                            const voters = item.votes_by_date[dateValue] ?? [];
+                            const hasVoted = voters.includes(userId);
+                            return (
+                              <li
+                                key={`bucket-map-vote-${item.id}-${dateValue}`}
+                                className="flex items-center justify-between gap-2 rounded-md border border-slate-200 bg-slate-50/80 px-2 py-1 dark:border-slate-700 dark:bg-slate-800/70"
+                              >
+                                <span className="text-[11px] text-slate-700 dark:text-slate-300">
+                                  {formatSuggestedDate(dateValue)}
+                                </span>
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                                    {t("home.bucketVotes", { count: voters.length })}
+                                  </span>
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant={hasVoted ? "default" : "outline"}
+                                    className="h-6 px-2 text-[10px]"
+                                    disabled={busy}
+                                    onClick={() => {
+                                      void onToggleBucketDateVote(item, dateValue, !hasVoted);
+                                    }}
+                                  >
+                                    {hasVoted ? t("home.bucketVotedAction") : t("home.bucketVoteAction")}
+                                  </Button>
+                                </div>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      </div>
+                    ) : null}
+                    {renderMapPopupActions({
+                      lat: entry.lat,
+                      lon: entry.lon
+                    })}
+                  </div>
+                </Popup>
+              </Marker>
+            );
+          })}
           {filteredHouseholdMarkers.map((marker, markerIndex) => {
             const markerRenderKey = `${marker.type}:${marker.id}:${markerIndex}`;
             if (marker.type === "point") {
@@ -5795,7 +6180,7 @@ export const HomePage = ({
                 <Marker
                   key={markerRenderKey}
                   position={[marker.lat, marker.lon]}
-                  icon={getManualMarkerIcon(marker.icon)}
+                  icon={getManualMarkerIcon(marker.icon, marker.color)}
                   pmIgnore={!isHouseholdOwner}
                   eventHandlers={{
                     add: (event) => {
@@ -5881,11 +6266,38 @@ export const HomePage = ({
             }
 
             if (marker.type === "vector") {
+              const positions = marker.points.map((point) => [point.lat, point.lon] as [number, number]);
+              const isClosedVector = isClosedVectorPath(marker.points.map((point) => L.latLng(point.lat, point.lon)));
+              const markerStrokeColor = normalizeMarkerColor(marker.color);
+              if (isClosedVector) {
+                return (
+                  <Polygon
+                    key={markerRenderKey}
+                    positions={positions}
+                    pathOptions={{
+                      color: markerStrokeColor,
+                      weight: 3,
+                      opacity: 0.9,
+                      fillColor: markerStrokeColor,
+                      fillOpacity: 0.18
+                    }}
+                    pmIgnore={!isHouseholdOwner}
+                    eventHandlers={{
+                      add: (event) => {
+                        (event.target as DomoraLeafletLayer)._domoraMeta = marker;
+                      }
+                    }}
+                  >
+                    {renderManualHouseholdMarkerPopup(marker)}
+                  </Polygon>
+                );
+              }
+
               return (
                 <Polyline
                   key={markerRenderKey}
-                  positions={marker.points.map((point) => [point.lat, point.lon])}
-                  pathOptions={{ color: "#0f766e", weight: 5, opacity: 0.85 }}
+                  positions={positions}
+                  pathOptions={{ color: markerStrokeColor, weight: 5, opacity: 0.85 }}
                   pmIgnore={!isHouseholdOwner}
                   eventHandlers={{
                     add: (event) => {
@@ -5899,12 +6311,13 @@ export const HomePage = ({
             }
 
             if (marker.type === "circle") {
+              const markerStrokeColor = normalizeMarkerColor(marker.color);
               return (
                 <Circle
                   key={markerRenderKey}
                   center={[marker.center.lat, marker.center.lon]}
                   radius={marker.radius_meters}
-                  pathOptions={{ color: "#0f766e", fillColor: "#14b8a6", fillOpacity: 0.2, weight: 3 }}
+                  pathOptions={{ color: markerStrokeColor, fillColor: markerStrokeColor, fillOpacity: 0.2, weight: 3 }}
                   pmIgnore={!isHouseholdOwner}
                   eventHandlers={{
                     add: (event) => {
@@ -5917,6 +6330,7 @@ export const HomePage = ({
               );
             }
 
+            const markerStrokeColor = normalizeMarkerColor(marker.color);
             return (
               <Rectangle
                 key={markerRenderKey}
@@ -5924,7 +6338,7 @@ export const HomePage = ({
                   [marker.bounds.south, marker.bounds.west],
                   [marker.bounds.north, marker.bounds.east]
                 ]}
-                pathOptions={{ color: "#0f766e", fillColor: "#14b8a6", fillOpacity: 0.2, weight: 3 }}
+                pathOptions={{ color: markerStrokeColor, fillColor: markerStrokeColor, fillOpacity: 0.2, weight: 3 }}
                 pmIgnore={!isHouseholdOwner}
                 eventHandlers={{
                   add: (event) => {
@@ -6097,6 +6511,9 @@ export const HomePage = ({
         {isFullscreen && mapReachabilityPanelOpen ? (
           <div className="absolute bottom-2 left-2 right-2 z-[1100] rounded-xl border border-slate-200/85 bg-white/95 p-2 shadow-sm backdrop-blur dark:border-slate-600/80 dark:bg-slate-900/95 sm:bottom-[11rem] sm:right-auto sm:w-[min(320px,calc(100%-1rem))]">
             <div className="grid grid-cols-1 gap-2">
+              <p className="text-xs font-semibold text-slate-700 dark:text-slate-200">
+                {t("home.householdMapReachabilityInfoTitle")}
+              </p>
               <div className="grid grid-cols-2 items-center gap-2">
                 <Label className="text-xs" htmlFor="map-reachability-minutes">
                   {t("home.householdMapReachabilityDurationLabel")}
@@ -6150,6 +6567,7 @@ export const HomePage = ({
                   {mapReachabilityLoading ? (
                     <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
                   ) : null}
+                  {!mapReachabilityLoading ? <span className="mr-1 text-sm leading-none">{getTravelModeGlyph(mapTravelMode)}</span> : null}
                   {t("home.householdMapReachabilityRun")}
                 </Button>
                 <Button
@@ -6197,28 +6615,50 @@ export const HomePage = ({
                 />
               </div>
               <div className="text-[11px] text-slate-600 dark:text-slate-300">
-                {mapRouteOrigin ? t("home.householdMapRouteOriginReady") : t("home.householdMapRouteNeedsOrigin")}
+                <span className="inline-flex w-full items-center justify-between gap-2 rounded-md border border-slate-200/80 px-2 py-1 dark:border-slate-700/80">
+                  <span className="truncate">
+                    <span className="font-medium">{t("home.householdMapRouteStart")}:</span> {mapRouteOriginLabel}
+                  </span>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={mapRoutePickOriginActive ? "default" : "outline"}
+                    className="h-7 w-7 shrink-0 p-0"
+                    onClick={() => {
+                      setMapRoutePickOriginActive((current) => !current);
+                    }}
+                    aria-label={
+                      mapRoutePickOriginActive
+                        ? t("home.householdMapRoutePickTargetActive")
+                        : t("home.householdMapRoutePickOrigin")
+                    }
+                  >
+                    <CircleDot className="h-3.5 w-3.5" />
+                  </Button>
+                </span>
               </div>
-              <Button
-                type="button"
-                size="sm"
-                variant={mapRoutePickTargetActive ? "default" : "outline"}
-                className="h-8"
-                onClick={() => {
-                  setMapRoutePickTargetActive((current) => !current);
-                }}
-              >
-                {mapRoutePickTargetActive
-                  ? t("home.householdMapRoutePickTargetActive")
-                  : t("home.householdMapRoutePickTarget")}
-              </Button>
               <div className="text-[11px] text-slate-600 dark:text-slate-300">
-                {mapRouteTarget
-                  ? t("home.householdMapRouteTargetReady", {
-                      lat: mapRouteTarget[0].toFixed(5),
-                      lon: mapRouteTarget[1].toFixed(5)
-                    })
-                  : t("home.householdMapRouteNeedsTarget")}
+                <span className="inline-flex w-full items-center justify-between gap-2 rounded-md border border-slate-200/80 px-2 py-1 dark:border-slate-700/80">
+                  <span className="truncate">
+                    <span className="font-medium">{t("home.householdMapRouteTarget")}:</span> {mapRouteTargetLabel}
+                  </span>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={mapRoutePickTargetActive ? "default" : "outline"}
+                    className="h-7 w-7 shrink-0 p-0"
+                    onClick={() => {
+                      setMapRoutePickTargetActive((current) => !current);
+                    }}
+                    aria-label={
+                      mapRoutePickTargetActive
+                        ? t("home.householdMapRoutePickTargetActive")
+                        : t("home.householdMapRoutePickTarget")
+                    }
+                  >
+                    <CircleDot className="h-3.5 w-3.5" />
+                  </Button>
+                </span>
               </div>
               <div className="flex items-center gap-2">
                 <Button
@@ -6231,6 +6671,7 @@ export const HomePage = ({
                   disabled={mapRouteLoading}
                 >
                   {mapRouteLoading ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : null}
+                  {!mapRouteLoading ? <span className="mr-1 text-sm leading-none">{getTravelModeGlyph(mapTravelMode)}</span> : null}
                   {t("home.householdMapRouteRun")}
                 </Button>
                 <Button
@@ -6240,6 +6681,7 @@ export const HomePage = ({
                   className="h-8"
                   onClick={() => {
                     clearRoutePlanning();
+                    setMapRoutePickOriginActive(false);
                     setMapRouteTarget(null);
                     setMapRoutePickTargetActive(false);
                   }}
@@ -6289,12 +6731,15 @@ export const HomePage = ({
       mapRouteMaxMinutes,
       mapRouteModeLabel,
       mapRouteOrigin,
+      mapRouteOriginLabel,
       mapRoutePanelOpen,
+      mapRoutePickOriginActive,
       mapRoutePickTargetActive,
       mapRouteSaveError,
       mapRouteSaving,
       mapRouteSummary,
       mapRouteTarget,
+      mapRouteTargetLabel,
       mapRouteDurationLabel,
       mapRouteAverageSpeedLabel,
       mapTravelMode,
@@ -6316,6 +6761,8 @@ export const HomePage = ({
       mapReachabilitySavedAt,
       mapReachabilitySaving,
       mapReachabilitySummary,
+      bucketMapEntries,
+      busy,
       mapSearchError,
       mapSearchInputFocused,
       mapSearchLoading,
@@ -6352,9 +6799,11 @@ export const HomePage = ({
       applyMapSearchResult,
       onSaveExistingPoiOverride,
       onSavePoiOverride,
+      onToggleBucketDateVote,
       poiOverrideDrafts,
       poiOverrideMarkersByRef,
       poiOverrideSavingId,
+      formatSuggestedDate,
       requestMyLocation,
       runReachability,
       runRoutePlanning,
@@ -6447,21 +6896,11 @@ export const HomePage = ({
     const timer = window.setTimeout(() => {
       void (async () => {
         try {
-          const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&q=${encodeURIComponent(query)}`;
-          const response = await fetch(url, {
-            method: "GET",
-            headers: { Accept: "application/json" },
-            signal: controller.signal
-          });
-          if (!response.ok) throw new Error("geocode_failed");
-          const payload = (await response.json()) as Array<{ lat?: string; lon?: string; display_name?: string }>;
-          const first = payload[0];
-          const lat = first?.lat ? Number(first.lat) : Number.NaN;
-          const lon = first?.lon ? Number(first.lon) : Number.NaN;
-          if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
+          const result = await geocodeAddressCandidate(query, controller.signal);
+          if (!result) return;
           if (!active) return;
-          setAddressMapCenter([lat, lon]);
-          setAddressMapLabel(first?.display_name?.trim() || query);
+          setAddressMapCenter([result.lat, result.lon]);
+          setAddressMapLabel(result.label);
         } catch {
           if (!active || controller.signal.aborted) return;
           setAddressMapCenter(null);
@@ -6476,6 +6915,42 @@ export const HomePage = ({
       window.clearTimeout(timer);
     };
   }, [addressInput]);
+  useEffect(() => {
+    const unresolved = bucketAddressCandidates.filter((address) => !(address in bucketAddressGeocodes));
+    if (unresolved.length === 0) return;
+
+    let active = true;
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        const resolvedEntries = await Promise.all(
+          unresolved.map(async (address) => {
+            try {
+              const result = await geocodeAddressCandidate(address, controller.signal);
+              return [address, result] as const;
+            } catch {
+              if (controller.signal.aborted) return [address, null] as const;
+              return [address, null] as const;
+            }
+          })
+        );
+        if (!active || controller.signal.aborted) return;
+        setBucketAddressGeocodes((current) => {
+          const next = { ...current };
+          for (const [address, result] of resolvedEntries) {
+            next[address] = result;
+          }
+          return next;
+        });
+      })();
+    }, ADDRESS_GEOCODE_DEBOUNCE_MS);
+
+    return () => {
+      active = false;
+      controller.abort();
+      window.clearTimeout(timer);
+    };
+  }, [bucketAddressCandidates, bucketAddressGeocodes]);
   const insertTextPlaceholder = t("home.widgetTextPlaceholder");
   const insertTextBeforeLabel = t("home.widgetInsertTextBefore");
   const insertTextAfterLabel = t("home.widgetInsertTextAfter");
@@ -7355,18 +7830,21 @@ export const HomePage = ({
       await onAddBucketItem({
         title: nextTitle,
         descriptionMarkdown: bucketDescriptionMarkdown.trim(),
+        address: bucketAddress.trim(),
         suggestedDates: [...new Set(bucketSuggestedDates)].sort()
       });
       setBucketTitle("");
       setBucketDescriptionMarkdown("");
+      setBucketAddress("");
       setBucketSuggestedDates([]);
     },
-    [bucketDescriptionMarkdown, bucketSuggestedDates, bucketTitle, onAddBucketItem]
+    [bucketAddress, bucketDescriptionMarkdown, bucketSuggestedDates, bucketTitle, onAddBucketItem]
   );
   const onStartBucketEdit = useCallback((item: BucketItem) => {
     setBucketItemBeingEdited(item);
     setBucketEditTitle(item.title);
     setBucketEditDescriptionMarkdown(item.description_markdown);
+    setBucketEditAddress(item.address ?? "");
     setBucketEditSuggestedDates(item.suggested_dates);
   }, []);
   const onSubmitBucketEdit = useCallback(
@@ -7381,29 +7859,24 @@ export const HomePage = ({
       await onUpdateBucketItem(bucketItemBeingEdited, {
         title: nextTitle,
         descriptionMarkdown: bucketEditDescriptionMarkdown.trim(),
+        address: bucketEditAddress.trim(),
         suggestedDates: [...new Set(bucketEditSuggestedDates)].sort()
       });
 
       setBucketItemBeingEdited(null);
       setBucketEditTitle("");
       setBucketEditDescriptionMarkdown("");
+      setBucketEditAddress("");
       setBucketEditSuggestedDates([]);
     },
-    [bucketEditDescriptionMarkdown, bucketEditSuggestedDates, bucketEditTitle, bucketItemBeingEdited, onUpdateBucketItem]
+    [bucketEditAddress, bucketEditDescriptionMarkdown, bucketEditSuggestedDates, bucketEditTitle, bucketItemBeingEdited, onUpdateBucketItem]
   );
   const onConfirmDeleteBucketItem = useCallback(async () => {
     if (!bucketItemPendingDelete) return;
     await onDeleteBucketItem(bucketItemPendingDelete);
     setBucketItemPendingDelete(null);
   }, [bucketItemPendingDelete, onDeleteBucketItem]);
-  const formatSuggestedDate = useMemo(
-    () => (value: string) => {
-      const parsed = new Date(`${value}T12:00:00`);
-      if (Number.isNaN(parsed.getTime())) return value;
-      return new Intl.DateTimeFormat(language, { dateStyle: "medium" }).format(parsed);
-    },
-    [language]
-  );
+  
   const onConfirmCompleteTask = useCallback(async () => {
     if (!pendingCompleteTask) return;
     await onCompleteTask(pendingCompleteTask);
@@ -8798,6 +9271,16 @@ export const HomePage = ({
                     className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs outline-none transition-[color,box-shadow] placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
                   />
                 </div>
+                <div className="space-y-1">
+                  <Label>{t("home.bucketAddressLabel")}</Label>
+                  <Input
+                    value={bucketAddress}
+                    onChange={(event) => setBucketAddress(event.target.value)}
+                    placeholder={t("home.bucketAddressPlaceholder")}
+                    maxLength={300}
+                    disabled={busy}
+                  />
+                </div>
                 <div className="space-y-2">
                   <p className="text-xs font-medium text-slate-600 dark:text-slate-300">{t("home.bucketDatesLabel")}</p>
                   <MultiDateCalendarSelect
@@ -9097,6 +9580,11 @@ export const HomePage = ({
                         </ReactMarkdown>
                       </div>
                     ) : null}
+                    {(item.address ?? "").trim().length > 0 ? (
+                      <p className="text-xs text-slate-600 dark:text-slate-300">
+                        {(item.address ?? "").trim()}
+                      </p>
+                    ) : null}
 
                     {item.suggested_dates.length > 0 ? (
                       <div className="space-y-2">
@@ -9158,6 +9646,7 @@ export const HomePage = ({
               setBucketItemBeingEdited(null);
               setBucketEditTitle("");
               setBucketEditDescriptionMarkdown("");
+              setBucketEditAddress("");
               setBucketEditSuggestedDates([]);
             }}
           >
@@ -9193,6 +9682,16 @@ export const HomePage = ({
                   />
                 </div>
                 <div className="space-y-1">
+                  <Label>{t("home.bucketAddressLabel")}</Label>
+                  <Input
+                    value={bucketEditAddress}
+                    onChange={(event) => setBucketEditAddress(event.target.value)}
+                    placeholder={t("home.bucketAddressPlaceholder")}
+                    maxLength={300}
+                    disabled={busy}
+                  />
+                </div>
+                <div className="space-y-1">
                   <p className="text-xs font-medium text-slate-600 dark:text-slate-300">
                     {t("home.bucketDatesLabel")}
                   </p>
@@ -9214,6 +9713,7 @@ export const HomePage = ({
                       setBucketItemBeingEdited(null);
                       setBucketEditTitle("");
                       setBucketEditDescriptionMarkdown("");
+                      setBucketEditAddress("");
                       setBucketEditSuggestedDates([]);
                     }}
                   >
@@ -9448,7 +9948,7 @@ export const HomePage = ({
                   false,
                 )}
                 <div className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-                  {!mapHasPin
+                  {!hasPoiQueryCenter
                     ? t("home.householdMapPoiNeedsAddress")
                     : nearbyPoiQuery.isFetching
                       ? t("home.householdMapPoiLoading")
@@ -9934,13 +10434,25 @@ export const HomePage = ({
             </div>
           ) : null}
           <div className="flex justify-end gap-2">
-            <Button type="button" variant="outline" onClick={cancelMapDeletion}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                cancelMapDeletion();
+              }}
+            >
               {t("common.cancel")}
             </Button>
             <Button
               type="button"
               className="bg-rose-600 text-white hover:bg-rose-700 dark:bg-rose-500 dark:hover:bg-rose-600"
-              onClick={confirmMapDeletion}
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                confirmMapDeletion();
+              }}
             >
               {t("home.householdMapDeleteConfirmAction")}
             </Button>
@@ -10000,6 +10512,25 @@ export const HomePage = ({
               </Select>
             </div>
             <div className="space-y-1">
+              <Label>{t("home.householdMapMarkerColorLabel")}</Label>
+              <Input
+                type="color"
+                value={normalizeMarkerColor(editingMarkerDraft?.color)}
+                onChange={(event) =>
+                  setEditingMarkerDraft((current) =>
+                    current
+                      ? {
+                          ...current,
+                          color: normalizeMarkerColor(event.target.value),
+                        }
+                      : current,
+                  )
+                }
+                disabled={editingMarkerSaving}
+                className="h-10 w-16 p-1"
+              />
+            </div>
+            <div className="space-y-1">
               <Label>{t("home.householdMapMarkerTitleLabel")}</Label>
               <Input
                 value={editingMarkerDraft?.title ?? ""}
@@ -10045,7 +10576,9 @@ export const HomePage = ({
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => {
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
                   setEditingMarkerDraft(null);
                   setEditingMarkerError(null);
                 }}

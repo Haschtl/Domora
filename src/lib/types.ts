@@ -27,6 +27,7 @@ export interface HouseholdMapMarkerPoint {
   id: string;
   type: "point";
   icon: HouseholdMapMarkerIcon;
+  color: string;
   title: string;
   description: string;
   image_b64: string | null;
@@ -43,6 +44,7 @@ export interface HouseholdMapMarkerVector {
   id: string;
   type: "vector";
   icon: HouseholdMapMarkerIcon;
+  color: string;
   title: string;
   description: string;
   image_b64: string | null;
@@ -61,6 +63,7 @@ export interface HouseholdMapMarkerCircle {
   id: string;
   type: "circle";
   icon: HouseholdMapMarkerIcon;
+  color: string;
   title: string;
   description: string;
   image_b64: string | null;
@@ -80,6 +83,7 @@ export interface HouseholdMapMarkerRectangle {
   id: string;
   type: "rectangle";
   icon: HouseholdMapMarkerIcon;
+  color: string;
   title: string;
   description: string;
   image_b64: string | null;
@@ -244,6 +248,7 @@ export interface BucketItem {
   household_id: string;
   title: string;
   description_markdown: string;
+  address: string;
   suggested_dates: string[];
   votes_by_date: Record<string, string[]>;
   done: boolean;

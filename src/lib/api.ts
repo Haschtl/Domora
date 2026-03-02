@@ -52,7 +52,7 @@ const SELECT_SHOPPING_ITEM_FIELDS =
 const SELECT_SHOPPING_COMPLETION_FIELDS =
   "id,shopping_item_id,household_id,title_snapshot,tags_snapshot,completed_by,completed_at";
 const SELECT_BUCKET_ITEM_FIELDS =
-  "id,household_id,title,description_markdown,suggested_dates,done,done_at,done_by,created_by,created_at";
+  "id,household_id,title,description_markdown,address,suggested_dates,done,done_at,done_by,created_by,created_at";
 const SELECT_BUCKET_ITEM_VOTE_FIELDS = "bucket_item_id,household_id,suggested_date,user_id,created_at";
 const SELECT_TASK_FIELDS =
   "id,household_id,title,description,current_state_image_url,target_state_image_url,start_date,due_at,cron_pattern,frequency_days,effort_pimpers,grace_minutes,delay_penalty_per_day,prioritize_low_pimpers,assignee_fairness_mode,is_active,done,done_at,done_by,assignee_id,ignore_delay_penalty_once,created_by,created_at";
@@ -118,6 +118,11 @@ const householdMapMarkerIconSchema = z.enum([
   "parking",
   "transit"
 ]);
+const markerColorSchema = z
+  .string()
+  .trim()
+  .regex(/^#[0-9A-Fa-f]{6}$/)
+  .default("#0f766e");
 const markerImageB64Schema = z
   .string()
   .regex(/^data:image\/[A-Za-z0-9.+-]+;base64,[A-Za-z0-9+/=]+$/)
@@ -130,6 +135,7 @@ const householdMapMarkerPointSchema = z.object({
   id: z.string().min(1).max(64),
   type: z.literal("point"),
   icon: householdMapMarkerIconSchema,
+  color: markerColorSchema,
   title: z.string().trim().min(1).max(120),
   description: z.string().trim().max(600).default(""),
   image_b64: markerImageB64Schema.transform((value) => value ?? null),
@@ -145,6 +151,7 @@ const householdMapMarkerVectorSchema = z.object({
   id: z.string().min(1).max(64),
   type: z.literal("vector"),
   icon: householdMapMarkerIconSchema,
+  color: markerColorSchema,
   title: z.string().trim().min(1).max(120),
   description: z.string().trim().max(600).default(""),
   image_b64: markerImageB64Schema.transform((value) => value ?? null),
@@ -166,6 +173,7 @@ const householdMapMarkerCircleSchema = z.object({
   id: z.string().min(1).max(64),
   type: z.literal("circle"),
   icon: householdMapMarkerIconSchema,
+  color: markerColorSchema,
   title: z.string().trim().min(1).max(120),
   description: z.string().trim().max(600).default(""),
   image_b64: markerImageB64Schema.transform((value) => value ?? null),
@@ -185,6 +193,7 @@ const householdMapMarkerRectangleSchema = z
     id: z.string().min(1).max(64),
     type: z.literal("rectangle"),
     icon: householdMapMarkerIconSchema,
+    color: markerColorSchema,
     title: z.string().trim().min(1).max(120),
     description: z.string().trim().max(600).default(""),
     image_b64: markerImageB64Schema.transform((value) => value ?? null),
@@ -216,6 +225,11 @@ const householdMapMarkerSchema = z.preprocess((raw) => {
     normalized.image_b64 = normalized.image_url;
   }
   if (typeof normalized.poi_ref !== "string") normalized.poi_ref = null;
+  if (typeof normalized.color !== "string" || !/^#[0-9A-Fa-f]{6}$/.test(normalized.color.trim())) {
+    normalized.color = "#0f766e";
+  } else {
+    normalized.color = normalized.color.trim();
+  }
   if (typeof normalized.created_at !== "string") normalized.created_at = new Date().toISOString();
   if (typeof normalized.last_edited_at !== "string") normalized.last_edited_at = normalized.created_at;
   if (typeof normalized.created_by !== "string") normalized.created_by = null;
@@ -307,6 +321,7 @@ const bucketItemSchema = z.object({
   household_id: z.string().uuid(),
   title: z.string().min(1),
   description_markdown: z.string().nullable().optional().transform((value) => value ?? ""),
+  address: z.string().nullable().optional().transform((value) => (value ?? "").trim()),
   suggested_dates: z.array(z.string().min(1)).nullable().optional().transform((value) => value ?? []),
   done: z.coerce.boolean(),
   done_at: z.string().nullable().optional().transform((value) => value ?? null),
@@ -512,6 +527,7 @@ const normalizeBucketItem = (row: Record<string, unknown>): BucketItem => ({
     return {
       ...parsed,
       description_markdown: parsed.description_markdown ?? "",
+      address: parsed.address ?? "",
       suggested_dates: [...new Set(parsed.suggested_dates)].sort(),
       votes_by_date: {} as Record<string, string[]>
     };
@@ -1735,7 +1751,7 @@ export const getBucketItems = async (householdId: string): Promise<BucketItem[]>
 
 export const addBucketItem = async (
   householdId: string,
-  input: { title: string; descriptionMarkdown: string; suggestedDates: string[] },
+  input: { title: string; descriptionMarkdown: string; address: string; suggestedDates: string[] },
   userId: string
 ): Promise<BucketItem> => {
   const parsedInput = z
@@ -1743,6 +1759,7 @@ export const addBucketItem = async (
       householdId: z.string().uuid(),
       title: z.string().trim().min(1).max(200),
       descriptionMarkdown: z.string().max(20_000),
+      address: z.string().trim().max(300),
       suggestedDates: z
         .array(z.string().regex(/^\d{4}-\d{2}-\d{2}$/))
         .max(15),
@@ -1752,6 +1769,7 @@ export const addBucketItem = async (
       householdId,
       title: input.title,
       descriptionMarkdown: input.descriptionMarkdown,
+      address: input.address,
       suggestedDates: input.suggestedDates,
       userId
     });
@@ -1763,6 +1781,7 @@ export const addBucketItem = async (
       household_id: parsedInput.householdId,
       title: parsedInput.title,
       description_markdown: parsedInput.descriptionMarkdown,
+      address: parsedInput.address,
       suggested_dates: [...new Set(parsedInput.suggestedDates)].sort(),
       done: false,
       created_by: parsedInput.userId
@@ -1776,13 +1795,14 @@ export const addBucketItem = async (
 
 export const updateBucketItem = async (
   id: string,
-  input: { title: string; descriptionMarkdown: string; suggestedDates: string[] }
+  input: { title: string; descriptionMarkdown: string; address: string; suggestedDates: string[] }
 ): Promise<void> => {
   const parsed = z
     .object({
       id: z.string().uuid(),
       title: z.string().trim().min(1).max(200),
       descriptionMarkdown: z.string().max(20_000),
+      address: z.string().trim().max(300),
       suggestedDates: z
         .array(z.string().regex(/^\d{4}-\d{2}-\d{2}$/))
         .max(15)
@@ -1791,6 +1811,7 @@ export const updateBucketItem = async (
       id,
       title: input.title,
       descriptionMarkdown: input.descriptionMarkdown,
+      address: input.address,
       suggestedDates: input.suggestedDates
     });
 
@@ -1799,6 +1820,7 @@ export const updateBucketItem = async (
     .update({
       title: parsed.title,
       description_markdown: parsed.descriptionMarkdown,
+      address: parsed.address,
       suggested_dates: [...new Set(parsed.suggestedDates)].sort()
     })
     .eq("id", parsed.id);

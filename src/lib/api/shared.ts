@@ -59,6 +59,11 @@ const householdMapMarkerIconSchema = z.enum([
   "parking",
   "transit"
 ]);
+const markerColorSchema = z
+  .string()
+  .trim()
+  .regex(/^#[0-9A-Fa-f]{6}$/)
+  .default("#0f766e");
 const markerImageB64Schema = z
   .string()
   .regex(/^data:image\/[A-Za-z0-9.+-]+;base64,[A-Za-z0-9+/=]+$/)
@@ -71,6 +76,7 @@ const householdMapMarkerPointSchema = z.object({
   id: z.string().min(1).max(64),
   type: z.literal("point"),
   icon: householdMapMarkerIconSchema,
+  color: markerColorSchema,
   title: z.string().trim().min(1).max(120),
   description: z.string().trim().max(600).default(""),
   image_b64: markerImageB64Schema.transform((value) => value ?? null),
@@ -86,6 +92,7 @@ const householdMapMarkerVectorSchema = z.object({
   id: z.string().min(1).max(64),
   type: z.literal("vector"),
   icon: householdMapMarkerIconSchema,
+  color: markerColorSchema,
   title: z.string().trim().min(1).max(120),
   description: z.string().trim().max(600).default(""),
   image_b64: markerImageB64Schema.transform((value) => value ?? null),
@@ -107,6 +114,7 @@ const householdMapMarkerCircleSchema = z.object({
   id: z.string().min(1).max(64),
   type: z.literal("circle"),
   icon: householdMapMarkerIconSchema,
+  color: markerColorSchema,
   title: z.string().trim().min(1).max(120),
   description: z.string().trim().max(600).default(""),
   image_b64: markerImageB64Schema.transform((value) => value ?? null),
@@ -126,6 +134,7 @@ const householdMapMarkerRectangleSchema = z
     id: z.string().min(1).max(64),
     type: z.literal("rectangle"),
     icon: householdMapMarkerIconSchema,
+    color: markerColorSchema,
     title: z.string().trim().min(1).max(120),
     description: z.string().trim().max(600).default(""),
     image_b64: markerImageB64Schema.transform((value) => value ?? null),
@@ -157,6 +166,11 @@ const householdMapMarkerSchema = z.preprocess((raw) => {
     normalized.image_b64 = normalized.image_url;
   }
   if (typeof normalized.poi_ref !== "string") normalized.poi_ref = null;
+  if (typeof normalized.color !== "string" || !/^#[0-9A-Fa-f]{6}$/.test(normalized.color.trim())) {
+    normalized.color = "#0f766e";
+  } else {
+    normalized.color = normalized.color.trim();
+  }
   if (typeof normalized.created_at !== "string") normalized.created_at = new Date().toISOString();
   if (typeof normalized.last_edited_at !== "string") normalized.last_edited_at = normalized.created_at;
   if (typeof normalized.created_by !== "string") normalized.created_by = null;

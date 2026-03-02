@@ -8,5 +8,5 @@ TEsten:
 
 
 bei routenplanung-popup start und ende anzeigen
-map-settings (verkehrsmittel, layers, filter) in localstorage speichern
 
+POI ist immeronch weg
