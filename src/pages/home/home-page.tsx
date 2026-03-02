@@ -2349,7 +2349,7 @@ const ManualMarkerPopup = memo(({
   return (
     <Popup
       eventHandlers={{
-        open: () => setPopupHydrated(true)
+        add: () => setPopupHydrated(true)
       }}
     >
       {!popupHydrated ? (
