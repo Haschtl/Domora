@@ -3489,7 +3489,7 @@ export const getHouseholdRoute = async (input: {
   fromLon: number;
   toLat: number;
   toLon: number;
-  maxMinutes: number;
+  maxMinutes?: number | null;
   travelMode: ReachabilityTravelMode;
 }): Promise<{ geojson: RouteGeoJson }> => {
   const parsedInput = z.object({
@@ -3498,7 +3498,7 @@ export const getHouseholdRoute = async (input: {
     fromLon: z.coerce.number().finite().min(-180).max(180),
     toLat: z.coerce.number().finite().min(-90).max(90),
     toLon: z.coerce.number().finite().min(-180).max(180),
-    maxMinutes: z.coerce.number().int().min(1).max(240),
+    maxMinutes: z.coerce.number().int().min(1).max(240).nullable().optional(),
     travelMode: reachabilityTravelModeSchema
   }).parse(input);
 
@@ -3509,7 +3509,9 @@ export const getHouseholdRoute = async (input: {
       fromLon: parsedInput.fromLon,
       toLat: parsedInput.toLat,
       toLon: parsedInput.toLon,
-      maxMinutes: parsedInput.maxMinutes,
+      ...(parsedInput.maxMinutes === null || typeof parsedInput.maxMinutes === "undefined"
+        ? {}
+        : { maxMinutes: parsedInput.maxMinutes }),
       travelMode: parsedInput.travelMode
     }
   });

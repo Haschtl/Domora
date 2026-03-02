@@ -48,6 +48,7 @@ import {
   CloudSnow,
   CloudSun,
   CloudLightning,
+  ExternalLink,
   Flame,
   House,
   Loader2,
@@ -254,9 +255,9 @@ type MapWeatherLayerToggles = {
   lightning: boolean;
 };
 type ManualMarkerFilterMode = "all" | "mine" | "member" | "none";
-type MapMeasureMode = "distance" | "area";
+type MapMeasureMode = "smart";
 type MapMeasureResult = {
-  mode: MapMeasureMode;
+  mode: "distance" | "area";
   distanceMeters?: number;
   areaSqm?: number;
   anchor?: [number, number];
@@ -375,6 +376,7 @@ const MANUAL_MARKER_ICON_OPTIONS: Array<{ id: HouseholdMapMarkerIcon; labelKey: 
 const LIVE_LOCATION_DURATION_OPTIONS = [5, 15, 30, 60] as const;
 const REACHABILITY_MINUTES_DEFAULT = 20;
 const ROUTE_MAX_MINUTES_DEFAULT = 45;
+const MAP_SETTINGS_STORAGE_KEY_PREFIX = "domora:home-map-settings:v1";
 const REACHABILITY_OPTIONS: Array<{ id: MapReachabilityMode; labelKey: string }> = [
   { id: "walk", labelKey: "home.householdMapReachabilityModeWalk" },
   { id: "bike", labelKey: "home.householdMapReachabilityModeBike" },
@@ -425,6 +427,40 @@ const MAP_STYLE_OPTIONS: MapStyleOption[] = [
     maxZoom: 20
   }
 ];
+
+type PersistedMapSettings = {
+  mapTravelMode: MapReachabilityMode;
+  mapWeatherLayers: MapWeatherLayerToggles;
+  manualMarkerFilterMode: ManualMarkerFilterMode;
+  manualMarkerFilterMemberId: string;
+  poiCategoriesEnabled: Record<PoiCategory, boolean>;
+};
+
+const canUseLocalStorage = () => typeof window !== "undefined" && "localStorage" in window;
+
+const getMapSettingsStorageKey = (householdId: string) =>
+  `${MAP_SETTINGS_STORAGE_KEY_PREFIX}:${householdId}`;
+
+const readPersistedMapSettings = (householdId: string): Partial<PersistedMapSettings> | null => {
+  if (!canUseLocalStorage()) return null;
+  try {
+    const raw = window.localStorage.getItem(getMapSettingsStorageKey(householdId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<PersistedMapSettings>;
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
+};
+
+const writePersistedMapSettings = (householdId: string, value: PersistedMapSettings) => {
+  if (!canUseLocalStorage()) return;
+  try {
+    window.localStorage.setItem(getMapSettingsStorageKey(householdId), JSON.stringify(value));
+  } catch {
+    // ignore quota/storage errors
+  }
+};
 const widgetTokenFromKey = (key: LandingWidgetKey) => `{{widget:${key}}}`;
 
 let leafletMarkerConfigured = false;
@@ -798,7 +834,7 @@ const GeomanMeasureBridge = ({
       return;
     }
 
-    mapWithPm.pm.enableDraw(mode === "distance" ? "Line" : "Polygon", {
+    mapWithPm.pm.enableDraw("Line", {
       continueDrawing: false,
       finishOn: "dblclick",
       templineStyle: { color: "#0f766e", dashArray: [5, 5] },
@@ -826,34 +862,56 @@ const GeomanMeasureBridge = ({
       }
       lastLayerRef.current = createdLayer;
 
-      if (currentMode === "distance" && createdLayer instanceof L.Polyline) {
+      if (currentMode === "smart" && createdLayer instanceof L.Polyline) {
         const points = toLinearLatLngs(createdLayer.getLatLngs() as L.LatLng[] | L.LatLng[][]);
-        const lastPoint = points.length > 0 ? points[points.length - 1] : undefined;
-        onMeasured({
-          mode: "distance",
-          distanceMeters: calculatePolylineDistanceMeters(map, points),
-          anchor: lastPoint ? [lastPoint.lat, lastPoint.lng] : undefined
-        });
-      }
+        const first = points.length > 0 ? points[0] : undefined;
+        const last = points.length > 0 ? points[points.length - 1] : undefined;
+        const hasRepeatedClosingPoint =
+          Boolean(first && last && first.lat === last.lat && first.lng === last.lng);
+        const closeDistanceMeters =
+          first && last ? map.distance(first, last) : Number.POSITIVE_INFINITY;
+        const closeDistancePixels =
+          first && last
+            ? map.latLngToContainerPoint(first).distanceTo(map.latLngToContainerPoint(last))
+            : Number.POSITIVE_INFINITY;
+        const isClosedShape =
+          Boolean(first && last && points.length >= 3)
+          && Boolean(
+            hasRepeatedClosingPoint
+            || closeDistanceMeters <= 25
+            || closeDistancePixels <= 18
+          );
 
-      if (currentMode === "area" && createdLayer instanceof L.Polygon) {
-        const polygonLatLngs = createdLayer.getLatLngs();
-        const firstRing = Array.isArray(polygonLatLngs[0]) ? (polygonLatLngs[0] as L.LatLng[]) : [];
-        let anchorLatLng: L.LatLng | undefined;
-        if (firstRing.length > 0) {
-          const last = firstRing.length > 0 ? firstRing[firstRing.length - 1] : undefined;
-          const first = firstRing[0];
-          if (last && first && firstRing.length > 1 && last.lat === first.lat && last.lng === first.lng) {
-            anchorLatLng = firstRing[firstRing.length - 2] ?? last;
-          } else {
-            anchorLatLng = last;
-          }
+        if (isClosedShape) {
+          const polygonPoints = hasRepeatedClosingPoint ? points.slice(0, -1) : points;
+          const polygonLayer = L.polygon(polygonPoints, {
+            color: "#0f766e",
+            weight: 4,
+            fillColor: "#14b8a6",
+            fillOpacity: 0.18
+          }) as DomoraLeafletLayer;
+          polygonLayer._domoraMeasure = true;
+          map.removeLayer(createdLayer);
+          polygonLayer.addTo(map);
+          lastLayerRef.current = polygonLayer;
+
+          const anchorLatLng =
+            polygonPoints.length > 0
+              ? polygonPoints[polygonPoints.length - 1]
+              : undefined;
+          onMeasured({
+            mode: "area",
+            areaSqm: calculatePolygonAreaSqm(polygonPoints),
+            anchor: anchorLatLng ? [anchorLatLng.lat, anchorLatLng.lng] : undefined
+          });
+        } else {
+          const lastPoint = points.length > 0 ? points[points.length - 1] : undefined;
+          onMeasured({
+            mode: "distance",
+            distanceMeters: calculatePolylineDistanceMeters(map, points),
+            anchor: lastPoint ? [lastPoint.lat, lastPoint.lng] : undefined
+          });
         }
-        onMeasured({
-          mode: "area",
-          areaSqm: calculatePolygonAreaSqm(firstRing),
-          anchor: anchorLatLng ? [anchorLatLng.lat, anchorLatLng.lng] : undefined
-        });
       }
 
       onModeChange(null);
@@ -957,6 +1015,21 @@ const MapSearchZoomBridge = ({
   return null;
 };
 
+const MapClosePopupBridge = ({
+  requestToken
+}: {
+  requestToken: number;
+}) => {
+  const map = useMap();
+
+  useEffect(() => {
+    if (requestToken <= 0) return;
+    map.closePopup();
+  }, [map, requestToken]);
+
+  return null;
+};
+
 const ReachabilityLayerBridge = ({
   geojson,
   color
@@ -1018,19 +1091,23 @@ const ReachabilityFitBoundsBridge = ({
 
 const RouteLayerBridge = ({
   geojson,
-  color
+  color,
+  tooltipHtml,
+  onSaveRoute,
+  openTooltipToken
 }: {
   geojson: RouteGeoJson | null;
   color: string;
+  tooltipHtml?: string | null;
+  onSaveRoute?: (() => void) | null;
+  openTooltipToken?: number;
 }) => {
   const map = useMap();
   const layerRef = useRef<L.GeoJSON | null>(null);
-  const infoMarkerRef = useRef<L.Marker | null>(null);
 
-  const getRouteDisplayInfo = (value: RouteGeoJson) => {
+  const getRouteDisplayLabel = (value: RouteGeoJson) => {
     let travelTimeSeconds: number | null = null;
     let lengthMeters: number | null = null;
-    let anchor: [number, number] | null = null;
     let fallbackCoords: Array<[number, number]> = [];
 
     for (const feature of value.features) {
@@ -1041,11 +1118,6 @@ const RouteLayerBridge = ({
           .filter(([lon, lat]) => Number.isFinite(lat) && Number.isFinite(lon));
         if (normalized.length >= 2) {
           fallbackCoords = normalized;
-          if (!anchor) {
-            const midIndex = Math.floor(normalized.length / 2);
-            const mid = normalized[midIndex]!;
-            anchor = [mid[1], mid[0]];
-          }
         }
       }
       const properties = feature.properties as { travelTime?: unknown; length?: unknown } | undefined;
@@ -1067,8 +1139,6 @@ const RouteLayerBridge = ({
       lengthMeters = sum;
     }
 
-    if (!anchor) return null;
-
     const durationLabel =
       travelTimeSeconds !== null
         ? travelTimeSeconds >= 3600
@@ -1081,20 +1151,15 @@ const RouteLayerBridge = ({
           ? `${(lengthMeters / 1000).toFixed(1)} km`
           : `${Math.round(lengthMeters)} m`
         : null;
-    const label = [durationLabel, distanceLabel].filter((entry): entry is string => Boolean(entry)).join(" · ");
-    if (!label) return null;
 
-    return { anchor, label };
+    const label = [durationLabel, distanceLabel].filter((entry): entry is string => Boolean(entry)).join(" · ");
+    return label || null;
   };
 
   useEffect(() => {
     if (layerRef.current) {
       map.removeLayer(layerRef.current);
       layerRef.current = null;
-    }
-    if (infoMarkerRef.current) {
-      map.removeLayer(infoMarkerRef.current);
-      infoMarkerRef.current = null;
     }
     if (!geojson) return;
     const layer = L.geoJSON(geojson as unknown as GeoJSON.GeoJsonObject, {
@@ -1103,36 +1168,69 @@ const RouteLayerBridge = ({
         weight: 4,
         opacity: 0.95
       }),
-      interactive: false
+      interactive: true
     });
+    const routeLabel = getRouteDisplayLabel(geojson);
+    const tooltipContent = tooltipHtml ?? routeLabel;
+    const pathLayers: L.Path[] = [];
+    if (tooltipContent) {
+      layer.eachLayer((entry) => {
+        if (!(entry instanceof L.Path)) return;
+        pathLayers.push(entry);
+        entry.bindTooltip(tooltipContent, {
+          direction: "top",
+          sticky: true,
+          opacity: 0.95,
+          interactive: true,
+          className: "domora-map-route-line-tooltip"
+        });
+        const handleTooltipOpen = (evt: { tooltip?: L.Tooltip }) => {
+          const tooltipElement = evt.tooltip?.getElement();
+          if (!tooltipElement) return;
+          const saveButton = tooltipElement.querySelector<HTMLButtonElement>(".domora-route-tooltip-save");
+          if (!saveButton) return;
+          const saveHandler = (domEvent: MouseEvent | PointerEvent | TouchEvent) => {
+            domEvent.preventDefault();
+            domEvent.stopPropagation();
+            if (saveButton.disabled) return;
+            onSaveRoute?.();
+          };
+          saveButton.onclick = saveHandler as (this: GlobalEventHandlers, ev: MouseEvent) => unknown;
+          saveButton.onpointerdown = saveHandler as (this: GlobalEventHandlers, ev: PointerEvent) => unknown;
+          saveButton.onmousedown = saveHandler as (this: GlobalEventHandlers, ev: MouseEvent) => unknown;
+          saveButton.ontouchstart = saveHandler as (this: GlobalEventHandlers, ev: TouchEvent) => unknown;
+        };
+        const handleTooltipClose = (evt: { tooltip?: L.Tooltip }) => {
+          const tooltipElement = evt.tooltip?.getElement();
+          if (!tooltipElement) return;
+          const saveButton = tooltipElement.querySelector<HTMLButtonElement>(".domora-route-tooltip-save");
+          if (!saveButton) return;
+          saveButton.onclick = null;
+          saveButton.onpointerdown = null;
+          saveButton.onmousedown = null;
+          saveButton.ontouchstart = null;
+        };
+        entry.on("tooltipopen", handleTooltipOpen as L.LeafletEventHandlerFn);
+        entry.on("tooltipclose", handleTooltipClose as L.LeafletEventHandlerFn);
+      });
+    }
     layer.addTo(map);
     layerRef.current = layer;
-
-    const routeInfo = getRouteDisplayInfo(geojson);
-    if (routeInfo) {
-      const marker = L.marker(routeInfo.anchor, {
-        interactive: false,
-        icon: L.divIcon({
-          className: "domora-route-inline-info-icon",
-          html: `<div class="domora-route-inline-info">${routeInfo.label}</div>`,
-          iconSize: [0, 0],
-          iconAnchor: [0, 0]
-        })
-      });
-      marker.addTo(map);
-      infoMarkerRef.current = marker;
+    if (tooltipContent && (openTooltipToken ?? 0) > 0) {
+      const firstPath = pathLayers[0];
+      if (firstPath) {
+        window.setTimeout(() => {
+          firstPath.openTooltip();
+        }, 0);
+      }
     }
 
     return () => {
       if (!layerRef.current) return;
       map.removeLayer(layerRef.current);
       layerRef.current = null;
-      if (infoMarkerRef.current) {
-        map.removeLayer(infoMarkerRef.current);
-        infoMarkerRef.current = null;
-      }
     };
-  }, [color, geojson, map]);
+  }, [color, geojson, map, onSaveRoute, openTooltipToken, tooltipHtml]);
 
   return null;
 };
@@ -1186,6 +1284,34 @@ const RouteTargetPickBridge = ({
       }
     };
   }, [enabled, map]);
+
+  return null;
+};
+
+const QuickPinDropBridge = ({
+  enabled,
+  onDrop
+}: {
+  enabled: boolean;
+  onDrop: (lat: number, lon: number) => void;
+}) => {
+  const isCoarsePointer = useCallback(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return false;
+    return window.matchMedia("(pointer: coarse)").matches;
+  }, []);
+
+  useMapEvents({
+    click: (event) => {
+      if (!enabled) return;
+      if (isCoarsePointer()) return;
+      onDrop(event.latlng.lat, event.latlng.lng);
+    },
+    contextmenu: (event) => {
+      if (!enabled) return;
+      event.originalEvent?.preventDefault?.();
+      onDrop(event.latlng.lat, event.latlng.lng);
+    }
+  });
 
   return null;
 };
@@ -1576,6 +1702,13 @@ const getManualMarkerIcon = (icon: HouseholdMapMarkerIcon) => {
 };
 
 const escapeHtmlAttr = (value: string) => value.replace(/"/g, "&quot;");
+const escapeHtmlText = (value: string) =>
+  value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 const liveLocationUserIconCache = new Map<string, L.DivIcon>();
 const getLiveLocationUserIcon = (avatarUrl: string) => {
   const cacheKey = avatarUrl;
@@ -1687,6 +1820,179 @@ const getRoutePointMarkerIcon = (color: string) => {
   return divIcon;
 };
 
+type RouteSummary = {
+  anchor: [number, number];
+  linePoints: Array<{ lat: number; lon: number }>;
+  durationSeconds: number | null;
+  distanceMeters: number | null;
+  travelType: string | null;
+  segmentCount: number;
+};
+
+type ReachabilitySummary = {
+  anchor: [number, number];
+  boundaryPoints: Array<{ lat: number; lon: number }>;
+  areaSqm: number | null;
+  maxRadiusMeters: number | null;
+  polygonCount: number;
+  pointCount: number;
+};
+
+const extractReachabilitySummary = (geojson: ReachabilityGeoJson | null): ReachabilitySummary | null => {
+  if (!geojson) return null;
+
+  const polygons: Array<Array<{ lat: number; lon: number }>> = [];
+
+  for (const feature of geojson.features) {
+    if (feature.geometry.type === "Polygon") {
+      const rings = feature.geometry.coordinates as number[][][];
+      const outerRing = rings[0] ?? [];
+      const points = outerRing
+        .map((pair) => ({ lon: Number(pair[0]), lat: Number(pair[1]) }))
+        .filter((point) => Number.isFinite(point.lat) && Number.isFinite(point.lon));
+      if (points.length >= 3) {
+        polygons.push(points);
+      }
+    }
+    if (feature.geometry.type === "MultiPolygon") {
+      const polyList = feature.geometry.coordinates as number[][][][];
+      for (const polygon of polyList) {
+        const outerRing = polygon[0] ?? [];
+        const points = outerRing
+          .map((pair) => ({ lon: Number(pair[0]), lat: Number(pair[1]) }))
+          .filter((point) => Number.isFinite(point.lat) && Number.isFinite(point.lon));
+        if (points.length >= 3) {
+          polygons.push(points);
+        }
+      }
+    }
+  }
+
+  if (polygons.length === 0) return null;
+
+  let largestPolygon: Array<{ lat: number; lon: number }> | null = null;
+  let largestAreaSqm = -1;
+  let totalAreaSqm = 0;
+  let pointCount = 0;
+
+  for (const polygon of polygons) {
+    pointCount += polygon.length;
+    const latLngs = polygon.map((point) => L.latLng(point.lat, point.lon));
+    const area = calculatePolygonAreaSqm(latLngs);
+    totalAreaSqm += area;
+    if (area > largestAreaSqm) {
+      largestAreaSqm = area;
+      largestPolygon = polygon;
+    }
+  }
+
+  if (!largestPolygon || largestPolygon.length < 3) return null;
+
+  const sum = largestPolygon.reduce(
+    (acc, point) => ({
+      lat: acc.lat + point.lat,
+      lon: acc.lon + point.lon
+    }),
+    { lat: 0, lon: 0 }
+  );
+  const anchor: [number, number] = [sum.lat / largestPolygon.length, sum.lon / largestPolygon.length];
+
+  const anchorLatLng = L.latLng(anchor[0], anchor[1]);
+  let maxRadiusMeters = 0;
+  for (const point of largestPolygon) {
+    const distance = anchorLatLng.distanceTo(L.latLng(point.lat, point.lon));
+    if (distance > maxRadiusMeters) {
+      maxRadiusMeters = distance;
+    }
+  }
+
+  return {
+    anchor,
+    boundaryPoints: largestPolygon,
+    areaSqm: totalAreaSqm > 0 ? totalAreaSqm : null,
+    maxRadiusMeters: maxRadiusMeters > 0 ? maxRadiusMeters : null,
+    polygonCount: polygons.length,
+    pointCount
+  };
+};
+
+const extractRouteSummary = (geojson: RouteGeoJson | null): RouteSummary | null => {
+  if (!geojson) return null;
+
+  let anchor: [number, number] | null = null;
+  const linePoints: Array<{ lat: number; lon: number }> = [];
+  let durationSeconds: number | null = null;
+  let distanceMeters: number | null = null;
+  let travelType: string | null = null;
+  let segmentCount = 0;
+
+  for (const feature of geojson.features) {
+    const properties = feature.properties as { travelTime?: unknown; length?: unknown; travelType?: unknown } | undefined;
+    if (durationSeconds === null && properties && Number.isFinite(Number(properties.travelTime))) {
+      durationSeconds = Number(properties.travelTime);
+    }
+    if (distanceMeters === null && properties && Number.isFinite(Number(properties.length))) {
+      distanceMeters = Number(properties.length);
+    }
+    if (travelType === null && properties && typeof properties.travelType === "string") {
+      travelType = properties.travelType;
+    }
+
+    if (feature.geometry.type === "LineString") {
+      const coords = feature.geometry.coordinates as number[][];
+      if (coords.length >= 2) {
+        segmentCount += coords.length - 1;
+      }
+      for (const pair of coords) {
+        const lon = Number(pair[0]);
+        const lat = Number(pair[1]);
+        if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+        linePoints.push({ lat, lon });
+      }
+    }
+    if (feature.geometry.type === "MultiLineString") {
+      const lines = feature.geometry.coordinates as number[][][];
+      for (const line of lines) {
+        if (line.length >= 2) {
+          segmentCount += line.length - 1;
+        }
+        for (const pair of line) {
+          const lon = Number(pair[0]);
+          const lat = Number(pair[1]);
+          if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+          linePoints.push({ lat, lon });
+        }
+      }
+    }
+  }
+
+  if (linePoints.length >= 2 && distanceMeters === null) {
+    let sum = 0;
+    for (let index = 1; index < linePoints.length; index += 1) {
+      const prev = linePoints[index - 1]!;
+      const next = linePoints[index]!;
+      sum += L.latLng(prev.lat, prev.lon).distanceTo(L.latLng(next.lat, next.lon));
+    }
+    distanceMeters = sum;
+  }
+
+  if (linePoints.length > 0) {
+    const midIndex = Math.floor(linePoints.length / 2);
+    const mid = linePoints[midIndex]!;
+    anchor = [mid.lat, mid.lon];
+  }
+  if (!anchor || linePoints.length < 2) return null;
+
+  return {
+    anchor,
+    linePoints,
+    durationSeconds,
+    distanceMeters,
+    travelType,
+    segmentCount
+  };
+};
+
 const mapMeasureAnchorIcon = L.divIcon({
   className: "domora-measure-anchor-icon",
   html: "",
@@ -1708,6 +2014,21 @@ const getMapStyleIcon = (styleId: MapStyleId) => {
       return <Moon className="h-4 w-4" />;
     default:
       return <MapIcon className="h-4 w-4" />;
+  }
+};
+
+const getTravelModeGlyph = (mode: MapReachabilityMode) => {
+  switch (mode) {
+    case "walk":
+      return "🚶";
+    case "bike":
+      return "🚲";
+    case "car":
+      return "🚗";
+    case "transit":
+      return "🚆";
+    default:
+      return "🧭";
   }
 };
 
@@ -2403,6 +2724,7 @@ export const HomePage = ({
   const [poiOverrideDrafts, setPoiOverrideDrafts] = useState<Record<string, { title: string; description: string }>>({});
   const [poiOverrideSavingId, setPoiOverrideSavingId] = useState<string | null>(null);
   const [poiOverrideError, setPoiOverrideError] = useState<string | null>(null);
+  const [activePoiEditorId, setActivePoiEditorId] = useState<string | null>(null);
   const [editingMarkerDraft, setEditingMarkerDraft] = useState<{
     id: string;
     title: string;
@@ -2417,7 +2739,6 @@ export const HomePage = ({
     warnings: true,
     lightning: false
   });
-  const [mapMeasurePanelOpen, setMapMeasurePanelOpen] = useState(false);
   const [mapMeasureMode, setMapMeasureMode] = useState<MapMeasureMode | null>(null);
   const [mapMeasureResult, setMapMeasureResult] = useState<string | null>(null);
   const [mapMeasureResultAnchor, setMapMeasureResultAnchor] = useState<[number, number] | null>(null);
@@ -2427,25 +2748,33 @@ export const HomePage = ({
     nextMarkers: HouseholdMapMarker[];
     removedMarkers: HouseholdMapMarker[];
   } | null>(null);
-  const [mapReachabilityMode, setMapReachabilityMode] = useState<MapReachabilityMode>("walk");
+  const [mapTravelMode, setMapTravelMode] = useState<MapReachabilityMode>("bike");
   const [mapReachabilityMinutes, setMapReachabilityMinutes] = useState<number>(REACHABILITY_MINUTES_DEFAULT);
   const [mapReachabilityGeoJson, setMapReachabilityGeoJson] = useState<ReachabilityGeoJson | null>(null);
   const [mapReachabilityLoading, setMapReachabilityLoading] = useState(false);
   const [mapReachabilityError, setMapReachabilityError] = useState<string | null>(null);
+  const [mapReachabilitySaveError, setMapReachabilitySaveError] = useState<string | null>(null);
+  const [mapReachabilitySavedAt, setMapReachabilitySavedAt] = useState<number | null>(null);
+  const [mapReachabilitySaving, setMapReachabilitySaving] = useState(false);
   const [mapReachabilityPanelOpen, setMapReachabilityPanelOpen] = useState(false);
   const [mapReachabilityOrigin, setMapReachabilityOrigin] = useState<[number, number] | null>(null);
   const [mapReachabilityOriginManual, setMapReachabilityOriginManual] = useState(false);
   const [mapReachabilityPickOriginActive, setMapReachabilityPickOriginActive] = useState(false);
   const [mapReachabilityFitRequestToken, setMapReachabilityFitRequestToken] = useState(0);
+  const [mapGeomanControlsOpen, setMapGeomanControlsOpen] = useState(false);
   const [mapRoutePanelOpen, setMapRoutePanelOpen] = useState(false);
-  const [mapRouteMode, setMapRouteMode] = useState<MapReachabilityMode>("walk");
-  const [mapRouteMaxMinutes, setMapRouteMaxMinutes] = useState<number>(ROUTE_MAX_MINUTES_DEFAULT);
+  const [mapRouteMaxMinutes, setMapRouteMaxMinutes] = useState<number | null>(ROUTE_MAX_MINUTES_DEFAULT);
   const [mapRouteTarget, setMapRouteTarget] = useState<[number, number] | null>(null);
   const [mapRoutePickTargetActive, setMapRoutePickTargetActive] = useState(false);
   const [mapRouteGeoJson, setMapRouteGeoJson] = useState<RouteGeoJson | null>(null);
   const [mapRouteLoading, setMapRouteLoading] = useState(false);
   const [mapRouteError, setMapRouteError] = useState<string | null>(null);
+  const [mapRouteSaveError, setMapRouteSaveError] = useState<string | null>(null);
+  const [mapRouteSaving, setMapRouteSaving] = useState(false);
   const [mapRouteFitRequestToken, setMapRouteFitRequestToken] = useState(0);
+  const [mapRouteTooltipOpenToken, setMapRouteTooltipOpenToken] = useState(0);
+  const [mapClosePopupRequestToken, setMapClosePopupRequestToken] = useState(0);
+  const [mapQuickPin, setMapQuickPin] = useState<[number, number] | null>(null);
   const [mapSearchQuery, setMapSearchQuery] = useState("");
   const [mapSearchResults, setMapSearchResults] = useState<MapSearchResult[]>([]);
   const [mapSearchLoading, setMapSearchLoading] = useState(false);
@@ -2465,9 +2794,74 @@ export const HomePage = ({
   const mapMarkerSaveTimerRef = useRef<number | null>(null);
   const pendingMapMarkerSaveRef = useRef<HouseholdMapMarker[] | null>(null);
   const locateControlRef = useRef<LocateControlHandle | null>(null);
+  const myLocationRequestTokenRef = useRef(0);
+  const myLocationFallbackTimerRef = useRef<number | null>(null);
+  const quickPinMarkerRef = useRef<L.Marker | null>(null);
   const liveShareHeartbeatTimerRef = useRef<number | null>(null);
   const liveShareExpiresAtRef = useRef<string | null>(null);
   const lastSavedWhiteboardRef = useRef(whiteboardSceneJson);
+
+  useEffect(() => {
+    const persisted = readPersistedMapSettings(household.id);
+    if (!persisted) return;
+
+    if (
+      persisted.mapTravelMode === "walk"
+      || persisted.mapTravelMode === "bike"
+      || persisted.mapTravelMode === "car"
+      || persisted.mapTravelMode === "transit"
+    ) {
+      setMapTravelMode(persisted.mapTravelMode);
+    }
+
+    if (persisted.mapWeatherLayers && typeof persisted.mapWeatherLayers === "object") {
+      setMapWeatherLayers({
+        radar: Boolean(persisted.mapWeatherLayers.radar),
+        warnings: Boolean(persisted.mapWeatherLayers.warnings),
+        lightning: Boolean(persisted.mapWeatherLayers.lightning)
+      });
+    }
+
+    if (
+      persisted.manualMarkerFilterMode === "all"
+      || persisted.manualMarkerFilterMode === "mine"
+      || persisted.manualMarkerFilterMode === "member"
+      || persisted.manualMarkerFilterMode === "none"
+    ) {
+      setManualMarkerFilterMode(persisted.manualMarkerFilterMode);
+    }
+
+    if (typeof persisted.manualMarkerFilterMemberId === "string") {
+      setManualMarkerFilterMemberId(persisted.manualMarkerFilterMemberId);
+    }
+
+    if (persisted.poiCategoriesEnabled && typeof persisted.poiCategoriesEnabled === "object") {
+      setPoiCategoriesEnabled({
+        restaurant: Boolean(persisted.poiCategoriesEnabled.restaurant),
+        shop: Boolean(persisted.poiCategoriesEnabled.shop),
+        supermarket: Boolean(persisted.poiCategoriesEnabled.supermarket),
+        fuel: Boolean(persisted.poiCategoriesEnabled.fuel)
+      });
+    }
+  }, [household.id]);
+
+  useEffect(() => {
+    writePersistedMapSettings(household.id, {
+      mapTravelMode,
+      mapWeatherLayers,
+      manualMarkerFilterMode,
+      manualMarkerFilterMemberId,
+      poiCategoriesEnabled
+    });
+  }, [
+    household.id,
+    manualMarkerFilterMemberId,
+    manualMarkerFilterMode,
+    mapTravelMode,
+    mapWeatherLayers,
+    poiCategoriesEnabled
+  ]);
+
   const isWhiteboardFullscreenOpen = location.pathname === "/home/summary/whiteboard";
   const isMapFullscreenOpen = location.pathname === "/home/summary/map";
   const openWhiteboardFullscreen = useCallback(() => {
@@ -2742,9 +3136,18 @@ export const HomePage = ({
       setMapReachabilityPanelOpen(false);
       setMapRoutePanelOpen(false);
       setMapRoutePickTargetActive(false);
-      setMapMeasurePanelOpen(false);
     }
   }, [isMapFullscreenOpen]);
+
+  useEffect(() => {
+    if (!mapQuickPin) return;
+    const timeout = window.setTimeout(() => {
+      quickPinMarkerRef.current?.openPopup();
+    }, 0);
+    return () => {
+      window.clearTimeout(timeout);
+    };
+  }, [mapQuickPin]);
   const nearbyPoiQuery = useQuery({
     queryKey: [
       "map-poi",
@@ -3838,64 +4241,112 @@ export const HomePage = ({
     locateControlRef.current = control;
   }, []);
 
+  const clearMyLocationFallbackTimer = useCallback(() => {
+    if (myLocationFallbackTimerRef.current !== null) {
+      window.clearTimeout(myLocationFallbackTimerRef.current);
+      myLocationFallbackTimerRef.current = null;
+    }
+  }, []);
+
+  const getLocationErrorMessage = useCallback(
+    (error: GeolocationPositionError | { code?: number } | null | undefined) => {
+      const code = typeof error?.code === "number" ? error.code : 0;
+      if (code === 1) return t("home.householdMapMyLocationDenied");
+      if (code === 3) return t("home.householdMapMyLocationTimeout");
+      return t("home.householdMapMyLocationError");
+    },
+    [t]
+  );
+
   const onLocateControlFound = useCallback((lat: number, lon: number) => {
+    clearMyLocationFallbackTimer();
     setMyLocationCenter([lat, lon]);
     setMyLocationRecenterRequestToken((current) => current + 1);
     setMyLocationError(null);
     setMyLocationStatus("idle");
-  }, []);
+  }, [clearMyLocationFallbackTimer]);
 
   const onLocateControlError = useCallback(() => {
+    clearMyLocationFallbackTimer();
     setMyLocationStatus("error");
     setMyLocationError(t("home.householdMapMyLocationError"));
-  }, [t]);
+  }, [clearMyLocationFallbackTimer, t]);
 
   const requestMyLocation = useCallback(() => {
-    if (locateControlRef.current) {
-      setMyLocationError(null);
-      setMyLocationStatus("loading");
-      locateControlRef.current.start();
-      return;
-    }
-
     if (typeof window === "undefined" || !("geolocation" in navigator)) {
       setMyLocationStatus("error");
       setMyLocationError(t("home.householdMapMyLocationUnavailable"));
       return;
     }
 
+    const requestToken = myLocationRequestTokenRef.current + 1;
+    myLocationRequestTokenRef.current = requestToken;
+    clearMyLocationFallbackTimer();
+
+    const finishWithPosition = (position: GeolocationPosition) => {
+      if (myLocationRequestTokenRef.current !== requestToken) return;
+      const lat = position.coords.latitude;
+      const lon = position.coords.longitude;
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+        setMyLocationStatus("error");
+        setMyLocationError(t("home.householdMapMyLocationError"));
+        return;
+      }
+      clearMyLocationFallbackTimer();
+      setMyLocationCenter([lat, lon]);
+      setMyLocationRecenterRequestToken((current) => current + 1);
+      setMyLocationError(null);
+      setMyLocationStatus("idle");
+    };
+
+    const finishWithError = (error: GeolocationPositionError | { code?: number } | null | undefined) => {
+      if (myLocationRequestTokenRef.current !== requestToken) return;
+      clearMyLocationFallbackTimer();
+      setMyLocationStatus("error");
+      setMyLocationError(getLocationErrorMessage(error));
+    };
+
+    const runLowAccuracyFallback = () => {
+      navigator.geolocation.getCurrentPosition(
+        finishWithPosition,
+        (error) => finishWithError(error),
+        {
+          enableHighAccuracy: false,
+          timeout: 20000,
+          maximumAge: 300000
+        }
+      );
+    };
+
     setMyLocationStatus("loading");
     setMyLocationError(null);
+
+    if (locateControlRef.current) {
+      locateControlRef.current.start();
+      myLocationFallbackTimerRef.current = window.setTimeout(() => {
+        if (myLocationRequestTokenRef.current !== requestToken) return;
+        runLowAccuracyFallback();
+      }, 12000);
+      return;
+    }
+
     navigator.geolocation.getCurrentPosition(
-      (position) => {
-        const lat = position.coords.latitude;
-        const lon = position.coords.longitude;
-        if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
-          setMyLocationStatus("error");
-          setMyLocationError(t("home.householdMapMyLocationError"));
+      finishWithPosition,
+      (error) => {
+        if (myLocationRequestTokenRef.current !== requestToken) return;
+        if (error.code === 3) {
+          runLowAccuracyFallback();
           return;
         }
-        setMyLocationCenter([lat, lon]);
-        setMyLocationRecenterRequestToken((current) => current + 1);
-        setMyLocationStatus("idle");
-      },
-      (error) => {
-        if (error.code === error.PERMISSION_DENIED) {
-          setMyLocationError(t("home.householdMapMyLocationDenied"));
-        } else if (error.code === error.TIMEOUT) {
-          setMyLocationError(t("home.householdMapMyLocationTimeout"));
-        } else {
-          setMyLocationError(t("home.householdMapMyLocationError"));
-        }
-        setMyLocationStatus("error");
+        finishWithError(error);
       },
       {
         enableHighAccuracy: true,
-        timeout: 10000,
+        timeout: 9000,
         maximumAge: 60000
       }
     );
-  }, [t]);
+  }, [clearMyLocationFallbackTimer, getLocationErrorMessage, t]);
 
   const runReachability = useCallback(async () => {
     const origin = mapReachabilityOrigin;
@@ -3911,7 +4362,7 @@ export const HomePage = ({
         lat: origin[0],
         lon: origin[1],
         minutes: mapReachabilityMinutes,
-        travelMode: mapReachabilityMode
+        travelMode: mapTravelMode
       });
       setMapReachabilityGeoJson(response.geojson);
       setMapReachabilityFitRequestToken(Date.now());
@@ -3921,13 +4372,15 @@ export const HomePage = ({
     } finally {
       setMapReachabilityLoading(false);
     }
-  }, [household.id, mapReachabilityMinutes, mapReachabilityMode, mapReachabilityOrigin, t]);
+  }, [household.id, mapReachabilityMinutes, mapReachabilityOrigin, mapTravelMode, t]);
 
   const clearReachability = useCallback(() => {
     setMapReachabilityGeoJson(null);
     setMapReachabilityError(null);
     setMapReachabilityLoading(false);
     setMapReachabilityPickOriginActive(false);
+    setMapReachabilitySaveError(null);
+    setMapReachabilitySavedAt(null);
   }, []);
 
   const mapReachabilityColor = useMemo(() => {
@@ -3965,18 +4418,19 @@ export const HomePage = ({
         fromLon: mapRouteOrigin[1],
         toLat: mapRouteTarget[0],
         toLon: mapRouteTarget[1],
-        maxMinutes: mapRouteMaxMinutes,
-        travelMode: mapRouteMode
+        maxMinutes: mapRouteMaxMinutes ?? undefined,
+        travelMode: mapTravelMode
       });
       setMapRouteGeoJson(response.geojson);
       setMapRouteFitRequestToken(Date.now());
+      setMapRouteTooltipOpenToken((current) => current + 1);
     } catch (error) {
       const message = error instanceof Error ? error.message : t("home.householdMapRouteError");
       setMapRouteError(message);
     } finally {
       setMapRouteLoading(false);
     }
-  }, [household.id, mapRouteMaxMinutes, mapRouteMode, mapRouteOrigin, mapRouteTarget, t]);
+  }, [household.id, mapRouteMaxMinutes, mapRouteOrigin, mapRouteTarget, mapTravelMode, t]);
 
   const clearRoutePlanning = useCallback(() => {
     setMapRouteGeoJson(null);
@@ -3984,8 +4438,148 @@ export const HomePage = ({
     setMapRouteLoading(false);
   }, []);
 
+  const runRouteToTarget = useCallback(
+    async (target: [number, number], originSource: "home" | "me") => {
+      const origin = originSource === "home" ? addressMapCenter : myLocationCenter;
+      if (!origin) {
+        if (originSource === "me") {
+          requestMyLocation();
+        }
+        setMapRouteError(t("home.householdMapRouteNeedsOrigin"));
+        return;
+      }
+
+      setMapRouteTarget(target);
+      setMapRoutePickTargetActive(false);
+
+      try {
+        setMapRouteLoading(true);
+        setMapRouteError(null);
+        const response = await getHouseholdRoute({
+          householdId: household.id,
+          fromLat: origin[0],
+          fromLon: origin[1],
+          toLat: target[0],
+          toLon: target[1],
+          maxMinutes: mapRouteMaxMinutes ?? undefined,
+          travelMode: mapTravelMode
+        });
+        setMapRouteGeoJson(response.geojson);
+        setMapRouteFitRequestToken(Date.now());
+        setMapRouteTooltipOpenToken((current) => current + 1);
+        setMapClosePopupRequestToken((current) => current + 1);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : t("home.householdMapRouteError");
+        setMapRouteError(message);
+      } finally {
+        setMapRouteLoading(false);
+      }
+    },
+    [
+      addressMapCenter,
+      household.id,
+      mapRouteMaxMinutes,
+      mapTravelMode,
+      myLocationCenter,
+      requestMyLocation,
+      t
+    ]
+  );
+
+  const createManualMarkerAtQuickPin = useCallback(async () => {
+    if (!mapQuickPin) return;
+    if (!isHouseholdOwner) return;
+
+    const nowIso = new Date().toISOString();
+    const newMarker: HouseholdMapMarker = {
+      id: createMarkerId(),
+      type: "point",
+      icon: "star",
+      title: t("home.householdMapMarkerPending"),
+      description: "",
+      image_b64: null,
+      poi_ref: null,
+      created_by: userId,
+      created_at: nowIso,
+      last_edited_by: userId,
+      last_edited_at: nowIso,
+      lat: Number(mapQuickPin[0].toFixed(6)),
+      lon: Number(mapQuickPin[1].toFixed(6))
+    };
+
+    try {
+      const nextMarkers = [...household.household_map_markers, newMarker];
+      await onUpdateHousehold(buildHouseholdUpdatePayload(nextMarkers));
+      setMapQuickPin(null);
+      setMapRenderVersion((current) => current + 1);
+    } catch {
+      // keep pin open so user can retry
+    }
+  }, [
+    buildHouseholdUpdatePayload,
+    household.household_map_markers,
+    isHouseholdOwner,
+    mapQuickPin,
+    onUpdateHousehold,
+    t,
+    userId
+  ]);
+  const createManualMarkerAtCoordinates = useCallback(
+    async (
+      lat: number,
+      lon: number,
+      options?: { openEditor?: boolean; initialTitle?: string; initialDescription?: string }
+    ) => {
+      if (!isHouseholdOwner) return;
+      const openEditor = options?.openEditor ?? true;
+      const title = options?.initialTitle?.trim() || t("home.householdMapMarkerPending");
+      const description = options?.initialDescription?.trim() ?? "";
+      const nowIso = new Date().toISOString();
+      const newMarker: HouseholdMapMarker = {
+        id: createMarkerId(),
+        type: "point",
+        icon: "star",
+        title,
+        description,
+        image_b64: null,
+        poi_ref: null,
+        created_by: userId,
+        created_at: nowIso,
+        last_edited_by: userId,
+        last_edited_at: nowIso,
+        lat: Number(lat.toFixed(6)),
+        lon: Number(lon.toFixed(6))
+      };
+
+      try {
+        const nextMarkers = [...household.household_map_markers, newMarker];
+        await onUpdateHousehold(buildHouseholdUpdatePayload(nextMarkers));
+        setMapRenderVersion((current) => current + 1);
+        if (openEditor) {
+          setEditingMarkerError(null);
+          setEditingMarkerDraft({
+            id: newMarker.id,
+            title,
+            description,
+            icon: newMarker.icon
+          });
+        }
+      } catch {
+        // ignore, popup stays open and user can retry
+      }
+    },
+    [
+      buildHouseholdUpdatePayload,
+      household.household_map_markers,
+      isHouseholdOwner,
+      onUpdateHousehold,
+      t,
+      userId
+    ]
+  );
+
   const mapRouteColor = useMemo(() => {
-    switch (mapRouteMode) {
+    switch (mapTravelMode) {
       case "walk":
         return "#16a34a";
       case "bike":
@@ -3997,7 +4591,222 @@ export const HomePage = ({
       default:
         return "#0f766e";
     }
-  }, [mapRouteMode]);
+  }, [mapTravelMode]);
+
+  const mapRouteSummary = useMemo(() => extractRouteSummary(mapRouteGeoJson), [mapRouteGeoJson]);
+  const mapReachabilitySummary = useMemo(
+    () => extractReachabilitySummary(mapReachabilityGeoJson),
+    [mapReachabilityGeoJson]
+  );
+
+  const mapRouteModeLabel = useMemo(
+    () => t((REACHABILITY_OPTIONS.find((option) => option.id === mapTravelMode)?.labelKey ?? "home.householdMapRouteModeLabel") as never),
+    [mapTravelMode, t]
+  );
+  const mapReachabilityAreaLabel = useMemo(() => {
+    const area = mapReachabilitySummary?.areaSqm;
+    if (!area || area <= 0) return t("home.householdMapRouteInfoUnknownValue");
+    if (area >= 1_000_000) {
+      return `${(area / 1_000_000).toFixed(2)} km²`;
+    }
+    return `${Math.round(area)} m²`;
+  }, [mapReachabilitySummary, t]);
+  const mapReachabilityRadiusLabel = useMemo(() => {
+    const radius = mapReachabilitySummary?.maxRadiusMeters;
+    if (!radius || radius <= 0) return t("home.householdMapRouteInfoUnknownValue");
+    if (radius >= 1000) {
+      return `${(radius / 1000).toFixed(1)} km`;
+    }
+    return `${Math.round(radius)} m`;
+  }, [mapReachabilitySummary, t]);
+
+  const mapRouteDurationLabel = useMemo(() => {
+    if (!mapRouteSummary?.durationSeconds || mapRouteSummary.durationSeconds <= 0) {
+      return t("home.householdMapRouteInfoUnknownValue");
+    }
+    if (mapRouteSummary.durationSeconds >= 3600) {
+      return `${(mapRouteSummary.durationSeconds / 3600).toFixed(1)} h`;
+    }
+    return `${Math.max(1, Math.round(mapRouteSummary.durationSeconds / 60))} min`;
+  }, [mapRouteSummary, t]);
+
+  const mapRouteDistanceLabel = useMemo(() => {
+    if (!mapRouteSummary?.distanceMeters || mapRouteSummary.distanceMeters <= 0) {
+      return t("home.householdMapRouteInfoUnknownValue");
+    }
+    if (mapRouteSummary.distanceMeters >= 1000) {
+      return `${(mapRouteSummary.distanceMeters / 1000).toFixed(1)} km`;
+    }
+    return `${Math.round(mapRouteSummary.distanceMeters)} m`;
+  }, [mapRouteSummary, t]);
+
+  const mapRouteAverageSpeedLabel = useMemo(() => {
+    if (!mapRouteSummary?.distanceMeters || !mapRouteSummary.durationSeconds || mapRouteSummary.durationSeconds <= 0) {
+      return t("home.householdMapRouteInfoUnknownValue");
+    }
+    const kmh = (mapRouteSummary.distanceMeters / 1000) / (mapRouteSummary.durationSeconds / 3600);
+    if (!Number.isFinite(kmh) || kmh <= 0) {
+      return t("home.householdMapRouteInfoUnknownValue");
+    }
+    return `${kmh.toFixed(1)} km/h`;
+  }, [mapRouteSummary, t]);
+  const mapRouteLineTooltipHtml = useMemo(() => {
+    if (!mapRouteSummary) return null;
+    const lines = [
+      `${mapRouteDurationLabel} · ${mapRouteDistanceLabel}`,
+      `${t("home.householdMapRouteInfoMode")}: ${mapRouteModeLabel}`,
+      `${t("home.householdMapRouteInfoAverageSpeed")}: ${mapRouteAverageSpeedLabel}`,
+      `${t("home.householdMapRouteInfoSegments")}: ${mapRouteSummary.segmentCount}`,
+      `${t("home.householdMapRouteInfoPoints")}: ${mapRouteSummary.linePoints.length}`
+    ];
+    const saveButtonHtml = `<button type="button" class="domora-route-tooltip-save" ${
+      mapRouteSaving || !isHouseholdOwner ? "disabled" : ""
+    }>${escapeHtmlText(mapRouteSaving ? t("home.householdMapRouteSaving") : t("home.householdMapRouteSave"))}</button>`;
+    return `<div class="domora-route-tooltip-inner">${lines
+      .map((line) => `<div class="domora-route-tooltip-line">${escapeHtmlText(line)}</div>`)
+      .join("")}<div class="domora-route-tooltip-actions">${saveButtonHtml}</div></div>`;
+  }, [
+    isHouseholdOwner,
+    mapRouteAverageSpeedLabel,
+    mapRouteDistanceLabel,
+    mapRouteDurationLabel,
+    mapRouteModeLabel,
+    mapRouteSaving,
+    mapRouteSummary,
+    t
+  ]);
+
+  const saveRouteToHouseholdMarkers = useCallback(async () => {
+    if (!mapRouteSummary) return;
+    if (!isHouseholdOwner) {
+      setMapRouteSaveError(t("home.householdMapRouteSaveOwnerOnly"));
+      return;
+    }
+
+    const nowIso = new Date().toISOString();
+    const routeMarker: HouseholdMapMarker = {
+      id: createMarkerId(),
+      type: "vector",
+      icon: "transit",
+      title: t("home.householdMapRouteSavedDefaultTitle", { mode: mapRouteModeLabel }),
+      description: [
+        `- ${t("home.householdMapRouteInfoMode")}: ${mapRouteModeLabel}`,
+        `- ${t("home.householdMapRouteInfoDuration")}: ${mapRouteDurationLabel}`,
+        `- ${t("home.householdMapRouteInfoDistance")}: ${mapRouteDistanceLabel}`
+      ].join("\n"),
+      image_b64: null,
+      poi_ref: null,
+      created_by: userId,
+      created_at: nowIso,
+      last_edited_by: userId,
+      last_edited_at: nowIso,
+      points: mapRouteSummary.linePoints.map((point) => ({
+        lat: Number(point.lat.toFixed(6)),
+        lon: Number(point.lon.toFixed(6))
+      }))
+    };
+
+    try {
+      setMapRouteSaving(true);
+      setMapRouteSaveError(null);
+      const nextMarkers = [...household.household_map_markers, routeMarker];
+      await onUpdateHousehold(buildHouseholdUpdatePayload(nextMarkers));
+      setMapRouteGeoJson(null);
+      setMapRouteTarget(null);
+      setMapRoutePickTargetActive(false);
+      setMapRoutePanelOpen(false);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t("home.householdMapRouteSaveError");
+      setMapRouteSaveError(message);
+    } finally {
+      setMapRouteSaving(false);
+    }
+  }, [
+    buildHouseholdUpdatePayload,
+    household.household_map_markers,
+    isHouseholdOwner,
+    mapRouteDistanceLabel,
+    mapRouteDurationLabel,
+    mapRouteModeLabel,
+    mapRouteSummary,
+    onUpdateHousehold,
+    t,
+    userId
+  ]);
+
+  const saveReachabilityToHouseholdMarkers = useCallback(async () => {
+    if (!mapReachabilitySummary) return;
+    if (!isHouseholdOwner) {
+      setMapReachabilitySaveError(t("home.householdMapReachabilitySaveOwnerOnly"));
+      return;
+    }
+
+    const nowIso = new Date().toISOString();
+    const closedPoints = [...mapReachabilitySummary.boundaryPoints];
+    const first = closedPoints[0];
+    const last = closedPoints[closedPoints.length - 1];
+    if (first && last && (first.lat !== last.lat || first.lon !== last.lon)) {
+      closedPoints.push(first);
+    }
+
+    const areaMarker: HouseholdMapMarker = {
+      id: createMarkerId(),
+      type: "vector",
+      icon: "transit",
+      title: t("home.householdMapReachabilitySavedDefaultTitle", {
+        mode: mapRouteModeLabel,
+        minutes: mapReachabilityMinutes
+      }),
+      description: [
+        `- ${t("home.householdMapRouteInfoMode")}: ${mapRouteModeLabel}`,
+        `- ${t("home.householdMapReachabilityDurationLabel")}: ${mapReachabilityMinutes} min`,
+        `- ${t("home.householdMapReachabilityInfoArea")}: ${mapReachabilityAreaLabel}`
+      ].join("\n"),
+      image_b64: null,
+      poi_ref: null,
+      created_by: userId,
+      created_at: nowIso,
+      last_edited_by: userId,
+      last_edited_at: nowIso,
+      points: closedPoints.map((point) => ({
+        lat: Number(point.lat.toFixed(6)),
+        lon: Number(point.lon.toFixed(6))
+      }))
+    };
+
+    try {
+      setMapReachabilitySaving(true);
+      setMapReachabilitySaveError(null);
+      const nextMarkers = [...household.household_map_markers, areaMarker];
+      await onUpdateHousehold(buildHouseholdUpdatePayload(nextMarkers));
+      setMapReachabilitySavedAt(Date.now());
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t("home.householdMapReachabilitySaveError");
+      setMapReachabilitySaveError(message);
+    } finally {
+      setMapReachabilitySaving(false);
+    }
+  }, [
+    buildHouseholdUpdatePayload,
+    household.household_map_markers,
+    isHouseholdOwner,
+    mapReachabilityAreaLabel,
+    mapReachabilityMinutes,
+    mapReachabilitySummary,
+    mapRouteModeLabel,
+    onUpdateHousehold,
+    t,
+    userId
+  ]);
+
+  useEffect(() => {
+    setMapRouteSaveError(null);
+  }, [mapRouteGeoJson]);
+
+  useEffect(() => {
+    setMapReachabilitySaveError(null);
+    setMapReachabilitySavedAt(null);
+  }, [mapReachabilityGeoJson]);
 
   const getCurrentPositionOnce = useCallback(
     () =>
@@ -4212,6 +5021,72 @@ export const HomePage = ({
     ),
     [buildExternalMapsHref, t]
   );
+  const renderMapPopupActions = useCallback(
+    ({
+      lat,
+      lon,
+      onEdit,
+      editLabelKey
+    }: {
+      lat: number;
+      lon: number;
+      onEdit?: () => void;
+      editLabelKey?: "home.householdMapMarkerEditAction" | "home.householdMapQuickPinCreate";
+    }) => (
+      <div className="grid grid-cols-2 gap-1.5 pt-1">
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className="h-8 w-full justify-start gap-1.5 px-2 text-xs leading-tight"
+          onClick={() => {
+            onEdit?.();
+          }}
+          disabled={!onEdit}
+        >
+          <Pencil className="h-3.5 w-3.5 shrink-0" />
+          {t(editLabelKey ?? "home.householdMapMarkerEditAction")}
+        </Button>
+        <Button
+          asChild
+          type="button"
+          size="sm"
+          variant="outline"
+          className="h-8 w-full justify-start gap-1.5 px-2 text-xs leading-tight"
+        >
+          <a href={buildExternalMapsHref(lat, lon)} target="_blank" rel="noreferrer noopener">
+            <ExternalLink className="h-3.5 w-3.5 shrink-0" />
+            {t("home.householdMapOpen")}
+          </a>
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className="h-8 w-full justify-start gap-1.5 px-2 text-xs leading-tight"
+          onClick={() => {
+            void runRouteToTarget([lat, lon], "home");
+          }}
+        >
+          <Route className="h-3.5 w-3.5 shrink-0" />
+          {t("home.householdMapRouteFromHome")}
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className="h-8 w-full justify-start gap-1.5 px-2 text-xs leading-tight"
+          onClick={() => {
+            void runRouteToTarget([lat, lon], "me");
+          }}
+        >
+          <Route className="h-3.5 w-3.5 shrink-0" />
+          {t("home.householdMapRouteFromMe")}
+        </Button>
+      </div>
+    ),
+    [buildExternalMapsHref, runRouteToTarget, t]
+  );
   const renderManualHouseholdMarkerPopup = useCallback(
     (marker: HouseholdMapMarker) => {
       const center = getHouseholdMarkerCenter(marker);
@@ -4233,24 +5108,18 @@ export const HomePage = ({
               className="max-h-32 w-full rounded object-cover"
             />
           ) : null}
-          {isHouseholdOwner ? (
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              className="mt-1 h-7"
-              onClick={() => openMarkerEdit(marker)}
-            >
-              <Pencil className="mr-1 h-3.5 w-3.5" />
-              {t("home.householdMapMarkerEditAction")}
-            </Button>
-          ) : null}
-          {center ? renderOpenInMapsButton(center[0], center[1]) : null}
+          {center
+            ? renderMapPopupActions({
+                lat: center[0],
+                lon: center[1],
+                onEdit: isHouseholdOwner ? () => openMarkerEdit(marker) : undefined
+              })
+            : null}
           </div>
         </Popup>
       );
     },
-    [isHouseholdOwner, openMarkerEdit, renderOpenInMapsButton, t]
+    [isHouseholdOwner, openMarkerEdit, renderMapPopupActions, t]
   );
   const editingMarkerMeta = useMemo(
     () =>
@@ -4291,20 +5160,43 @@ export const HomePage = ({
     if (mapRoutePickTargetActive || mapReachabilityPickOriginActive) return;
     setMapReachabilityPanelOpen(false);
     setMapRoutePanelOpen(false);
-    setMapMeasurePanelOpen(false);
   }, [mapReachabilityPickOriginActive, mapRoutePickTargetActive]);
+
+  useEffect(() => {
+    if (!isMapFullscreenOpen) {
+      setMapGeomanControlsOpen(false);
+    }
+  }, [isMapFullscreenOpen]);
   const renderHouseholdMapSurface = useCallback(
     (containerClassName: string, isFullscreen: boolean) => (
       <div className={containerClassName}>
-        <div className={`absolute right-2 z-[1000] flex flex-col gap-2 ${isFullscreen ? "bottom-[7.5rem]" : "bottom-2"}`}>
+        <div className={`absolute right-2 left-auto z-[1000] flex flex-col gap-2 ${isFullscreen ? "bottom-[7.5rem]" : "bottom-2"}`}>
+          {isFullscreen && (mapMeasureMode || mapMeasureResult) ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-8 w-8 border-slate-200/80 bg-white/95 p-0 backdrop-blur dark:border-slate-600/80 dark:bg-slate-900/95"
+              onClick={() => {
+                clearMeasureResultAndLayer();
+              }}
+              aria-label={t("home.householdMapMeasureClear")}
+              title={t("home.householdMapMeasureClear")}
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          ) : null}
           {isFullscreen ? (
             <Button
               type="button"
               size="sm"
-              variant={mapMeasurePanelOpen || mapMeasureMode ? "default" : "outline"}
+              variant={mapMeasureMode ? "default" : "outline"}
               className="h-8 w-8 border-slate-200/80 bg-white/95 p-0 backdrop-blur dark:border-slate-600/80 dark:bg-slate-900/95"
               onClick={() => {
-                setMapMeasurePanelOpen((current) => !current);
+                setMapMeasureResult(null);
+                setMapMeasureResultAnchor(null);
+                setMapMeasureClearToken((current) => current + 1);
+                setMapMeasureMode((current) => (current ? null : "smart"));
               }}
               aria-label={t("home.householdMapMeasureLabel")}
               title={t("home.householdMapMeasureLabel")}
@@ -4341,6 +5233,37 @@ export const HomePage = ({
           </Button>
         </div>
         <div className="absolute right-2 top-2 z-[1000] flex items-center gap-2">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-8 w-8 border-slate-200/80 bg-white/95 p-0 backdrop-blur dark:border-slate-600/80 dark:bg-slate-900/95"
+                aria-label={t("home.householdMapTravelModeLabel")}
+                title={t("home.householdMapTravelModeLabel")}
+              >
+                <span className="text-sm leading-none">{getTravelModeGlyph(mapTravelMode)}</span>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="min-w-[170px]">
+              {REACHABILITY_OPTIONS.map((option) => (
+                <DropdownMenuCheckboxItem
+                  key={`global-travel-mode-${option.id}`}
+                  checked={mapTravelMode === option.id}
+                  onCheckedChange={(checked) => {
+                    if (!checked) return;
+                    setMapTravelMode(option.id);
+                  }}
+                >
+                  <span className="inline-flex items-center gap-2">
+                    <span>{getTravelModeGlyph(option.id)}</span>
+                    <span>{t(option.labelKey as never)}</span>
+                  </span>
+                </DropdownMenuCheckboxItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
@@ -4482,7 +5405,22 @@ export const HomePage = ({
           </DropdownMenu>
         </div>
         {isFullscreen ? (
-          <div className="absolute bottom-[7.5rem] left-2 z-[1000] flex flex-col gap-2">
+          <div className="absolute bottom-[7.5rem] left-2 right-auto z-[1000] flex flex-col gap-2">
+            {isHouseholdOwner ? (
+              <Button
+                type="button"
+                size="sm"
+                variant={mapGeomanControlsOpen ? "default" : "outline"}
+                className="h-8 w-8 border-slate-200/80 bg-white/95 p-0 backdrop-blur dark:border-slate-600/80 dark:bg-slate-900/95"
+                onClick={() => {
+                  setMapGeomanControlsOpen((current) => !current);
+                }}
+                aria-label={t("home.householdMapEditTools")}
+                title={t("home.householdMapEditTools")}
+              >
+                <Pencil className="h-4 w-4" />
+              </Button>
+            ) : null}
             <Button
               type="button"
               size="sm"
@@ -4520,7 +5458,7 @@ export const HomePage = ({
           style={{ height: "100%", width: "100%" }}
         >
           <GeomanEditorBridge
-            enabled={isHouseholdOwner && isFullscreen}
+            enabled={isHouseholdOwner && isFullscreen && mapGeomanControlsOpen}
             suppressCreate={Boolean(mapMeasureMode)}
             userId={userId}
             defaultTitle={t("home.householdMapMarkerPending")}
@@ -4559,11 +5497,27 @@ export const HomePage = ({
               setMapReachabilityError(null);
             }}
           />
+          <QuickPinDropBridge
+            enabled={!mapRoutePickTargetActive && !mapReachabilityPickOriginActive && mapMeasureMode === null}
+            onDrop={(lat, lon) => {
+              setMapQuickPin([lat, lon]);
+              setMapReachabilityOrigin([lat, lon]);
+              setMapReachabilityOriginManual(true);
+              setMapReachabilityPickOriginActive(false);
+              setMapReachabilityError(null);
+            }}
+          />
           <MapOverlayDismissBridge
             enabled={isFullscreen}
             onDismiss={dismissMapPanelsOnMapClick}
           />
-          <RouteLayerBridge geojson={mapRouteGeoJson} color={mapRouteColor} />
+          <RouteLayerBridge
+            geojson={mapRouteGeoJson}
+            color={mapRouteColor}
+            tooltipHtml={mapRouteLineTooltipHtml}
+            onSaveRoute={mapRouteSummary ? () => { void saveRouteToHouseholdMarkers(); } : null}
+            openTooltipToken={mapRouteTooltipOpenToken}
+          />
           <RouteFitBoundsBridge geojson={mapRouteGeoJson} requestToken={mapRouteFitRequestToken} />
           <ReachabilityLayerBridge geojson={mapReachabilityGeoJson} color={mapReachabilityColor} />
           <ReachabilityFitBoundsBridge
@@ -4588,6 +5542,7 @@ export const HomePage = ({
             onBoundsChange={setMapSearchViewportBounds}
           />
           <MapSearchZoomBridge request={mapSearchZoomRequest} />
+          <MapClosePopupBridge requestToken={mapClosePopupRequestToken} />
           <TileLayer
             key={activeMapStyle.id}
             attribution={activeMapStyle.attribution}
@@ -4670,6 +5625,59 @@ export const HomePage = ({
               </Popup>
             </Marker>
           ) : null}
+          {mapQuickPin ? (
+            <Marker
+              key={`quick-pin-${mapQuickPin[0]}-${mapQuickPin[1]}`}
+              position={mapQuickPin}
+              icon={getRoutePointMarkerIcon("#475569")}
+              ref={(marker) => {
+                quickPinMarkerRef.current = marker;
+              }}
+              pmIgnore
+            >
+              <Popup>
+                <div className="space-y-2">
+                  <div className="grid grid-cols-2 gap-1">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="h-7 text-[11px]"
+                      onClick={() => {
+                        void createManualMarkerAtQuickPin();
+                      }}
+                      disabled={!isHouseholdOwner}
+                    >
+                      {t("home.householdMapQuickPinCreate")}
+                    </Button>
+                    {renderOpenInMapsButton(mapQuickPin[0], mapQuickPin[1])}
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="h-7 text-[11px]"
+                      onClick={() => {
+                        void runRouteToTarget([mapQuickPin[0], mapQuickPin[1]], "home");
+                      }}
+                    >
+                      {t("home.householdMapRouteFromHome")}
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="h-7 text-[11px]"
+                      onClick={() => {
+                        void runRouteToTarget([mapQuickPin[0], mapQuickPin[1]], "me");
+                      }}
+                    >
+                      {t("home.householdMapRouteFromMe")}
+                    </Button>
+                  </div>
+                </div>
+              </Popup>
+            </Marker>
+          ) : null}
           {isFullscreen && mapReachabilityOrigin && mapReachabilityOriginManual ? (
             <Marker
               key={`reachability-origin-${mapReachabilityOrigin[0]}-${mapReachabilityOrigin[1]}`}
@@ -4685,6 +5693,65 @@ export const HomePage = ({
               </Popup>
             </Marker>
           ) : null}
+          {isFullscreen && mapReachabilitySummary ? (
+            <Marker
+              key={`reachability-summary-${mapReachabilitySummary.anchor[0]}-${mapReachabilitySummary.anchor[1]}-${mapReachabilitySummary.polygonCount}`}
+              position={mapReachabilitySummary.anchor}
+              icon={getRoutePointMarkerIcon(mapReachabilityColor)}
+              pmIgnore
+            >
+              <LeafletTooltip direction="top" offset={[0, -30]} opacity={0.95}>
+                <div className="text-[11px] font-medium">
+                  {mapReachabilityAreaLabel} · {mapReachabilityMinutes} min
+                </div>
+              </LeafletTooltip>
+              <Popup>
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold">{t("home.householdMapReachabilityInfoTitle")}</p>
+                  <div className="space-y-1 text-[11px] text-slate-700 dark:text-slate-200">
+                    <p>
+                      {t("home.householdMapRouteInfoMode")}: {mapRouteModeLabel}
+                    </p>
+                    <p>
+                      {t("home.householdMapReachabilityDurationLabel")}: {mapReachabilityMinutes} min
+                    </p>
+                    <p>
+                      {t("home.householdMapReachabilityInfoArea")}: {mapReachabilityAreaLabel}
+                    </p>
+                    <p>
+                      {t("home.householdMapReachabilityInfoRadius")}: {mapReachabilityRadiusLabel}
+                    </p>
+                    <p>
+                      {t("home.householdMapReachabilityInfoPolygons")}: {mapReachabilitySummary.polygonCount}
+                    </p>
+                    <p>
+                      {t("home.householdMapReachabilityInfoPoints")}: {mapReachabilitySummary.pointCount}
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-7 w-full text-[11px]"
+                    onClick={() => {
+                      void saveReachabilityToHouseholdMarkers();
+                    }}
+                    disabled={mapReachabilitySaving || !isHouseholdOwner}
+                  >
+                    {mapReachabilitySaving ? t("home.householdMapReachabilitySaving") : t("home.householdMapReachabilitySave")}
+                  </Button>
+                  {mapReachabilitySavedAt ? (
+                    <p className="text-[11px] text-emerald-700 dark:text-emerald-400">
+                      {t("home.householdMapReachabilitySaveSuccess")}
+                    </p>
+                  ) : null}
+                  {mapReachabilitySaveError ? (
+                    <p className="text-[11px] text-rose-600 dark:text-rose-400">{mapReachabilitySaveError}</p>
+                  ) : null}
+                </div>
+              </Popup>
+            </Marker>
+          ) : null}
           {isFullscreen
             ? mapSearchResults.map((result) => (
                 <Marker
@@ -4696,7 +5763,26 @@ export const HomePage = ({
                   <Popup>
                     <div className="space-y-1">
                       <p className="text-xs font-semibold">{result.label}</p>
-                      {renderOpenInMapsButton(result.lat, result.lon)}
+                      {renderMapPopupActions({
+                        lat: result.lat,
+                        lon: result.lon,
+                        editLabelKey: "home.householdMapQuickPinCreate",
+                        onEdit: isHouseholdOwner
+                          ? () => {
+                              const segments = result.label
+                                .split(",")
+                                .map((part) => part.trim())
+                                .filter(Boolean);
+                              const initialTitle = segments[0] || result.label;
+                              const initialDescription =
+                                segments.length > 1 ? segments.slice(1).join(", ") : result.label;
+                              void createManualMarkerAtCoordinates(result.lat, result.lon, {
+                                initialTitle,
+                                initialDescription
+                              });
+                            }
+                          : undefined
+                      })}
                     </div>
                   </Popup>
                 </Marker>
@@ -4723,45 +5809,56 @@ export const HomePage = ({
                         <p className="font-semibold">
                           {getMarkerEmoji(marker.icon)} {marker.title}
                         </p>
-                        <Input
-                          value={poiOverrideDrafts[marker.poi_ref]?.title ?? marker.title}
-                          onChange={(event) =>
-                            setPoiOverrideDrafts((current) => ({
-                              ...current,
-                              [marker.poi_ref!]: {
-                                title: event.target.value,
-                                description: current[marker.poi_ref!]?.description ?? marker.description
+                        {renderMapPopupActions({
+                          lat: marker.lat,
+                          lon: marker.lon,
+                          onEdit: isHouseholdOwner
+                            ? () => setActivePoiEditorId((current) => (current === marker.poi_ref ? null : marker.poi_ref ?? null))
+                            : undefined
+                        })}
+                        {activePoiEditorId === marker.poi_ref ? (
+                          <>
+                            <Input
+                              value={poiOverrideDrafts[marker.poi_ref]?.title ?? marker.title}
+                              onChange={(event) =>
+                                setPoiOverrideDrafts((current) => ({
+                                  ...current,
+                                  [marker.poi_ref!]: {
+                                    title: event.target.value,
+                                    description: current[marker.poi_ref!]?.description ?? marker.description
+                                  }
+                                }))
                               }
-                            }))
-                          }
-                          placeholder={t("home.householdMapPoiOverrideTitlePlaceholder")}
-                        />
-                        <Input
-                          value={poiOverrideDrafts[marker.poi_ref]?.description ?? marker.description}
-                          onChange={(event) =>
-                            setPoiOverrideDrafts((current) => ({
-                              ...current,
-                              [marker.poi_ref!]: {
-                                title: current[marker.poi_ref!]?.title ?? marker.title,
-                                description: event.target.value
+                              placeholder={t("home.householdMapPoiOverrideTitlePlaceholder")}
+                            />
+                            <Input
+                              value={poiOverrideDrafts[marker.poi_ref]?.description ?? marker.description}
+                              onChange={(event) =>
+                                setPoiOverrideDrafts((current) => ({
+                                  ...current,
+                                  [marker.poi_ref!]: {
+                                    title: current[marker.poi_ref!]?.title ?? marker.title,
+                                    description: event.target.value
+                                  }
+                                }))
                               }
-                            }))
-                          }
-                          placeholder={t("home.householdMapPoiOverrideDescriptionPlaceholder")}
-                        />
-                        <Button
-                          type="button"
-                          size="sm"
-                          className="h-8 w-full"
-                          onClick={() => {
-                            void onSaveExistingPoiOverride(marker);
-                          }}
-                          disabled={!isHouseholdOwner || poiOverrideSavingId === marker.poi_ref}
-                        >
-                          {poiOverrideSavingId === marker.poi_ref
-                            ? t("home.householdMapPoiOverrideSaving")
-                            : t("home.householdMapPoiOverrideSave")}
-                        </Button>
+                              placeholder={t("home.householdMapPoiOverrideDescriptionPlaceholder")}
+                            />
+                            <Button
+                              type="button"
+                              size="sm"
+                              className="h-8 w-full"
+                              onClick={() => {
+                                void onSaveExistingPoiOverride(marker);
+                              }}
+                              disabled={!isHouseholdOwner || poiOverrideSavingId === marker.poi_ref}
+                            >
+                              {poiOverrideSavingId === marker.poi_ref
+                                ? t("home.householdMapPoiOverrideSaving")
+                                : t("home.householdMapPoiOverrideSave")}
+                            </Button>
+                          </>
+                        ) : null}
                         {marker.image_b64 ? (
                           <img
                             src={marker.image_b64}
@@ -4774,7 +5871,6 @@ export const HomePage = ({
                             <ReactMarkdown remarkPlugins={[remarkGfm]}>{marker.description}</ReactMarkdown>
                           </div>
                         ) : null}
-                        {renderOpenInMapsButton(marker.lat, marker.lon)}
                       </div>
                     </Popup>
                   ) : (
@@ -4856,63 +5952,71 @@ export const HomePage = ({
                       {typeof poi.tags["addr:housenumber"] === "string" ? ` ${poi.tags["addr:housenumber"]}` : ""}
                     </p>
                   ) : null}
-                  <div className="space-y-1 pt-1">
-                    <Input
-                      value={
-                        poiOverrideDrafts[poi.id]?.title
-                        ?? poiOverrideMarkersByRef.get(poi.id)?.title
-                        ?? (poi.name ?? "")
-                      }
-                      onChange={(event) =>
-                        setPoiOverrideDrafts((current) => ({
-                          ...current,
-                          [poi.id]: {
-                            title: event.target.value,
-                            description:
-                              current[poi.id]?.description
-                              ?? poiOverrideMarkersByRef.get(poi.id)?.description
-                              ?? ""
-                          }
-                        }))
-                      }
-                      placeholder={t("home.householdMapPoiOverrideTitlePlaceholder")}
-                    />
-                    <Input
-                      value={
-                        poiOverrideDrafts[poi.id]?.description
-                        ?? poiOverrideMarkersByRef.get(poi.id)?.description
-                        ?? ""
-                      }
-                      onChange={(event) =>
-                        setPoiOverrideDrafts((current) => ({
-                          ...current,
-                          [poi.id]: {
-                            title:
-                              current[poi.id]?.title
-                              ?? poiOverrideMarkersByRef.get(poi.id)?.title
-                              ?? poi.name
-                              ?? "",
-                            description: event.target.value
-                          }
-                        }))
-                      }
-                      placeholder={t("home.householdMapPoiOverrideDescriptionPlaceholder")}
-                    />
-                    <Button
-                      type="button"
-                      size="sm"
-                      className="h-8 w-full"
-                      onClick={() => {
-                        void onSavePoiOverride(poi);
-                      }}
-                      disabled={!isHouseholdOwner || poiOverrideSavingId === poi.id}
-                    >
-                      {poiOverrideSavingId === poi.id
-                        ? t("home.householdMapPoiOverrideSaving")
-                        : t("home.householdMapPoiOverrideSave")}
-                    </Button>
-                    {renderOpenInMapsButton(poi.lat, poi.lon)}
-                  </div>
+                  {renderMapPopupActions({
+                    lat: poi.lat,
+                    lon: poi.lon,
+                    onEdit: isHouseholdOwner
+                      ? () => setActivePoiEditorId((current) => (current === poi.id ? null : poi.id))
+                      : undefined
+                  })}
+                  {activePoiEditorId === poi.id ? (
+                    <div className="space-y-1 pt-1">
+                      <Input
+                        value={
+                          poiOverrideDrafts[poi.id]?.title
+                          ?? poiOverrideMarkersByRef.get(poi.id)?.title
+                          ?? (poi.name ?? "")
+                        }
+                        onChange={(event) =>
+                          setPoiOverrideDrafts((current) => ({
+                            ...current,
+                            [poi.id]: {
+                              title: event.target.value,
+                              description:
+                                current[poi.id]?.description
+                                ?? poiOverrideMarkersByRef.get(poi.id)?.description
+                                ?? ""
+                            }
+                          }))
+                        }
+                        placeholder={t("home.householdMapPoiOverrideTitlePlaceholder")}
+                      />
+                      <Input
+                        value={
+                          poiOverrideDrafts[poi.id]?.description
+                          ?? poiOverrideMarkersByRef.get(poi.id)?.description
+                          ?? ""
+                        }
+                        onChange={(event) =>
+                          setPoiOverrideDrafts((current) => ({
+                            ...current,
+                            [poi.id]: {
+                              title:
+                                current[poi.id]?.title
+                                ?? poiOverrideMarkersByRef.get(poi.id)?.title
+                                ?? poi.name
+                                ?? "",
+                              description: event.target.value
+                            }
+                          }))
+                        }
+                        placeholder={t("home.householdMapPoiOverrideDescriptionPlaceholder")}
+                      />
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="h-8 w-full"
+                        onClick={() => {
+                          void onSavePoiOverride(poi);
+                        }}
+                        disabled={!isHouseholdOwner || poiOverrideSavingId === poi.id}
+                      >
+                        {poiOverrideSavingId === poi.id
+                          ? t("home.householdMapPoiOverrideSaving")
+                          : t("home.householdMapPoiOverrideSave")}
+                      </Button>
+                    </div>
+                  ) : null}
                 </div>
               </Popup>
             </Marker>
@@ -4994,24 +6098,6 @@ export const HomePage = ({
           <div className="absolute bottom-2 left-2 right-2 z-[1100] rounded-xl border border-slate-200/85 bg-white/95 p-2 shadow-sm backdrop-blur dark:border-slate-600/80 dark:bg-slate-900/95 sm:bottom-[11rem] sm:right-auto sm:w-[min(320px,calc(100%-1rem))]">
             <div className="grid grid-cols-1 gap-2">
               <div className="grid grid-cols-2 items-center gap-2">
-                <Label className="text-xs">{t("home.householdMapReachabilityModeLabel")}</Label>
-                <Select
-                  value={mapReachabilityMode}
-                  onValueChange={(value) => setMapReachabilityMode(value as MapReachabilityMode)}
-                >
-                  <SelectTrigger className="h-8 text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {REACHABILITY_OPTIONS.map((option) => (
-                      <SelectItem key={option.id} value={option.id}>
-                        {t(option.labelKey as never)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="grid grid-cols-2 items-center gap-2">
                 <Label className="text-xs" htmlFor="map-reachability-minutes">
                   {t("home.householdMapReachabilityDurationLabel")}
                 </Label>
@@ -5083,75 +6169,9 @@ export const HomePage = ({
             </div>
           </div>
         ) : null}
-        {isFullscreen && mapMeasurePanelOpen ? (
-          <div className="absolute bottom-[11rem] right-2 z-[1000] w-[min(280px,calc(100%-1rem))] rounded-xl border border-slate-200/85 bg-white/95 p-2 shadow-sm backdrop-blur dark:border-slate-600/80 dark:bg-slate-900/95">
-            <div className="grid grid-cols-1 gap-2">
-              <Button
-                type="button"
-                size="sm"
-                variant={mapMeasureMode === "distance" ? "default" : "outline"}
-                className="h-8 justify-start"
-                onClick={() => {
-                  setMapMeasureResult(null);
-                  setMapMeasureResultAnchor(null);
-                  setMapMeasureClearToken((current) => current + 1);
-                  setMapMeasureMode((current) => (current === "distance" ? null : "distance"));
-                }}
-              >
-                <Ruler className="mr-2 h-4 w-4" />
-                {t("home.householdMapMeasureDistance")}
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant={mapMeasureMode === "area" ? "default" : "outline"}
-                className="h-8 justify-start"
-                onClick={() => {
-                  setMapMeasureResult(null);
-                  setMapMeasureResultAnchor(null);
-                  setMapMeasureClearToken((current) => current + 1);
-                  setMapMeasureMode((current) => (current === "area" ? null : "area"));
-                }}
-              >
-                <CircleDot className="mr-2 h-4 w-4" />
-                {t("home.householdMapMeasureArea")}
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                className="h-8 justify-start"
-                onClick={() => {
-                  clearMeasureResultAndLayer();
-                }}
-              >
-                <X className="mr-2 h-4 w-4" />
-                {t("home.householdMapMeasureClear")}
-              </Button>
-            </div>
-          </div>
-        ) : null}
         {isFullscreen && mapRoutePanelOpen ? (
           <div className="absolute bottom-2 left-2 right-2 z-[1100] rounded-xl border border-slate-200/85 bg-white/95 p-2 shadow-sm backdrop-blur dark:border-slate-600/80 dark:bg-slate-900/95 sm:bottom-[11rem] sm:left-auto sm:w-[min(340px,calc(100%-1rem))]">
             <div className="grid grid-cols-1 gap-2">
-              <div className="grid grid-cols-2 items-center gap-2">
-                <Label className="text-xs">{t("home.householdMapRouteModeLabel")}</Label>
-                <Select
-                  value={mapRouteMode}
-                  onValueChange={(value) => setMapRouteMode(value as MapReachabilityMode)}
-                >
-                  <SelectTrigger className="h-8 text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {REACHABILITY_OPTIONS.map((option) => (
-                      <SelectItem key={`route-mode-${option.id}`} value={option.id}>
-                        {t(option.labelKey as never)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
               <div className="grid grid-cols-2 items-center gap-2">
                 <Label className="text-xs" htmlFor="map-route-max-minutes">
                   {t("home.householdMapRouteMaxDurationLabel")}
@@ -5162,8 +6182,13 @@ export const HomePage = ({
                   min={1}
                   max={240}
                   step={1}
-                  value={String(mapRouteMaxMinutes)}
+                  value={mapRouteMaxMinutes === null ? "" : String(mapRouteMaxMinutes)}
+                  placeholder={t("home.householdMapRouteMaxDurationAuto")}
                   onChange={(event) => {
+                    if (event.target.value.trim() === "") {
+                      setMapRouteMaxMinutes(null);
+                      return;
+                    }
                     const parsed = Number(event.target.value);
                     if (!Number.isFinite(parsed)) return;
                     setMapRouteMaxMinutes(Math.max(1, Math.min(240, Math.round(parsed))));
@@ -5226,6 +6251,9 @@ export const HomePage = ({
               {mapRouteError ? (
                 <p className="text-xs text-rose-600 dark:text-rose-400">{mapRouteError}</p>
               ) : null}
+              {mapRouteSaveError ? (
+                <p className="text-xs text-rose-600 dark:text-rose-400">{mapRouteSaveError}</p>
+              ) : null}
             </div>
           </div>
         ) : null}
@@ -5254,26 +6282,40 @@ export const HomePage = ({
       mapRouteError,
       mapRouteFitRequestToken,
       mapRouteGeoJson,
+      mapRouteTooltipOpenToken,
+      mapClosePopupRequestToken,
+      mapRouteDistanceLabel,
       mapRouteLoading,
       mapRouteMaxMinutes,
-      mapRouteMode,
+      mapRouteModeLabel,
       mapRouteOrigin,
       mapRoutePanelOpen,
       mapRoutePickTargetActive,
+      mapRouteSaveError,
+      mapRouteSaving,
+      mapRouteSummary,
       mapRouteTarget,
+      mapRouteDurationLabel,
+      mapRouteAverageSpeedLabel,
+      mapTravelMode,
       mapWeatherLayers,
-      mapMeasurePanelOpen,
+      mapGeomanControlsOpen,
       dismissMapPanelsOnMapClick,
       mapReachabilityColor,
       mapReachabilityError,
       mapReachabilityFitRequestToken,
       mapReachabilityGeoJson,
       mapReachabilityLoading,
+      mapReachabilityAreaLabel,
       mapReachabilityMinutes,
-      mapReachabilityMode,
       mapReachabilityOrigin,
       mapReachabilityPickOriginActive,
       mapReachabilityPanelOpen,
+      mapReachabilityRadiusLabel,
+      mapReachabilitySaveError,
+      mapReachabilitySavedAt,
+      mapReachabilitySaving,
+      mapReachabilitySummary,
       mapSearchError,
       mapSearchInputFocused,
       mapSearchLoading,
@@ -5281,8 +6323,12 @@ export const HomePage = ({
       mapSearchResults,
       mapSearchZoomRequest,
       memberOptionsForMarkerFilter,
+      activePoiEditorId,
+      isHouseholdOwner,
       renderOpenInMapsButton,
+      renderMapPopupActions,
       mapMemberLabel,
+      mapQuickPin,
       myLocationCenter,
       myLocationRecenterRequestToken,
       myLocationStatus,
@@ -5293,6 +6339,11 @@ export const HomePage = ({
       onLocateControlFound,
       onLocateControlReady,
       onMeasuredWithGeoman,
+      runRouteToTarget,
+      saveRouteToHouseholdMarkers,
+      saveReachabilityToHouseholdMarkers,
+      createManualMarkerAtQuickPin,
+      createManualMarkerAtCoordinates,
       clearMeasureResultAndLayer,
       clearReachability,
       clearRoutePlanning,
@@ -5317,6 +6368,15 @@ export const HomePage = ({
 
   useEffect(() => {
     ensureLeafletMarkerIcon();
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (myLocationFallbackTimerRef.current !== null) {
+        window.clearTimeout(myLocationFallbackTimerRef.current);
+        myLocationFallbackTimerRef.current = null;
+      }
+    };
   }, []);
 
   useEffect(() => {
@@ -8820,9 +9880,6 @@ export const HomePage = ({
               <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 dark:border-slate-700">
                 <div>
                   <DialogTitle>{t("home.householdMapTitle")}</DialogTitle>
-                  <DialogDescription>
-                    {t("home.householdMapDescription")}
-                  </DialogDescription>
                 </div>
                 <button
                   type="button"

@@ -6,8 +6,7 @@ TEsten:
 - marker-editor, description als markdown + existierende POIs bearbeiten
 - Finance OCR testen
 
-Karte:
-windy prognose-daten anzeigen
-reachability-plugin
-routing plugin
+
+bei routenplanung-popup start und ende anzeigen
+map-settings (verkehrsmittel, layers, filter) in localstorage speichern
 

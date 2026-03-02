@@ -23,6 +23,21 @@ type RouteGeoJson = {
 const isValidTravelMode = (value: unknown): value is RouteTravelMode =>
   value === "walk" || value === "bike" || value === "car" || value === "transit";
 
+const defaultMaxMinutesByMode = (mode: RouteTravelMode) => {
+  switch (mode) {
+    case "walk":
+      return 200;
+    case "bike":
+      return 650;
+    case "car":
+      return 850;
+    case "transit":
+      return 500;
+    default:
+      return 450;
+  }
+};
+
 const WEB_MERCATOR_RADIUS = 6378137;
 
 const mercatorToWgs84 = (x: number, y: number): [number, number] => {
@@ -177,7 +192,13 @@ serve(async (req) => {
   const toLat = Number(payload.toLat);
   const toLon = Number(payload.toLon);
   const travelMode = payload.travelMode;
-  const maxMinutes = Number(payload.maxMinutes);
+  const maxMinutesRaw = payload.maxMinutes;
+  const parsedMaxMinutes =
+    maxMinutesRaw === null
+    || typeof maxMinutesRaw === "undefined"
+    || (typeof maxMinutesRaw === "string" && maxMinutesRaw.trim().length === 0)
+      ? null
+      : Number(maxMinutesRaw);
 
   if (
     !householdId
@@ -194,9 +215,14 @@ serve(async (req) => {
     || toLon < -180
     || toLon > 180
     || !isValidTravelMode(travelMode)
-    || !Number.isFinite(maxMinutes)
-    || maxMinutes < 1
-    || maxMinutes > 240
+    || (
+      parsedMaxMinutes !== null
+      && (
+        !Number.isFinite(parsedMaxMinutes)
+        || parsedMaxMinutes < 1
+        || parsedMaxMinutes > 240
+      )
+    )
   ) {
     return new Response("Invalid request payload", { status: 400, headers: corsHeaders });
   }
@@ -211,7 +237,10 @@ serve(async (req) => {
     return new Response("Forbidden", { status: 403, headers: corsHeaders });
   }
 
-  const maxEdgeWeight = Math.round(maxMinutes * 60);
+  const resolvedMaxMinutes = parsedMaxMinutes === null
+    ? defaultMaxMinutesByMode(travelMode)
+    : parsedMaxMinutes;
+  const maxEdgeWeight = Math.round(resolvedMaxMinutes * 60);
   const now = new Date();
   const nowIso = now.toISOString();
 
