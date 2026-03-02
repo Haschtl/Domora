@@ -323,8 +323,21 @@ type TextDetectorConstructor = new (options?: { languages?: string[] }) => TextD
 type TesseractWorkerLike = {
   recognize: (
     image: HTMLCanvasElement,
-    options?: { rectangle?: { left: number; top: number; width: number; height: number } }
-  ) => Promise<{ data: { text: string; words?: Array<{ text?: string; confidence?: number; bbox?: { x0: number; y0: number; x1: number; y1: number } }> } }>;
+    options?: { rectangle?: { left: number; top: number; width: number; height: number } },
+    output?: { text?: boolean; blocks?: boolean }
+  ) => Promise<{
+    data: {
+      text: string;
+      words?: Array<{ text?: string; confidence?: number; bbox?: { x0: number; y0: number; x1: number; y1: number } }>;
+      lines?: Array<{ text?: string; confidence?: number; bbox?: { x0: number; y0: number; x1: number; y1: number } }>;
+      blocks?: Array<{
+        text?: string;
+        confidence?: number;
+        bbox?: { x0: number; y0: number; x1: number; y1: number };
+        lines?: Array<{ text?: string; confidence?: number; bbox?: { x0: number; y0: number; x1: number; y1: number } }>;
+      }>;
+    };
+  }>;
   setParameters: (params: Record<string, string>) => Promise<unknown>;
   terminate: () => Promise<unknown>;
 };
@@ -338,6 +351,13 @@ const getTextDetectorConstructor = (): TextDetectorConstructor | null => {
 const OCR_MIN_USEFUL_TEXT_LENGTH = 16;
 const OCR_MAX_ANALYSIS_DIMENSION = 1800;
 const OCR_MAX_PREVIEW_BOXES = 48;
+const buildPublicAssetUrl = (relativePath: string) => {
+  const basePath = import.meta.env.BASE_URL || "/";
+  const normalizedBase = basePath.endsWith("/") ? basePath : `${basePath}/`;
+  return `${normalizedBase}${relativePath.replace(/^\/+/, "")}`;
+};
+const LOCAL_TESSERACT_WORKER_PATH = buildPublicAssetUrl("tesseract/worker.min.js");
+const LOCAL_TESSERACT_CORE_PATH = buildPublicAssetUrl("tesseract/core");
 
 const clamp01 = (value: number) => Math.max(0, Math.min(1, value));
 
@@ -475,6 +495,25 @@ const classifyOcrBoxKind = (
     }
   }
   return "other";
+};
+
+const boxFromBbox = (
+  bbox: { x0: number; y0: number; x1: number; y1: number } | undefined,
+  width: number,
+  height: number,
+  text?: string
+) => {
+  if (!bbox) return null;
+  const widthPx = bbox.x1 - bbox.x0;
+  const heightPx = bbox.y1 - bbox.y0;
+  if (widthPx <= 1 || heightPx <= 1) return null;
+  return {
+    left: clamp01(bbox.x0 / width),
+    top: clamp01(bbox.y0 / height),
+    width: clamp01(widthPx / width),
+    height: clamp01(heightPx / height),
+    text: text?.trim() || undefined
+  } satisfies OcrPreviewBox;
 };
 
 const runTextDetectorOcr = async (detectorCtor: TextDetectorConstructor, canvas: HTMLCanvasElement) => {
@@ -2509,9 +2548,19 @@ export const FinancesPage = ({
   const getOrCreateTesseractWorker = useCallback(async () => {
     if (ocrTesseractWorkerRef.current) return ocrTesseractWorkerRef.current;
     const tesseractModule = await import("tesseract.js");
-    const worker = (await tesseractModule.createWorker(["deu", "eng"], tesseractModule.OEM.LSTM_ONLY, {
-      logger: () => undefined
-    })) as unknown as TesseractWorkerLike;
+    let worker: TesseractWorkerLike | undefined;
+    try {
+      worker = (await tesseractModule.createWorker(["deu", "eng"], tesseractModule.OEM.LSTM_ONLY, {
+        logger: () => undefined,
+        workerPath: LOCAL_TESSERACT_WORKER_PATH,
+        corePath: LOCAL_TESSERACT_CORE_PATH
+      })) as unknown as TesseractWorkerLike;
+    } catch {
+      // Fallback to default remote paths if local assets are unavailable.
+      worker = (await tesseractModule.createWorker(["deu", "eng"], tesseractModule.OEM.LSTM_ONLY, {
+        logger: () => undefined
+      })) as unknown as TesseractWorkerLike;
+    }
     await worker.setParameters({
       tessedit_pageseg_mode: "6",
       preserve_interword_spaces: "1"
@@ -2581,28 +2630,47 @@ export const FinancesPage = ({
 
       if (text.trim().length < OCR_MIN_USEFUL_TEXT_LENGTH) {
         const worker = await getOrCreateTesseractWorker();
-        const result = await worker.recognize(processedCanvas);
+        const result = await worker.recognize(processedCanvas, undefined, { text: true, blocks: true });
         const tesseractText = result.data.text.trim();
+        const tesseractBoxes: OcrPreviewBox[] = [];
+        const seen = new Set<string>();
+        const pushUniqueBox = (box: OcrPreviewBox | null) => {
+          if (!box) return;
+          const key = `${box.left.toFixed(4)}:${box.top.toFixed(4)}:${box.width.toFixed(4)}:${box.height.toFixed(4)}`;
+          if (seen.has(key)) return;
+          seen.add(key);
+          tesseractBoxes.push(box);
+        };
+
+        // Prefer precise word boxes.
+        for (const word of result.data.words ?? []) {
+          if (tesseractBoxes.length >= OCR_MAX_PREVIEW_BOXES) break;
+          pushUniqueBox(boxFromBbox(word.bbox, processedCanvas.width, processedCanvas.height, word.text));
+        }
+        // Fallback to line boxes when no/too few word boxes are provided.
+        if (tesseractBoxes.length < 6) {
+          for (const line of result.data.lines ?? []) {
+            if (tesseractBoxes.length >= OCR_MAX_PREVIEW_BOXES) break;
+            pushUniqueBox(boxFromBbox(line.bbox, processedCanvas.width, processedCanvas.height, line.text));
+          }
+        }
+        // Last fallback to block + nested line boxes.
+        if (tesseractBoxes.length < 6) {
+          for (const block of result.data.blocks ?? []) {
+            if (tesseractBoxes.length >= OCR_MAX_PREVIEW_BOXES) break;
+            pushUniqueBox(boxFromBbox(block.bbox, processedCanvas.width, processedCanvas.height, block.text));
+            for (const line of block.lines ?? []) {
+              if (tesseractBoxes.length >= OCR_MAX_PREVIEW_BOXES) break;
+              pushUniqueBox(boxFromBbox(line.bbox, processedCanvas.width, processedCanvas.height, line.text));
+            }
+          }
+        }
+
         if (tesseractText.length > text.trim().length) {
           text = tesseractText;
-          const tesseractBoxes: OcrPreviewBox[] = [];
-          for (const word of result.data.words ?? []) {
-            const rawText = (word.text ?? "").trim();
-            const bbox = word.bbox;
-            if (!rawText || !bbox) continue;
-            const widthPx = bbox.x1 - bbox.x0;
-            const heightPx = bbox.y1 - bbox.y0;
-            if (widthPx <= 1 || heightPx <= 1) continue;
-            if (typeof word.confidence === "number" && word.confidence < 20) continue;
-            tesseractBoxes.push({
-              left: clamp01(bbox.x0 / processedCanvas.width),
-              top: clamp01(bbox.y0 / processedCanvas.height),
-              width: clamp01(widthPx / processedCanvas.width),
-              height: clamp01(heightPx / processedCanvas.height),
-              text: rawText
-            });
-            if (tesseractBoxes.length >= OCR_MAX_PREVIEW_BOXES) break;
-          }
+          boxes = tesseractBoxes;
+        } else if (boxes.length === 0 && tesseractBoxes.length > 0) {
+          // Keep detector text, but still show geometry from tesseract.
           boxes = tesseractBoxes;
         }
       }
