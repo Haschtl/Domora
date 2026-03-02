@@ -51,8 +51,16 @@ export default defineConfig({
         manualChunks(id) {
           if (!id.includes("node_modules")) return undefined;
           if (id.includes("@tsparticles/")) return "vendor-particles";
-          if (id.includes("chart.js") || id.includes("react-chartjs-2")) return "vendor-charts";
-          if (id.includes("react-markdown") || id.includes("remark-gfm")) return "vendor-markdown";
+          // Keep markdown + charts in one shared chunk to avoid cross-chunk cycles
+          // ("vendor-markdown -> vendor-charts -> vendor-markdown").
+          if (
+            id.includes("chart.js")
+            || id.includes("react-chartjs-2")
+            || id.includes("react-markdown")
+            || id.includes("remark-gfm")
+          ) {
+            return "vendor-content";
+          }
           if (id.includes("@supabase/supabase-js")) return "vendor-supabase";
           return undefined;
         }

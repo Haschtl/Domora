@@ -3595,6 +3595,7 @@ export const HomePage = ({
   const [whiteboardOnlineUserIds, setWhiteboardOnlineUserIds] = useState<string[]>([]);
   const [liveShareDurationMinutes, setLiveShareDurationMinutes] = useState<number>(15);
   const [isLiveShareDialogOpen, setIsLiveShareDialogOpen] = useState(false);
+  const [isWeatherFullscreenOpen, setIsWeatherFullscreenOpen] = useState(false);
   const [liveShareStatus, setLiveShareStatus] = useState<"idle" | "starting" | "active" | "stopping" | "error">("idle");
   const [liveShareError, setLiveShareError] = useState<string | null>(null);
   const [poiOverrideDrafts, setPoiOverrideDrafts] = useState<Record<string, { title: string; description: string }>>({});
@@ -8948,6 +8949,187 @@ export const HomePage = ({
     setPendingCompleteTask(null);
   }, [onCompleteTask, pendingCompleteTask]);
 
+  const todayWeatherDay = householdWeatherDays[0] ?? null;
+  const weatherBannerTempLabel = useMemo(() => {
+    if (!todayWeatherDay) return null;
+    const max = todayWeatherDay.tempMaxC === null ? "—" : Math.round(todayWeatherDay.tempMaxC);
+    const min = todayWeatherDay.tempMinC === null ? "—" : Math.round(todayWeatherDay.tempMinC);
+    return `${max}° / ${min}°`;
+  }, [todayWeatherDay]);
+
+  const renderHouseholdWeatherContent = useCallback((dayLimit?: number) => {
+    if (!mapHasPin) {
+      return (
+        <p className="text-xs text-slate-500 dark:text-slate-400">
+          {t("home.householdWeatherNeedsAddress")}
+        </p>
+      );
+    }
+    if (householdWeatherQuery.isLoading) {
+      return (
+        <p className="text-xs text-slate-500 dark:text-slate-400">
+          {t("home.householdWeatherLoading")}
+        </p>
+      );
+    }
+    if (householdWeatherQuery.isError) {
+      return (
+        <p className="text-xs text-rose-600 dark:text-rose-400">
+          {t("home.householdWeatherError")}
+        </p>
+      );
+    }
+    if (householdWeatherHourly.length === 0) {
+      return (
+        <p className="text-xs text-slate-500 dark:text-slate-400">
+          {t("home.householdWeatherEmpty")}
+        </p>
+      );
+    }
+
+    const weatherDaysToRender =
+      typeof dayLimit === "number" ? householdWeatherDays.slice(0, Math.max(0, dayLimit)) : householdWeatherDays;
+
+    return (
+      <div className="space-y-2">
+        {weatherDaysToRender.length > 0 ? (
+          <HouseholdWeatherDailyPreview>
+            {weatherDaysToRender.map((day, index) => (
+              <div
+                key={`weather-day-${day.date}`}
+                className="w-[168px] shrink-0 rounded-2xl border border-slate-200/90 bg-gradient-to-b from-white/95 to-slate-50/90 p-1 shadow-sm dark:border-slate-700/90 dark:from-slate-900/85 dark:to-slate-900/65"
+              >
+                {(() => {
+                  const warnings = getDailyWeatherWarnings(day);
+                  return (
+                    <div className="relative flex items-center justify-center rounded-xl bg-white/70 py-1 pt-4 dark:bg-slate-800/65">
+                      <p className="absolute top-2 left-2 text-sm font-semibold text-slate-800 dark:text-slate-100">
+                        {index === 0
+                          ? t("home.householdWeatherRelativeToday")
+                          : index === 1
+                            ? t("home.householdWeatherRelativeTomorrow")
+                            : index === 2
+                              ? t("home.householdWeatherRelativeDayAfterTomorrow")
+                              : formatDateOnly(day.date, language, day.date)}
+                      </p>
+                      {warnings.icy || warnings.heat || warnings.storm || warnings.uv ? (
+                        <div className="absolute left-1.5 top-1.5 flex items-center gap-1">
+                          {warnings.icy ? (
+                            <span
+                              className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-cyan-200/90 bg-cyan-50/95 text-cyan-700 dark:border-cyan-800 dark:bg-cyan-900/40 dark:text-cyan-200"
+                              title={t("home.householdWeatherWarningIcy")}
+                              aria-label={t("home.householdWeatherWarningIcy")}
+                            >
+                              <Snowflake className="h-3 w-3" />
+                            </span>
+                          ) : null}
+                          {warnings.heat ? (
+                            <span
+                              className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-orange-200/90 bg-orange-50/95 text-orange-700 dark:border-orange-800 dark:bg-orange-900/40 dark:text-orange-200"
+                              title={t("home.householdWeatherWarningHeat")}
+                              aria-label={t("home.householdWeatherWarningHeat")}
+                            >
+                              <Flame className="h-3 w-3" />
+                            </span>
+                          ) : null}
+                          {warnings.storm ? (
+                            <span
+                              className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-indigo-200/90 bg-indigo-50/95 text-indigo-700 dark:border-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-200"
+                              title={t("home.householdWeatherWarningStorm")}
+                              aria-label={t("home.householdWeatherWarningStorm")}
+                            >
+                              <Wind className="h-3 w-3" />
+                            </span>
+                          ) : null}
+                          {warnings.uv ? (
+                            <span
+                              className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-amber-200/90 bg-amber-50/95 text-amber-700 dark:border-amber-800 dark:bg-amber-900/40 dark:text-amber-200"
+                              title={t("home.householdWeatherWarningUv")}
+                              aria-label={t("home.householdWeatherWarningUv")}
+                            >
+                              <Sun className="h-3 w-3" />
+                            </span>
+                          ) : null}
+                        </div>
+                      ) : null}
+                      <WeatherSvg state={getAnimatedWeatherState(day)} width={52} height={52} />
+                      <span className="absolute bottom-1.5 right-2 rounded-full border border-slate-200/90 bg-white/90 px-2 py-0.5 text-[10px] font-medium text-slate-700 dark:border-slate-700 dark:bg-slate-900/90 dark:text-slate-200">
+                        {t(getWeatherConditionLabelKey(day))}
+                      </span>
+                    </div>
+                  );
+                })()}
+                <p className="p-2 text-xs font-semibold text-slate-700 dark:text-slate-300">
+                  {t("home.householdWeatherTemp", {
+                    max: day.tempMaxC === null ? "—" : Math.round(day.tempMaxC),
+                    min: day.tempMinC === null ? "—" : Math.round(day.tempMinC)
+                  })}
+                </p>
+                <p className="mt-1 px-2 text-[11px] text-slate-600 dark:text-slate-300">
+                  {t("home.householdWeatherPrecip", {
+                    mm: day.precipitationMm === null ? "—" : Number(day.precipitationMm.toFixed(1)),
+                    prob: day.precipitationProbabilityPercent === null ? "—" : Math.round(day.precipitationProbabilityPercent)
+                  })}
+                </p>
+                <p className="mt-1 px-2 text-[11px] text-slate-600 dark:text-slate-300">
+                  {t("home.householdWeatherWind", {
+                    min:
+                      day.windSpeedKmh === null && day.windGustKmh === null
+                        ? "—"
+                        : Math.min(day.windSpeedKmh ?? Number.POSITIVE_INFINITY, day.windGustKmh ?? Number.POSITIVE_INFINITY) === Number.POSITIVE_INFINITY
+                          ? "—"
+                          : Math.round(Math.min(day.windSpeedKmh ?? Number.POSITIVE_INFINITY, day.windGustKmh ?? Number.POSITIVE_INFINITY)),
+                    max:
+                      day.windSpeedKmh === null && day.windGustKmh === null
+                        ? "—"
+                        : Math.max(day.windSpeedKmh ?? 0, day.windGustKmh ?? 0),
+                    dir: getWindDirectionLabel(day.windDirectionDeg)
+                  })}
+                </p>
+              </div>
+            ))}
+          </HouseholdWeatherDailyPreview>
+        ) : null}
+        <HouseholdWeatherPlot
+          hint={t("home.householdWeatherChartHint")}
+          isMobile={isMobileBucketComposer}
+          legendButtonLabel={t("home.householdWeatherLegendButton")}
+          legendItems={weatherLegendItems}
+          onToggleLegendItem={toggleWeatherLegendDataset}
+        >
+          <div
+            ref={weatherChartContainerRef}
+            className="h-64 overflow-hidden rounded-lg border border-slate-200/90 bg-white/80 dark:border-slate-700/90 dark:bg-slate-900/70"
+            onDoubleClick={zoomOutWeatherChart}
+            onTouchEndCapture={onWeatherChartTouchEndCapture}
+          >
+            <Chart
+              ref={weatherChartRef}
+              type="bar"
+              data={householdWeatherChartData}
+              options={householdWeatherChartOptions}
+            />
+          </div>
+        </HouseholdWeatherPlot>
+      </div>
+    );
+  }, [
+    householdWeatherDays,
+    householdWeatherHourly.length,
+    householdWeatherQuery.isError,
+    householdWeatherQuery.isLoading,
+    householdWeatherChartData,
+    householdWeatherChartOptions,
+    isMobileBucketComposer,
+    language,
+    mapHasPin,
+    t,
+    toggleWeatherLegendDataset,
+    weatherLegendItems,
+    zoomOutWeatherChart,
+    onWeatherChartTouchEndCapture
+  ]);
+
   const renderHouseholdCalendarCard = (withTopMargin: boolean, showTitle: boolean) => (
               <Card className={`${withTopMargin ? "mt-6 " : ""}rounded-xl border border-slate-300 bg-white/90 p-3 text-slate-800 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-100`}>
                 <HouseholdCalendarWidget
@@ -10375,6 +10557,29 @@ export const HomePage = ({
           />
           <div className="absolute inset-0 bg-gradient-to-r from-slate-900/45 via-slate-900/25 to-slate-900/55" />
           <div className="relative flex min-h-44 items-end p-5 sm:min-h-56 sm:p-7">
+            {todayWeatherDay ? (
+              <button
+                type="button"
+                onClick={() => setIsWeatherFullscreenOpen(true)}
+                className="absolute right-4 top-4 inline-flex items-center gap-2 rounded-xl border border-white/25 bg-slate-900/45 px-2.5 py-1.5 text-left text-white backdrop-blur transition hover:bg-slate-900/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
+                aria-label={householdWeatherTitle}
+                title={householdWeatherTitle}
+              >
+                <WeatherSvg
+                  state={getAnimatedWeatherState(todayWeatherDay)}
+                  width={34}
+                  height={34}
+                />
+                <div className="min-w-0">
+                  <p className="text-[10px] font-medium uppercase tracking-[0.08em] text-white/80">
+                    {t("home.householdWeatherRelativeToday")}
+                  </p>
+                  <p className="truncate text-sm font-semibold text-white">
+                    {weatherBannerTempLabel ?? "—"}
+                  </p>
+                </div>
+              </button>
+            ) : null}
             <div className="min-w-0">
               <p className="truncate text-xs font-medium uppercase tracking-[0.12em] text-white/80">
                 {userLabel ?? t("app.noUserLabel")}
@@ -11093,212 +11298,41 @@ export const HomePage = ({
                 </CardDescription>
               </CardHeader>
               <CardContent className="pt-2">
-                {!mapHasPin ? (
-                  <p className="text-xs text-slate-500 dark:text-slate-400">
-                    {t("home.householdWeatherNeedsAddress")}
-                  </p>
-                ) : householdWeatherQuery.isLoading ? (
-                  <p className="text-xs text-slate-500 dark:text-slate-400">
-                    {t("home.householdWeatherLoading")}
-                  </p>
-                ) : householdWeatherQuery.isError ? (
-                  <p className="text-xs text-rose-600 dark:text-rose-400">
-                    {t("home.householdWeatherError")}
-                  </p>
-                ) : householdWeatherHourly.length === 0 ? (
-                  <p className="text-xs text-slate-500 dark:text-slate-400">
-                    {t("home.householdWeatherEmpty")}
-                  </p>
-                ) : (
-                  <div className="space-y-2">
-                    {householdWeatherDays.length > 0 ? (
-                      <HouseholdWeatherDailyPreview>
-                        {householdWeatherDays.map((day, index) => (
-                          <div
-                            key={`weather-day-${day.date}`}
-                            className="w-[168px] shrink-0 rounded-2xl border border-slate-200/90 bg-gradient-to-b from-white/95 to-slate-50/90 p-1 shadow-sm dark:border-slate-700/90 dark:from-slate-900/85 dark:to-slate-900/65"
-                          >
-                            {(() => {
-                              const warnings = getDailyWeatherWarnings(day);
-                              return (
-                                <div className="relative flex items-center justify-center rounded-xl bg-white/70 py-1 pt-4 dark:bg-slate-800/65">
-                                  <p className="absolute top-2 left-2 text-sm font-semibold text-slate-800 dark:text-slate-100">
-                                    {index === 0
-                                      ? t("home.householdWeatherRelativeToday")
-                                      : index === 1
-                                        ? t(
-                                            "home.householdWeatherRelativeTomorrow",
-                                          )
-                                        : index === 2
-                                          ? t(
-                                              "home.householdWeatherRelativeDayAfterTomorrow",
-                                            )
-                                          : formatDateOnly(
-                                              day.date,
-                                              language,
-                                              day.date,
-                                            )}
-                                  </p>
-                                  {warnings.icy ||
-                                  warnings.heat ||
-                                  warnings.storm ||
-                                  warnings.uv ? (
-                                    <div className="absolute left-1.5 top-1.5 flex items-center gap-1">
-                                      {warnings.icy ? (
-                                        <span
-                                          className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-cyan-200/90 bg-cyan-50/95 text-cyan-700 dark:border-cyan-800 dark:bg-cyan-900/40 dark:text-cyan-200"
-                                          title={t(
-                                            "home.householdWeatherWarningIcy",
-                                          )}
-                                          aria-label={t(
-                                            "home.householdWeatherWarningIcy",
-                                          )}
-                                        >
-                                          <Snowflake className="h-3 w-3" />
-                                        </span>
-                                      ) : null}
-                                      {warnings.heat ? (
-                                        <span
-                                          className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-orange-200/90 bg-orange-50/95 text-orange-700 dark:border-orange-800 dark:bg-orange-900/40 dark:text-orange-200"
-                                          title={t(
-                                            "home.householdWeatherWarningHeat",
-                                          )}
-                                          aria-label={t(
-                                            "home.householdWeatherWarningHeat",
-                                          )}
-                                        >
-                                          <Flame className="h-3 w-3" />
-                                        </span>
-                                      ) : null}
-                                      {warnings.storm ? (
-                                        <span
-                                          className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-indigo-200/90 bg-indigo-50/95 text-indigo-700 dark:border-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-200"
-                                          title={t(
-                                            "home.householdWeatherWarningStorm",
-                                          )}
-                                          aria-label={t(
-                                            "home.householdWeatherWarningStorm",
-                                          )}
-                                        >
-                                          <Wind className="h-3 w-3" />
-                                        </span>
-                                      ) : null}
-                                      {warnings.uv ? (
-                                        <span
-                                          className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-amber-200/90 bg-amber-50/95 text-amber-700 dark:border-amber-800 dark:bg-amber-900/40 dark:text-amber-200"
-                                          title={t(
-                                            "home.householdWeatherWarningUv",
-                                          )}
-                                          aria-label={t(
-                                            "home.householdWeatherWarningUv",
-                                          )}
-                                        >
-                                          <Sun className="h-3 w-3" />
-                                        </span>
-                                      ) : null}
-                                    </div>
-                                  ) : null}
-                                  <WeatherSvg
-                                    state={getAnimatedWeatherState(day)}
-                                    width={52}
-                                    height={52}
-                                  />
-                                  <span className="absolute bottom-1.5 right-2 rounded-full border border-slate-200/90 bg-white/90 px-2 py-0.5 text-[10px] font-medium text-slate-700 dark:border-slate-700 dark:bg-slate-900/90 dark:text-slate-200">
-                                    {t(getWeatherConditionLabelKey(day))}
-                                  </span>
-                                </div>
-                              );
-                            })()}
-                            <p className="p-2 text-xs font-semibold text-slate-700 dark:text-slate-300">
-                              {t("home.householdWeatherTemp", {
-                                max:
-                                  day.tempMaxC === null
-                                    ? "—"
-                                    : Math.round(day.tempMaxC),
-                                min:
-                                  day.tempMinC === null
-                                    ? "—"
-                                    : Math.round(day.tempMinC),
-                              })}
-                            </p>
-                            <p className="px-2 mt-1 text-[11px] text-slate-600 dark:text-slate-300">
-                              {t("home.householdWeatherPrecip", {
-                                mm:
-                                  day.precipitationMm === null
-                                    ? "—"
-                                    : Number(day.precipitationMm.toFixed(1)),
-                                prob:
-                                  day.precipitationProbabilityPercent === null
-                                    ? "—"
-                                    : Math.round(
-                                        day.precipitationProbabilityPercent,
-                                      ),
-                              })}
-                            </p>
-                            <p className="px-2 mt-1 text-[11px] text-slate-600 dark:text-slate-300">
-                              {t("home.householdWeatherWind", {
-                                min:
-                                  day.windSpeedKmh === null &&
-                                  day.windGustKmh === null
-                                    ? "—"
-                                    : Math.min(
-                                          day.windSpeedKmh ??
-                                            Number.POSITIVE_INFINITY,
-                                          day.windGustKmh ??
-                                            Number.POSITIVE_INFINITY,
-                                        ) === Number.POSITIVE_INFINITY
-                                      ? "—"
-                                      : Math.round(
-                                          Math.min(
-                                            day.windSpeedKmh ??
-                                              Number.POSITIVE_INFINITY,
-                                            day.windGustKmh ??
-                                              Number.POSITIVE_INFINITY,
-                                          ),
-                                        ),
-                                max:
-                                  day.windSpeedKmh === null &&
-                                  day.windGustKmh === null
-                                    ? "—"
-                                    : Math.max(
-                                        day.windSpeedKmh ?? 0,
-                                        day.windGustKmh ?? 0,
-                                      ),
-                                dir: getWindDirectionLabel(
-                                  day.windDirectionDeg,
-                                ),
-                              })}
-                            </p>
-                          </div>
-                        ))}
-                      </HouseholdWeatherDailyPreview>
-                    ) : null}
-                    <HouseholdWeatherPlot
-                      hint={t("home.householdWeatherChartHint")}
-                      isMobile={isMobileBucketComposer}
-                      legendButtonLabel={t("home.householdWeatherLegendButton")}
-                      legendItems={weatherLegendItems}
-                      onToggleLegendItem={toggleWeatherLegendDataset}
-                    >
-                      <div
-                        ref={weatherChartContainerRef}
-                        className="h-64 rounded-lg  overflow-hidden border border-slate-200/90 bg-white/80 dark:border-slate-700/90 dark:bg-slate-900/70"
-                        onDoubleClick={zoomOutWeatherChart}
-                        onTouchEndCapture={onWeatherChartTouchEndCapture}
-                      >
-                        <Chart
-                          ref={weatherChartRef}
-                          type="bar"
-                          data={householdWeatherChartData}
-                          options={householdWeatherChartOptions}
-                        />
-                      </div>
-                    </HouseholdWeatherPlot>
-                  </div>
-                )}
+                {renderHouseholdWeatherContent()}
               </CardContent>
             </Card>
           ) : null}
+
+          <Dialog
+            open={isWeatherFullscreenOpen}
+            onOpenChange={(open) => {
+              setIsWeatherFullscreenOpen(open);
+            }}
+          >
+            <DialogContent className="inset-0 left-0 top-0 flex h-[100dvh] w-[100vw] max-w-none -translate-x-0 -translate-y-0 flex-col overflow-hidden rounded-none border-0 p-0 [padding-bottom:var(--safe-area-bottom)] [padding-left:var(--safe-area-left)] [padding-right:var(--safe-area-right)] [padding-top:var(--safe-area-top)]">
+              <div className="flex flex-1 flex-col bg-slate-50 dark:bg-slate-950">
+                <div className="flex items-start justify-between border-b border-slate-200 px-4 py-3 dark:border-slate-800">
+                  <div className="min-w-0">
+                    <DialogTitle className="truncate">{householdWeatherTitle}</DialogTitle>
+                    <DialogDescription>{t("home.householdWeatherDescription")}</DialogDescription>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 w-8 shrink-0 p-0"
+                    onClick={() => setIsWeatherFullscreenOpen(false)}
+                    aria-label={t("common.close")}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+                <div className="flex-1 overflow-y-auto p-4">
+                  {renderHouseholdWeatherContent()}
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
 
           <Dialog
             open={isLiveShareDialogOpen}
