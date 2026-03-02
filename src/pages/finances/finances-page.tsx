@@ -20,11 +20,14 @@ import {
   PartyPopper,
   Paperclip,
   Plus,
+  RotateCcw,
   Scale,
   SlidersHorizontal,
   Smile,
   Sparkles as SparklesIcon,
-  TrendingDown
+  TrendingDown,
+  Zap,
+  ZapOff
 } from "lucide-react";
 import SparklesEffect from "react-sparkle";
 import { Bar, Doughnut } from "react-chartjs-2";
@@ -301,14 +304,109 @@ const fallbackColorFromUserId = (memberId: string) => {
   return `hsl(${hue} 70% 48%)`;
 };
 
-type OcrDetectionResult = { rawValue?: string; text?: string };
+type OcrPreviewBox = {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+  text?: string;
+  kind?: "price" | "product" | "other";
+};
+
+type OcrDetectionResult = {
+  rawValue?: string;
+  text?: string;
+  boundingBox?: { x?: number; y?: number; width?: number; height?: number };
+};
 type TextDetectorLike = { detect: (input: ImageBitmapSource) => Promise<OcrDetectionResult[]> };
 type TextDetectorConstructor = new (options?: { languages?: string[] }) => TextDetectorLike;
+type TesseractWorkerLike = {
+  recognize: (
+    image: HTMLCanvasElement,
+    options?: { rectangle?: { left: number; top: number; width: number; height: number } }
+  ) => Promise<{ data: { text: string; words?: Array<{ text?: string; confidence?: number; bbox?: { x0: number; y0: number; x1: number; y1: number } }> } }>;
+  setParameters: (params: Record<string, string>) => Promise<unknown>;
+  terminate: () => Promise<unknown>;
+};
 
 const getTextDetectorConstructor = (): TextDetectorConstructor | null => {
   if (typeof window === "undefined") return null;
   const maybeCtor = (window as unknown as { TextDetector?: TextDetectorConstructor }).TextDetector;
   return typeof maybeCtor === "function" ? maybeCtor : null;
+};
+
+const OCR_MIN_USEFUL_TEXT_LENGTH = 16;
+const OCR_MAX_ANALYSIS_DIMENSION = 1800;
+const OCR_MAX_PREVIEW_BOXES = 48;
+
+const clamp01 = (value: number) => Math.max(0, Math.min(1, value));
+
+const clampOcrSize = (width: number, height: number) => {
+  if (width <= OCR_MAX_ANALYSIS_DIMENSION && height <= OCR_MAX_ANALYSIS_DIMENSION) {
+    return { width, height };
+  }
+  const ratio = Math.min(OCR_MAX_ANALYSIS_DIMENSION / width, OCR_MAX_ANALYSIS_DIMENSION / height);
+  return {
+    width: Math.max(1, Math.round(width * ratio)),
+    height: Math.max(1, Math.round(height * ratio))
+  };
+};
+
+const getOtsuThreshold = (pixels: Uint8ClampedArray) => {
+  const histogram = new Uint32Array(256);
+  for (let i = 0; i < pixels.length; i += 4) {
+    histogram[pixels[i]] += 1;
+  }
+  const total = pixels.length / 4;
+  let sum = 0;
+  for (let i = 0; i < 256; i += 1) sum += i * histogram[i];
+
+  let sumBackground = 0;
+  let weightBackground = 0;
+  let maxVariance = -1;
+  let threshold = 128;
+
+  for (let i = 0; i < 256; i += 1) {
+    weightBackground += histogram[i];
+    if (weightBackground === 0) continue;
+    const weightForeground = total - weightBackground;
+    if (weightForeground === 0) break;
+    sumBackground += i * histogram[i];
+    const meanBackground = sumBackground / weightBackground;
+    const meanForeground = (sum - sumBackground) / weightForeground;
+    const variance = weightBackground * weightForeground * (meanBackground - meanForeground) ** 2;
+    if (variance > maxVariance) {
+      maxVariance = variance;
+      threshold = i;
+    }
+  }
+
+  return threshold;
+};
+
+const preprocessOcrCanvas = (source: HTMLCanvasElement) => {
+  const { width, height } = clampOcrSize(source.width, source.height);
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext("2d");
+  if (!context) return source;
+
+  context.filter = "grayscale(1) contrast(1.4) brightness(1.05)";
+  context.drawImage(source, 0, 0, width, height);
+  context.filter = "none";
+
+  const imageData = context.getImageData(0, 0, width, height);
+  const { data } = imageData;
+  const threshold = getOtsuThreshold(data);
+  for (let i = 0; i < data.length; i += 4) {
+    const value = data[i] >= threshold ? 255 : 0;
+    data[i] = value;
+    data[i + 1] = value;
+    data[i + 2] = value;
+  }
+  context.putImageData(imageData, 0, 0);
+  return canvas;
 };
 
 const extractPriceFromOcrText = (text: string) => {
@@ -335,6 +433,82 @@ const extractProductFromOcrText = (text: string) => {
     });
 
   return lines[0] ?? null;
+};
+
+const normalizeOcrText = (value: string) =>
+  value
+    .toLocaleLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+
+const normalizePriceToken = (value: string) => {
+  const normalized = value.replace(/\s/g, "").replace(",", ".");
+  const match = normalized.match(/(\d{1,4}(?:\.\d{2}))/);
+  if (!match?.[1]) return null;
+  const parsed = Number(match[1]);
+  if (!Number.isFinite(parsed) || parsed < 0) return null;
+  return parsed.toFixed(2);
+};
+
+const classifyOcrBoxKind = (
+  boxText: string | undefined,
+  recognizedProduct: string | null,
+  recognizedPrice: number | null
+): OcrPreviewBox["kind"] => {
+  const text = (boxText ?? "").trim();
+  if (!text) return "other";
+
+  const normalizedText = normalizeOcrText(text);
+  const normalizedProduct = normalizeOcrText(recognizedProduct ?? "");
+  const recognizedPriceToken = recognizedPrice !== null ? recognizedPrice.toFixed(2) : null;
+  const boxPriceToken = normalizePriceToken(text);
+
+  if (recognizedPriceToken && boxPriceToken === recognizedPriceToken) {
+    return "price";
+  }
+  if (/\d{1,4}(?:[.,]\d{2})/.test(text)) {
+    return "price";
+  }
+  if (normalizedProduct) {
+    if (normalizedText.includes(normalizedProduct) || normalizedProduct.includes(normalizedText)) {
+      return "product";
+    }
+  }
+  return "other";
+};
+
+const runTextDetectorOcr = async (detectorCtor: TextDetectorConstructor, canvas: HTMLCanvasElement) => {
+  const bitmap = await createImageBitmap(canvas);
+  try {
+    const detector = new detectorCtor({ languages: ["de", "en"] });
+    const results = await detector.detect(bitmap);
+    const lines = results
+      .map((entry) => (entry.rawValue ?? entry.text ?? "").trim())
+      .filter(Boolean);
+    const boxes: OcrPreviewBox[] = [];
+    for (const entry of results) {
+      const text = (entry.rawValue ?? entry.text ?? "").trim();
+      const box = entry.boundingBox;
+      if (!box || typeof box.x !== "number" || typeof box.y !== "number" || typeof box.width !== "number" || typeof box.height !== "number") {
+        continue;
+      }
+      if (box.width <= 1 || box.height <= 1) continue;
+      boxes.push({
+        left: clamp01(box.x / canvas.width),
+        top: clamp01(box.y / canvas.height),
+        width: clamp01(box.width / canvas.width),
+        height: clamp01(box.height / canvas.height),
+        text
+      });
+      if (boxes.length >= OCR_MAX_PREVIEW_BOXES) break;
+    }
+    return {
+      text: lines.join("\n"),
+      boxes
+    };
+  } finally {
+    bitmap.close?.();
+  }
 };
 
 const MAX_RECEIPT_IMAGE_DIMENSION = 1600;
@@ -407,7 +581,10 @@ export const FinancesPage = ({
   const [ocrConfirmDialogOpen, setOcrConfirmDialogOpen] = useState(false);
   const [ocrBusy, setOcrBusy] = useState(false);
   const [ocrError, setOcrError] = useState<string | null>(null);
-  const [ocrCandidate, setOcrCandidate] = useState<{ description: string; amount: string; fullText: string } | null>(null);
+  const [ocrCandidate, setOcrCandidate] = useState<{ description: string; amount: string; fullText: string; boxes: OcrPreviewBox[] } | null>(null);
+  const [ocrPreviewImageUrl, setOcrPreviewImageUrl] = useState<string | null>(null);
+  const [ocrTorchSupported, setOcrTorchSupported] = useState(false);
+  const [ocrTorchEnabled, setOcrTorchEnabled] = useState(false);
   const [rentFormError, setRentFormError] = useState<string | null>(null);
   const [memberRentFormError, setMemberRentFormError] = useState<string | null>(null);
   const [overviewMemberRentFormError, setOverviewMemberRentFormError] = useState<string | null>(null);
@@ -439,6 +616,7 @@ export const FinancesPage = ({
   const ocrVideoRef = useRef<HTMLVideoElement | null>(null);
   const ocrCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const ocrStreamRef = useRef<MediaStream | null>(null);
+  const ocrTesseractWorkerRef = useRef<TesseractWorkerLike | null>(null);
   const addReceiptUploadInputRef = useRef<HTMLInputElement | null>(null);
   const addReceiptCameraInputRef = useRef<HTMLInputElement | null>(null);
   const editReceiptUploadInputRef = useRef<HTMLInputElement | null>(null);
@@ -2274,6 +2452,8 @@ export const FinancesPage = ({
     if (!ocrStreamRef.current) return;
     ocrStreamRef.current.getTracks().forEach((track) => track.stop());
     ocrStreamRef.current = null;
+    setOcrTorchSupported(false);
+    setOcrTorchEnabled(false);
   }, []);
 
   const startOcrCameraStream = useCallback(async () => {
@@ -2289,6 +2469,10 @@ export const FinancesPage = ({
         audio: false
       });
       ocrStreamRef.current = stream;
+      const [videoTrack] = stream.getVideoTracks();
+      const capabilities = (videoTrack?.getCapabilities?.() ?? {}) as { torch?: boolean };
+      setOcrTorchSupported(Boolean(capabilities.torch));
+      setOcrTorchEnabled(false);
       if (ocrVideoRef.current) {
         ocrVideoRef.current.srcObject = stream;
         await ocrVideoRef.current.play();
@@ -2307,15 +2491,48 @@ export const FinancesPage = ({
     return () => stopOcrCameraStream();
   }, [ocrCameraDialogOpen, startOcrCameraStream, stopOcrCameraStream]);
 
+  const toggleOcrTorch = useCallback(async () => {
+    const [videoTrack] = ocrStreamRef.current?.getVideoTracks() ?? [];
+    if (!videoTrack) return;
+    const next = !ocrTorchEnabled;
+    try {
+      await videoTrack.applyConstraints({
+        advanced: [{ torch: next } as unknown as MediaTrackConstraintSet]
+      });
+      setOcrTorchEnabled(next);
+      setOcrError(null);
+    } catch {
+      setOcrError(t("finances.ocrTorchError"));
+    }
+  }, [ocrTorchEnabled, t]);
+
+  const getOrCreateTesseractWorker = useCallback(async () => {
+    if (ocrTesseractWorkerRef.current) return ocrTesseractWorkerRef.current;
+    const tesseractModule = await import("tesseract.js");
+    const worker = (await tesseractModule.createWorker(["deu", "eng"], tesseractModule.OEM.LSTM_ONLY, {
+      logger: () => undefined
+    })) as unknown as TesseractWorkerLike;
+    await worker.setParameters({
+      tessedit_pageseg_mode: "6",
+      preserve_interword_spaces: "1"
+    });
+    ocrTesseractWorkerRef.current = worker;
+    return worker;
+  }, []);
+
+  useEffect(
+    () => () => {
+      const worker = ocrTesseractWorkerRef.current;
+      if (!worker) return;
+      ocrTesseractWorkerRef.current = null;
+      void worker.terminate();
+    },
+    []
+  );
+
   const captureAndAnalyzeOcr = useCallback(async () => {
     if (!ocrVideoRef.current || !ocrCanvasRef.current) return;
     if (ocrBusy) return;
-
-    const detectorCtor = getTextDetectorConstructor();
-    if (!detectorCtor) {
-      setOcrError(t("finances.ocrUnsupported"));
-      return;
-    }
 
     const video = ocrVideoRef.current;
     const canvas = ocrCanvasRef.current;
@@ -2334,6 +2551,7 @@ export const FinancesPage = ({
 
     setOcrBusy(true);
     setOcrError(null);
+    setOcrPreviewImageUrl(null);
     try {
       const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.92));
       if (!blob) {
@@ -2341,19 +2559,72 @@ export const FinancesPage = ({
         return;
       }
 
-      const bitmap = await createImageBitmap(blob);
-      const detector = new detectorCtor({ languages: ["de", "en"] });
-      const results = await detector.detect(bitmap);
-      bitmap.close?.();
-      const text = results.map((entry) => (entry.rawValue ?? entry.text ?? "").trim()).filter(Boolean).join("\n");
+      const sourceBitmap = await createImageBitmap(blob);
+      context.drawImage(sourceBitmap, 0, 0, width, height);
+      sourceBitmap.close?.();
+      const previewImageUrl = canvas.toDataURL("image/jpeg", 0.88);
+      const processedCanvas = preprocessOcrCanvas(canvas);
+
+      const detectorCtor = getTextDetectorConstructor();
+      let text = "";
+      let boxes: OcrPreviewBox[] = [];
+      if (detectorCtor) {
+        try {
+          const detected = await runTextDetectorOcr(detectorCtor, processedCanvas);
+          text = detected.text;
+          boxes = detected.boxes;
+        } catch {
+          text = "";
+          boxes = [];
+        }
+      }
+
+      if (text.trim().length < OCR_MIN_USEFUL_TEXT_LENGTH) {
+        const worker = await getOrCreateTesseractWorker();
+        const result = await worker.recognize(processedCanvas);
+        const tesseractText = result.data.text.trim();
+        if (tesseractText.length > text.trim().length) {
+          text = tesseractText;
+          const tesseractBoxes: OcrPreviewBox[] = [];
+          for (const word of result.data.words ?? []) {
+            const rawText = (word.text ?? "").trim();
+            const bbox = word.bbox;
+            if (!rawText || !bbox) continue;
+            const widthPx = bbox.x1 - bbox.x0;
+            const heightPx = bbox.y1 - bbox.y0;
+            if (widthPx <= 1 || heightPx <= 1) continue;
+            if (typeof word.confidence === "number" && word.confidence < 20) continue;
+            tesseractBoxes.push({
+              left: clamp01(bbox.x0 / processedCanvas.width),
+              top: clamp01(bbox.y0 / processedCanvas.height),
+              width: clamp01(widthPx / processedCanvas.width),
+              height: clamp01(heightPx / processedCanvas.height),
+              text: rawText
+            });
+            if (tesseractBoxes.length >= OCR_MAX_PREVIEW_BOXES) break;
+          }
+          boxes = tesseractBoxes;
+        }
+      }
+
+      if (!text.trim()) {
+        setOcrError(t("finances.ocrReadError"));
+        return;
+      }
 
       const recognizedPrice = extractPriceFromOcrText(text);
       const recognizedProduct = extractProductFromOcrText(text);
+      const classifiedBoxes = boxes.map((box) => ({
+        ...box,
+        kind: classifyOcrBoxKind(box.text, recognizedProduct, recognizedPrice)
+      }));
       const candidate = {
         description: recognizedProduct ?? "",
         amount: recognizedPrice !== null ? recognizedPrice.toFixed(2) : "",
-        fullText: text
+        fullText: text,
+        boxes: classifiedBoxes
       };
+      setOcrPreviewImageUrl(previewImageUrl);
       setOcrCandidate(candidate);
       setOcrConfirmDialogOpen(true);
       setOcrCameraDialogOpen(false);
@@ -2362,7 +2633,7 @@ export const FinancesPage = ({
     } finally {
       setOcrBusy(false);
     }
-  }, [ocrBusy, t]);
+  }, [getOrCreateTesseractWorker, ocrBusy, t]);
 
   const useCameraInsteadOfAdd = useMemo(() => {
     const description = addEntryForm.state.values.description.trim();
@@ -2398,7 +2669,7 @@ export const FinancesPage = ({
                       {selectedShoppingItems.map((item) => (
                         <span
                           key={item.id}
-                          className="inline-flex h-6 max-w-40 items-center gap-1 rounded-md border border-brand-200 bg-brand-50/70 px-2 text-xs text-brand-700 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200"
+                          className="inline-flex h-6 max-w-40 items-center gap-1 rounded-md border border-brand-200 bg-brand-50/30 px-2 text-xs dark:border-slate-600 dark:bg-slate-800/40 dark:text-slate-200"
                         >
                           <span className="truncate">{item.title}</span>
                           <button
@@ -4584,7 +4855,10 @@ export const FinancesPage = ({
         open={ocrCameraDialogOpen}
         onOpenChange={(open) => {
           setOcrCameraDialogOpen(open);
-          if (!open) setOcrError(null);
+          if (!open) {
+            setOcrError(null);
+            setOcrPreviewImageUrl(null);
+          }
         }}
       >
         <DialogContent>
@@ -4595,7 +4869,7 @@ export const FinancesPage = ({
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
-            <div className="overflow-hidden rounded-xl border border-brand-100 bg-black dark:border-slate-700">
+            <div className="relative overflow-hidden rounded-xl border border-brand-100 bg-black dark:border-slate-700">
               <video
                 ref={ocrVideoRef}
                 className="h-64 w-full object-cover"
@@ -4603,6 +4877,21 @@ export const FinancesPage = ({
                 muted
                 playsInline
               />
+              {ocrTorchSupported ? (
+                <button
+                  type="button"
+                  className={`absolute bottom-3 right-3 inline-flex h-10 w-10 items-center justify-center rounded-full border transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400/60 ${
+                    ocrTorchEnabled
+                      ? "border-amber-300 bg-amber-400 text-amber-950 hover:bg-amber-300"
+                      : "border-white/40 bg-black/45 text-white hover:bg-black/60"
+                  }`}
+                  onClick={() => void toggleOcrTorch()}
+                  aria-label={ocrTorchEnabled ? t("finances.ocrTorchOffButton") : t("finances.ocrTorchOnButton")}
+                  title={ocrTorchEnabled ? t("finances.ocrTorchOffButton") : t("finances.ocrTorchOnButton")}
+                >
+                  {ocrTorchEnabled ? <ZapOff className="h-4 w-4" /> : <Zap className="h-4 w-4" />}
+                </button>
+              ) : null}
             </div>
             <canvas ref={ocrCanvasRef} className="hidden" />
             {ocrError ? (
@@ -4633,7 +4922,10 @@ export const FinancesPage = ({
         open={ocrConfirmDialogOpen}
         onOpenChange={(open) => {
           setOcrConfirmDialogOpen(open);
-          if (!open) setOcrCandidate(null);
+          if (!open) {
+            setOcrCandidate(null);
+            setOcrPreviewImageUrl(null);
+          }
         }}
       >
         <DialogContent>
@@ -4644,6 +4936,51 @@ export const FinancesPage = ({
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
+            {ocrPreviewImageUrl ? (
+              <div className="overflow-hidden rounded-xl border border-brand-100 bg-slate-100 dark:border-slate-700 dark:bg-slate-900">
+                <div className="relative mx-auto w-fit max-w-full">
+                  <img
+                    src={ocrPreviewImageUrl}
+                    alt={t("finances.receiptPreviewAlt")}
+                    className="block max-h-56 w-auto max-w-full"
+                  />
+                  {ocrCandidate?.boxes.map((box, index) => (
+                    <div
+                      key={`${box.left}-${box.top}-${box.width}-${box.height}-${index}`}
+                      className={`pointer-events-none absolute border ${
+                        box.kind === "price"
+                          ? "border-emerald-400/85 bg-emerald-300/15"
+                          : box.kind === "product"
+                            ? "border-sky-400/85 bg-sky-300/15"
+                            : "border-amber-400/85 bg-amber-300/15"
+                      }`}
+                      style={{
+                        left: `${box.left * 100}%`,
+                        top: `${box.top * 100}%`,
+                        width: `${box.width * 100}%`,
+                        height: `${box.height * 100}%`
+                      }}
+                      title={box.text}
+                    />
+                  ))}
+                  <button
+                    type="button"
+                    className="absolute bottom-3 right-3 inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/40 bg-black/45 text-white transition hover:bg-black/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400/60"
+                    onClick={() => {
+                      setOcrConfirmDialogOpen(false);
+                      setOcrCandidate(null);
+                      setOcrPreviewImageUrl(null);
+                      setOcrError(null);
+                      setOcrCameraDialogOpen(true);
+                    }}
+                    aria-label={t("finances.ocrRetryButton")}
+                    title={t("finances.ocrRetryButton")}
+                  >
+                    <RotateCcw className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+            ) : null}
             <div className="rounded-xl border border-brand-100 bg-brand-50/40 p-3 text-sm dark:border-slate-700 dark:bg-slate-800/50">
               <p>
                 <span className="font-semibold">
