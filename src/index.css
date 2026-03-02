@@ -259,6 +259,109 @@ input[type="number"] {
   min-height: 0 !important;
 }
 
+.domora-map-surface .leaflet-top,
+.domora-map-surface .leaflet-bottom {
+  z-index: 950;
+}
+
+.domora-map-surface .leaflet-bar {
+  border: 1px solid rgb(226 232 240 / 0.9);
+  border-radius: var(--radius-xl);
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgb(15 23 42 / 0.14);
+}
+
+.domora-map-surface .leaflet-control-zoom a,
+.domora-map-surface .leaflet-pm-toolbar .button-container,
+.domora-map-surface .leaflet-pm-toolbar.leaflet-bar a,
+.domora-map-surface .leaflet-pm-toolbar .button-container a {
+  width: 2.25rem;
+  min-width: 2.25rem;
+  height: 2.25rem;
+  min-height: 2.25rem;
+  line-height: 2.25rem;
+  border-bottom: 1px solid rgb(226 232 240 / 0.9);
+  background: rgb(255 255 255 / 0.95);
+  color: rgb(15 23 42 / 0.92);
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-align: center;
+  transition: background-color 150ms ease, color 150ms ease;
+}
+
+.domora-map-surface .leaflet-control-zoom-in,
+.domora-map-surface .leaflet-control-zoom-out {
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.domora-map-surface .leaflet-control-zoom a:last-child,
+.domora-map-surface .leaflet-pm-toolbar .button-container:last-child,
+.domora-map-surface .leaflet-pm-toolbar.leaflet-bar a:last-child,
+.domora-map-surface .leaflet-pm-toolbar .button-container a:last-child {
+  border-bottom: 0;
+}
+
+.domora-map-surface .leaflet-control-zoom a:hover,
+.domora-map-surface .leaflet-control-zoom a:focus,
+.domora-map-surface .leaflet-pm-toolbar .button-container:hover,
+.domora-map-surface .leaflet-pm-toolbar .button-container:focus,
+.domora-map-surface .leaflet-pm-toolbar.leaflet-bar a:hover,
+.domora-map-surface .leaflet-pm-toolbar.leaflet-bar a:focus,
+.domora-map-surface .leaflet-pm-toolbar .button-container a:hover,
+.domora-map-surface .leaflet-pm-toolbar .button-container a:focus,
+.domora-map-surface .leaflet-pm-toolbar .button-container.active {
+  background: rgb(241 245 249 / 0.98);
+  color: rgb(15 118 110);
+}
+
+.domora-map-surface .leaflet-control-zoom a.leaflet-disabled,
+.domora-map-surface .leaflet-pm-toolbar .button-container.disabled,
+.domora-map-surface .leaflet-pm-toolbar.leaflet-bar a.leaflet-disabled,
+.domora-map-surface .leaflet-pm-toolbar .button-container a.leaflet-disabled {
+  background: rgb(248 250 252 / 0.9);
+  color: rgb(148 163 184 / 0.95);
+}
+
+.domora-map-surface .leaflet-pm-toolbar .button-container .control-icon {
+  filter: saturate(0.2) contrast(0.9);
+}
+
+.dark .domora-map-surface .leaflet-bar {
+  border-color: rgb(51 65 85 / 0.85);
+  box-shadow: 0 8px 22px rgb(2 6 23 / 0.45);
+}
+
+.dark .domora-map-surface .leaflet-control-zoom a,
+.dark .domora-map-surface .leaflet-pm-toolbar .button-container,
+.dark .domora-map-surface .leaflet-pm-toolbar.leaflet-bar a,
+.dark .domora-map-surface .leaflet-pm-toolbar .button-container a {
+  border-bottom-color: rgb(51 65 85 / 0.85);
+  background: rgb(15 23 42 / 0.94);
+  color: rgb(226 232 240 / 0.96);
+}
+
+.dark .domora-map-surface .leaflet-control-zoom a:hover,
+.dark .domora-map-surface .leaflet-control-zoom a:focus,
+.dark .domora-map-surface .leaflet-pm-toolbar .button-container:hover,
+.dark .domora-map-surface .leaflet-pm-toolbar .button-container:focus,
+.dark .domora-map-surface .leaflet-pm-toolbar.leaflet-bar a:hover,
+.dark .domora-map-surface .leaflet-pm-toolbar.leaflet-bar a:focus,
+.dark .domora-map-surface .leaflet-pm-toolbar .button-container a:hover,
+.dark .domora-map-surface .leaflet-pm-toolbar .button-container a:focus,
+.dark .domora-map-surface .leaflet-pm-toolbar .button-container.active {
+  background: rgb(30 41 59 / 0.98);
+  color: rgb(45 212 191 / 0.98);
+}
+
+.dark .domora-map-surface .leaflet-control-zoom a.leaflet-disabled,
+.dark .domora-map-surface .leaflet-pm-toolbar .button-container.disabled,
+.dark .domora-map-surface .leaflet-pm-toolbar.leaflet-bar a.leaflet-disabled,
+.dark .domora-map-surface .leaflet-pm-toolbar .button-container a.leaflet-disabled {
+  background: rgb(15 23 42 / 0.9);
+  color: rgb(100 116 139 / 0.95);
+}
+
 .excalidraw-embed canvas {
   max-width: 100% !important;
   max-height: 100% !important;

@@ -1,7 +1,9 @@
-import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import L from "leaflet";
+import "@geoman-io/leaflet-geoman-free";
+import "leaflet.locatecontrol";
 import markerIcon2xUrl from "leaflet/dist/images/marker-icon-2x.png";
 import markerIconUrl from "leaflet/dist/images/marker-icon.png";
 import markerShadowUrl from "leaflet/dist/images/marker-shadow.png";
@@ -14,7 +16,9 @@ import {
   ChevronUp,
   GripVertical,
   CircleDot,
+  House,
   Loader2,
+  LocateFixed,
   Maximize2,
   MoreHorizontal,
   Pencil,
@@ -178,6 +182,7 @@ type MapStyleOption = {
   subdomains?: string;
   maxZoom?: number;
 };
+type ManualMarkerFilterMode = "all" | "mine" | "member" | "none";
 
 const LANDING_WIDGET_COMPONENTS: Array<{ key: LandingWidgetKey; tag: string }> = [
   { key: "tasks-overview", tag: "LandingWidgetTasksOverview" },
@@ -272,6 +277,296 @@ const openStreetMapSearchUrl = (query: string) =>
 const openStreetMapPinUrl = (lat: number, lon: number) =>
   `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lon}#map=17/${lat}/${lon}`;
 
+type DomoraLeafletLayer = L.Layer & {
+  _domoraMeta?: HouseholdMapMarker;
+};
+
+type LocateControlHandle = L.Control & {
+  start: () => void;
+  stop: () => void;
+};
+
+type MapWithPm = L.Map & {
+  pm?: {
+    addControls: (options: Record<string, unknown>) => void;
+    removeControls: () => void;
+    setGlobalOptions: (options: Record<string, unknown>) => void;
+  };
+};
+
+const toFixedCoordinate = (value: number) => Number(value.toFixed(6));
+const toFixedRadius = (value: number) => Number(value.toFixed(2));
+const createMarkerId = () => {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return `marker:${crypto.randomUUID()}`;
+  }
+  return `marker:${Date.now()}:${Math.floor(Math.random() * 100_000)}`;
+};
+
+const serializeHouseholdLayer = (
+  layer: DomoraLeafletLayer,
+  userId: string,
+  defaultTitle: string
+): HouseholdMapMarker | null => {
+  const nowIso = new Date().toISOString();
+  const existing = layer._domoraMeta;
+  const base = {
+    id: existing?.id ?? createMarkerId(),
+    icon: existing?.icon ?? ("star" as HouseholdMapMarkerIcon),
+    title: existing?.title?.trim() || defaultTitle,
+    description: existing?.description ?? "",
+    image_b64: existing?.image_b64 ?? null,
+    poi_ref: existing?.poi_ref ?? null,
+    created_by: existing?.created_by ?? userId,
+    created_at: existing?.created_at ?? nowIso,
+    last_edited_by: userId,
+    last_edited_at: nowIso
+  };
+
+  if (layer instanceof L.Marker) {
+    const latLng = layer.getLatLng();
+    return {
+      ...base,
+      type: "point",
+      lat: toFixedCoordinate(latLng.lat),
+      lon: toFixedCoordinate(latLng.lng)
+    };
+  }
+
+  if (layer instanceof L.Circle) {
+    const center = layer.getLatLng();
+    return {
+      ...base,
+      type: "circle",
+      center: {
+        lat: toFixedCoordinate(center.lat),
+        lon: toFixedCoordinate(center.lng)
+      },
+      radius_meters: toFixedRadius(layer.getRadius())
+    };
+  }
+
+  if (layer instanceof L.Rectangle) {
+    const bounds = layer.getBounds();
+    return {
+      ...base,
+      type: "rectangle",
+      bounds: {
+        south: toFixedCoordinate(bounds.getSouth()),
+        west: toFixedCoordinate(bounds.getWest()),
+        north: toFixedCoordinate(bounds.getNorth()),
+        east: toFixedCoordinate(bounds.getEast())
+      }
+    };
+  }
+
+  if (layer instanceof L.Polyline) {
+    const latLngs = layer.getLatLngs();
+    const linearLatLngs = Array.isArray(latLngs[0])
+      ? (latLngs as L.LatLng[][]).flat()
+      : (latLngs as L.LatLng[]);
+    const points = linearLatLngs
+      .map((entry) => {
+        const latLng = entry as L.LatLng;
+        return {
+          lat: toFixedCoordinate(latLng.lat),
+          lon: toFixedCoordinate(latLng.lng)
+        };
+      })
+      .filter((point) => Number.isFinite(point.lat) && Number.isFinite(point.lon));
+
+    if (points.length < 2) return null;
+    return {
+      ...base,
+      type: "vector",
+      points
+    };
+  }
+
+  return null;
+};
+
+const GeomanEditorBridge = ({
+  enabled,
+  userId,
+  defaultTitle,
+  onMarkersChange
+}: {
+  enabled: boolean;
+  userId: string;
+  defaultTitle: string;
+  onMarkersChange: (markers: HouseholdMapMarker[]) => void;
+}) => {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!enabled) return;
+
+    const mapWithPm = map as MapWithPm;
+    if (!mapWithPm.pm) return;
+
+    mapWithPm.pm.setGlobalOptions({
+      continueDrawing: false,
+      snapDistance: 20,
+      pinning: true
+    });
+    mapWithPm.pm.addControls({
+      position: "topleft",
+      oneBlock: false,
+      drawMarker: true,
+      drawPolyline: true,
+      drawCircle: true,
+      drawRectangle: true,
+      drawPolygon: false,
+      drawCircleMarker: false,
+      drawText: false,
+      drawCut: false,
+      editMode: true,
+      dragMode: true,
+      removalMode: true,
+      rotateMode: false
+    });
+
+    const emitMarkers = () => {
+      const nextMarkers: HouseholdMapMarker[] = [];
+      map.eachLayer((layer) => {
+        const domoraLayer = layer as DomoraLeafletLayer;
+        if (!domoraLayer._domoraMeta) return;
+        const serialized = serializeHouseholdLayer(domoraLayer, userId, defaultTitle);
+        if (serialized) nextMarkers.push(serialized);
+      });
+      onMarkersChange(nextMarkers);
+    };
+
+    const handleCreate = (event: { layer?: L.Layer }) => {
+      const createdLayer = event.layer as DomoraLeafletLayer | undefined;
+      if (!createdLayer) return;
+      if (!createdLayer._domoraMeta) {
+        const nowIso = new Date().toISOString();
+        createdLayer._domoraMeta = {
+          id: createMarkerId(),
+          type: "point",
+          icon: "star",
+          title: defaultTitle,
+          description: "",
+          image_b64: null,
+          poi_ref: null,
+          created_by: userId,
+          created_at: nowIso,
+          last_edited_by: userId,
+          last_edited_at: nowIso,
+          lat: 0,
+          lon: 0
+        };
+      }
+      if (createdLayer instanceof L.Marker) {
+        const markerLayer = createdLayer as DomoraLeafletLayer & L.Marker;
+        markerLayer.setIcon(getManualMarkerIcon(markerLayer._domoraMeta?.icon ?? "star"));
+      }
+      emitMarkers();
+    };
+
+    map.on("pm:create", handleCreate as L.LeafletEventHandlerFn);
+    map.on("pm:edit", emitMarkers as L.LeafletEventHandlerFn);
+    map.on("pm:dragend", emitMarkers as L.LeafletEventHandlerFn);
+    map.on("pm:remove", emitMarkers as L.LeafletEventHandlerFn);
+    map.on("pm:cut", emitMarkers as L.LeafletEventHandlerFn);
+
+    return () => {
+      map.off("pm:create", handleCreate as L.LeafletEventHandlerFn);
+      map.off("pm:edit", emitMarkers as L.LeafletEventHandlerFn);
+      map.off("pm:dragend", emitMarkers as L.LeafletEventHandlerFn);
+      map.off("pm:remove", emitMarkers as L.LeafletEventHandlerFn);
+      map.off("pm:cut", emitMarkers as L.LeafletEventHandlerFn);
+      mapWithPm.pm?.removeControls();
+    };
+  }, [defaultTitle, enabled, map, onMarkersChange, userId]);
+
+  return null;
+};
+
+const LocateControlBridge = ({
+  enabled,
+  onReady,
+  onLocationFound,
+  onLocationError
+}: {
+  enabled: boolean;
+  onReady: (control: LocateControlHandle | null) => void;
+  onLocationFound: (lat: number, lon: number) => void;
+  onLocationError: () => void;
+}) => {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!enabled) {
+      onReady(null);
+      return;
+    }
+
+    const factory = (L.control as unknown as {
+      locate?: (options?: Record<string, unknown>) => LocateControlHandle;
+    }).locate;
+    if (!factory) {
+      onReady(null);
+      return;
+    }
+
+    const control = factory({
+      position: "topleft",
+      flyTo: true,
+      setView: "untilPanOrZoom",
+      keepCurrentZoomLevel: false,
+      initialZoomLevel: MAP_ZOOM_WITH_ADDRESS,
+      cacheLocation: true,
+      clickBehavior: {
+        inView: "stop",
+        inViewNotFollowing: "inView",
+        outOfView: "setView"
+      },
+      strings: {
+        title: "Standort ermitteln"
+      },
+      locateOptions: {
+        enableHighAccuracy: true,
+        timeout: 15000,
+        maximumAge: 60000
+      }
+    });
+
+    control.addTo(map);
+    onReady(control);
+
+    const handleLocationFound = (event: { latitude?: number; longitude?: number; latlng?: L.LatLng }) => {
+      const lat = event.latlng?.lat ?? event.latitude;
+      const lon = event.latlng?.lng ?? event.longitude;
+      const resolvedLat = typeof lat === "number" ? lat : Number.NaN;
+      const resolvedLon = typeof lon === "number" ? lon : Number.NaN;
+      if (!Number.isFinite(resolvedLat) || !Number.isFinite(resolvedLon)) {
+        onLocationError();
+        return;
+      }
+      onLocationFound(resolvedLat, resolvedLon);
+    };
+
+    const handleLocationError = () => {
+      onLocationError();
+    };
+
+    map.on("locationfound", handleLocationFound as L.LeafletEventHandlerFn);
+    map.on("locationerror", handleLocationError as L.LeafletEventHandlerFn);
+
+    return () => {
+      map.off("locationfound", handleLocationFound as L.LeafletEventHandlerFn);
+      map.off("locationerror", handleLocationError as L.LeafletEventHandlerFn);
+      onReady(null);
+      control.remove();
+    };
+  }, [enabled, map, onLocationError, onLocationFound, onReady]);
+
+  return null;
+};
+
 const AddressMapView = ({ center }: { center: [number, number] }) => {
   const map = useMap();
   useEffect(() => {
@@ -364,7 +659,7 @@ const renderHouseholdMarkerTooltip = (marker: HouseholdMapMarker) => (
   </LeafletTooltip>
 );
 
-const renderHouseholdMarkerPopup = (marker: HouseholdMapMarker) => (
+const renderHouseholdMarkerPopup = (marker: HouseholdMapMarker, history?: ReactNode) => (
   <Popup>
     <div className="space-y-1">
       <p className="font-semibold">
@@ -378,6 +673,7 @@ const renderHouseholdMarkerPopup = (marker: HouseholdMapMarker) => (
           className="max-h-32 w-full rounded object-cover"
         />
       ) : null}
+      {history}
     </div>
   </Popup>
 );
@@ -861,6 +1157,8 @@ export const HomePage = ({
   const [poiOverrideSavingId, setPoiOverrideSavingId] = useState<string | null>(null);
   const [poiOverrideError, setPoiOverrideError] = useState<string | null>(null);
   const [mapStyle, setMapStyle] = useState<MapStyleId>("street");
+  const [manualMarkerFilterMode, setManualMarkerFilterMode] = useState<ManualMarkerFilterMode>("all");
+  const [manualMarkerFilterMemberId, setManualMarkerFilterMemberId] = useState<string>("");
   const [poiCategoriesEnabled, setPoiCategoriesEnabled] = useState<Record<PoiCategory, boolean>>({
     restaurant: true,
     shop: true,
@@ -868,6 +1166,9 @@ export const HomePage = ({
     fuel: true
   });
   const whiteboardSaveTimerRef = useRef<number | null>(null);
+  const mapMarkerSaveTimerRef = useRef<number | null>(null);
+  const pendingMapMarkerSaveRef = useRef<HouseholdMapMarker[] | null>(null);
+  const locateControlRef = useRef<LocateControlHandle | null>(null);
   const lastSavedWhiteboardRef = useRef(whiteboardSceneJson);
   const isWhiteboardFullscreenOpen = location.pathname === "/home/summary/whiteboard";
   const isMapFullscreenOpen = location.pathname === "/home/summary/map";
@@ -951,6 +1252,49 @@ export const HomePage = ({
     () => MAP_STYLE_OPTIONS.find((option) => option.id === mapStyle) ?? MAP_STYLE_OPTIONS[0],
     [mapStyle]
   );
+  const mapMemberLabel = useCallback(
+    (memberId: string) => {
+      const member = members.find((entry) => entry.user_id === memberId);
+      const display = member?.display_name?.trim();
+      if (display) return display;
+      return memberId;
+    },
+    [members]
+  );
+  const filteredHouseholdMarkers = useMemo(() => {
+    if (manualMarkerFilterMode === "none") return [] as HouseholdMapMarker[];
+    if (manualMarkerFilterMode === "mine") {
+      return household.household_map_markers.filter((marker) => marker.created_by === userId);
+    }
+    if (manualMarkerFilterMode === "member") {
+      if (!manualMarkerFilterMemberId) return [] as HouseholdMapMarker[];
+      return household.household_map_markers.filter((marker) => marker.created_by === manualMarkerFilterMemberId);
+    }
+    return household.household_map_markers;
+  }, [household.household_map_markers, manualMarkerFilterMemberId, manualMarkerFilterMode, userId]);
+  const memberOptionsForMarkerFilter = useMemo(
+    () =>
+      members
+        .map((member) => ({
+          id: member.user_id,
+          label: mapMemberLabel(member.user_id)
+        }))
+        .sort((a, b) => a.label.localeCompare(b.label)),
+    [mapMemberLabel, members]
+  );
+  useEffect(() => {
+    if (manualMarkerFilterMode !== "member") return;
+    if (memberOptionsForMarkerFilter.length === 0) {
+      if (manualMarkerFilterMemberId !== "") {
+        setManualMarkerFilterMemberId("");
+      }
+      return;
+    }
+    const exists = memberOptionsForMarkerFilter.some((option) => option.id === manualMarkerFilterMemberId);
+    if (!exists) {
+      setManualMarkerFilterMemberId(memberOptionsForMarkerFilter[0]!.id);
+    }
+  }, [manualMarkerFilterMemberId, manualMarkerFilterMode, memberOptionsForMarkerFilter]);
   const nearbyPoiQuery = useQuery({
     queryKey: [
       "map-poi",
@@ -990,6 +1334,36 @@ export const HomePage = ({
     }
     return byRef;
   }, [household.household_map_markers]);
+  const buildHouseholdUpdatePayload = useCallback(
+    (markers: HouseholdMapMarker[]): UpdateHouseholdInput => ({
+      name: household.name,
+      imageUrl: household.image_url ?? "",
+      address: household.address,
+      currency: household.currency,
+      apartmentSizeSqm: household.apartment_size_sqm,
+      coldRentMonthly: household.cold_rent_monthly,
+      utilitiesMonthly: household.utilities_monthly,
+      utilitiesOnRoomSqmPercent: household.utilities_on_room_sqm_percent,
+      taskLazinessEnabled: household.task_laziness_enabled,
+      vacationTasksExcludeEnabled: household.vacation_tasks_exclude_enabled,
+      vacationFinancesExcludeEnabled: household.vacation_finances_exclude_enabled,
+      taskSkipEnabled: household.task_skip_enabled,
+      featureBucketEnabled: household.feature_bucket_enabled,
+      featureShoppingEnabled: household.feature_shopping_enabled,
+      featureTasksEnabled: household.feature_tasks_enabled,
+      featureOneOffTasksEnabled: household.feature_one_off_tasks_enabled,
+      featureFinancesEnabled: household.feature_finances_enabled,
+      oneOffClaimTimeoutHours: household.one_off_claim_timeout_hours,
+      oneOffClaimMaxPimpers: household.one_off_claim_max_pimpers,
+      themePrimaryColor: household.theme_primary_color,
+      themeAccentColor: household.theme_accent_color,
+      themeFontFamily: household.theme_font_family,
+      themeRadiusScale: household.theme_radius_scale,
+      translationOverrides: household.translation_overrides,
+      householdMapMarkers: markers
+    }),
+    [household]
+  );
   const onSaveExistingPoiOverride = useCallback(
     async (marker: HouseholdMapMarker) => {
       if (marker.type !== "point") return;
@@ -1036,7 +1410,62 @@ export const HomePage = ({
       userId
     ]
   );
+
+  const flushQueuedMapMarkerSave = useCallback(async () => {
+    const nextMarkers = pendingMapMarkerSaveRef.current;
+    pendingMapMarkerSaveRef.current = null;
+    if (!nextMarkers) return;
+
+    const currentSerialized = JSON.stringify(household.household_map_markers);
+    const nextSerialized = JSON.stringify(nextMarkers);
+    if (currentSerialized === nextSerialized) return;
+
+    try {
+      await onUpdateHousehold(buildHouseholdUpdatePayload(nextMarkers));
+    } catch {
+      // Ignore silent autosave errors in map editor to avoid blocking interactions.
+    }
+  }, [buildHouseholdUpdatePayload, household.household_map_markers, onUpdateHousehold]);
+
+  const onGeomanMarkersChanged = useCallback(
+    (markers: HouseholdMapMarker[]) => {
+      if (!isHouseholdOwner) return;
+      pendingMapMarkerSaveRef.current = markers;
+      if (mapMarkerSaveTimerRef.current !== null) {
+        window.clearTimeout(mapMarkerSaveTimerRef.current);
+      }
+      mapMarkerSaveTimerRef.current = window.setTimeout(() => {
+        mapMarkerSaveTimerRef.current = null;
+        void flushQueuedMapMarkerSave();
+      }, 500);
+    },
+    [flushQueuedMapMarkerSave, isHouseholdOwner]
+  );
+
+  const onLocateControlReady = useCallback((control: LocateControlHandle | null) => {
+    locateControlRef.current = control;
+  }, []);
+
+  const onLocateControlFound = useCallback((lat: number, lon: number) => {
+    setMyLocationCenter([lat, lon]);
+    setMyLocationRecenterRequestToken((current) => current + 1);
+    setMyLocationError(null);
+    setMyLocationStatus("idle");
+  }, []);
+
+  const onLocateControlError = useCallback(() => {
+    setMyLocationStatus("error");
+    setMyLocationError(t("home.householdMapMyLocationError"));
+  }, [t]);
+
   const requestMyLocation = useCallback(() => {
+    if (locateControlRef.current) {
+      setMyLocationError(null);
+      setMyLocationStatus("loading");
+      locateControlRef.current.start();
+      return;
+    }
+
     if (typeof window === "undefined" || !("geolocation" in navigator)) {
       setMyLocationStatus("error");
       setMyLocationError(t("home.householdMapMyLocationUnavailable"));
@@ -1075,36 +1504,6 @@ export const HomePage = ({
       }
     );
   }, [t]);
-  const buildHouseholdUpdatePayload = useCallback(
-    (markers: HouseholdMapMarker[]): UpdateHouseholdInput => ({
-      name: household.name,
-      imageUrl: household.image_url ?? "",
-      address: household.address,
-      currency: household.currency,
-      apartmentSizeSqm: household.apartment_size_sqm,
-      coldRentMonthly: household.cold_rent_monthly,
-      utilitiesMonthly: household.utilities_monthly,
-      utilitiesOnRoomSqmPercent: household.utilities_on_room_sqm_percent,
-      taskLazinessEnabled: household.task_laziness_enabled,
-      vacationTasksExcludeEnabled: household.vacation_tasks_exclude_enabled,
-      vacationFinancesExcludeEnabled: household.vacation_finances_exclude_enabled,
-      taskSkipEnabled: household.task_skip_enabled,
-      featureBucketEnabled: household.feature_bucket_enabled,
-      featureShoppingEnabled: household.feature_shopping_enabled,
-      featureTasksEnabled: household.feature_tasks_enabled,
-      featureOneOffTasksEnabled: household.feature_one_off_tasks_enabled,
-      featureFinancesEnabled: household.feature_finances_enabled,
-      oneOffClaimTimeoutHours: household.one_off_claim_timeout_hours,
-      oneOffClaimMaxPimpers: household.one_off_claim_max_pimpers,
-      themePrimaryColor: household.theme_primary_color,
-      themeAccentColor: household.theme_accent_color,
-      themeFontFamily: household.theme_font_family,
-      themeRadiusScale: household.theme_radius_scale,
-      translationOverrides: household.translation_overrides,
-      householdMapMarkers: markers
-    }),
-    [household]
-  );
   const onSavePoiOverride = useCallback(
     async (poi: NearbyPoi) => {
       if (!isHouseholdOwner) {
@@ -1167,29 +1566,55 @@ export const HomePage = ({
       userId
     ]
   );
+  const markerHistoryNode = useCallback(
+    (marker: HouseholdMapMarker) => (
+      <div className="mt-2 border-t border-slate-200 pt-2 text-xs text-slate-600 dark:border-slate-700 dark:text-slate-300">
+        <p>
+          {t("home.householdMapMarkerHistoryCreatedBy", {
+            name: marker.created_by ? mapMemberLabel(marker.created_by) : t("common.memberFallback"),
+            at: formatDateTime(marker.created_at, language, marker.created_at)
+          })}
+        </p>
+        <p>
+          {t("home.householdMapMarkerHistoryUpdatedBy", {
+            name: marker.last_edited_by ? mapMemberLabel(marker.last_edited_by) : t("common.memberFallback"),
+            at: formatDateTime(marker.last_edited_at, language, marker.last_edited_at)
+          })}
+        </p>
+      </div>
+    ),
+    [language, mapMemberLabel, t]
+  );
   const renderHouseholdMapSurface = useCallback(
-    (containerClassName: string) => (
+    (containerClassName: string, isFullscreen: boolean) => (
       <div className={containerClassName}>
-        <div className="absolute left-2 top-2 z-[1000] flex flex-col gap-2">
+        <div className="absolute bottom-2 right-2 z-[1000] flex flex-col gap-2">
           <Button
             type="button"
             size="sm"
             variant="outline"
-            className="h-8 border-slate-200/80 bg-white/95 px-2.5 backdrop-blur dark:border-slate-600/80 dark:bg-slate-900/95"
+            className="h-8 w-8 border-slate-200/80 bg-white/95 p-0 backdrop-blur dark:border-slate-600/80 dark:bg-slate-900/95"
             onClick={() => setMapRecenterRequestToken((current) => current + 1)}
+            aria-label={t("home.householdMapBackToWg")}
+            title={t("home.householdMapBackToWg")}
           >
-            {t("home.householdMapBackToWg")}
+            <House className="h-4 w-4" />
           </Button>
           <Button
             type="button"
             size="sm"
             variant="outline"
-            className="h-8 gap-2 border-slate-200/80 bg-white/95 px-2.5 backdrop-blur dark:border-slate-600/80 dark:bg-slate-900/95"
+            className="h-8 w-8 border-slate-200/80 bg-white/95 p-0 backdrop-blur dark:border-slate-600/80 dark:bg-slate-900/95"
             onClick={requestMyLocation}
             disabled={myLocationStatus === "loading"}
+            aria-label={t("home.householdMapMyLocation")}
+            title={t("home.householdMapMyLocation")}
           >
-            {myLocationStatus === "loading" ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-            <span>{t("home.householdMapMyLocation")}</span>
+            {myLocationStatus === "loading" ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <LocateFixed className="h-4 w-4" />
+            )}
           </Button>
         </div>
         <div className="absolute right-2 top-2 z-[1000]">
@@ -1226,6 +1651,50 @@ export const HomePage = ({
                 </DropdownMenuCheckboxItem>
               ))}
               <DropdownMenuSeparator />
+              <DropdownMenuLabel>{t("home.householdMapManualFilterLabel")}</DropdownMenuLabel>
+              <DropdownMenuCheckboxItem
+                checked={manualMarkerFilterMode === "all"}
+                onCheckedChange={(checked) => {
+                  if (!checked) return;
+                  setManualMarkerFilterMode("all");
+                }}
+              >
+                {t("home.householdMapManualFilterAll")}
+              </DropdownMenuCheckboxItem>
+              <DropdownMenuCheckboxItem
+                checked={manualMarkerFilterMode === "mine"}
+                onCheckedChange={(checked) => {
+                  if (!checked) return;
+                  setManualMarkerFilterMode("mine");
+                }}
+              >
+                {t("home.householdMapManualFilterMine")}
+              </DropdownMenuCheckboxItem>
+              <DropdownMenuCheckboxItem
+                checked={manualMarkerFilterMode === "none"}
+                onCheckedChange={(checked) => {
+                  if (!checked) return;
+                  setManualMarkerFilterMode("none");
+                }}
+              >
+                {t("home.householdMapManualFilterNone")}
+              </DropdownMenuCheckboxItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel>{t("home.householdMapManualFilterByMember")}</DropdownMenuLabel>
+              {memberOptionsForMarkerFilter.map((memberOption) => (
+                <DropdownMenuCheckboxItem
+                  key={memberOption.id}
+                  checked={manualMarkerFilterMode === "member" && manualMarkerFilterMemberId === memberOption.id}
+                  onCheckedChange={(checked) => {
+                    if (!checked) return;
+                    setManualMarkerFilterMode("member");
+                    setManualMarkerFilterMemberId(memberOption.id);
+                  }}
+                >
+                  {memberOption.label}
+                </DropdownMenuCheckboxItem>
+              ))}
+              <DropdownMenuSeparator />
               <DropdownMenuLabel>{t("home.householdMapStyleLabel")}</DropdownMenuLabel>
               {MAP_STYLE_OPTIONS.map((option) => (
                 <DropdownMenuCheckboxItem
@@ -1243,11 +1712,24 @@ export const HomePage = ({
           </DropdownMenu>
         </div>
         <MapContainer
+          className="domora-map-surface"
           center={mapCenter}
           zoom={mapZoom}
           scrollWheelZoom
           style={{ height: "100%", width: "100%" }}
         >
+          <GeomanEditorBridge
+            enabled={isHouseholdOwner && isFullscreen}
+            userId={userId}
+            defaultTitle={t("home.householdMapMarkerPending")}
+            onMarkersChange={onGeomanMarkersChanged}
+          />
+          <LocateControlBridge
+            enabled
+            onReady={onLocateControlReady}
+            onLocationFound={onLocateControlFound}
+            onLocationError={onLocateControlError}
+          />
           <AddressMapView center={mapCenter} />
           <RecenterMapOnRequest
             center={mapCenter}
@@ -1265,26 +1747,48 @@ export const HomePage = ({
             key={activeMapStyle.id}
             attribution={activeMapStyle.attribution}
             url={activeMapStyle.tileUrl}
-            subdomains={activeMapStyle.subdomains}
+            subdomains={activeMapStyle.subdomains ?? "abc"}
             maxZoom={activeMapStyle.maxZoom}
           />
           {mapHasPin ? (
-            <Marker position={mapCenter}>
-              <Popup>{addressMapLabel ?? addressInput}</Popup>
+            <Marker position={mapCenter} pmIgnore>
+              <LeafletTooltip>
+                <div
+                  className="min-w-[180px] rounded-md border border-white/30 bg-white/92 p-2 text-slate-900 shadow-md dark:border-slate-600/70 dark:bg-slate-900/90 dark:text-slate-100"
+                  style={
+                    isFullscreen && householdImageUrl
+                      ? {
+                          backgroundImage: `linear-gradient(rgba(2,6,23,0.45), rgba(2,6,23,0.45)), url("${householdImageUrl}")`,
+                          backgroundSize: "cover",
+                          backgroundPosition: "center",
+                          color: "#f8fafc"
+                        }
+                      : undefined
+                  }
+                >
+                  <p className="font-semibold">{household.name}</p>
+                </div>
+              </LeafletTooltip>
             </Marker>
           ) : null}
           {myLocationCenter ? (
-            <Marker position={myLocationCenter}>
+            <Marker position={myLocationCenter} pmIgnore>
               <Popup>{t("home.householdMapMyLocation")}</Popup>
             </Marker>
           ) : null}
-          {household.household_map_markers.map((marker) => {
+          {filteredHouseholdMarkers.map((marker) => {
             if (marker.type === "point") {
               return (
                 <Marker
                   key={marker.id}
                   position={[marker.lat, marker.lon]}
                   icon={getManualMarkerIcon(marker.icon)}
+                  pmIgnore={!isHouseholdOwner}
+                  eventHandlers={{
+                    add: (event) => {
+                      (event.target as DomoraLeafletLayer)._domoraMeta = marker;
+                    }
+                  }}
                 >
                   {renderHouseholdMarkerTooltip(marker)}
                   {marker.poi_ref ? (
@@ -1339,10 +1843,11 @@ export const HomePage = ({
                             className="max-h-32 w-full rounded object-cover"
                           />
                         ) : null}
+                        {markerHistoryNode(marker)}
                       </div>
                     </Popup>
                   ) : (
-                    renderHouseholdMarkerPopup(marker)
+                    renderHouseholdMarkerPopup(marker, markerHistoryNode(marker))
                   )}
                 </Marker>
               );
@@ -1354,9 +1859,15 @@ export const HomePage = ({
                   key={marker.id}
                   positions={marker.points.map((point) => [point.lat, point.lon])}
                   pathOptions={{ color: "#0f766e", weight: 5, opacity: 0.85 }}
+                  pmIgnore={!isHouseholdOwner}
+                  eventHandlers={{
+                    add: (event) => {
+                      (event.target as DomoraLeafletLayer)._domoraMeta = marker;
+                    }
+                  }}
                 >
                   {renderHouseholdMarkerTooltip(marker)}
-                  {renderHouseholdMarkerPopup(marker)}
+                  {renderHouseholdMarkerPopup(marker, markerHistoryNode(marker))}
                 </Polyline>
               );
             }
@@ -1368,9 +1879,15 @@ export const HomePage = ({
                   center={[marker.center.lat, marker.center.lon]}
                   radius={marker.radius_meters}
                   pathOptions={{ color: "#0f766e", fillColor: "#14b8a6", fillOpacity: 0.2, weight: 3 }}
+                  pmIgnore={!isHouseholdOwner}
+                  eventHandlers={{
+                    add: (event) => {
+                      (event.target as DomoraLeafletLayer)._domoraMeta = marker;
+                    }
+                  }}
                 >
                   {renderHouseholdMarkerTooltip(marker)}
-                  {renderHouseholdMarkerPopup(marker)}
+                  {renderHouseholdMarkerPopup(marker, markerHistoryNode(marker))}
                 </Circle>
               );
             }
@@ -1383,14 +1900,20 @@ export const HomePage = ({
                   [marker.bounds.north, marker.bounds.east]
                 ]}
                 pathOptions={{ color: "#0f766e", fillColor: "#14b8a6", fillOpacity: 0.2, weight: 3 }}
+                pmIgnore={!isHouseholdOwner}
+                eventHandlers={{
+                  add: (event) => {
+                    (event.target as DomoraLeafletLayer)._domoraMeta = marker;
+                  }
+                }}
               >
                 {renderHouseholdMarkerTooltip(marker)}
-                {renderHouseholdMarkerPopup(marker)}
+                {renderHouseholdMarkerPopup(marker, markerHistoryNode(marker))}
               </Rectangle>
             );
           })}
           {nearbyPois.map((poi) => (
-            <Marker key={poi.id} position={[poi.lat, poi.lon]} icon={getPoiMarkerIcon(poi.category)}>
+            <Marker key={poi.id} position={[poi.lat, poi.lon]} icon={getPoiMarkerIcon(poi.category)} pmIgnore>
               <Popup>
                 <div className="space-y-1">
                   <p className="font-semibold">
@@ -1476,15 +1999,23 @@ export const HomePage = ({
       activeMapStyle.tileUrl,
       addressInput,
       addressMapLabel,
-      household.household_map_markers,
+      filteredHouseholdMarkers,
       mapCenter,
       mapHasPin,
       mapRecenterRequestToken,
       mapZoom,
+      manualMarkerFilterMemberId,
+      manualMarkerFilterMode,
+      memberOptionsForMarkerFilter,
+      markerHistoryNode,
       myLocationCenter,
       myLocationRecenterRequestToken,
       myLocationStatus,
       nearbyPois,
+      onGeomanMarkersChanged,
+      onLocateControlError,
+      onLocateControlFound,
+      onLocateControlReady,
       onSaveExistingPoiOverride,
       onSavePoiOverride,
       poiOverrideDrafts,
@@ -1493,12 +2024,19 @@ export const HomePage = ({
       requestMyLocation,
       selectedPoiCategories.length,
       isHouseholdOwner,
-      t
+      t,
+      userId
     ]
   );
 
   useEffect(() => {
     ensureLeafletMarkerIcon();
+  }, []);
+
+  useEffect(() => () => {
+    if (mapMarkerSaveTimerRef.current !== null) {
+      window.clearTimeout(mapMarkerSaveTimerRef.current);
+    }
   }, []);
 
   useEffect(() => {
@@ -4237,7 +4775,10 @@ export const HomePage = ({
               </div>
             </CardHeader>
             <CardContent className="pt-2">
-              {renderHouseholdMapSurface("relative h-72 overflow-hidden rounded-lg border border-brand-100 dark:border-slate-700")}
+              {renderHouseholdMapSurface(
+                "relative h-72 overflow-hidden rounded-lg border border-brand-100 dark:border-slate-700",
+                false
+              )}
               <div className="mt-2 text-xs text-slate-500 dark:text-slate-400">
                 {!mapHasPin
                   ? t("home.householdMapPoiNeedsAddress")
@@ -4332,7 +4873,7 @@ export const HomePage = ({
                 </button>
               </div>
               <div className="flex-1">
-                {renderHouseholdMapSurface("relative h-full overflow-hidden border-brand-100 dark:border-slate-700")}
+                {renderHouseholdMapSurface("relative h-full overflow-hidden border-brand-100 dark:border-slate-700", true)}
               </div>
             </DialogContent>
           </Dialog>

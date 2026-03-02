@@ -6,6 +6,8 @@ import "./i18n";
 import "./index.css";
 import "@mdxeditor/editor/style.css";
 import "leaflet/dist/leaflet.css";
+import "@geoman-io/leaflet-geoman-free/dist/leaflet-geoman.css";
+import "leaflet.locatecontrol/dist/L.Control.Locate.min.css";
 import "react-toastify/dist/ReactToastify.css";
 import { toast } from "react-toastify";
 import { registerSW } from "virtual:pwa-register";
