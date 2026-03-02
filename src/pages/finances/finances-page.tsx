@@ -318,6 +318,20 @@ type OcrDetectionResult = {
   text?: string;
   boundingBox?: { x?: number; y?: number; width?: number; height?: number };
 };
+type OcrAmountCandidate = {
+  value: number;
+  token: string;
+  score: number;
+  index: number;
+};
+type OcrPassResult = {
+  text: string;
+  boxes: OcrPreviewBox[];
+  meanConfidence: number;
+  source: "detector" | "main" | "sparse" | "numeric" | "lowerNumeric" | "opencvSparse";
+  region: "full" | "lower";
+  numericFocused: boolean;
+};
 type TextDetectorLike = { detect: (input: ImageBitmapSource) => Promise<OcrDetectionResult[]> };
 type TextDetectorConstructor = new (options?: { languages?: string[] }) => TextDetectorLike;
 type TesseractWorkerLike = {
@@ -351,6 +365,7 @@ const getTextDetectorConstructor = (): TextDetectorConstructor | null => {
 const OCR_MIN_USEFUL_TEXT_LENGTH = 16;
 const OCR_MAX_ANALYSIS_DIMENSION = 1800;
 const OCR_MAX_PREVIEW_BOXES = 48;
+const OCR_MIN_SHARPNESS_SCORE = 28;
 const buildPublicAssetUrl = (relativePath: string) => {
   const basePath = import.meta.env.BASE_URL || "/";
   const normalizedBase = basePath.endsWith("/") ? basePath : `${basePath}/`;
@@ -479,9 +494,38 @@ const getOpenCvModule = async () => {
   return openCvModulePromise;
 };
 
-const preprocessOcrCanvasWithOpenCv = async (source: HTMLCanvasElement) => {
+const estimateCanvasSharpness = (source: HTMLCanvasElement) => {
+  const context = source.getContext("2d");
+  if (!context || source.width < 3 || source.height < 3) return 0;
+  const data = context.getImageData(0, 0, source.width, source.height).data;
+  const width = source.width;
+  const height = source.height;
+  const gray = new Float32Array(width * height);
+  for (let i = 0, j = 0; i < data.length; i += 4, j += 1) {
+    gray[j] = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
+  }
+
+  let sum = 0;
+  let sumSq = 0;
+  let count = 0;
+  for (let y = 1; y < height - 1; y += 1) {
+    for (let x = 1; x < width - 1; x += 1) {
+      const idx = y * width + x;
+      const lap = -4 * gray[idx] + gray[idx - 1] + gray[idx + 1] + gray[idx - width] + gray[idx + width];
+      sum += lap;
+      sumSq += lap * lap;
+      count += 1;
+    }
+  }
+  if (count === 0) return 0;
+  const mean = sum / count;
+  const variance = Math.max(0, sumSq / count - mean * mean);
+  return Math.sqrt(variance) / 4;
+};
+
+const preprocessOcrCanvasWithOpenCv = async (source: HTMLCanvasElement): Promise<{ canvas: HTMLCanvasElement | null; sharpness: number | null }> => {
   const cv = await getOpenCvModule();
-  if (!cv) return null;
+  if (!cv) return { canvas: null, sharpness: null };
   const cvAny = cv as Record<string, unknown>;
 
   const { width, height } = clampOcrSize(source.width, source.height);
@@ -489,15 +533,23 @@ const preprocessOcrCanvasWithOpenCv = async (source: HTMLCanvasElement) => {
   input.width = width;
   input.height = height;
   const inputContext = input.getContext("2d");
-  if (!inputContext) return null;
+  if (!inputContext) return { canvas: null, sharpness: null };
   inputContext.drawImage(source, 0, 0, width, height);
 
-  const src = (cvAny.imread as (canvas: HTMLCanvasElement) => { cols: number; rows: number; delete?: () => void })(input);
+  const src = (cvAny.imread as (canvas: HTMLCanvasElement) => { cols: number; rows: number; data32S?: Int32Array; delete?: () => void })(input);
   const gray = new (cvAny.Mat as new () => { delete?: () => void })();
+  const laplacian = new (cvAny.Mat as new () => { data64F?: Float64Array; rows?: number; cols?: number; delete?: () => void })();
+  const contours = new (cvAny.MatVector as new () => { size: () => number; get: (index: number) => { data32S?: Int32Array; rows?: number; cols?: number; delete?: () => void }; delete?: () => void })();
+  const hierarchy = new (cvAny.Mat as new () => { delete?: () => void })();
+  const edges = new (cvAny.Mat as new () => { rows?: number; cols?: number; data32S?: Int32Array; delete?: () => void })();
+  const contourApprox = new (cvAny.Mat as new () => { rows?: number; data32S?: Int32Array; delete?: () => void })();
+  const doc = new (cvAny.Mat as new () => { cols: number; rows: number; data32S?: Int32Array; delete?: () => void })();
   const blurred = new (cvAny.Mat as new () => { delete?: () => void })();
-  const binary = new (cvAny.Mat as new () => { cols: number; rows: number; delete?: () => void })();
+  const binary = new (cvAny.Mat as new () => { cols: number; rows: number; data32S?: Int32Array; delete?: () => void })();
   const cleaned = new (cvAny.Mat as new () => { cols: number; rows: number; delete?: () => void })();
   const resized = new (cvAny.Mat as new () => { delete?: () => void })();
+  const rotationMatrix = new (cvAny.Mat as new () => { delete?: () => void })();
+  const deskewed = new (cvAny.Mat as new () => { cols: number; rows: number; delete?: () => void })();
   const kernel = (cvAny.getStructuringElement as (shape: number, size: unknown) => { delete?: () => void })(
     cvAny.MORPH_RECT as number,
     new (cvAny.Size as new (width: number, height: number) => unknown)(2, 2)
@@ -510,8 +562,154 @@ const preprocessOcrCanvasWithOpenCv = async (source: HTMLCanvasElement) => {
       cvAny.COLOR_RGBA2GRAY as number,
       0
     );
-    (cvAny.GaussianBlur as (srcMat: unknown, dstMat: unknown, ksize: unknown, sx: number, sy: number, bt?: number) => void)(
+    (cvAny.Laplacian as (srcMat: unknown, dstMat: unknown, depth: number, ksize?: number, scale?: number, delta?: number, borderType?: number) => void)(
       gray,
+      laplacian,
+      cvAny.CV_64F as number,
+      3,
+      1,
+      0,
+      cvAny.BORDER_DEFAULT as number
+    );
+    const lapData = laplacian.data64F ?? new Float64Array();
+    let lapSum = 0;
+    let lapSq = 0;
+    for (let i = 0; i < lapData.length; i += 1) {
+      lapSum += lapData[i];
+      lapSq += lapData[i] * lapData[i];
+    }
+    const lapMean = lapData.length > 0 ? lapSum / lapData.length : 0;
+    const sharpness = lapData.length > 0 ? Math.sqrt(Math.max(0, lapSq / lapData.length - lapMean * lapMean)) / 4 : null;
+
+    // Perspective correction by detecting the largest quadrilateral contour.
+    (cvAny.Canny as (srcMat: unknown, dstMat: unknown, threshold1: number, threshold2: number) => void)(
+      gray,
+      edges,
+      70,
+      200
+    );
+    (cvAny.findContours as (image: unknown, contoursMat: unknown, hierarchyMat: unknown, mode: number, method: number) => void)(
+      edges,
+      contours,
+      hierarchy,
+      cvAny.RETR_LIST as number,
+      cvAny.CHAIN_APPROX_SIMPLE as number
+    );
+    let bestQuad: number[] | null = null;
+    let bestArea = 0;
+    for (let i = 0; i < contours.size(); i += 1) {
+      const contour = contours.get(i);
+      const perimeter = (cvAny.arcLength as (curve: unknown, closed: boolean) => number)(contour, true);
+      (cvAny.approxPolyDP as (curve: unknown, approxCurve: unknown, epsilon: number, closed: boolean) => void)(
+        contour,
+        contourApprox,
+        0.02 * perimeter,
+        true
+      );
+      const points = contourApprox.data32S ?? new Int32Array();
+      const isQuad = contourApprox.rows === 4 && points.length >= 8;
+      if (isQuad) {
+        const area = Math.abs((cvAny.contourArea as (contour: unknown, oriented?: boolean) => number)(contourApprox, false));
+        if (area > bestArea) {
+          bestArea = area;
+          bestQuad = Array.from(points.slice(0, 8));
+        }
+      }
+      contour.delete?.();
+    }
+
+    let docSource: unknown = src;
+    if (bestQuad && bestArea > src.cols * src.rows * 0.22) {
+      const quadPoints: Array<[number, number]> = [
+        [bestQuad[0] ?? 0, bestQuad[1] ?? 0],
+        [bestQuad[2] ?? 0, bestQuad[3] ?? 0],
+        [bestQuad[4] ?? 0, bestQuad[5] ?? 0],
+        [bestQuad[6] ?? 0, bestQuad[7] ?? 0]
+      ];
+      const sorted = [...quadPoints].sort((a, b) => a[1] - b[1]);
+      const top = sorted.slice(0, 2).sort((a, b) => a[0] - b[0]);
+      const bottom = sorted.slice(2).sort((a, b) => a[0] - b[0]);
+      const ordered: Array<[number, number]> = [top[0], top[1], bottom[1], bottom[0]];
+      const dist = (left: [number, number], right: [number, number]) => Math.hypot(right[0] - left[0], right[1] - left[1]);
+      const targetWidth = Math.max(1, Math.round(Math.max(dist(ordered[0], ordered[1]), dist(ordered[2], ordered[3]))));
+      const targetHeight = Math.max(1, Math.round(Math.max(dist(ordered[0], ordered[3]), dist(ordered[1], ordered[2]))));
+      const srcTri = (cvAny.matFromArray as (rows: number, cols: number, type: number, data: number[]) => unknown)(
+        4,
+        1,
+        cvAny.CV_32FC2 as number,
+        [ordered[0][0], ordered[0][1], ordered[1][0], ordered[1][1], ordered[2][0], ordered[2][1], ordered[3][0], ordered[3][1]]
+      );
+      const dstTri = (cvAny.matFromArray as (rows: number, cols: number, type: number, data: number[]) => unknown)(
+        4,
+        1,
+        cvAny.CV_32FC2 as number,
+        [0, 0, targetWidth - 1, 0, targetWidth - 1, targetHeight - 1, 0, targetHeight - 1]
+      );
+      const matrix = (cvAny.getPerspectiveTransform as (srcPts: unknown, dstPts: unknown) => unknown)(srcTri, dstTri);
+      (cvAny.warpPerspective as (srcMat: unknown, dstMat: unknown, transform: unknown, size: unknown, flags?: number, borderMode?: number, borderValue?: unknown) => void)(
+        src,
+        doc,
+        matrix,
+        new (cvAny.Size as new (width: number, height: number) => unknown)(targetWidth, targetHeight),
+        cvAny.INTER_LINEAR as number,
+        cvAny.BORDER_REPLICATE as number,
+        new (cvAny.Scalar as new (v0: number, v1: number, v2: number, v3: number) => unknown)(255, 255, 255, 255)
+      );
+      docSource = doc;
+      (matrix as { delete?: () => void }).delete?.();
+      (srcTri as { delete?: () => void }).delete?.();
+      (dstTri as { delete?: () => void }).delete?.();
+    }
+
+    // Deskew: estimate dominant near-horizontal line angle and rotate back.
+    const docGray = new (cvAny.Mat as new () => { rows?: number; cols?: number; data32S?: Int32Array; delete?: () => void })();
+    const docEdges = new (cvAny.Mat as new () => { rows?: number; cols?: number; data32S?: Int32Array; delete?: () => void })();
+    const lines = new (cvAny.Mat as new () => { data32S?: Int32Array; rows?: number; delete?: () => void })();
+    (cvAny.cvtColor as (srcMat: unknown, dstMat: unknown, code: number, channels?: number) => void)(
+      docSource,
+      docGray,
+      cvAny.COLOR_RGBA2GRAY as number,
+      0
+    );
+    (cvAny.Canny as (srcMat: unknown, dstMat: unknown, threshold1: number, threshold2: number) => void)(docGray, docEdges, 50, 170);
+    (cvAny.HoughLinesP as (image: unknown, linesMat: unknown, rho: number, theta: number, threshold: number, minLineLength?: number, maxLineGap?: number) => void)(
+      docEdges,
+      lines,
+      1,
+      Math.PI / 180,
+      90,
+      Math.max(30, Math.floor(((docGray.cols ?? width) + (docGray.rows ?? height)) * 0.12)),
+      20
+    );
+    const lineData = lines.data32S ?? new Int32Array();
+    const angles: number[] = [];
+    for (let i = 0; i + 3 < lineData.length; i += 4) {
+      const angle = (Math.atan2(lineData[i + 3] - lineData[i + 1], lineData[i + 2] - lineData[i]) * 180) / Math.PI;
+      if (Math.abs(angle) <= 35) angles.push(angle);
+    }
+    angles.sort((left, right) => left - right);
+    const deskewAngle = angles.length > 0 ? angles[Math.floor(angles.length / 2)] : 0;
+    if (Math.abs(deskewAngle) >= 0.7) {
+      const center = new (cvAny.Point as new (x: number, y: number) => unknown)((docGray.cols ?? width) / 2, (docGray.rows ?? height) / 2);
+      const matrix = (cvAny.getRotationMatrix2D as (center: unknown, angle: number, scale: number) => unknown)(center, deskewAngle, 1);
+      (cvAny.warpAffine as (srcMat: unknown, dstMat: unknown, transform: unknown, size: unknown, flags?: number, borderMode?: number, borderValue?: unknown) => void)(
+        docSource,
+        deskewed,
+        matrix,
+        new (cvAny.Size as new (width: number, height: number) => unknown)(docGray.cols ?? width, docGray.rows ?? height),
+        cvAny.INTER_LINEAR as number,
+        cvAny.BORDER_REPLICATE as number,
+        new (cvAny.Scalar as new (v0: number, v1: number, v2: number, v3: number) => unknown)(255, 255, 255, 255)
+      );
+      docSource = deskewed;
+      (matrix as { delete?: () => void }).delete?.();
+    }
+    docGray.delete?.();
+    docEdges.delete?.();
+    lines.delete?.();
+
+    (cvAny.GaussianBlur as (srcMat: unknown, dstMat: unknown, ksize: unknown, sx: number, sy: number, bt?: number) => void)(
+      docSource,
       blurred,
       new (cvAny.Size as new (width: number, height: number) => unknown)(3, 3),
       0,
@@ -550,16 +748,24 @@ const preprocessOcrCanvasWithOpenCv = async (source: HTMLCanvasElement) => {
     output.width = targetWidth;
     output.height = targetHeight;
     (cvAny.imshow as (canvas: HTMLCanvasElement, mat: unknown) => void)(output, resized);
-    return output;
+    return { canvas: output, sharpness };
   } catch {
-    return null;
+    return { canvas: null, sharpness: null };
   } finally {
     src.delete?.();
     gray.delete?.();
+    laplacian.delete?.();
+    contours.delete?.();
+    hierarchy.delete?.();
+    edges.delete?.();
+    contourApprox.delete?.();
+    doc.delete?.();
     blurred.delete?.();
     binary.delete?.();
     cleaned.delete?.();
     resized.delete?.();
+    rotationMatrix.delete?.();
+    deskewed.delete?.();
     kernel.delete?.();
   }
 };
@@ -601,11 +807,30 @@ const normalizePriceToken = (value: string) => {
     .replace(/[Oo]/g, "0")
     .replace(/[Il]/g, "1")
     .replace(/€/g, "")
-    .replace(/EUR/gi, "");
-  const match = normalized.match(/(\d{1,5}(?:[.,]\d{2}))/);
-  if (!match?.[1]) return null;
-  const parsed = Number(match[1].replace(",", "."));
-  if (!Number.isFinite(parsed) || parsed < 0) return null;
+    .replace(/EUR/gi, "")
+    .replace(/[^\d,.-]/g, "");
+  const match = normalized.match(/-?\d[\d,.\-]{1,16}/);
+  if (!match?.[0]) return null;
+  const raw = match[0].replace(/(?!^)-/g, "");
+  const lastComma = raw.lastIndexOf(",");
+  const lastDot = raw.lastIndexOf(".");
+  let normalizedNumber = raw;
+
+  if (lastComma >= 0 && lastDot >= 0) {
+    const decimalSeparator = lastComma > lastDot ? "," : ".";
+    const thousandSeparator = decimalSeparator === "," ? "." : ",";
+    normalizedNumber = normalizedNumber.split(thousandSeparator).join("");
+    if (decimalSeparator === ",") normalizedNumber = normalizedNumber.replace(",", ".");
+  } else if (lastComma >= 0) {
+    const fraction = raw.length - lastComma - 1;
+    normalizedNumber = fraction === 2 ? raw.replace(",", ".") : raw.replace(/,/g, "");
+  } else if (lastDot >= 0) {
+    const fraction = raw.length - lastDot - 1;
+    normalizedNumber = fraction === 2 ? raw : raw.replace(/\./g, "");
+  }
+
+  const parsed = Number(normalizedNumber);
+  if (!Number.isFinite(parsed)) return null;
   return parsed.toFixed(2);
 };
 
@@ -613,40 +838,110 @@ const parseAmountToken = (value: string) => {
   const token = normalizePriceToken(value);
   if (!token) return null;
   const parsed = Number(token);
-  if (!Number.isFinite(parsed) || parsed < 0 || parsed > 100000) return null;
+  if (!Number.isFinite(parsed) || parsed < 0 || parsed > 100000 || token.endsWith(".00")) return null;
   return parsed;
 };
 
-const extractPriceFromOcrText = (text: string) => {
+const extractPriceCandidatesFromOcrText = (
+  text: string,
+  options?: {
+    baseWeight?: number;
+    confidence?: number;
+    lowerRegion?: boolean;
+    numericFocused?: boolean;
+  }
+) => {
+  const baseWeight = options?.baseWeight ?? 0;
+  const confidence = options?.confidence ?? 0;
+  const lowerRegion = options?.lowerRegion ?? false;
+  const numericFocused = options?.numericFocused ?? false;
   const lines = text
     .split(/\r?\n/)
     .map((line) => line.replace(/\s+/g, " ").trim())
     .filter(Boolean);
 
-  const candidates: Array<{ value: number; score: number; index: number }> = [];
+  const candidates: OcrAmountCandidate[] = [];
   for (let i = 0; i < lines.length; i += 1) {
     const line = lines[i];
     const lowered = line.toLocaleLowerCase();
-    const matches = [...line.matchAll(/\d[\dOoIl.,]{1,10}/g)];
+    const matches = [...line.matchAll(/-?\d[\dOoIl.,-]{1,16}/g)];
     if (matches.length === 0) continue;
     for (const match of matches) {
       const parsed = parseAmountToken(match[0] ?? "");
       if (parsed === null) continue;
-      let score = 10;
+      const token = parsed.toFixed(2);
+      let score = 8 + baseWeight + confidence * 0.5;
       if (parsed >= 1) score += 4;
       if (parsed <= 3000) score += 2;
+      if (lowerRegion) score += 4;
+      if (numericFocused) score += 6;
       if (OCR_TOTAL_KEYWORDS.some((keyword) => lowered.includes(keyword))) score += 40;
       if (/mwst|tax|ust/.test(lowered)) score -= 18;
       if (/rabatt|discount|coupon/.test(lowered)) score -= 16;
+      if (/subtotal|zwischen/.test(lowered)) score -= 10;
+      if (/cashback|change/.test(lowered)) score -= 12;
       score += Math.max(0, i - Math.floor(lines.length * 0.35));
-      candidates.push({ value: parsed, score, index: i });
+      candidates.push({ value: parsed, token, score, index: i });
     }
   }
-
-  if (candidates.length === 0) return null;
-  candidates.sort((left, right) => right.score - left.score || right.index - left.index || right.value - left.value);
-  return candidates[0]?.value ?? null;
+  return candidates;
 };
+
+const pickBestAmountFromCandidates = (candidates: OcrAmountCandidate[]) => {
+  if (candidates.length === 0) return null;
+  const aggregated = new Map<string, { value: number; score: number; maxScore: number; count: number; lastIndex: number }>();
+  for (const candidate of candidates) {
+    const current = aggregated.get(candidate.token);
+    if (!current) {
+      aggregated.set(candidate.token, {
+        value: candidate.value,
+        score: candidate.score,
+        maxScore: candidate.score,
+        count: 1,
+        lastIndex: candidate.index
+      });
+      continue;
+    }
+    current.score += candidate.score;
+    current.maxScore = Math.max(current.maxScore, candidate.score);
+    current.count += 1;
+    current.lastIndex = Math.max(current.lastIndex, candidate.index);
+  }
+  const ranked = [...aggregated.values()].sort(
+    (left, right) =>
+      right.maxScore - left.maxScore ||
+      right.score - left.score ||
+      right.count - left.count ||
+      right.lastIndex - left.lastIndex ||
+      right.value - left.value
+  );
+  return ranked[0]?.value ?? null;
+};
+
+const extractPriceFromOcrText = (text: string) => pickBestAmountFromCandidates(extractPriceCandidatesFromOcrText(text));
+
+const extractPriceFromOcrPasses = (passes: OcrPassResult[]) =>
+  pickBestAmountFromCandidates(
+    passes.flatMap((pass) =>
+      extractPriceCandidatesFromOcrText(pass.text, {
+        baseWeight:
+          pass.source === "main"
+            ? 14
+            : pass.source === "numeric"
+              ? 24
+              : pass.source === "lowerNumeric"
+                ? 30
+                : pass.source === "opencvSparse"
+                  ? 18
+                  : pass.source === "detector"
+                    ? 8
+                    : 10,
+        confidence: pass.meanConfidence,
+        lowerRegion: pass.region === "lower",
+        numericFocused: pass.numericFocused
+      })
+    )
+  );
 
 const extractProductFromOcrText = (text: string) => {
   const lines = text
@@ -2823,7 +3118,8 @@ export const FinancesPage = ({
     }
     await worker.setParameters({
       tessedit_pageseg_mode: "6",
-      preserve_interword_spaces: "1"
+      preserve_interword_spaces: "1",
+      user_defined_dpi: "300"
     });
     ocrTesseractWorkerRef.current = worker;
     return worker;
@@ -2872,10 +3168,21 @@ export const FinancesPage = ({
       context.drawImage(sourceBitmap, 0, 0, width, height);
       sourceBitmap.close?.();
       const previewImageUrl = canvas.toDataURL("image/jpeg", 0.88);
+      const sharpnessScore = estimateCanvasSharpness(canvas);
+      if (sharpnessScore < OCR_MIN_SHARPNESS_SCORE) {
+        setOcrError(t("finances.ocrTooBlurryError"));
+        return;
+      }
       const balancedCanvas = preprocessOcrCanvas(canvas, "balanced");
       const highContrastCanvas = preprocessOcrCanvas(canvas, "highContrast");
       const grayscaleCanvas = preprocessOcrCanvas(canvas, "grayscale");
-      const openCvCanvas = await preprocessOcrCanvasWithOpenCv(canvas);
+      const openCvResult = await preprocessOcrCanvasWithOpenCv(canvas);
+      const openCvCanvas = openCvResult.canvas;
+      const effectiveSharpness = openCvResult.sharpness ?? sharpnessScore;
+      if (effectiveSharpness < OCR_MIN_SHARPNESS_SCORE) {
+        setOcrError(t("finances.ocrTooBlurryError"));
+        return;
+      }
 
       const detectorCtor = getTextDetectorConstructor();
       let detectorText = "";
@@ -2896,18 +3203,29 @@ export const FinancesPage = ({
         source,
         params,
         rectangle,
-        withBoxes
+        withBoxes,
+        sourceName,
+        region,
+        numericFocused
       }: {
         source: HTMLCanvasElement;
         params: Record<string, string>;
         rectangle?: { left: number; top: number; width: number; height: number };
         withBoxes?: boolean;
+        sourceName: OcrPassResult["source"];
+        region: OcrPassResult["region"];
+        numericFocused: boolean;
       }) => {
         await worker.setParameters(params);
         const result = await worker.recognize(source, rectangle ? { rectangle } : undefined, { text: true, blocks: true });
         const text = result.data.text.trim();
         const boxes = withBoxes ? extractBoxesFromTesseractResult(result, source.width, source.height) : [];
-        return { text, boxes };
+        const confidences = [...(result.data.words ?? []), ...(result.data.lines ?? [])]
+          .map((entry) => Number(entry.confidence ?? 0))
+          .filter((value) => Number.isFinite(value) && value > 0);
+        const meanConfidence =
+          confidences.length > 0 ? confidences.reduce((sum, value) => sum + value, 0) / confidences.length : 0;
+        return { text, boxes, meanConfidence, source: sourceName, region, numericFocused } satisfies OcrPassResult;
       };
 
       const numericSourceCanvas = openCvCanvas ?? highContrastCanvas;
@@ -2927,6 +3245,9 @@ export const FinancesPage = ({
       const mainPass = await runTesseractPass({
         source: openCvCanvas ?? balancedCanvas,
         withBoxes: true,
+        sourceName: "main",
+        region: "full",
+        numericFocused: false,
         params: {
           tessedit_pageseg_mode: "6",
           preserve_interword_spaces: "1",
@@ -2935,6 +3256,9 @@ export const FinancesPage = ({
       });
       const sparsePass = await runTesseractPass({
         source: grayscaleCanvas,
+        sourceName: "sparse",
+        region: "full",
+        numericFocused: false,
         params: {
           tessedit_pageseg_mode: "11",
           preserve_interword_spaces: "1",
@@ -2944,6 +3268,9 @@ export const FinancesPage = ({
       const numericPass = await runTesseractPass({
         source: numericSourceCanvas,
         rectangle: fullReceipt,
+        sourceName: "numeric",
+        region: "full",
+        numericFocused: true,
         params: {
           tessedit_pageseg_mode: "6",
           preserve_interword_spaces: "1",
@@ -2953,30 +3280,53 @@ export const FinancesPage = ({
       const lowerNumericPass = await runTesseractPass({
         source: numericSourceCanvas,
         rectangle: lowerRegion,
+        sourceName: "lowerNumeric",
+        region: "lower",
+        numericFocused: true,
         params: {
           tessedit_pageseg_mode: "11",
           preserve_interword_spaces: "1",
           tessedit_char_whitelist: "0123456789.,€EURSUMMETOTALGESAMTBETRAG"
         }
       });
-      const openCvSparsePass =
+      const openCvSparsePass: OcrPassResult =
         openCvCanvas !== null
           ? await runTesseractPass({
               source: openCvCanvas,
+              sourceName: "opencvSparse",
+              region: "full",
+              numericFocused: false,
               params: {
                 tessedit_pageseg_mode: "11",
                 preserve_interword_spaces: "1",
                 tessedit_char_whitelist: ""
               }
             })
-          : { text: "", boxes: [] as OcrPreviewBox[] };
+          : {
+              text: "",
+              boxes: [] as OcrPreviewBox[],
+              meanConfidence: 0,
+              source: "opencvSparse",
+              region: "full",
+              numericFocused: false
+            };
 
       await worker.setParameters({
         tessedit_pageseg_mode: "6",
         preserve_interword_spaces: "1",
-        tessedit_char_whitelist: ""
+        tessedit_char_whitelist: "",
+        user_defined_dpi: "300"
       });
 
+      const detectorPass: OcrPassResult = {
+        text: detectorText,
+        boxes: detectorBoxes,
+        meanConfidence: 55,
+        source: "detector",
+        region: "full",
+        numericFocused: false
+      };
+      const passes: OcrPassResult[] = [detectorPass, mainPass, sparsePass, numericPass, lowerNumericPass, openCvSparsePass];
       const text = buildUniqueLinesText(
         detectorText,
         mainPass.text,
@@ -2998,7 +3348,7 @@ export const FinancesPage = ({
         return;
       }
 
-      const recognizedPrice = extractPriceFromOcrText(text);
+      const recognizedPrice = extractPriceFromOcrPasses(passes) ?? extractPriceFromOcrText(text);
       const recognizedProduct = extractProductFromOcrText(text);
       const classifiedBoxes = boxes.map((box) => ({
         ...box,

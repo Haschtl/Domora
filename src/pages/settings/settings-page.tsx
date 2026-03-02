@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useForm } from "@tanstack/react-form";
 import imageCompression from "browser-image-compression";
+import L from "leaflet";
+import markerIcon2xUrl from "leaflet/dist/images/marker-icon-2x.png";
+import markerIconUrl from "leaflet/dist/images/marker-icon.png";
+import markerShadowUrl from "leaflet/dist/images/marker-shadow.png";
 import { Camera, Check, Crown, Share2, UserMinus, X } from "lucide-react";
+import { MapContainer, Marker, Popup, TileLayer, useMap } from "react-leaflet";
 import { useTranslation } from "react-i18next";
 import QRCode from "react-qr-code";
 import { isSupported } from "firebase/messaging";
@@ -104,6 +109,36 @@ const findCurrencyOption = (code: string) => CURRENCY_OPTIONS.find((entry) => en
 const MAX_IMAGE_DIMENSION = 1600;
 const MAX_IMAGE_SIZE_MB = 0.9;
 const IMAGE_QUALITY = 0.78;
+const DEFAULT_MAP_CENTER: [number, number] = [51.1657, 10.4515];
+const MAP_ZOOM_WITH_ADDRESS = 16;
+const MAP_ZOOM_DEFAULT = 5;
+const MIN_ADDRESS_LENGTH_FOR_GEOCODE = 5;
+const ADDRESS_GEOCODE_DEBOUNCE_MS = 650;
+
+let leafletMarkerConfigured = false;
+const ensureLeafletMarkerIcon = () => {
+  if (leafletMarkerConfigured) return;
+  leafletMarkerConfigured = true;
+  delete (L.Icon.Default.prototype as unknown as { _getIconUrl?: () => string })._getIconUrl;
+  L.Icon.Default.mergeOptions({
+    iconRetinaUrl: markerIcon2xUrl,
+    iconUrl: markerIconUrl,
+    shadowUrl: markerShadowUrl
+  });
+};
+
+const openStreetMapSearchUrl = (query: string) =>
+  `https://www.openstreetmap.org/search?query=${encodeURIComponent(query)}`;
+const openStreetMapPinUrl = (lat: number, lon: number) =>
+  `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lon}#map=17/${lat}/${lon}`;
+
+const AddressMapView = ({ center }: { center: [number, number] }) => {
+  const map = useMap();
+  useEffect(() => {
+    map.setView(center, map.getZoom(), { animate: false });
+  }, [center, map]);
+  return null;
+};
 
 const readBlobAsDataUrl = (blob: Blob) =>
   new Promise<string>((resolve, reject) => {
@@ -205,6 +240,10 @@ export const SettingsPage = ({
   const [inviteCopied, setInviteCopied] = useState(false);
   const [vacationDialogOpen, setVacationDialogOpen] = useState(false);
   const [pendingVacationMode, setPendingVacationMode] = useState<boolean | null>(null);
+  const [addressMapCenter, setAddressMapCenter] = useState<[number, number] | null>(null);
+  const [addressMapLoading, setAddressMapLoading] = useState(false);
+  const [addressMapError, setAddressMapError] = useState<string | null>(null);
+  const [addressMapLabel, setAddressMapLabel] = useState<string | null>(null);
   const todayIso = useMemo(() => new Date().toISOString().slice(0, 10), []);
   const [vacationFormStart, setVacationFormStart] = useState(todayIso);
   const [vacationFormEnd, setVacationFormEnd] = useState(todayIso);
@@ -972,6 +1011,74 @@ export const SettingsPage = ({
   };
   const showMe = section === "me";
   const showHousehold = section === "household";
+  const addressInput = householdForm.state.values.address.trim();
+  const addressCoords = addressMapCenter;
+  const mapCenter = addressMapCenter ?? DEFAULT_MAP_CENTER;
+  const mapHasPin = Boolean(addressMapCenter);
+  const mapLink = addressCoords
+    ? openStreetMapPinUrl(addressCoords[0], addressCoords[1])
+    : openStreetMapSearchUrl(addressInput);
+
+  useEffect(() => {
+    ensureLeafletMarkerIcon();
+  }, []);
+
+  useEffect(() => {
+    const query = addressInput.trim();
+    if (query.length < MIN_ADDRESS_LENGTH_FOR_GEOCODE) {
+      setAddressMapCenter(null);
+      setAddressMapLabel(null);
+      setAddressMapLoading(false);
+      setAddressMapError(null);
+      return;
+    }
+
+    let active = true;
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      setAddressMapLoading(true);
+      setAddressMapError(null);
+      void (async () => {
+        try {
+          const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&q=${encodeURIComponent(query)}`;
+          const response = await fetch(url, {
+            method: "GET",
+            headers: { Accept: "application/json" },
+            signal: controller.signal
+          });
+          if (!response.ok) throw new Error("geocode_failed");
+          const payload = (await response.json()) as Array<{ lat?: string; lon?: string; display_name?: string }>;
+          const first = payload[0];
+          const lat = first?.lat ? Number(first.lat) : Number.NaN;
+          const lon = first?.lon ? Number(first.lon) : Number.NaN;
+          if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+            throw new Error("no_result");
+          }
+          if (!active) return;
+          setAddressMapCenter([lat, lon]);
+          setAddressMapLabel(first?.display_name?.trim() || query);
+          setAddressMapError(null);
+        } catch (error) {
+          if (!active || controller.signal.aborted) return;
+          const message = error instanceof Error && error.message === "no_result"
+            ? t("settings.householdAddressMapNoResult")
+            : t("settings.householdAddressMapError");
+          setAddressMapCenter(null);
+          setAddressMapLabel(null);
+          setAddressMapError(message);
+        } finally {
+          if (active) setAddressMapLoading(false);
+        }
+      })();
+    }, ADDRESS_GEOCODE_DEBOUNCE_MS);
+
+    return () => {
+      active = false;
+      controller.abort();
+      window.clearTimeout(timer);
+    };
+  }, [addressInput, t]);
+
   const handleClearWhiteboard = useCallback(async () => {
     if (!isOwner || !household?.id || !userId) return;
     setWhiteboardResetBusy(true);
@@ -1951,6 +2058,48 @@ export const SettingsPage = ({
                     />
                   )}
                 />
+                <div className="rounded-xl border border-brand-200 bg-white p-2 dark:border-slate-700 dark:bg-slate-900">
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      {!addressInput
+                        ? t("settings.householdAddressMapHint")
+                        : addressMapLoading
+                          ? t("settings.householdAddressMapLoading")
+                          : addressMapError
+                            ? addressMapError
+                            : (addressMapLabel ?? t("settings.householdAddressMapReady"))}
+                    </p>
+                    {addressInput ? (
+                      <a
+                        href={mapLink}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-xs font-medium text-brand-700 underline decoration-brand-300 underline-offset-2 hover:text-brand-900 dark:text-brand-300 dark:hover:text-brand-200"
+                      >
+                        {t("settings.householdAddressMapOpen")}
+                      </a>
+                    ) : null}
+                  </div>
+                  <div className="h-64 overflow-hidden rounded-lg border border-brand-100 dark:border-slate-700">
+                    <MapContainer
+                      center={mapCenter}
+                      zoom={mapHasPin ? MAP_ZOOM_WITH_ADDRESS : MAP_ZOOM_DEFAULT}
+                      scrollWheelZoom
+                      style={{ height: "100%", width: "100%" }}
+                    >
+                      <AddressMapView center={mapCenter} />
+                      <TileLayer
+                        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                      />
+                      {mapHasPin ? (
+                        <Marker position={mapCenter}>
+                          <Popup>{addressMapLabel ?? addressInput}</Popup>
+                        </Marker>
+                      ) : null}
+                    </MapContainer>
+                  </div>
+                </div>
               </div>
 
               <div className="space-y-1">
