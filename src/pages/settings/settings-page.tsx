@@ -236,9 +236,13 @@ export const SettingsPage = ({
     () => memberVacationsForUser.find((vacation) => vacation.id === editingVacationId) ?? null,
     [editingVacationId, memberVacationsForUser]
   );
-  const hasVacationStarted = useMemo(() => {
+  const isEditingVacationLocked = useMemo(() => {
     if (!editingVacation) return false;
     return editingVacation.start_date <= todayIso;
+  }, [editingVacation, todayIso]);
+  const isEditingVacationEndLocked = useMemo(() => {
+    if (!editingVacation) return false;
+    return editingVacation.end_date < todayIso;
   }, [editingVacation, todayIso]);
   const plannedVacationTodayIds = useMemo(
     () =>
@@ -923,11 +927,13 @@ export const SettingsPage = ({
     setVacationFormError(null);
     if (editingVacationId) {
       const updatePayload: { startDate?: string; endDate?: string; note?: string } = {
-        endDate: vacationFormEnd,
         note: vacationFormNote.trim()
       };
-      if (!hasVacationStarted) {
+      if (!isEditingVacationLocked) {
         updatePayload.startDate = vacationFormStart;
+      }
+      if (!isEditingVacationEndLocked) {
+        updatePayload.endDate = vacationFormEnd;
       }
       await onUpdateMemberVacation(editingVacationId, updatePayload);
       setEditingVacationId(null);
@@ -1717,16 +1723,13 @@ export const SettingsPage = ({
                         id="vacation-start"
                         type="date"
                         value={vacationFormStart}
-                        disabled={
-                          busy ||
-                          (editingVacationId !== null && hasVacationStarted)
-                        }
+                        disabled={busy || (editingVacationId !== null && isEditingVacationLocked)}
                         max={vacationFormEnd}
                         onChange={(event) =>
                           setVacationFormStart(event.target.value)
                         }
                       />
-                      {editingVacationId !== null && hasVacationStarted ? (
+                      {editingVacationId !== null && isEditingVacationLocked ? (
                         <p className="text-[11px] text-slate-500 dark:text-slate-400">
                           {t("settings.vacationPlanStartLocked")}
                         </p>
@@ -1740,12 +1743,17 @@ export const SettingsPage = ({
                         id="vacation-end"
                         type="date"
                         value={vacationFormEnd}
-                        disabled={busy}
+                        disabled={busy || (editingVacationId !== null && isEditingVacationEndLocked)}
                         min={vacationFormStart}
                         onChange={(event) =>
                           setVacationFormEnd(event.target.value)
                         }
                       />
+                      {editingVacationId !== null && isEditingVacationEndLocked ? (
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                          {t("settings.vacationPlanEndLocked")}
+                        </p>
+                      ) : null}
                     </div>
                   </div>
                   <div className="mt-3 space-y-1.5">
@@ -1819,8 +1827,8 @@ export const SettingsPage = ({
                             key={vacation.id}
                             className={`flex flex-wrap items-center justify-between gap-2 rounded-lg border px-3 py-2 text-xs ${
                               editingVacationId === vacation.id
-                                ? "border-brand-300 bg-brand-50/70 dark:border-brand-600 dark:bg-brand-900/20"
-                                : "border-brand-100 bg-white/80 dark:border-slate-700 dark:bg-slate-900/70"
+                                ? "border-brand-300 bg-brand-50/70 dark:!border-brand-700 dark:!bg-brand-900/35"
+                                : "border-brand-100 bg-white/80 dark:!border-slate-700 dark:!bg-slate-900/85"
                             }`}
                           >
                             <div className="space-y-0.5">
@@ -1840,7 +1848,7 @@ export const SettingsPage = ({
                                 {vacation.start_date} – {vacation.end_date}
                               </p>
                               {vacation.note ? (
-                                <p className="text-slate-500 dark:text-slate-400">
+                                <p className="text-slate-500 dark:text-slate-300">
                                   {vacation.note}
                                 </p>
                               ) : null}
