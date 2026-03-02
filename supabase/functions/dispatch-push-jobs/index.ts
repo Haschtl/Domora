@@ -149,6 +149,15 @@ const buildMessage = (job: PushJob) => {
     base.title = "Auszug";
     const name = String(payload.payload?.name ?? "Jemand");
     base.body = `${name} ist ausgezogen.`;
+  } else if (event === "live_location_started") {
+    base.title = "Live-Standort gestartet";
+    const name = String(payload.payload?.actorName ?? "Jemand");
+    const durationMinutes = Number(payload.payload?.durationMinutes ?? 0);
+    const durationText =
+      Number.isFinite(durationMinutes) && durationMinutes > 0
+        ? ` für ${Math.floor(durationMinutes)} Minuten`
+        : "";
+    base.body = `${name} teilt den Live-Standort${durationText}.`;
   } else if (event === "rent_updated") {
     base.title = "Mietkosten geändert";
     const name = String(payload.payload?.name ?? "Jemand");

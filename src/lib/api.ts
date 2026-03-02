@@ -17,6 +17,7 @@ import type {
   FinanceSubscription,
   FinanceSubscriptionRecurrence,
   HouseholdEvent,
+  HouseholdLiveLocation,
   HouseholdWhiteboard,
   Household,
   HouseholdMember,
@@ -72,6 +73,8 @@ const SELECT_FINANCE_SUBSCRIPTION_FIELDS =
 const SELECT_PUSH_PREFERENCES_FIELDS = "user_id,household_id,enabled,quiet_hours,topics";
 const SELECT_MEMBER_VACATION_FIELDS =
   "id,household_id,user_id,start_date,end_date,note,created_by,created_at";
+const SELECT_HOUSEHOLD_LIVE_LOCATION_FIELDS =
+  "household_id,user_id,lat,lon,started_at,expires_at,updated_at";
 
 const optionalNumberSchema = z.preprocess(
   (value) => {
@@ -416,7 +419,8 @@ const householdEventSchema = z.object({
     "admin_hint",
     "pimpers_reset",
     "vacation_mode_enabled",
-    "vacation_mode_disabled"
+    "vacation_mode_disabled",
+    "live_location_started"
   ]),
   actor_user_id: z.string().uuid().nullable().optional().transform((value) => value ?? null),
   subject_user_id: z.string().uuid().nullable().optional().transform((value) => value ?? null),
@@ -428,6 +432,16 @@ const householdWhiteboardSchema = z.object({
   household_id: z.string().uuid(),
   scene_json: z.string().max(10 * 1024 * 1024).default(""),
   updated_by: z.string().uuid().nullable().optional().transform((value) => value ?? null),
+  updated_at: z.string().min(1)
+});
+
+const householdLiveLocationSchema = z.object({
+  household_id: z.string().uuid(),
+  user_id: z.string().uuid(),
+  lat: z.coerce.number().finite().min(-90).max(90),
+  lon: z.coerce.number().finite().min(-180).max(180),
+  started_at: z.string().min(1),
+  expires_at: z.string().min(1),
   updated_at: z.string().min(1)
 });
 
@@ -539,6 +553,10 @@ const normalizeHouseholdEvent = (row: Record<string, unknown>): HouseholdEvent =
 
 const normalizeHouseholdWhiteboard = (row: Record<string, unknown>): HouseholdWhiteboard => ({
   ...householdWhiteboardSchema.parse(row)
+});
+
+const normalizeHouseholdLiveLocation = (row: Record<string, unknown>): HouseholdLiveLocation => ({
+  ...householdLiveLocationSchema.parse(row)
 });
 
 const normalizeFinanceEntry = (row: Record<string, unknown>): FinanceEntry => ({
@@ -666,12 +684,13 @@ const insertHouseholdEvent = async (input: {
         "contract_created",
         "contract_updated",
         "contract_deleted",
-        "cash_audit_requested",
-        "admin_hint",
-        "pimpers_reset",
-        "vacation_mode_enabled",
-        "vacation_mode_disabled"
-      ]),
+      "cash_audit_requested",
+      "admin_hint",
+      "pimpers_reset",
+      "vacation_mode_enabled",
+      "vacation_mode_disabled",
+      "live_location_started"
+    ]),
       actorUserId: z.string().uuid().nullable().optional(),
       subjectUserId: z.string().uuid().nullable().optional(),
       payload: z.record(z.string(), z.unknown()).optional(),
@@ -1143,6 +1162,113 @@ export const upsertHouseholdWhiteboard = async (
     .single();
   if (error) throw error;
   return normalizeHouseholdWhiteboard(data as Record<string, unknown>);
+};
+
+export const getHouseholdLiveLocations = async (householdId: string): Promise<HouseholdLiveLocation[]> => {
+  const validatedHouseholdId = z.string().uuid().parse(householdId);
+  const nowIso = new Date().toISOString();
+  const { data, error } = await supabase
+    .from("household_live_locations")
+    .select(SELECT_HOUSEHOLD_LIVE_LOCATION_FIELDS)
+    .eq("household_id", validatedHouseholdId)
+    .gt("expires_at", nowIso)
+    .order("updated_at", { ascending: false });
+
+  if (error) throw error;
+  return (data ?? []).map((entry) => normalizeHouseholdLiveLocation(entry as Record<string, unknown>));
+};
+
+export const startHouseholdLiveLocationShare = async (input: {
+  householdId: string;
+  userId: string;
+  lat: number;
+  lon: number;
+  durationMinutes: number;
+  actorName?: string | null;
+}): Promise<HouseholdLiveLocation> => {
+  const parsed = z.object({
+    householdId: z.string().uuid(),
+    userId: z.string().uuid(),
+    lat: z.coerce.number().finite().min(-90).max(90),
+    lon: z.coerce.number().finite().min(-180).max(180),
+    durationMinutes: z.coerce.number().int().min(1).max(180),
+    actorName: z.string().trim().max(120).nullable().optional()
+  }).parse(input);
+
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + parsed.durationMinutes * 60_000).toISOString();
+  const nowIso = now.toISOString();
+
+  const { data, error } = await supabase
+    .from("household_live_locations")
+    .upsert(
+      {
+        household_id: parsed.householdId,
+        user_id: parsed.userId,
+        lat: parsed.lat,
+        lon: parsed.lon,
+        started_at: nowIso,
+        expires_at: expiresAt
+      },
+      { onConflict: "household_id,user_id" }
+    )
+    .select(SELECT_HOUSEHOLD_LIVE_LOCATION_FIELDS)
+    .single();
+  if (error) throw error;
+
+  await insertHouseholdEvent({
+    householdId: parsed.householdId,
+    eventType: "live_location_started",
+    actorUserId: parsed.userId,
+    payload: {
+      actorName: parsed.actorName ?? null,
+      durationMinutes: parsed.durationMinutes
+    }
+  });
+
+  return normalizeHouseholdLiveLocation(data as Record<string, unknown>);
+};
+
+export const updateHouseholdLiveLocationShare = async (input: {
+  householdId: string;
+  userId: string;
+  lat: number;
+  lon: number;
+  expiresAt: string;
+}): Promise<HouseholdLiveLocation> => {
+  const parsed = z.object({
+    householdId: z.string().uuid(),
+    userId: z.string().uuid(),
+    lat: z.coerce.number().finite().min(-90).max(90),
+    lon: z.coerce.number().finite().min(-180).max(180),
+    expiresAt: z.string().datetime({ offset: true })
+  }).parse(input);
+
+  const { data, error } = await supabase
+    .from("household_live_locations")
+    .update({
+      lat: parsed.lat,
+      lon: parsed.lon,
+      expires_at: parsed.expiresAt
+    })
+    .eq("household_id", parsed.householdId)
+    .eq("user_id", parsed.userId)
+    .select(SELECT_HOUSEHOLD_LIVE_LOCATION_FIELDS)
+    .single();
+  if (error) throw error;
+  return normalizeHouseholdLiveLocation(data as Record<string, unknown>);
+};
+
+export const stopHouseholdLiveLocationShare = async (householdId: string, userId: string): Promise<void> => {
+  const parsedHouseholdId = z.string().uuid().parse(householdId);
+  const parsedUserId = z.string().uuid().parse(userId);
+
+  const { error } = await supabase
+    .from("household_live_locations")
+    .delete()
+    .eq("household_id", parsedHouseholdId)
+    .eq("user_id", parsedUserId);
+  if (error) throw error;
 };
 
 export const updateMemberSettings = async (

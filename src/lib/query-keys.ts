@@ -15,5 +15,6 @@ export const queryKeys = {
   householdMemberVacations: (householdId: string) => ["household", householdId, "member-vacations"] as const,
   householdMemberPimpers: (householdId: string) => ["household", householdId, "member-pimpers"] as const,
   householdEvents: (householdId: string) => ["household", householdId, "events"] as const,
-  householdWhiteboard: (householdId: string) => ["household", householdId, "whiteboard"] as const
+  householdWhiteboard: (householdId: string) => ["household", householdId, "whiteboard"] as const,
+  householdLiveLocations: (householdId: string) => ["household", householdId, "live-locations"] as const
 };

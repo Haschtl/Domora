@@ -124,6 +124,9 @@ export const useWorkspaceData = () => {
     subscribeTable("household_whiteboards", `household_id=eq.${activeHouseholdId}`, () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.householdWhiteboard(activeHouseholdId) });
     });
+    subscribeTable("household_live_locations", `household_id=eq.${activeHouseholdId}`, () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.householdLiveLocations(activeHouseholdId) });
+    });
     subscribeTable("households", `id=eq.${activeHouseholdId}`, () => {
       if (userId) {
         void queryClient.invalidateQueries({ queryKey: queryKeys.households(userId) });

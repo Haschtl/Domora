@@ -1,7 +1,31 @@
-import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
+import {
+  Suspense,
+  lazy,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+  type ReactNode,
+  type TouchEvent as ReactTouchEvent
+} from "react";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import L from "leaflet";
+import {
+  BarElement,
+  CategoryScale,
+  Chart as ChartJS,
+  Filler,
+  Legend,
+  LineElement,
+  LinearScale,
+  PointElement,
+  Tooltip as ChartTooltip
+} from "chart.js";
+import zoomPlugin from "chartjs-plugin-zoom";
+import "hammerjs";
 import "@geoman-io/leaflet-geoman-free";
 import "leaflet.locatecontrol";
 import markerIcon2xUrl from "leaflet/dist/images/marker-icon-2x.png";
@@ -16,18 +40,34 @@ import {
   ChevronUp,
   GripVertical,
   CircleDot,
+  Cloud,
+  CloudFog,
+  CloudRain,
+  CloudSnow,
+  CloudSun,
+  CloudLightning,
+  Flame,
   House,
   Loader2,
+  Map as MapIcon,
+  Mountain,
   LocateFixed,
   Maximize2,
+  Moon,
   MoreHorizontal,
   Pencil,
   Plus,
   Receipt,
+  Ruler,
+  Satellite,
+  Search,
   SlidersHorizontal,
+  Sun,
   ShoppingCart,
+  Snowflake,
   Trash2,
   Wallet,
+  Wind,
   X
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
@@ -44,7 +84,13 @@ import { Circle, MapContainer, Marker, Polyline, Popup, Rectangle, TileLayer, To
 import { createTrianglifyBannerBackground } from "../../lib/banner";
 import { formatDateOnly, formatDateTime, formatShortDay, getLastMonthRange } from "../../lib/date";
 import { suggestCategoryLabel } from "../../lib/category-heuristics";
-import { getNearbyPois } from "../../lib/api";
+import {
+  getHouseholdLiveLocations,
+  getNearbyPois,
+  startHouseholdLiveLocationShare,
+  stopHouseholdLiveLocationShare,
+  updateHouseholdLiveLocationShare
+} from "../../lib/api";
 import { createMemberLabelGetter } from "../../lib/member-label";
 import { createDiceBearAvatarDataUri, getMemberAvatarSeed } from "../../lib/avatar";
 import { calculateBalancesByMember } from "../../lib/finance-math";
@@ -61,6 +107,7 @@ import type {
   CashAuditRequest,
   FinanceEntry,
   HouseholdEvent,
+  HouseholdLiveLocation,
   Household,
   HouseholdMember,
   HouseholdMemberVacation,
@@ -90,7 +137,11 @@ import { Label } from "../../components/ui/label";
 import { MultiDateCalendarSelect } from "../../components/ui/multi-date-calendar-select";
 import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "../../components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
+import { Chart } from "react-chartjs-2";
+import { WeatherSvg, type WeatherState } from "weather-icons-animated";
 import { buildMonthGrid, dayKey, startOfMonth } from "../../features/tasks-calendar";
+import { queryKeys } from "../../lib/query-keys";
+import { supabase } from "../../lib/supabase";
 import {   
   LANDING_WIDGET_KEYS,
   type LandingWidgetKey,
@@ -183,6 +234,51 @@ type MapStyleOption = {
   maxZoom?: number;
 };
 type ManualMarkerFilterMode = "all" | "mine" | "member" | "none";
+type MapMeasureMode = "distance" | "area";
+type MapSearchViewportBounds = {
+  south: number;
+  west: number;
+  north: number;
+  east: number;
+};
+type MapSearchResult = {
+  id: string;
+  label: string;
+  lat: number;
+  lon: number;
+  bounds: MapSearchViewportBounds | null;
+};
+type MapSearchZoomRequest = {
+  token: number;
+  lat: number;
+  lon: number;
+  bounds: MapSearchViewportBounds | null;
+};
+type HouseholdWeatherDay = {
+  date: string;
+  weatherCode: number | null;
+  tempMaxC: number | null;
+  tempMinC: number | null;
+  precipitationMm: number | null;
+  precipitationProbabilityPercent: number | null;
+  windSpeedKmh: number | null;
+  windGustKmh: number | null;
+  windDirectionDeg: number | null;
+  uvIndexMax: number | null;
+  sunrise: string | null;
+  sunset: string | null;
+};
+type HouseholdWeatherHourlyPoint = {
+  time: string;
+  tempC: number | null;
+  apparentTempC: number | null;
+  precipitationMm: number | null;
+  snowfallCm: number | null;
+  precipitationProbabilityPercent: number | null;
+  cloudCoverPercent: number | null;
+  uvIndex: number | null;
+  windSpeedKmh: number | null;
+};
 
 const LANDING_WIDGET_COMPONENTS: Array<{ key: LandingWidgetKey; tag: string }> = [
   { key: "tasks-overview", tag: "LandingWidgetTasksOverview" },
@@ -199,6 +295,18 @@ const LANDING_WIDGET_COMPONENTS: Array<{ key: LandingWidgetKey; tag: string }> =
   { key: "reliability-by-member", tag: "LandingWidgetReliabilityByMember" }
 ];
 
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  BarElement,
+  ChartTooltip,
+  Legend,
+  Filler,
+  zoomPlugin
+);
+
 const MAX_WHITEBOARD_BYTES = 10 * 1024 * 1024;
 const MAX_CALENDAR_TOOLTIP_ITEMS = 4;
 const DEFAULT_MAP_CENTER: [number, number] = [51.1657, 10.4515];
@@ -214,6 +322,17 @@ const POI_CATEGORY_OPTIONS: Array<{ id: PoiCategory; labelKey: string; emoji: st
   { id: "supermarket", labelKey: "home.householdMapPoiSupermarkets", emoji: "🛒" },
   { id: "fuel", labelKey: "home.householdMapPoiFuel", emoji: "⛽" }
 ];
+const MANUAL_MARKER_ICON_OPTIONS: Array<{ id: HouseholdMapMarkerIcon; labelKey: string }> = [
+  { id: "home", labelKey: "home.householdMapMarkerIconHome" },
+  { id: "shopping", labelKey: "home.householdMapMarkerIconShopping" },
+  { id: "restaurant", labelKey: "home.householdMapMarkerIconRestaurant" },
+  { id: "fuel", labelKey: "home.householdMapMarkerIconFuel" },
+  { id: "hospital", labelKey: "home.householdMapMarkerIconHospital" },
+  { id: "park", labelKey: "home.householdMapMarkerIconPark" },
+  { id: "work", labelKey: "home.householdMapMarkerIconWork" },
+  { id: "star", labelKey: "home.householdMapMarkerIconStar" }
+];
+const LIVE_LOCATION_DURATION_OPTIONS = [5, 15, 30, 60] as const;
 const MAP_STYLE_OPTIONS: MapStyleOption[] = [
   {
     id: "street",
@@ -272,13 +391,9 @@ const ensureLeafletMarkerIcon = () => {
   });
 };
 
-const openStreetMapSearchUrl = (query: string) =>
-  `https://www.openstreetmap.org/search?query=${encodeURIComponent(query)}`;
-const openStreetMapPinUrl = (lat: number, lon: number) =>
-  `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lon}#map=17/${lat}/${lon}`;
-
 type DomoraLeafletLayer = L.Layer & {
   _domoraMeta?: HouseholdMapMarker;
+  _domoraMeasure?: boolean;
 };
 
 type LocateControlHandle = L.Control & {
@@ -291,7 +406,37 @@ type MapWithPm = L.Map & {
     addControls: (options: Record<string, unknown>) => void;
     removeControls: () => void;
     setGlobalOptions: (options: Record<string, unknown>) => void;
+    enableDraw: (shape: "Line" | "Polygon", options?: Record<string, unknown>) => void;
+    disableDraw: () => void;
   };
+};
+
+const toLinearLatLngs = (latLngs: L.LatLng[] | L.LatLng[][]) =>
+  Array.isArray(latLngs[0]) ? (latLngs as L.LatLng[][]).flat() : (latLngs as L.LatLng[]);
+
+const calculatePolylineDistanceMeters = (map: L.Map, points: L.LatLng[]) => {
+  let total = 0;
+  for (let i = 1; i < points.length; i += 1) {
+    const prev = points[i - 1];
+    const next = points[i];
+    if (!prev || !next) continue;
+    total += map.distance(prev, next);
+  }
+  return total;
+};
+
+const calculatePolygonAreaSqm = (points: L.LatLng[]) => {
+  const earthRadius = 6378137;
+  if (points.length < 3) return 0;
+  let area = 0;
+  const radians = Math.PI / 180;
+  for (let i = 0; i < points.length; i += 1) {
+    const p1 = points[i];
+    const p2 = points[(i + 1) % points.length];
+    if (!p1 || !p2) continue;
+    area += (p2.lng - p1.lng) * radians * (2 + Math.sin(p1.lat * radians) + Math.sin(p2.lat * radians));
+  }
+  return Math.abs((area * earthRadius * earthRadius) / 2);
 };
 
 const toFixedCoordinate = (value: number) => Number(value.toFixed(6));
@@ -362,9 +507,7 @@ const serializeHouseholdLayer = (
 
   if (layer instanceof L.Polyline) {
     const latLngs = layer.getLatLngs();
-    const linearLatLngs = Array.isArray(latLngs[0])
-      ? (latLngs as L.LatLng[][]).flat()
-      : (latLngs as L.LatLng[]);
+    const linearLatLngs = toLinearLatLngs(latLngs as L.LatLng[] | L.LatLng[][]);
     const points = linearLatLngs
       .map((entry) => {
         const latLng = entry as L.LatLng;
@@ -441,6 +584,7 @@ const GeomanEditorBridge = ({
     const handleCreate = (event: { layer?: L.Layer }) => {
       const createdLayer = event.layer as DomoraLeafletLayer | undefined;
       if (!createdLayer) return;
+      if (createdLayer._domoraMeasure) return;
       if (!createdLayer._domoraMeta) {
         const nowIso = new Date().toISOString();
         createdLayer._domoraMeta = {
@@ -515,6 +659,7 @@ const LocateControlBridge = ({
     const control = factory({
       position: "topleft",
       flyTo: true,
+      showCompass: true,
       setView: "untilPanOrZoom",
       keepCurrentZoomLevel: false,
       initialZoomLevel: MAP_ZOOM_WITH_ADDRESS,
@@ -522,16 +667,16 @@ const LocateControlBridge = ({
       clickBehavior: {
         inView: "stop",
         inViewNotFollowing: "inView",
-        outOfView: "setView"
+        outOfView: "setView",
       },
       strings: {
-        title: "Standort ermitteln"
+        title: "Standort ermitteln",
       },
       locateOptions: {
         enableHighAccuracy: true,
         timeout: 15000,
-        maximumAge: 60000
-      }
+        maximumAge: 60000,
+      },
     });
 
     control.addTo(map);
@@ -567,6 +712,84 @@ const LocateControlBridge = ({
   return null;
 };
 
+const GeomanMeasureBridge = ({
+  enabled,
+  mode,
+  onModeChange,
+  onMeasured
+}: {
+  enabled: boolean;
+  mode: MapMeasureMode | null;
+  onModeChange: (nextMode: MapMeasureMode | null) => void;
+  onMeasured: (result: { mode: MapMeasureMode; distanceMeters?: number; areaSqm?: number }) => void;
+}) => {
+  const map = useMap();
+  const latestModeRef = useRef<MapMeasureMode | null>(mode);
+  const lastLayerRef = useRef<L.Layer | null>(null);
+
+  useEffect(() => {
+    latestModeRef.current = mode;
+  }, [mode]);
+
+  useEffect(() => {
+    const mapWithPm = map as MapWithPm;
+    if (!enabled || !mapWithPm.pm || !mode) return;
+
+    mapWithPm.pm.enableDraw(mode === "distance" ? "Line" : "Polygon", {
+      continueDrawing: false,
+      finishOn: "dblclick",
+      templineStyle: { color: "#0f766e", dashArray: [5, 5] },
+      hintlineStyle: { color: "#14b8a6", dashArray: [5, 5] },
+      pathOptions: { color: "#0f766e", weight: 4, fillOpacity: 0.18 }
+    });
+
+    return () => {
+      mapWithPm.pm?.disableDraw();
+    };
+  }, [enabled, map, mode]);
+
+  useEffect(() => {
+    if (!enabled) return;
+
+    const handleCreate = (event: { layer?: L.Layer }) => {
+      const currentMode = latestModeRef.current;
+      if (!currentMode) return;
+      const createdLayer = event.layer as DomoraLeafletLayer | undefined;
+      if (!createdLayer) return;
+      createdLayer._domoraMeasure = true;
+
+      if (lastLayerRef.current) {
+        map.removeLayer(lastLayerRef.current);
+      }
+      lastLayerRef.current = createdLayer;
+
+      if (currentMode === "distance" && createdLayer instanceof L.Polyline) {
+        const points = toLinearLatLngs(createdLayer.getLatLngs() as L.LatLng[] | L.LatLng[][]);
+        onMeasured({ mode: "distance", distanceMeters: calculatePolylineDistanceMeters(map, points) });
+      }
+
+      if (currentMode === "area" && createdLayer instanceof L.Polygon) {
+        const polygonLatLngs = createdLayer.getLatLngs();
+        const firstRing = Array.isArray(polygonLatLngs[0]) ? (polygonLatLngs[0] as L.LatLng[]) : [];
+        onMeasured({ mode: "area", areaSqm: calculatePolygonAreaSqm(firstRing) });
+      }
+
+      onModeChange(null);
+    };
+
+    map.on("pm:create", handleCreate as L.LeafletEventHandlerFn);
+    return () => {
+      map.off("pm:create", handleCreate as L.LeafletEventHandlerFn);
+      if (!enabled && lastLayerRef.current) {
+        map.removeLayer(lastLayerRef.current);
+        lastLayerRef.current = null;
+      }
+    };
+  }, [enabled, map, onMeasured, onModeChange]);
+
+  return null;
+};
+
 const AddressMapView = ({ center }: { center: [number, number] }) => {
   const map = useMap();
   useEffect(() => {
@@ -589,6 +812,66 @@ const RecenterMapOnRequest = ({
     if (requestToken <= 0) return;
     map.setView(center, zoom, { animate: true });
   }, [center, map, requestToken, zoom]);
+  return null;
+};
+
+const FullscreenMapViewportBridge = ({
+  enabled,
+  onBoundsChange
+}: {
+  enabled: boolean;
+  onBoundsChange: (bounds: MapSearchViewportBounds) => void;
+}) => {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!enabled) return;
+
+    const emit = () => {
+      const bounds = map.getBounds();
+      onBoundsChange({
+        south: bounds.getSouth(),
+        west: bounds.getWest(),
+        north: bounds.getNorth(),
+        east: bounds.getEast()
+      });
+    };
+
+    emit();
+    map.on("moveend", emit);
+    map.on("zoomend", emit);
+
+    return () => {
+      map.off("moveend", emit);
+      map.off("zoomend", emit);
+    };
+  }, [enabled, map, onBoundsChange]);
+
+  return null;
+};
+
+const MapSearchZoomBridge = ({
+  request
+}: {
+  request: MapSearchZoomRequest | null;
+}) => {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!request) return;
+    if (request.bounds) {
+      map.fitBounds(
+        [
+          [request.bounds.south, request.bounds.west],
+          [request.bounds.north, request.bounds.east]
+        ],
+        { animate: true, padding: [40, 40] }
+      );
+      return;
+    }
+    map.setView([request.lat, request.lon], Math.max(map.getZoom(), 17), { animate: true });
+  }, [map, request]);
+
   return null;
 };
 
@@ -648,34 +931,16 @@ const getHouseholdMarkerCenter = (marker: HouseholdMapMarker): [number, number] 
   }
 };
 
-const renderHouseholdMarkerTooltip = (marker: HouseholdMapMarker) => (
-  <LeafletTooltip>
+const renderHouseholdMarkerTooltip = (marker: HouseholdMapMarker, action?: ReactNode) => (
+  <LeafletTooltip interactive={Boolean(action)}>
     <div className="space-y-1">
       <p className="font-semibold">
         {getMarkerEmoji(marker.icon)} {marker.title}
       </p>
       {marker.description ? <p className="text-xs">{marker.description}</p> : null}
+      {action ? <div className="pt-1">{action}</div> : null}
     </div>
   </LeafletTooltip>
-);
-
-const renderHouseholdMarkerPopup = (marker: HouseholdMapMarker, history?: ReactNode) => (
-  <Popup>
-    <div className="space-y-1">
-      <p className="font-semibold">
-        {getMarkerEmoji(marker.icon)} {marker.title}
-      </p>
-      {marker.description ? <p className="text-xs">{marker.description}</p> : null}
-      {marker.image_b64 ? (
-        <img
-          src={marker.image_b64}
-          alt={marker.title}
-          className="max-h-32 w-full rounded object-cover"
-        />
-      ) : null}
-      {history}
-    </div>
-  </Popup>
 );
 
 const poiDivIconCache = new Map<string, L.DivIcon>();
@@ -720,6 +985,266 @@ const getPoiMarkerIcon = (category: PoiCategory) => {
   });
   poiDivIconCache.set(category, divIcon);
   return divIcon;
+};
+
+const searchDivIconCache = new Map<string, L.DivIcon>();
+const getSearchResultMarkerIcon = () => {
+  const cacheKey = "default";
+  const cached = searchDivIconCache.get(cacheKey);
+  if (cached) return cached;
+  const divIcon = L.divIcon({
+    className: "domora-map-search-icon",
+    html: '<div style="background:#1d4ed8;border:2px solid #fff;color:#fff;width:22px;height:22px;border-radius:999px;display:flex;align-items:center;justify-content:center;font-size:11px;box-shadow:0 2px 6px rgba(0,0,0,.28)">🔎</div>',
+    iconSize: [22, 22],
+    iconAnchor: [11, 22],
+    popupAnchor: [0, -20]
+  });
+  searchDivIconCache.set(cacheKey, divIcon);
+  return divIcon;
+};
+
+const getMapStyleIcon = (styleId: MapStyleId) => {
+  switch (styleId) {
+    case "street":
+      return <MapIcon className="h-4 w-4" />;
+    case "nature":
+      return <Mountain className="h-4 w-4" />;
+    case "satellite":
+      return <Satellite className="h-4 w-4" />;
+    case "light":
+      return <Sun className="h-4 w-4" />;
+    case "dark":
+      return <Moon className="h-4 w-4" />;
+    default:
+      return <MapIcon className="h-4 w-4" />;
+  }
+};
+
+const getAnimatedWeatherState = (day: HouseholdWeatherDay): WeatherState => {
+  const code = day.weatherCode;
+  const wind = day.windSpeedKmh ?? 0;
+  if (wind >= 45 && (code === 0 || code === 1 || code === 2 || code === 3)) {
+    return "windy-variant";
+  }
+  if (wind >= 30 && (code === 0 || code === 1 || code === 2 || code === 3)) {
+    return "windy";
+  }
+  if (code === null) return "partlycloudy";
+  if (code === 0) return "sunny";
+  if (code === 1 || code === 2) return "partlycloudy";
+  if (code === 3) return "cloudy";
+  if (code === 45 || code === 48) return "fog";
+  if ((code >= 51 && code <= 57) || (code >= 61 && code <= 67) || (code >= 80 && code <= 82)) return "rainy";
+  if (code === 82) return "pouring";
+  if ((code >= 71 && code <= 77) || code === 85 || code === 86) return "snowy";
+  if (code >= 95 && code <= 99) return code === 96 || code === 99 ? "lightning-rainy" : "lightning";
+  return "partlycloudy";
+};
+
+const getWeatherConditionLabelKey = (day: HouseholdWeatherDay) => {
+  const code = day.weatherCode;
+  if (code === null) return "home.householdWeatherConditionUnknown";
+  if (code === 0) return "home.householdWeatherConditionClear";
+  if (code === 1 || code === 2) return "home.householdWeatherConditionPartlyCloudy";
+  if (code === 3) return "home.householdWeatherConditionCloudy";
+  if (code === 45 || code === 48) return "home.householdWeatherConditionFog";
+  if ((code >= 51 && code <= 67) || (code >= 80 && code <= 82)) return "home.householdWeatherConditionRain";
+  if ((code >= 71 && code <= 77) || code === 85 || code === 86) return "home.householdWeatherConditionSnow";
+  if (code >= 95 && code <= 99) return "home.householdWeatherConditionThunder";
+  return "home.householdWeatherConditionUnknown";
+};
+
+const getWindDirectionLabel = (degrees: number | null) => {
+  if (typeof degrees !== "number" || !Number.isFinite(degrees)) return "—";
+  const normalized = ((degrees % 360) + 360) % 360;
+  const labels = ["N", "NO", "O", "SO", "S", "SW", "W", "NW"];
+  const index = Math.round(normalized / 45) % 8;
+  return labels[index] ?? "—";
+};
+
+const getDailyWeatherWarnings = (day: HouseholdWeatherDay) => {
+  const code = day.weatherCode ?? -1;
+  const hasSnowOrFreezingCode =
+    (code >= 71 && code <= 77) || code === 85 || code === 86 || code === 66 || code === 67;
+  const hasIcyCondition =
+    hasSnowOrFreezingCode || ((day.tempMinC ?? Number.POSITIVE_INFINITY) <= 0 && (day.precipitationMm ?? 0) > 0);
+  const hasHeatCondition = (day.tempMaxC ?? Number.NEGATIVE_INFINITY) >= 30;
+  const hasStormCondition =
+    (day.windGustKmh ?? Number.NEGATIVE_INFINITY) >= 60 ||
+    (day.windSpeedKmh ?? Number.NEGATIVE_INFINITY) >= 45 ||
+    (code >= 95 && code <= 99);
+  const hasHighUvCondition = (day.uvIndexMax ?? Number.NEGATIVE_INFINITY) >= 6;
+
+  return {
+    icy: hasIcyCondition,
+    heat: hasHeatCondition,
+    storm: hasStormCondition,
+    uv: hasHighUvCondition
+  };
+};
+
+const getStaticWeatherCalendarIcon = (day: HouseholdWeatherDay) => {
+  const code = day.weatherCode;
+  const wind = day.windSpeedKmh ?? 0;
+  const iconClassName = "h-3.5 w-3.5";
+  if (wind >= 45 && (code === 0 || code === 1 || code === 2 || code === 3)) {
+    return <Wind className={`${iconClassName} text-teal-600 dark:text-teal-300`} />;
+  }
+  if (code === null) return null;
+  if (code === 0) return <Sun className={`${iconClassName} text-amber-500 dark:text-amber-300`} />;
+  if (code === 1 || code === 2) return <CloudSun className={`${iconClassName} text-amber-500 dark:text-amber-300`} />;
+  if (code === 3) return <Cloud className={`${iconClassName} text-slate-500 dark:text-slate-300`} />;
+  if (code === 45 || code === 48) return <CloudFog className={`${iconClassName} text-slate-500 dark:text-slate-300`} />;
+  if ((code >= 51 && code <= 67) || (code >= 80 && code <= 82)) {
+    return <CloudRain className={`${iconClassName} text-sky-600 dark:text-sky-300`} />;
+  }
+  if ((code >= 71 && code <= 77) || code === 85 || code === 86) {
+    return <CloudSnow className={`${iconClassName} text-cyan-600 dark:text-cyan-300`} />;
+  }
+  if (code >= 95 && code <= 99) {
+    return <CloudLightning className={`${iconClassName} text-violet-600 dark:text-violet-300`} />;
+  }
+  return null;
+};
+
+const moonEmojiCanvasCache = new Map<string, HTMLCanvasElement>();
+
+const getDateKeyFromIsoDateTime = (value: string) => value.slice(0, 10);
+
+const addDaysToDateKey = (dateKey: string, days: number) => {
+  const source = new Date(`${dateKey}T00:00:00`);
+  if (Number.isNaN(source.getTime())) return dateKey;
+  source.setDate(source.getDate() + days);
+  const year = source.getFullYear();
+  const month = `${source.getMonth() + 1}`.padStart(2, "0");
+  const day = `${source.getDate()}`.padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const getMoonPhaseFraction = (date: Date) => {
+  const synodicMonthDays = 29.530588853;
+  const referenceNewMoonUtcMs = Date.UTC(2000, 0, 6, 18, 14, 0);
+  const daysSinceReference = (date.getTime() - referenceNewMoonUtcMs) / (1000 * 60 * 60 * 24);
+  const cycle = daysSinceReference / synodicMonthDays;
+  const normalized = cycle - Math.floor(cycle);
+  return normalized < 0 ? normalized + 1 : normalized;
+};
+
+const getMoonIllumination = (phase: number) => 0.5 * (1 - Math.cos(2 * Math.PI * phase));
+
+const getMoonPhaseEmoji = (phase: number) => {
+  if (phase < 0.0625 || phase >= 0.9375) return "🌑";
+  if (phase < 0.1875) return "🌒";
+  if (phase < 0.3125) return "🌓";
+  if (phase < 0.4375) return "🌔";
+  if (phase < 0.5625) return "🌕";
+  if (phase < 0.6875) return "🌖";
+  if (phase < 0.8125) return "🌗";
+  return "🌘";
+};
+
+const getMoonPhaseLabel = (phase: number) => {
+  if (phase < 0.0625 || phase >= 0.9375) return "Neumond";
+  if (phase < 0.1875) return "Zunehmende Sichel";
+  if (phase < 0.3125) return "Erstes Viertel";
+  if (phase < 0.4375) return "Zunehmender Mond";
+  if (phase < 0.5625) return "Vollmond";
+  if (phase < 0.6875) return "Abnehmender Mond";
+  if (phase < 0.8125) return "Letztes Viertel";
+  return "Abnehmende Sichel";
+};
+
+const getMoonPhasePointStyle = (emoji: string) => {
+  const cached = moonEmojiCanvasCache.get(emoji);
+  if (cached) return cached;
+  if (typeof document === "undefined") return emoji;
+  const canvas = document.createElement("canvas");
+  canvas.width = 20;
+  canvas.height = 20;
+  const ctx = canvas.getContext("2d");
+  if (ctx) {
+    ctx.font = "14px sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(emoji, 10, 10);
+  }
+  moonEmojiCanvasCache.set(emoji, canvas);
+  return canvas;
+};
+
+const resolveChartTickIndex = (tickValue: unknown, fallbackIndex: number) => {
+  if (typeof tickValue === "number" && Number.isFinite(tickValue)) {
+    return Math.round(tickValue);
+  }
+  const parsed = Number(tickValue);
+  if (Number.isFinite(parsed)) {
+    return Math.round(parsed);
+  }
+  return fallbackIndex;
+};
+
+const getWeatherXAxisDensity = (visibleHours: number) => {
+  if (visibleHours <= 30) {
+    return { labelEvery: 1, minorGridEvery: 1, majorGridEvery: 6 };
+  }
+  if (visibleHours <= 60) {
+    return { labelEvery: 2, minorGridEvery: 2, majorGridEvery: 6 };
+  }
+  if (visibleHours <= 96) {
+    return { labelEvery: 4, minorGridEvery: 4, majorGridEvery: 12 };
+  }
+  if (visibleHours <= 144) {
+    return { labelEvery: 6, minorGridEvery: 6, majorGridEvery: 24 };
+  }
+  return { labelEvery: 12, minorGridEvery: 12, majorGridEvery: 24 };
+};
+
+const getPrecipitationBarColor = (precipProbabilityPercent: number | null) => {
+  const probability = Math.min(100, Math.max(0, precipProbabilityPercent ?? 0));
+  const t = probability / 100;
+  const lightness = 78 - t * 34; // 78% -> 44%
+  const saturation = 68 + t * 20; // 68% -> 88%
+  const alpha = 0.28 + t * 0.56; // 0.28 -> 0.84
+  return `hsla(210, ${saturation}%, ${lightness}%, ${alpha})`;
+};
+
+const getPrecipitationBarBorderColor = (precipProbabilityPercent: number | null) => {
+  const probability = Math.min(100, Math.max(0, precipProbabilityPercent ?? 0));
+  const t = probability / 100;
+  const lightness = 58 - t * 20; // 58% -> 38%
+  const saturation = 70 + t * 18; // 70% -> 88%
+  const alpha = 0.45 + t * 0.45; // 0.45 -> 0.9
+  return `hsla(214, ${saturation}%, ${lightness}%, ${alpha})`;
+};
+
+const getPrecipitationAxisMax = (values: Array<number | null>) => {
+  const maxValue = values.reduce<number>((max, value) => {
+    if (typeof value !== "number" || !Number.isFinite(value)) return max;
+    return Math.max(max, value);
+  }, 0);
+
+  // 12 mm/h is already heavy rain, so this gives useful headroom without
+  // compressing normal household forecasts too much.
+  const baselineMax = 12;
+  const target = Math.max(maxValue, baselineMax);
+
+  if (target <= 12) return 12;
+  if (target <= 25) return Math.ceil(target / 2) * 2;
+  if (target <= 50) return Math.ceil(target / 5) * 5;
+  if (target <= 100) return Math.ceil(target / 10) * 10;
+  return Math.ceil(target / 25) * 25;
+};
+
+const getUvAxisMax = (values: Array<number | null>) => {
+  const maxValue = values.reduce<number>((max, value) => {
+    if (typeof value !== "number" || !Number.isFinite(value)) return max;
+    return Math.max(max, value);
+  }, 0);
+  const baselineMax = 8;
+  const target = Math.max(maxValue, baselineMax);
+  if (target <= 8) return 8;
+  if (target <= 12) return 12;
+  return Math.ceil(target);
 };
 
 const convertLandingTokensToEditorJsx = (markdown: string) => {
@@ -1153,10 +1678,32 @@ export const HomePage = ({
   const [myLocationRecenterRequestToken, setMyLocationRecenterRequestToken] = useState(0);
   const [myLocationStatus, setMyLocationStatus] = useState<"idle" | "loading" | "error">("idle");
   const [myLocationError, setMyLocationError] = useState<string | null>(null);
+  const [whiteboardOnlineUserIds, setWhiteboardOnlineUserIds] = useState<string[]>([]);
+  const [liveShareDurationMinutes, setLiveShareDurationMinutes] = useState<number>(15);
+  const [isLiveShareDialogOpen, setIsLiveShareDialogOpen] = useState(false);
+  const [liveShareStatus, setLiveShareStatus] = useState<"idle" | "starting" | "active" | "stopping" | "error">("idle");
+  const [liveShareError, setLiveShareError] = useState<string | null>(null);
   const [poiOverrideDrafts, setPoiOverrideDrafts] = useState<Record<string, { title: string; description: string }>>({});
   const [poiOverrideSavingId, setPoiOverrideSavingId] = useState<string | null>(null);
   const [poiOverrideError, setPoiOverrideError] = useState<string | null>(null);
+  const [editingMarkerDraft, setEditingMarkerDraft] = useState<{
+    id: string;
+    title: string;
+    description: string;
+    icon: HouseholdMapMarkerIcon;
+  } | null>(null);
+  const [editingMarkerError, setEditingMarkerError] = useState<string | null>(null);
+  const [editingMarkerSaving, setEditingMarkerSaving] = useState(false);
   const [mapStyle, setMapStyle] = useState<MapStyleId>("street");
+  const [mapMeasureMode, setMapMeasureMode] = useState<MapMeasureMode | null>(null);
+  const [mapMeasureResult, setMapMeasureResult] = useState<string | null>(null);
+  const [mapSearchQuery, setMapSearchQuery] = useState("");
+  const [mapSearchResults, setMapSearchResults] = useState<MapSearchResult[]>([]);
+  const [mapSearchLoading, setMapSearchLoading] = useState(false);
+  const [mapSearchError, setMapSearchError] = useState<string | null>(null);
+  const [mapSearchInputFocused, setMapSearchInputFocused] = useState(false);
+  const [mapSearchViewportBounds, setMapSearchViewportBounds] = useState<MapSearchViewportBounds | null>(null);
+  const [mapSearchZoomRequest, setMapSearchZoomRequest] = useState<MapSearchZoomRequest | null>(null);
   const [manualMarkerFilterMode, setManualMarkerFilterMode] = useState<ManualMarkerFilterMode>("all");
   const [manualMarkerFilterMemberId, setManualMarkerFilterMemberId] = useState<string>("");
   const [poiCategoriesEnabled, setPoiCategoriesEnabled] = useState<Record<PoiCategory, boolean>>({
@@ -1169,6 +1716,8 @@ export const HomePage = ({
   const mapMarkerSaveTimerRef = useRef<number | null>(null);
   const pendingMapMarkerSaveRef = useRef<HouseholdMapMarker[] | null>(null);
   const locateControlRef = useRef<LocateControlHandle | null>(null);
+  const liveShareHeartbeatTimerRef = useRef<number | null>(null);
+  const liveShareExpiresAtRef = useRef<string | null>(null);
   const lastSavedWhiteboardRef = useRef(whiteboardSceneJson);
   const isWhiteboardFullscreenOpen = location.pathname === "/home/summary/whiteboard";
   const isMapFullscreenOpen = location.pathname === "/home/summary/map";
@@ -1240,9 +1789,6 @@ export const HomePage = ({
     ?? DEFAULT_MAP_CENTER;
   const mapHasPin = Boolean(addressMapCenter);
   const mapZoom = mapHasPin ? MAP_ZOOM_WITH_ADDRESS : addressInput ? MAP_ZOOM_WITH_ADDRESS_FALLBACK : MAP_ZOOM_DEFAULT;
-  const mapLink = addressMapCenter
-    ? openStreetMapPinUrl(addressMapCenter[0], addressMapCenter[1])
-    : openStreetMapSearchUrl(addressInput);
   const selectedPoiCategories = useMemo(
     () =>
       POI_CATEGORY_OPTIONS.map((entry) => entry.id).filter((category) => poiCategoriesEnabled[category]),
@@ -1295,6 +1841,121 @@ export const HomePage = ({
       setManualMarkerFilterMemberId(memberOptionsForMarkerFilter[0]!.id);
     }
   }, [manualMarkerFilterMemberId, manualMarkerFilterMode, memberOptionsForMarkerFilter]);
+  const applyMapSearchResult = useCallback((result: MapSearchResult) => {
+    setMapSearchZoomRequest({
+      token: Date.now(),
+      lat: result.lat,
+      lon: result.lon,
+      bounds: result.bounds
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!isMapFullscreenOpen) return;
+
+    const query = mapSearchQuery.trim();
+    if (query.length < 2) {
+      setMapSearchLoading(false);
+      setMapSearchError(null);
+      setMapSearchResults([]);
+      return;
+    }
+    if (!mapSearchViewportBounds) {
+      setMapSearchLoading(false);
+      setMapSearchError(null);
+      setMapSearchResults([]);
+      return;
+    }
+
+    const controller = new AbortController();
+    setMapSearchLoading(true);
+    setMapSearchError(null);
+
+    const timeout = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const params = new URLSearchParams({
+            format: "jsonv2",
+            limit: "8",
+            q: query,
+            bounded: "1",
+            viewbox: `${mapSearchViewportBounds.west},${mapSearchViewportBounds.north},${mapSearchViewportBounds.east},${mapSearchViewportBounds.south}`
+          });
+          const response = await fetch(`https://nominatim.openstreetmap.org/search?${params.toString()}`, {
+            method: "GET",
+            headers: { Accept: "application/json" },
+            signal: controller.signal
+          });
+          if (!response.ok) {
+            throw new Error("nominatim_failed");
+          }
+          const payload = (await response.json()) as Array<{
+            place_id?: string | number;
+            display_name?: string;
+            lat?: string;
+            lon?: string;
+            boundingbox?: [string, string, string, string];
+          }>;
+          const nextResults = payload
+            .map((entry): MapSearchResult | null => {
+              const lat = Number(entry.lat);
+              const lon = Number(entry.lon);
+              if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+              const bbox = Array.isArray(entry.boundingbox) ? entry.boundingbox : null;
+              const bounds =
+                bbox && bbox.length === 4
+                  ? {
+                      south: Number(bbox[0]),
+                      north: Number(bbox[1]),
+                      west: Number(bbox[2]),
+                      east: Number(bbox[3])
+                    }
+                  : null;
+              return {
+                id: String(entry.place_id ?? `${lat}:${lon}`),
+                label: entry.display_name?.trim() || `${lat.toFixed(5)}, ${lon.toFixed(5)}`,
+                lat,
+                lon,
+                bounds:
+                  bounds
+                  && Number.isFinite(bounds.south)
+                  && Number.isFinite(bounds.north)
+                  && Number.isFinite(bounds.west)
+                  && Number.isFinite(bounds.east)
+                    ? bounds
+                    : null
+              };
+            })
+            .filter((entry): entry is MapSearchResult => entry !== null);
+
+          setMapSearchResults(nextResults);
+          setMapSearchError(null);
+        } catch {
+          if (controller.signal.aborted) return;
+          setMapSearchResults([]);
+          setMapSearchError(t("home.householdMapSearchError"));
+        } finally {
+          if (!controller.signal.aborted) {
+            setMapSearchLoading(false);
+          }
+        }
+      })();
+    }, 380);
+
+    return () => {
+      controller.abort();
+      window.clearTimeout(timeout);
+    };
+  }, [isMapFullscreenOpen, mapSearchQuery, mapSearchViewportBounds, t]);
+
+  useEffect(() => {
+    if (!isMapFullscreenOpen) {
+      setMapSearchQuery("");
+      setMapSearchResults([]);
+      setMapSearchError(null);
+      setMapSearchLoading(false);
+    }
+  }, [isMapFullscreenOpen]);
   const nearbyPoiQuery = useQuery({
     queryKey: [
       "map-poi",
@@ -1316,6 +1977,780 @@ export const HomePage = ({
     staleTime: 5 * 60 * 1000
   });
   const nearbyPois = (nearbyPoiQuery.data?.rows ?? []) as NearbyPoi[];
+  const householdWeatherQuery = useQuery<{ days: HouseholdWeatherDay[]; hourly: HouseholdWeatherHourlyPoint[] }>({
+    queryKey: [
+      "household-weather",
+      household.id,
+      mapHasPin ? addressMapCenter?.[0] : null,
+      mapHasPin ? addressMapCenter?.[1] : null
+    ],
+    queryFn: async () => {
+      const latitude = addressMapCenter![0];
+      const longitude = addressMapCenter![1];
+      const params = new URLSearchParams({
+        latitude: String(latitude),
+        longitude: String(longitude),
+        daily: [
+          "weather_code",
+          "temperature_2m_max",
+          "temperature_2m_min",
+          "precipitation_sum",
+          "precipitation_probability_max",
+          "uv_index_max",
+          "wind_speed_10m_max",
+          "wind_gusts_10m_max",
+          "wind_direction_10m_dominant",
+          "sunrise",
+          "sunset"
+        ].join(","),
+        hourly: [
+          "temperature_2m",
+          "apparent_temperature",
+          "precipitation",
+          "snowfall",
+          "precipitation_probability",
+          "cloud_cover",
+          "uv_index",
+          "wind_speed_10m"
+        ].join(","),
+        timezone: "auto",
+        forecast_days: "7"
+      });
+      const response = await fetch(`https://api.open-meteo.com/v1/forecast?${params.toString()}`, {
+        method: "GET",
+        headers: { Accept: "application/json" }
+      });
+      if (!response.ok) {
+        throw new Error("weather_fetch_failed");
+      }
+      const payload = (await response.json()) as {
+        daily?: {
+          time?: unknown[];
+          weather_code?: unknown[];
+          temperature_2m_max?: unknown[];
+          temperature_2m_min?: unknown[];
+          precipitation_sum?: unknown[];
+          precipitation_probability_max?: unknown[];
+          uv_index_max?: unknown[];
+          wind_speed_10m_max?: unknown[];
+          wind_gusts_10m_max?: unknown[];
+          wind_direction_10m_dominant?: unknown[];
+          sunrise?: unknown[];
+          sunset?: unknown[];
+        };
+        hourly?: {
+          time?: unknown[];
+          temperature_2m?: unknown[];
+          apparent_temperature?: unknown[];
+          precipitation?: unknown[];
+          snowfall?: unknown[];
+          precipitation_probability?: unknown[];
+          cloud_cover?: unknown[];
+          uv_index?: unknown[];
+          wind_speed_10m?: unknown[];
+        };
+      };
+      const daily = payload.daily ?? {};
+      const times = Array.isArray(daily.time) ? daily.time : [];
+      const days: HouseholdWeatherDay[] = times
+        .slice(0, 7)
+        .map((entry, index) => {
+          const date = typeof entry === "string" ? entry : "";
+          const readNumber = (values: unknown[] | undefined): number | null => {
+            const raw = values?.[index];
+            const parsed = typeof raw === "number" ? raw : Number(raw);
+            return Number.isFinite(parsed) ? parsed : null;
+          };
+          return {
+            date,
+            weatherCode: readNumber(Array.isArray(daily.weather_code) ? daily.weather_code : undefined),
+            tempMaxC: readNumber(Array.isArray(daily.temperature_2m_max) ? daily.temperature_2m_max : undefined),
+            tempMinC: readNumber(Array.isArray(daily.temperature_2m_min) ? daily.temperature_2m_min : undefined),
+            precipitationMm: readNumber(Array.isArray(daily.precipitation_sum) ? daily.precipitation_sum : undefined),
+            precipitationProbabilityPercent: readNumber(
+              Array.isArray(daily.precipitation_probability_max) ? daily.precipitation_probability_max : undefined
+            ),
+            uvIndexMax: readNumber(Array.isArray(daily.uv_index_max) ? daily.uv_index_max : undefined),
+            windSpeedKmh: readNumber(Array.isArray(daily.wind_speed_10m_max) ? daily.wind_speed_10m_max : undefined),
+            windGustKmh: readNumber(Array.isArray(daily.wind_gusts_10m_max) ? daily.wind_gusts_10m_max : undefined),
+            windDirectionDeg: readNumber(
+              Array.isArray(daily.wind_direction_10m_dominant) ? daily.wind_direction_10m_dominant : undefined
+            ),
+            sunrise: (() => {
+              const raw = Array.isArray(daily.sunrise) ? daily.sunrise[index] : null;
+              return typeof raw === "string" && raw.length > 0 ? raw : null;
+            })(),
+            sunset: (() => {
+              const raw = Array.isArray(daily.sunset) ? daily.sunset[index] : null;
+              return typeof raw === "string" && raw.length > 0 ? raw : null;
+            })()
+          };
+        })
+        .filter((entry) => entry.date.length > 0);
+      const hourly = payload.hourly ?? {};
+      const hourlyTimes = Array.isArray(hourly.time) ? hourly.time : [];
+      const hourlyReadNumber = (values: unknown[] | undefined, index: number): number | null => {
+        const raw = values?.[index];
+        const parsed = typeof raw === "number" ? raw : Number(raw);
+        return Number.isFinite(parsed) ? parsed : null;
+      };
+      const next7DaysHourly: HouseholdWeatherHourlyPoint[] = hourlyTimes
+        .slice(0, 24 * 7)
+        .map((entry, index) => ({
+          time: typeof entry === "string" ? entry : "",
+          tempC: hourlyReadNumber(Array.isArray(hourly.temperature_2m) ? hourly.temperature_2m : undefined, index),
+          apparentTempC: hourlyReadNumber(
+            Array.isArray(hourly.apparent_temperature) ? hourly.apparent_temperature : undefined,
+            index
+          ),
+          precipitationMm: hourlyReadNumber(Array.isArray(hourly.precipitation) ? hourly.precipitation : undefined, index),
+          snowfallCm: hourlyReadNumber(Array.isArray(hourly.snowfall) ? hourly.snowfall : undefined, index),
+          precipitationProbabilityPercent: hourlyReadNumber(
+            Array.isArray(hourly.precipitation_probability) ? hourly.precipitation_probability : undefined,
+            index
+          ),
+          cloudCoverPercent: hourlyReadNumber(Array.isArray(hourly.cloud_cover) ? hourly.cloud_cover : undefined, index),
+          uvIndex: hourlyReadNumber(Array.isArray(hourly.uv_index) ? hourly.uv_index : undefined, index),
+          windSpeedKmh: hourlyReadNumber(Array.isArray(hourly.wind_speed_10m) ? hourly.wind_speed_10m : undefined, index)
+        }))
+        .filter((entry) => entry.time.length > 0);
+      return { days, hourly: next7DaysHourly };
+    },
+    enabled: mapHasPin,
+    staleTime: 15 * 60 * 1000
+  });
+  const householdWeatherDays = householdWeatherQuery.data?.days ?? [];
+  const householdWeatherHourly = householdWeatherQuery.data?.hourly ?? [];
+  const hasPrecipitationInForecast = useMemo(
+    () => householdWeatherHourly.some((entry) => (entry.precipitationMm ?? 0) > 0),
+    [householdWeatherHourly]
+  );
+  const hasSnowfallInForecast = useMemo(
+    () => householdWeatherHourly.some((entry) => (entry.snowfallCm ?? 0) > 0),
+    [householdWeatherHourly]
+  );
+  const weatherChartRef = useRef<ChartJS<"bar"> | null>(null);
+  const lastWeatherChartTapRef = useRef<{ at: number; x: number; y: number } | null>(null);
+  const [weatherLegendVersion, setWeatherLegendVersion] = useState(0);
+  const zoomOutWeatherChart = useCallback(() => {
+    const chart = weatherChartRef.current as (ChartJS<"bar"> & { resetZoom?: () => void; zoom?: (amount: number) => void }) | null;
+    if (!chart) return;
+    if (typeof chart.resetZoom === "function") {
+      chart.resetZoom();
+      return;
+    }
+    if (typeof chart.zoom === "function") {
+      chart.zoom(0.8);
+    }
+  }, []);
+  const onWeatherChartTouchEndCapture = useCallback((event: ReactTouchEvent<HTMLDivElement>) => {
+    if (event.changedTouches.length !== 1) {
+      lastWeatherChartTapRef.current = null;
+      return;
+    }
+    const touch = event.changedTouches[0];
+    const now = Date.now();
+    const lastTap = lastWeatherChartTapRef.current;
+    if (
+      lastTap &&
+      now - lastTap.at <= 360 &&
+      Math.hypot(touch.clientX - lastTap.x, touch.clientY - lastTap.y) <= 32
+    ) {
+      event.preventDefault();
+      zoomOutWeatherChart();
+      lastWeatherChartTapRef.current = null;
+      return;
+    }
+    lastWeatherChartTapRef.current = {
+      at: now,
+      x: touch.clientX,
+      y: touch.clientY
+    };
+  }, [zoomOutWeatherChart]);
+  const householdWeatherByDay = useMemo(() => {
+    const byDay = new Map<string, HouseholdWeatherDay>();
+    householdWeatherDays.forEach((day) => {
+      byDay.set(day.date, day);
+    });
+    return byDay;
+  }, [householdWeatherDays]);
+  const householdWeatherChartData = useMemo(() => {
+    const dailyAstronomy = new Map<
+      string,
+      {
+        sunrise: Date | null;
+        sunset: Date | null;
+        moonPhase: number;
+        moonIllumination: number;
+      }
+    >();
+
+    householdWeatherDays.forEach((day) => {
+      const dayDate = new Date(`${day.date}T12:00:00`);
+      const moonPhase = Number.isNaN(dayDate.getTime()) ? 0 : getMoonPhaseFraction(dayDate);
+      dailyAstronomy.set(day.date, {
+        sunrise: day.sunrise ? new Date(day.sunrise) : null,
+        sunset: day.sunset ? new Date(day.sunset) : null,
+        moonPhase,
+        moonIllumination: getMoonIllumination(moonPhase)
+      });
+    });
+
+    const labels = householdWeatherHourly.map((entry, index) => {
+      const date = new Date(entry.time);
+      if (Number.isNaN(date.getTime())) return `${index + 1}`;
+      const day = date.toLocaleDateString(language, { day: "2-digit", month: "2-digit" });
+      const hour = date.toLocaleTimeString(language, { hour: "2-digit", minute: "2-digit" });
+      return `${day} ${hour}`;
+    });
+
+    const sunTrack: Array<number | null> = [];
+    const moonTrack: Array<number | null> = [];
+    const moonPhaseTrack: number[] = [];
+    const moonPointRadius: number[] = new Array(householdWeatherHourly.length).fill(0);
+    const moonPointStyle: Array<string | HTMLCanvasElement> = new Array(householdWeatherHourly.length).fill("circle");
+    const moonPointHoverRadius: number[] = new Array(householdWeatherHourly.length).fill(0);
+    const moonPeakByDay = new Map<string, { index: number; distance: number }>();
+
+    householdWeatherHourly.forEach((entry, index) => {
+      const current = new Date(entry.time);
+      if (Number.isNaN(current.getTime())) {
+        sunTrack.push(null);
+        moonTrack.push(null);
+        moonPhaseTrack.push(0);
+        return;
+      }
+
+      const dateKey = getDateKeyFromIsoDateTime(entry.time);
+      const dayAstronomy = dailyAstronomy.get(dateKey);
+      const sunrise = dayAstronomy?.sunrise;
+      const sunset = dayAstronomy?.sunset;
+      const hourMs = 60 * 60 * 1000;
+
+      let sunValue: number | null = null;
+      if (sunrise && sunset && current >= sunrise && current <= sunset) {
+        const msSinceSunrise = current.getTime() - sunrise.getTime();
+        const msUntilSunset = sunset.getTime() - current.getTime();
+        if (msSinceSunrise < hourMs || msUntilSunset < hourMs) {
+          // Force clear endpoints at sunrise/sunset on hourly data.
+          sunValue = 0;
+        } else {
+          const dayDurationMs = sunset.getTime() - sunrise.getTime();
+          if (dayDurationMs > 0) {
+            const progress = (current.getTime() - sunrise.getTime()) / dayDurationMs;
+            sunValue = Math.sin(Math.PI * Math.min(1, Math.max(0, progress)));
+          }
+        }
+      }
+      sunTrack.push(sunValue);
+
+      const prevKey = addDaysToDateKey(dateKey, -1);
+      const nextKey = addDaysToDateKey(dateKey, 1);
+      const prevAstronomy = dailyAstronomy.get(prevKey);
+      const nextAstronomy = dailyAstronomy.get(nextKey);
+
+      let nightStart: Date | null = null;
+      let nightEnd: Date | null = null;
+      let moonPhase = dayAstronomy?.moonPhase ?? getMoonPhaseFraction(current);
+      let moonIllumination = dayAstronomy?.moonIllumination ?? getMoonIllumination(moonPhase);
+
+      if (sunrise && current < sunrise && prevAstronomy?.sunset) {
+        nightStart = prevAstronomy.sunset;
+        nightEnd = sunrise;
+        moonPhase = prevAstronomy.moonPhase;
+        moonIllumination = prevAstronomy.moonIllumination;
+      } else if (sunset && current >= sunset && nextAstronomy?.sunrise) {
+        nightStart = sunset;
+        nightEnd = nextAstronomy.sunrise;
+      }
+
+      if (!nightStart || !nightEnd) {
+        moonTrack.push(null);
+        moonPhaseTrack.push(moonPhase);
+        return;
+      }
+
+      const nightDurationMs = nightEnd.getTime() - nightStart.getTime();
+      if (nightDurationMs <= 0) {
+        moonTrack.push(null);
+        moonPhaseTrack.push(moonPhase);
+        return;
+      }
+
+      const progress = (current.getTime() - nightStart.getTime()) / nightDurationMs;
+      const clamped = Math.min(1, Math.max(0, progress));
+      const msSinceNightStart = current.getTime() - nightStart.getTime();
+      const msUntilNightEnd = nightEnd.getTime() - current.getTime();
+      const moonHeight =
+        msSinceNightStart < hourMs || msUntilNightEnd < hourMs
+          ? 0
+          : Math.sin(Math.PI * clamped) * (0.55 + moonIllumination * 0.45);
+      moonTrack.push(moonHeight);
+      moonPhaseTrack.push(moonPhase);
+
+      const peakDistance = Math.abs(clamped - 0.5);
+      const existingPeak = moonPeakByDay.get(dateKey);
+      if (!existingPeak || peakDistance < existingPeak.distance) {
+        moonPeakByDay.set(dateKey, { index, distance: peakDistance });
+      }
+    });
+
+    moonPeakByDay.forEach(({ index }) => {
+      const phase = moonPhaseTrack[index] ?? 0;
+      const emoji = getMoonPhaseEmoji(phase);
+      moonPointRadius[index] = 5;
+      moonPointHoverRadius[index] = 7;
+      moonPointStyle[index] = getMoonPhasePointStyle(emoji);
+    });
+
+    return {
+      labels,
+      datasets: [
+        {
+          type: "line" as const,
+          label: t("home.householdWeatherChartTemp"),
+          data: householdWeatherHourly.map((entry) => entry.tempC),
+          yAxisID: "y",
+          borderColor: "rgba(234, 88, 12, 0.95)",
+          backgroundColor: "rgba(234, 88, 12, 0.22)",
+          pointRadius: 0,
+          pointHoverRadius: 3,
+          borderWidth: 2,
+          tension: 0.3
+        },
+        {
+          type: "line" as const,
+          label: t("home.householdWeatherChartApparentTemp"),
+          data: householdWeatherHourly.map((entry) => entry.apparentTempC),
+          yAxisID: "y",
+          hidden: true,
+          borderColor: "rgba(251, 146, 60, 0.82)",
+          backgroundColor: "rgba(251, 146, 60, 0.2)",
+          pointRadius: 0,
+          pointHoverRadius: 2,
+          borderWidth: 1.8,
+          borderDash: [5, 4],
+          tension: 0.3
+        },
+        {
+          type: "bar" as const,
+          label: t("home.householdWeatherChartCloudCover"),
+          data: householdWeatherHourly.map((entry) => {
+            if (typeof entry.cloudCoverPercent !== "number" || !Number.isFinite(entry.cloudCoverPercent)) return null;
+            return 100 - Math.min(100, Math.max(0, entry.cloudCoverPercent));
+          }),
+          yAxisID: "yCloud",
+          base: 100,
+          backgroundColor: householdWeatherHourly.map((entry) => {
+            const cover = Math.min(100, Math.max(0, entry.cloudCoverPercent ?? 0));
+            const alpha = 0.08 + (cover / 100) * 0.26;
+            return `rgba(148, 163, 184, ${alpha})`;
+          }),
+          borderWidth: 0,
+          barPercentage: 1,
+          categoryPercentage: 1
+        },
+        ...(hasPrecipitationInForecast
+          ? [
+              {
+                type: "bar" as const,
+                label: t("home.householdWeatherChartPrecip"),
+                data: householdWeatherHourly.map((entry) => entry.precipitationMm),
+                yAxisID: "yPrecip",
+                backgroundColor: householdWeatherHourly.map((entry) =>
+                  getPrecipitationBarColor(entry.precipitationProbabilityPercent)
+                ),
+                borderColor: householdWeatherHourly.map((entry) =>
+                  getPrecipitationBarBorderColor(entry.precipitationProbabilityPercent)
+                ),
+                borderWidth: 1,
+                barPercentage: 0.9,
+                categoryPercentage: 1
+              }
+            ]
+          : []),
+        ...(hasSnowfallInForecast
+          ? [
+              {
+                type: "bar" as const,
+                label: t("home.householdWeatherChartSnowfall"),
+                data: householdWeatherHourly.map((entry) => entry.snowfallCm),
+                yAxisID: "ySnow",
+                backgroundColor: householdWeatherHourly.map((entry) =>
+                  getPrecipitationBarColor(entry.precipitationProbabilityPercent)
+                ),
+                borderColor: householdWeatherHourly.map((entry) =>
+                  getPrecipitationBarBorderColor(entry.precipitationProbabilityPercent)
+                ),
+                borderWidth: 1,
+                barPercentage: 0.9,
+                categoryPercentage: 1
+              }
+            ]
+          : []),
+        {
+          type: "line" as const,
+          label: t("home.householdWeatherChartWind"),
+          data: householdWeatherHourly.map((entry) => entry.windSpeedKmh),
+          yAxisID: "y",
+          borderColor: "rgba(16, 185, 129, 0.92)",
+          backgroundColor: "rgba(16, 185, 129, 0.2)",
+          pointRadius: 0,
+          pointHoverRadius: 3,
+          borderWidth: 2,
+          tension: 0.25
+        },
+        {
+          type: "line" as const,
+          label: t("home.householdWeatherChartUvIndex"),
+          data: householdWeatherHourly.map((entry) => entry.uvIndex),
+          yAxisID: "yUv",
+          hidden: true,
+          borderColor: "rgba(236, 72, 153, 0.88)",
+          backgroundColor: "rgba(236, 72, 153, 0.18)",
+          pointRadius: 0,
+          pointHoverRadius: 3,
+          borderWidth: 2,
+          tension: 0.3
+        },
+        {
+          type: "line" as const,
+          label: "Sonnenverlauf",
+          data: sunTrack,
+          yAxisID: "ySky",
+          hidden: true,
+          borderColor: "rgba(250, 204, 21, 0.9)",
+          backgroundColor: "rgba(250, 204, 21, 0.18)",
+          pointRadius: 0,
+          pointHoverRadius: 0,
+          borderWidth: 2,
+          fill: "origin" as const,
+          tension: 0.35
+        },
+        {
+          type: "line" as const,
+          label: "Mondstand",
+          data: moonTrack,
+          yAxisID: "ySky",
+          hidden: true,
+          borderColor: "rgba(167, 139, 250, 0.88)",
+          backgroundColor: "rgba(167, 139, 250, 0.15)",
+          borderWidth: 2,
+          tension: 0.35,
+          pointRadius: moonPointRadius,
+          pointHoverRadius: moonPointHoverRadius,
+          pointStyle: moonPointStyle
+        }
+      ]
+    };
+  }, [hasPrecipitationInForecast, hasSnowfallInForecast, householdWeatherDays, householdWeatherHourly, language, t]);
+  const weatherLegendItems = useMemo(() => {
+    const activeDatasets =
+      (weatherChartRef.current?.data.datasets as Array<{ label?: string; hidden?: boolean }> | undefined) ??
+      (householdWeatherChartData.datasets as Array<{ label?: string; hidden?: boolean }>);
+    const chart = weatherChartRef.current;
+    return activeDatasets
+      .map((dataset, index) => ({
+        index,
+        label: dataset.label ?? `${t("common.loading")} ${index + 1}`,
+        visible: chart ? chart.isDatasetVisible(index) : !(dataset.hidden ?? false)
+      }))
+      .filter((item) => item.label.trim().length > 0);
+  }, [householdWeatherChartData.datasets, t, weatherLegendVersion]);
+  const toggleWeatherLegendDataset = useCallback((datasetIndex: number) => {
+    const chart = weatherChartRef.current;
+    if (!chart) return;
+    const nextVisible = !chart.isDatasetVisible(datasetIndex);
+    chart.setDatasetVisibility(datasetIndex, nextVisible);
+    chart.update();
+    setWeatherLegendVersion((version) => version + 1);
+  }, []);
+  const householdWeatherChartOptions = useMemo(
+    () => {
+      const precipitationAxisMax = getPrecipitationAxisMax(
+        householdWeatherHourly.map((entry) => entry.precipitationMm)
+      );
+      const snowfallAxisMax = getPrecipitationAxisMax(
+        householdWeatherHourly.map((entry) => entry.snowfallCm)
+      );
+      const uvAxisMax = getUvAxisMax(
+        householdWeatherHourly.map((entry) => entry.uvIndex)
+      );
+      const options: Record<string, unknown> = {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: {
+        mode: "index" as const,
+        intersect: false
+      },
+      plugins: {
+        legend: {
+          display: !isMobileBucketComposer,
+          labels: {
+            boxWidth: 12,
+            boxHeight: 8,
+            color: "rgb(100 116 139)"
+          }
+        },
+        tooltip: {
+          callbacks: {
+            title: (items: Array<{ dataIndex: number }>) => {
+              const index = items[0]?.dataIndex ?? 0;
+              const row = householdWeatherHourly[index];
+              if (!row) return "";
+              const parsedDate = new Date(row.time);
+              if (Number.isNaN(parsedDate.getTime())) return row.time;
+              return parsedDate.toLocaleString(language, {
+                weekday: "short",
+                hour: "2-digit",
+                minute: "2-digit"
+              });
+            },
+            label: (context: { dataset: { label?: string; yAxisID?: string }; parsed: { y?: number }; dataIndex: number }) => {
+              const datasetLabel = context.dataset.label ?? "";
+              const numericValue = context.parsed.y;
+              if (context.dataset.yAxisID === "ySky") {
+                if (datasetLabel === "Sonnenverlauf") {
+                  return `${datasetLabel}: ${Math.round((numericValue ?? 0) * 100)} %`;
+                }
+                const hourly = householdWeatherHourly[context.dataIndex];
+                const phase = hourly
+                  ? getMoonPhaseFraction(new Date(hourly.time))
+                  : 0;
+                return `${datasetLabel}: ${getMoonPhaseEmoji(phase)} ${getMoonPhaseLabel(phase)} (${Math.round(
+                  getMoonIllumination(phase) * 100
+                )} %)`;
+              }
+              if (context.dataset.yAxisID === "yCloud") {
+                const cover = householdWeatherHourly[context.dataIndex]?.cloudCoverPercent ?? 0;
+                return `${datasetLabel}: ${Math.round(cover)} %`;
+              }
+              if (datasetLabel === t("home.householdWeatherChartPrecip")) {
+                const probability = householdWeatherHourly[context.dataIndex]?.precipitationProbabilityPercent ?? 0;
+                return `${datasetLabel}: ${numericValue ?? 0} mm (${Math.round(probability)} %)`;
+              }
+              if (datasetLabel === t("home.householdWeatherChartSnowfall")) {
+                const probability = householdWeatherHourly[context.dataIndex]?.precipitationProbabilityPercent ?? 0;
+                return `${datasetLabel}: ${numericValue ?? 0} cm (${Math.round(probability)} %)`;
+              }
+              if (datasetLabel === t("home.householdWeatherChartWind")) {
+                return `${datasetLabel}: ${numericValue ?? 0} km/h`;
+              }
+              if (datasetLabel === t("home.householdWeatherChartUvIndex")) {
+                return `${datasetLabel}: ${numericValue ?? 0}`;
+              }
+              return `${datasetLabel}: ${numericValue ?? 0} °C`;
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          ticks: {
+            autoSkip: false,
+            maxRotation: 0,
+            color: "rgb(100 116 139)",
+            callback: function (this: { min?: number; max?: number }, value: string | number, index: number) {
+              const visibleMin = Number.isFinite(this.min) ? Number(this.min) : 0;
+              const visibleMax = Number.isFinite(this.max)
+                ? Number(this.max)
+                : Math.max(0, householdWeatherHourly.length - 1);
+              const visibleHours = Math.max(1, Math.round(visibleMax - visibleMin + 1));
+              const density = getWeatherXAxisDensity(visibleHours);
+              const labelEvery = isMobileBucketComposer
+                ? Math.max(density.labelEvery * 2, visibleHours <= 30 ? 3 : 2)
+                : density.labelEvery;
+              const parsedIndex = resolveChartTickIndex(value, index);
+              const clampedIndex = Math.max(0, Math.min(householdWeatherHourly.length - 1, parsedIndex));
+              const row = householdWeatherHourly[clampedIndex];
+              if (!row) return "";
+              const date = new Date(row.time);
+              if (Number.isNaN(date.getTime())) return "";
+
+              if (clampedIndex % labelEvery !== 0) {
+                return "";
+              }
+
+              if (visibleHours <= 30) {
+                return isMobileBucketComposer
+                  ? date.toLocaleTimeString(language, { hour: "2-digit" })
+                  : date.toLocaleTimeString(language, { hour: "2-digit", minute: "2-digit" });
+              }
+
+              if (visibleHours <= 96) {
+                if (date.getHours() === 0) {
+                  return date.toLocaleDateString(language, { day: "2-digit", month: "2-digit" });
+                }
+                return date.toLocaleTimeString(language, { hour: "2-digit" });
+              }
+
+              if (date.getHours() === 0) {
+                return date.toLocaleDateString(language, { day: "2-digit", month: "2-digit" });
+              }
+              if (date.getHours() % 12 === 0) {
+                return date.toLocaleTimeString(language, { hour: "2-digit" });
+              }
+              return "";
+            }
+          },
+          grid: {
+            color: (ctx: { chart: { scales?: Record<string, { min?: number; max?: number }> }; tick?: { value?: number | string }; index: number }) => {
+              const xScale = ctx.chart.scales?.x;
+              const visibleMin = Number.isFinite(xScale?.min) ? Number(xScale?.min) : 0;
+              const visibleMax = Number.isFinite(xScale?.max)
+                ? Number(xScale?.max)
+                : Math.max(0, householdWeatherHourly.length - 1);
+              const visibleHours = Math.max(1, Math.round(visibleMax - visibleMin + 1));
+              const density = getWeatherXAxisDensity(visibleHours);
+              const tickIndex = resolveChartTickIndex(ctx.tick?.value, ctx.index);
+              const normalized = Math.max(0, tickIndex);
+
+              if (normalized % density.majorGridEvery === 0) {
+                return "rgba(148, 163, 184, 0.24)";
+              }
+              if (normalized % density.minorGridEvery === 0) {
+                return "rgba(148, 163, 184, 0.12)";
+              }
+              return "rgba(148, 163, 184, 0.04)";
+            },
+            lineWidth: (ctx: { chart: { scales?: Record<string, { min?: number; max?: number }> }; tick?: { value?: number | string }; index: number }) => {
+              const xScale = ctx.chart.scales?.x;
+              const visibleMin = Number.isFinite(xScale?.min) ? Number(xScale?.min) : 0;
+              const visibleMax = Number.isFinite(xScale?.max)
+                ? Number(xScale?.max)
+                : Math.max(0, householdWeatherHourly.length - 1);
+              const visibleHours = Math.max(1, Math.round(visibleMax - visibleMin + 1));
+              const density = getWeatherXAxisDensity(visibleHours);
+              const tickIndex = resolveChartTickIndex(ctx.tick?.value, ctx.index);
+              const normalized = Math.max(0, tickIndex);
+              if (normalized % density.majorGridEvery === 0) return 1.1;
+              if (normalized % density.minorGridEvery === 0) return 0.7;
+              return 0.35;
+            }
+          }
+        },
+        y: {
+          position: "left" as const,
+          ticks: {
+            display: !isMobileBucketComposer,
+            color: "rgb(100 116 139)",
+            callback: (value: number | string) => `${value}°C / kmh`
+          },
+          grid: {
+            color: "rgba(148, 163, 184, 0.2)"
+          }
+        },
+        yPrecip: {
+          display: false,
+          position: "right" as const,
+          min: 0,
+          max: precipitationAxisMax,
+          ticks: {
+            display: false,
+            color: "rgb(100 116 139)",
+            callback: (value: number | string) => `${value} mm`
+          },
+          grid: {
+            display: false,
+            drawOnChartArea: false
+          }
+        },
+        ySnow: {
+          display: false,
+          position: "right" as const,
+          min: 0,
+          max: snowfallAxisMax,
+          ticks: {
+            display: false
+          },
+          grid: {
+            display: false,
+            drawOnChartArea: false
+          }
+        },
+        yCloud: {
+          display: false,
+          position: "right" as const,
+          min: 0,
+          max: 100,
+          grid: {
+            display: false,
+            drawOnChartArea: false
+          },
+          ticks: {
+            display: false
+          }
+        },
+        yUv: {
+          display: false,
+          position: "right" as const,
+          min: 0,
+          max: uvAxisMax,
+          grid: {
+            display: false,
+            drawOnChartArea: false
+          },
+          ticks: {
+            display: false
+          }
+        },
+        ySky: {
+          position: "right" as const,
+          min: 0,
+          max: 1,
+          display: false,
+          grid: {
+            display: false,
+            drawOnChartArea: false
+          },
+          ticks: {
+            display: false
+          }
+        }
+      }
+    };
+      const plugins = options.plugins as Record<string, unknown>;
+      plugins.zoom = {
+        pan: {
+          enabled: true,
+          mode: "x"
+        },
+        zoom: {
+          wheel: {
+            enabled: true
+          },
+          pinch: {
+            enabled: true
+          },
+          drag: {
+            enabled: true,
+            backgroundColor: "rgba(59, 130, 246, 0.12)"
+          },
+          mode: "x"
+        },
+        limits: {
+          x: { min: 0, max: Math.max(0, householdWeatherHourly.length - 1) }
+        }
+      };
+
+      return options;
+    },
+    [householdWeatherHourly, isMobileBucketComposer, language, t]
+  );
+  const liveLocationsQuery = useQuery<HouseholdLiveLocation[]>({
+    queryKey: queryKeys.householdLiveLocations(household.id),
+    queryFn: () => getHouseholdLiveLocations(household.id),
+    refetchInterval: 30_000
+  });
+  const activeLiveLocations = liveLocationsQuery.data ?? [];
+  const myActiveLiveLocation = useMemo(
+    () => activeLiveLocations.find((entry) => entry.user_id === userId) ?? null,
+    [activeLiveLocations, userId]
+  );
+  const otherActiveLiveLocations = useMemo(
+    () => activeLiveLocations.filter((entry) => entry.user_id !== userId),
+    [activeLiveLocations, userId]
+  );
   const isHouseholdOwner = currentMember?.role === "owner";
   const poiOverrideMarkersByRef = useMemo(() => {
     const byRef = new Map<string, HouseholdMapMarker>();
@@ -1410,6 +2845,67 @@ export const HomePage = ({
       userId
     ]
   );
+  const openMarkerEdit = useCallback(
+    (marker: HouseholdMapMarker) => {
+      if (!isHouseholdOwner) return;
+      setEditingMarkerError(null);
+      setEditingMarkerDraft({
+        id: marker.id,
+        title: marker.title,
+        description: marker.description,
+        icon: marker.icon
+      });
+    },
+    [isHouseholdOwner]
+  );
+  const saveEditedMarker = useCallback(async () => {
+    if (!editingMarkerDraft || !isHouseholdOwner) return;
+
+    const title = editingMarkerDraft.title.trim();
+    if (!title) {
+      setEditingMarkerError(t("home.householdMapMarkerTitleRequired"));
+      return;
+    }
+
+    const markerToUpdate = household.household_map_markers.find((marker) => marker.id === editingMarkerDraft.id);
+    if (!markerToUpdate) {
+      setEditingMarkerError(t("app.unknownError"));
+      return;
+    }
+
+    const nowIso = new Date().toISOString();
+    const updatedMarker: HouseholdMapMarker = {
+      ...markerToUpdate,
+      title,
+      description: editingMarkerDraft.description.trim(),
+      icon: editingMarkerDraft.icon,
+      last_edited_by: userId,
+      last_edited_at: nowIso
+    };
+    const nextMarkers = household.household_map_markers.map((marker) =>
+      marker.id === updatedMarker.id ? updatedMarker : marker
+    );
+
+    try {
+      setEditingMarkerSaving(true);
+      setEditingMarkerError(null);
+      await onUpdateHousehold(buildHouseholdUpdatePayload(nextMarkers));
+      setEditingMarkerDraft(null);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t("app.unknownError");
+      setEditingMarkerError(message);
+    } finally {
+      setEditingMarkerSaving(false);
+    }
+  }, [
+    buildHouseholdUpdatePayload,
+    editingMarkerDraft,
+    household.household_map_markers,
+    isHouseholdOwner,
+    onUpdateHousehold,
+    t,
+    userId
+  ]);
 
   const flushQueuedMapMarkerSave = useCallback(async () => {
     const nextMarkers = pendingMapMarkerSaveRef.current;
@@ -1504,6 +3000,119 @@ export const HomePage = ({
       }
     );
   }, [t]);
+
+  const getCurrentPositionOnce = useCallback(
+    () =>
+      new Promise<{ lat: number; lon: number }>((resolve, reject) => {
+        if (typeof window === "undefined" || !("geolocation" in navigator)) {
+          reject(new Error("geolocation_unavailable"));
+          return;
+        }
+        navigator.geolocation.getCurrentPosition(
+          (position) => {
+            const lat = position.coords.latitude;
+            const lon = position.coords.longitude;
+            if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+              reject(new Error("geolocation_invalid"));
+              return;
+            }
+            resolve({ lat, lon });
+          },
+          (error) => reject(error),
+          {
+            enableHighAccuracy: true,
+            timeout: 12000,
+            maximumAge: 15000
+          }
+        );
+      }),
+    []
+  );
+
+  const stopLiveLocationShareNow = useCallback(async () => {
+    if (liveShareHeartbeatTimerRef.current !== null) {
+      window.clearInterval(liveShareHeartbeatTimerRef.current);
+      liveShareHeartbeatTimerRef.current = null;
+    }
+    liveShareExpiresAtRef.current = null;
+    setLiveShareStatus("stopping");
+    setLiveShareError(null);
+    try {
+      await stopHouseholdLiveLocationShare(household.id, userId);
+      setLiveShareStatus("idle");
+      await liveLocationsQuery.refetch();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t("app.unknownError");
+      setLiveShareError(message);
+      setLiveShareStatus("error");
+    }
+  }, [household.id, liveLocationsQuery, t, userId]);
+
+  const startLiveLocationShareNow = useCallback(async () => {
+    setLiveShareStatus("starting");
+    setLiveShareError(null);
+    try {
+      const first = await getCurrentPositionOnce();
+      const actorName = (currentMember?.display_name ?? "").trim() || null;
+      const started = await startHouseholdLiveLocationShare({
+        householdId: household.id,
+        userId,
+        lat: first.lat,
+        lon: first.lon,
+        durationMinutes: liveShareDurationMinutes,
+        actorName
+      });
+      liveShareExpiresAtRef.current = started.expires_at;
+      setLiveShareStatus("active");
+      await liveLocationsQuery.refetch();
+
+      if (liveShareHeartbeatTimerRef.current !== null) {
+        window.clearInterval(liveShareHeartbeatTimerRef.current);
+      }
+      liveShareHeartbeatTimerRef.current = window.setInterval(() => {
+        void (async () => {
+          const expiresAt = liveShareExpiresAtRef.current;
+          if (!expiresAt) return;
+          const expiresAtMs = Date.parse(expiresAt);
+          if (!Number.isFinite(expiresAtMs) || expiresAtMs <= Date.now()) {
+            await stopLiveLocationShareNow();
+            return;
+          }
+
+          try {
+            const next = await getCurrentPositionOnce();
+            await updateHouseholdLiveLocationShare({
+              householdId: household.id,
+              userId,
+              lat: next.lat,
+              lon: next.lon,
+              expiresAt
+            });
+            void liveLocationsQuery.refetch();
+          } catch {
+            // Soft-fail heartbeat updates to avoid interrupting the active share.
+          }
+        })();
+      }, 20_000);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t("app.unknownError");
+      setLiveShareError(message);
+      setLiveShareStatus("error");
+    }
+  }, [
+    currentMember?.display_name,
+    getCurrentPositionOnce,
+    household.id,
+    liveLocationsQuery,
+    liveShareDurationMinutes,
+    stopLiveLocationShareNow,
+    t,
+    userId
+  ]);
+  const onConfirmStartLiveShare = useCallback(() => {
+    setIsLiveShareDialogOpen(false);
+    void startLiveLocationShareNow();
+  }, [startLiveLocationShareNow]);
   const onSavePoiOverride = useCallback(
     async (poi: NearbyPoi) => {
       if (!isHouseholdOwner) {
@@ -1585,10 +3194,118 @@ export const HomePage = ({
     ),
     [language, mapMemberLabel, t]
   );
+  const buildExternalMapsHref = useCallback((lat: number, lon: number) => {
+    const query = `${lat},${lon}`;
+    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
+  }, []);
+  const renderOpenInMapsButton = useCallback(
+    (lat: number, lon: number, compact = false) => (
+      <Button
+        asChild
+        type="button"
+        size="sm"
+        variant="outline"
+        className={compact ? "h-6 px-2 text-[11px]" : "h-7"}
+      >
+        <a href={buildExternalMapsHref(lat, lon)} target="_blank" rel="noreferrer noopener">
+          {t("home.householdMapOpen")}
+        </a>
+      </Button>
+    ),
+    [buildExternalMapsHref, t]
+  );
+  const renderMarkerTooltipAction = useCallback(
+    (marker: HouseholdMapMarker) => {
+      const center = getHouseholdMarkerCenter(marker);
+      const canShowMaps = Boolean(center);
+      if (!canShowMaps && !isHouseholdOwner) return undefined;
+      return (
+        <div className="flex flex-wrap items-center gap-1">
+          {center ? renderOpenInMapsButton(center[0], center[1], true) : null}
+          {isHouseholdOwner ? (
+            <button
+              type="button"
+              className="inline-flex h-6 items-center gap-1 rounded-md border border-slate-300 bg-white/95 px-2 text-[11px] font-medium text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-900/95 dark:text-slate-200 dark:hover:bg-slate-800"
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                openMarkerEdit(marker);
+              }}
+            >
+              <Pencil className="h-3 w-3" />
+              {t("home.bucketEdit")}
+            </button>
+          ) : null}
+        </div>
+      );
+    },
+    [isHouseholdOwner, openMarkerEdit, renderOpenInMapsButton, t]
+  );
+  const renderManualHouseholdMarkerPopup = useCallback(
+    (marker: HouseholdMapMarker) => {
+      const center = getHouseholdMarkerCenter(marker);
+      return (
+        <Popup>
+          <div className="space-y-1">
+          <p className="font-semibold">
+            {getMarkerEmoji(marker.icon)} {marker.title}
+          </p>
+          {marker.description ? (
+            <div className="prose prose-xs max-w-none text-xs dark:prose-invert prose-p:my-1 prose-ul:my-1 prose-ol:my-1 prose-li:my-0">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{marker.description}</ReactMarkdown>
+            </div>
+          ) : null}
+          {marker.image_b64 ? (
+            <img
+              src={marker.image_b64}
+              alt={marker.title}
+              className="max-h-32 w-full rounded object-cover"
+            />
+          ) : null}
+          {isHouseholdOwner ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="mt-1 h-7"
+              onClick={() => openMarkerEdit(marker)}
+            >
+              <Pencil className="mr-1 h-3.5 w-3.5" />
+              {t("home.bucketEdit")}
+            </Button>
+          ) : null}
+          {center ? renderOpenInMapsButton(center[0], center[1]) : null}
+          {markerHistoryNode(marker)}
+          </div>
+        </Popup>
+      );
+    },
+    [isHouseholdOwner, markerHistoryNode, openMarkerEdit, renderOpenInMapsButton, t]
+  );
+  const onMeasuredWithGeoman = useCallback(
+    (result: { mode: MapMeasureMode; distanceMeters?: number; areaSqm?: number }) => {
+      if (result.mode === "distance" && typeof result.distanceMeters === "number") {
+        const value =
+          result.distanceMeters >= 1000
+            ? `${(result.distanceMeters / 1000).toFixed(2)} km`
+            : `${Math.round(result.distanceMeters)} m`;
+        setMapMeasureResult(t("home.householdMapMeasureResultDistance", { value }));
+        return;
+      }
+      if (result.mode === "area" && typeof result.areaSqm === "number") {
+        const value =
+          result.areaSqm >= 1000000
+            ? `${(result.areaSqm / 1000000).toFixed(2)} km²`
+            : `${Math.round(result.areaSqm)} m²`;
+        setMapMeasureResult(t("home.householdMapMeasureResultArea", { value }));
+      }
+    },
+    [t]
+  );
   const renderHouseholdMapSurface = useCallback(
     (containerClassName: string, isFullscreen: boolean) => (
       <div className={containerClassName}>
-        <div className="absolute bottom-2 right-2 z-[1000] flex flex-col gap-2">
+        <div className={`absolute right-2 z-[1000] flex flex-col gap-2 ${isFullscreen ? "bottom-[7.5rem]" : "bottom-2"}`}>
           <Button
             type="button"
             size="sm"
@@ -1617,7 +3334,7 @@ export const HomePage = ({
             )}
           </Button>
         </div>
-        <div className="absolute right-2 top-2 z-[1000]">
+        <div className="absolute right-2 top-2 z-[1000] flex items-center gap-2">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
@@ -1694,8 +3411,22 @@ export const HomePage = ({
                   {memberOption.label}
                 </DropdownMenuCheckboxItem>
               ))}
-              <DropdownMenuSeparator />
-              <DropdownMenuLabel>{t("home.householdMapStyleLabel")}</DropdownMenuLabel>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-8 w-8 border-slate-200/80 bg-white/95 p-0 backdrop-blur dark:border-slate-600/80 dark:bg-slate-900/95"
+                aria-label={t("home.householdMapStyleLabel")}
+                title={t("home.householdMapStyleLabel")}
+              >
+                {getMapStyleIcon(mapStyle)}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="min-w-[180px]">
               {MAP_STYLE_OPTIONS.map((option) => (
                 <DropdownMenuCheckboxItem
                   key={option.id}
@@ -1705,12 +3436,61 @@ export const HomePage = ({
                     setMapStyle(option.id);
                   }}
                 >
-                  {t(option.labelKey as never)}
+                  <span className="inline-flex items-center gap-2">
+                    {getMapStyleIcon(option.id)}
+                    <span>{t(option.labelKey as never)}</span>
+                  </span>
                 </DropdownMenuCheckboxItem>
               ))}
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
+        {isFullscreen ? (
+          <div className="absolute bottom-[7.5rem] left-2 z-[1000] flex flex-col gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant={mapMeasureMode === "distance" ? "default" : "outline"}
+              className="h-8 w-8 border-slate-200/80 bg-white/95 p-0 backdrop-blur dark:border-slate-600/80 dark:bg-slate-900/95"
+              onClick={() => {
+                setMapMeasureResult(null);
+                setMapMeasureMode((current) => (current === "distance" ? null : "distance"));
+              }}
+              aria-label={t("home.householdMapMeasureDistance")}
+              title={t("home.householdMapMeasureDistance")}
+            >
+              <Ruler className="h-4 w-4" />
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant={mapMeasureMode === "area" ? "default" : "outline"}
+              className="h-8 w-8 border-slate-200/80 bg-white/95 p-0 backdrop-blur dark:border-slate-600/80 dark:bg-slate-900/95"
+              onClick={() => {
+                setMapMeasureResult(null);
+                setMapMeasureMode((current) => (current === "area" ? null : "area"));
+              }}
+              aria-label={t("home.householdMapMeasureArea")}
+              title={t("home.householdMapMeasureArea")}
+            >
+              <CircleDot className="h-4 w-4" />
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-8 w-8 border-slate-200/80 bg-white/95 p-0 backdrop-blur dark:border-slate-600/80 dark:bg-slate-900/95"
+              onClick={() => {
+                setMapMeasureMode(null);
+                setMapMeasureResult(null);
+              }}
+              aria-label={t("home.householdMapMeasureClear")}
+              title={t("home.householdMapMeasureClear")}
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
+        ) : null}
         <MapContainer
           className="domora-map-surface"
           center={mapCenter}
@@ -1730,6 +3510,12 @@ export const HomePage = ({
             onLocationFound={onLocateControlFound}
             onLocationError={onLocateControlError}
           />
+          <GeomanMeasureBridge
+            enabled={isFullscreen}
+            mode={mapMeasureMode}
+            onModeChange={setMapMeasureMode}
+            onMeasured={onMeasuredWithGeoman}
+          />
           <AddressMapView center={mapCenter} />
           <RecenterMapOnRequest
             center={mapCenter}
@@ -1743,16 +3529,25 @@ export const HomePage = ({
               requestToken={myLocationRecenterRequestToken}
             />
           ) : null}
+          <FullscreenMapViewportBridge
+            enabled={isFullscreen}
+            onBoundsChange={setMapSearchViewportBounds}
+          />
+          <MapSearchZoomBridge request={mapSearchZoomRequest} />
           <TileLayer
             key={activeMapStyle.id}
             attribution={activeMapStyle.attribution}
             url={activeMapStyle.tileUrl}
             subdomains={activeMapStyle.subdomains ?? "abc"}
             maxZoom={activeMapStyle.maxZoom}
+            updateWhenIdle={false}
+            updateWhenZooming
+            keepBuffer={4}
+            detectRetina
           />
           {mapHasPin ? (
             <Marker position={mapCenter} pmIgnore>
-              <LeafletTooltip>
+              <LeafletTooltip interactive>
                 <div
                   className="min-w-[180px] rounded-md border border-white/30 bg-white/92 p-2 text-slate-900 shadow-md dark:border-slate-600/70 dark:bg-slate-900/90 dark:text-slate-100"
                   style={
@@ -1767,20 +3562,68 @@ export const HomePage = ({
                   }
                 >
                   <p className="font-semibold">{household.name}</p>
+                  {renderOpenInMapsButton(mapCenter[0], mapCenter[1], true)}
                 </div>
               </LeafletTooltip>
             </Marker>
           ) : null}
           {myLocationCenter ? (
             <Marker position={myLocationCenter} pmIgnore>
-              <Popup>{t("home.householdMapMyLocation")}</Popup>
+              <Popup>
+                <div className="space-y-1">
+                  <p>{t("home.householdMapMyLocation")}</p>
+                  {renderOpenInMapsButton(myLocationCenter[0], myLocationCenter[1])}
+                </div>
+              </Popup>
             </Marker>
           ) : null}
-          {filteredHouseholdMarkers.map((marker) => {
+          {otherActiveLiveLocations.map((entry) => (
+            <Marker
+              key={`live-location-${entry.user_id}`}
+              position={[entry.lat, entry.lon]}
+              icon={getManualMarkerIcon("work")}
+              pmIgnore
+            >
+              <Popup>
+                <div className="space-y-1">
+                  <p className="font-semibold">
+                    {t("home.householdMapLiveLocationUser", {
+                      name: mapMemberLabel(entry.user_id)
+                    })}
+                  </p>
+                  <p className="text-xs">
+                    {t("home.householdMapLiveLocationUntil", {
+                      at: formatDateTime(entry.expires_at, language, entry.expires_at)
+                    })}
+                  </p>
+                  {renderOpenInMapsButton(entry.lat, entry.lon)}
+                </div>
+              </Popup>
+            </Marker>
+          ))}
+          {isFullscreen
+            ? mapSearchResults.map((result) => (
+                <Marker
+                  key={`map-search-marker-${result.id}`}
+                  position={[result.lat, result.lon]}
+                  icon={getSearchResultMarkerIcon()}
+                  pmIgnore
+                >
+                  <Popup>
+                    <div className="space-y-1">
+                      <p className="text-xs font-semibold">{result.label}</p>
+                      {renderOpenInMapsButton(result.lat, result.lon)}
+                    </div>
+                  </Popup>
+                </Marker>
+              ))
+            : null}
+          {filteredHouseholdMarkers.map((marker, markerIndex) => {
+            const markerRenderKey = `${marker.type}:${marker.id}:${markerIndex}`;
             if (marker.type === "point") {
               return (
                 <Marker
-                  key={marker.id}
+                  key={markerRenderKey}
                   position={[marker.lat, marker.lon]}
                   icon={getManualMarkerIcon(marker.icon)}
                   pmIgnore={!isHouseholdOwner}
@@ -1790,7 +3633,7 @@ export const HomePage = ({
                     }
                   }}
                 >
-                  {renderHouseholdMarkerTooltip(marker)}
+                  {renderHouseholdMarkerTooltip(marker, renderMarkerTooltipAction(marker))}
                   {marker.poi_ref ? (
                     <Popup>
                       <div className="space-y-2">
@@ -1843,11 +3686,17 @@ export const HomePage = ({
                             className="max-h-32 w-full rounded object-cover"
                           />
                         ) : null}
+                        {marker.description ? (
+                          <div className="prose prose-xs max-w-none text-xs dark:prose-invert prose-p:my-1 prose-ul:my-1 prose-ol:my-1 prose-li:my-0">
+                            <ReactMarkdown remarkPlugins={[remarkGfm]}>{marker.description}</ReactMarkdown>
+                          </div>
+                        ) : null}
                         {markerHistoryNode(marker)}
+                        {renderOpenInMapsButton(marker.lat, marker.lon)}
                       </div>
                     </Popup>
                   ) : (
-                    renderHouseholdMarkerPopup(marker, markerHistoryNode(marker))
+                    renderManualHouseholdMarkerPopup(marker)
                   )}
                 </Marker>
               );
@@ -1856,7 +3705,7 @@ export const HomePage = ({
             if (marker.type === "vector") {
               return (
                 <Polyline
-                  key={marker.id}
+                  key={markerRenderKey}
                   positions={marker.points.map((point) => [point.lat, point.lon])}
                   pathOptions={{ color: "#0f766e", weight: 5, opacity: 0.85 }}
                   pmIgnore={!isHouseholdOwner}
@@ -1866,8 +3715,8 @@ export const HomePage = ({
                     }
                   }}
                 >
-                  {renderHouseholdMarkerTooltip(marker)}
-                  {renderHouseholdMarkerPopup(marker, markerHistoryNode(marker))}
+                  {renderHouseholdMarkerTooltip(marker, renderMarkerTooltipAction(marker))}
+                  {renderManualHouseholdMarkerPopup(marker)}
                 </Polyline>
               );
             }
@@ -1875,7 +3724,7 @@ export const HomePage = ({
             if (marker.type === "circle") {
               return (
                 <Circle
-                  key={marker.id}
+                  key={markerRenderKey}
                   center={[marker.center.lat, marker.center.lon]}
                   radius={marker.radius_meters}
                   pathOptions={{ color: "#0f766e", fillColor: "#14b8a6", fillOpacity: 0.2, weight: 3 }}
@@ -1886,15 +3735,15 @@ export const HomePage = ({
                     }
                   }}
                 >
-                  {renderHouseholdMarkerTooltip(marker)}
-                  {renderHouseholdMarkerPopup(marker, markerHistoryNode(marker))}
+                  {renderHouseholdMarkerTooltip(marker, renderMarkerTooltipAction(marker))}
+                  {renderManualHouseholdMarkerPopup(marker)}
                 </Circle>
               );
             }
 
             return (
               <Rectangle
-                key={marker.id}
+                key={markerRenderKey}
                 bounds={[
                   [marker.bounds.south, marker.bounds.west],
                   [marker.bounds.north, marker.bounds.east]
@@ -1907,15 +3756,15 @@ export const HomePage = ({
                   }
                 }}
               >
-                {renderHouseholdMarkerTooltip(marker)}
-                {renderHouseholdMarkerPopup(marker, markerHistoryNode(marker))}
+                {renderHouseholdMarkerTooltip(marker, renderMarkerTooltipAction(marker))}
+                {renderManualHouseholdMarkerPopup(marker)}
               </Rectangle>
             );
           })}
           {nearbyPois.map((poi) => (
             <Marker key={poi.id} position={[poi.lat, poi.lon]} icon={getPoiMarkerIcon(poi.category)} pmIgnore>
               <Popup>
-                <div className="space-y-1">
+                  <div className="space-y-1">
                   <p className="font-semibold">
                     {getPoiEmoji(poi.category)} {poi.name ?? t("home.householdMapPoiUnnamed")}
                   </p>
@@ -1983,12 +3832,72 @@ export const HomePage = ({
                         ? t("home.householdMapPoiOverrideSaving")
                         : t("home.householdMapPoiOverrideSave")}
                     </Button>
+                    {renderOpenInMapsButton(poi.lat, poi.lon)}
                   </div>
                 </div>
               </Popup>
             </Marker>
           ))}
         </MapContainer>
+        {isFullscreen ? (
+          <div className="absolute bottom-2 left-1/2 z-[1000] w-[min(560px,calc(100%-1rem))] -translate-x-1/2">
+            <div className="rounded-xl border border-slate-200/85 bg-white/95 p-2 shadow-sm backdrop-blur dark:border-slate-600/80 dark:bg-slate-900/95">
+              <div className="flex items-center gap-2">
+                <Search className="h-4 w-4 shrink-0 text-slate-500 dark:text-slate-300" />
+                <Input
+                  value={mapSearchQuery}
+                  onChange={(event) => setMapSearchQuery(event.target.value)}
+                  onFocus={() => setMapSearchInputFocused(true)}
+                  onBlur={() => {
+                    window.setTimeout(() => {
+                      setMapSearchInputFocused(false);
+                    }, 120);
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key !== "Enter") return;
+                    event.preventDefault();
+                    if (mapSearchResults.length === 0) return;
+                    applyMapSearchResult(mapSearchResults[0]!);
+                  }}
+                  placeholder={t("home.householdMapSearchPlaceholder")}
+                  className="h-8 border-0 bg-transparent px-0 text-sm shadow-none focus-visible:ring-0"
+                />
+              </div>
+              {mapSearchInputFocused && mapSearchLoading ? (
+                <p className="pt-1 text-xs text-slate-500 dark:text-slate-400">{t("home.householdMapSearchLoading")}</p>
+              ) : null}
+              {mapSearchInputFocused && !mapSearchLoading && mapSearchError ? (
+                <p className="pt-1 text-xs text-rose-600 dark:text-rose-400">{mapSearchError}</p>
+              ) : null}
+              {mapSearchInputFocused && !mapSearchLoading && !mapSearchError && mapSearchQuery.trim().length >= 2 && mapSearchResults.length === 0 ? (
+                <p className="pt-1 text-xs text-slate-500 dark:text-slate-400">{t("home.householdMapSearchEmpty")}</p>
+              ) : null}
+              {mapSearchInputFocused && mapSearchResults.length > 0 ? (
+                <div className="mt-1 max-h-52 overflow-auto rounded-lg border border-slate-200/80 dark:border-slate-700/80">
+                  {mapSearchResults.map((result) => (
+                    <button
+                      key={`map-search-result-${result.id}`}
+                      type="button"
+                      className="flex w-full items-start gap-2 border-b border-slate-200/80 px-2.5 py-2 text-left text-xs text-slate-700 hover:bg-slate-100/80 dark:border-slate-700/80 dark:text-slate-200 dark:hover:bg-slate-800/80 last:border-b-0"
+                      onMouseDown={(event) => {
+                        event.preventDefault();
+                      }}
+                      onClick={() => applyMapSearchResult(result)}
+                    >
+                      <Search className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-500 dark:text-slate-400" />
+                      <span className="line-clamp-2">{result.label}</span>
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
+        {isFullscreen && mapMeasureResult ? (
+          <div className="absolute bottom-[8.75rem] left-2 z-[1000] rounded-md border border-slate-200/80 bg-white/95 px-2.5 py-1.5 text-xs text-slate-700 shadow-sm backdrop-blur dark:border-slate-600/80 dark:bg-slate-900/95 dark:text-slate-200">
+            {mapMeasureResult}
+          </div>
+        ) : null}
       </div>
     ),
     [
@@ -2006,16 +3915,30 @@ export const HomePage = ({
       mapZoom,
       manualMarkerFilterMemberId,
       manualMarkerFilterMode,
+      mapMeasureMode,
+      mapMeasureResult,
+      mapSearchError,
+      mapSearchInputFocused,
+      mapSearchLoading,
+      mapSearchQuery,
+      mapSearchResults,
+      mapSearchZoomRequest,
       memberOptionsForMarkerFilter,
       markerHistoryNode,
+      renderMarkerTooltipAction,
+      renderOpenInMapsButton,
+      mapMemberLabel,
       myLocationCenter,
       myLocationRecenterRequestToken,
       myLocationStatus,
+      otherActiveLiveLocations,
       nearbyPois,
       onGeomanMarkersChanged,
       onLocateControlError,
       onLocateControlFound,
       onLocateControlReady,
+      onMeasuredWithGeoman,
+      applyMapSearchResult,
       onSaveExistingPoiOverride,
       onSavePoiOverride,
       poiOverrideDrafts,
@@ -2024,6 +3947,7 @@ export const HomePage = ({
       requestMyLocation,
       selectedPoiCategories.length,
       isHouseholdOwner,
+      language,
       t,
       userId
     ]
@@ -2033,9 +3957,58 @@ export const HomePage = ({
     ensureLeafletMarkerIcon();
   }, []);
 
+  useEffect(() => {
+    const channel = supabase.channel(`whiteboard-online-${household.id}`, {
+      config: { presence: { key: userId } }
+    });
+
+    channel.on("presence", { event: "sync" }, () => {
+      const state = channel.presenceState<{ user_id?: string }>();
+      const nextUserIds = new Set<string>();
+      Object.values(state).forEach((entries) => {
+        entries.forEach((entry) => {
+          if (typeof entry.user_id === "string" && entry.user_id.length > 0) {
+            nextUserIds.add(entry.user_id);
+          }
+        });
+      });
+      setWhiteboardOnlineUserIds(Array.from(nextUserIds));
+    });
+
+    channel.subscribe(async (status) => {
+      if (status !== "SUBSCRIBED") return;
+      await channel.track({
+        user_id: userId,
+        household_id: household.id,
+        online_at: new Date().toISOString()
+      });
+    });
+
+    return () => {
+      void channel.untrack();
+      void supabase.removeChannel(channel);
+      setWhiteboardOnlineUserIds([]);
+    };
+  }, [household.id, userId]);
+
+  useEffect(() => {
+    if (myActiveLiveLocation) {
+      liveShareExpiresAtRef.current = myActiveLiveLocation.expires_at;
+      setLiveShareStatus("active");
+      return;
+    }
+    liveShareExpiresAtRef.current = null;
+    if (liveShareStatus === "active") {
+      setLiveShareStatus("idle");
+    }
+  }, [liveShareStatus, myActiveLiveLocation]);
+
   useEffect(() => () => {
     if (mapMarkerSaveTimerRef.current !== null) {
       window.clearTimeout(mapMarkerSaveTimerRef.current);
+    }
+    if (liveShareHeartbeatTimerRef.current !== null) {
+      window.clearInterval(liveShareHeartbeatTimerRef.current);
     }
   }, []);
 
@@ -2098,6 +4071,10 @@ export const HomePage = ({
         fallbackLabel: t("common.memberFallback")
       }),
     [members, t, userId]
+  );
+  const whiteboardOnlineMembers = useMemo(
+    () => members.filter((member) => whiteboardOnlineUserIds.includes(member.user_id)),
+    [members, whiteboardOnlineUserIds]
   );
   const dueTasksCount = useMemo(() => {
     const now = Date.now();
@@ -2816,6 +4793,18 @@ export const HomePage = ({
             icon: "audit",
             text: t("home.activityMemberLeft", {
               user: labelForUserId(entry.subject_user_id ?? entry.actor_user_id)
+            })
+          };
+        }
+
+        if (entry.event_type === "live_location_started") {
+          return {
+            id: `event-${entry.id}`,
+            at: entry.created_at,
+            icon: "audit",
+            text: t("home.activityLiveLocationStarted", {
+              user: labelForUserId(entry.actor_user_id),
+              minutes: Number(payload.durationMinutes ?? 0)
             })
           };
         }
@@ -4237,6 +6226,7 @@ export const HomePage = ({
                 <div className="grid grid-cols-7 gap-1">
                   {calendarMonthCells.map((cell) => {
                     const cellDayKey = dayKey(cell.date);
+                    const dayWeather = householdWeatherByDay.get(cellDayKey) ?? null;
                     const isToday = cellDayKey === dayKey(new Date());
                     const entry = homeCalendarEntries.get(cellDayKey);
                     const vacationSpans = vacationSpansByDay.get(cellDayKey) ?? [];
@@ -4295,15 +6285,22 @@ export const HomePage = ({
                                 : "border-brand-50 bg-white/40 opacity-65 dark:border-slate-800 dark:bg-slate-900/40"
                             }`}
                           >
-                            <p
-                              className={`text-xs font-medium ${
-                                isToday
-                                  ? "text-brand-700 dark:text-brand-300"
-                                  : "text-slate-700 dark:text-slate-300"
-                              }`}
-                            >
-                              {cell.date.getDate()}
-                            </p>
+                            <div className="flex items-center justify-between">
+                              <p
+                                className={`text-xs font-medium ${
+                                  isToday
+                                    ? "text-brand-700 dark:text-brand-300"
+                                    : "text-slate-700 dark:text-slate-300"
+                                }`}
+                              >
+                                {cell.date.getDate()}
+                              </p>
+                              {dayWeather ? (
+                                <span className="inline-flex items-center justify-center">
+                                  {getStaticWeatherCalendarIcon(dayWeather)}
+                                </span>
+                              ) : null}
+                            </div>
                             {showVacationSpans ? (
                               <div className="mt-1 space-y-0.5">
                                 {vacationSpans.map((span) => {
@@ -4681,6 +6678,22 @@ export const HomePage = ({
                   <CardDescription>
                     {t("home.whiteboardDescription")}
                   </CardDescription>
+                  {whiteboardOnlineMembers.length > 0 ? (
+                    <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                      <span className="text-[11px] font-medium text-emerald-700 dark:text-emerald-300">
+                        {t("home.whiteboardOnlineNow", { count: whiteboardOnlineMembers.length })}
+                      </span>
+                      {whiteboardOnlineMembers.slice(0, 6).map((member) => (
+                        <span
+                          key={`wb-online-card-${member.user_id}`}
+                          className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-200"
+                        >
+                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                          {memberLabel(member.user_id)}
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
                 </div>
                 <div className="flex items-center gap-2">
                   {/* <span
@@ -4752,16 +6765,6 @@ export const HomePage = ({
                   <CardDescription>{t("home.householdMapDescription")}</CardDescription>
                 </div>
                 <div className="flex items-center gap-2">
-                  {addressInput ? (
-                    <a
-                      href={mapLink}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-xs font-medium text-brand-700 underline decoration-brand-300 underline-offset-2 hover:text-brand-900 dark:text-brand-300 dark:hover:text-brand-200"
-                    >
-                      {t("home.householdMapOpen")}
-                    </a>
-                  ) : null}
                   <button
                     type="button"
                     className="inline-flex h-8 w-8 items-center justify-center rounded-xl text-slate-700 hover:bg-slate-200/80 dark:text-brand-100 dark:hover:bg-slate-800"
@@ -4797,8 +6800,275 @@ export const HomePage = ({
               {poiOverrideError ? (
                 <div className="mt-1 text-xs text-rose-600 dark:text-rose-400">{poiOverrideError}</div>
               ) : null}
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                {myActiveLiveLocation ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      void stopLiveLocationShareNow();
+                    }}
+                    disabled={liveShareStatus === "stopping"}
+                  >
+                    {t("home.householdMapLiveShareStop")}
+                  </Button>
+                ) : (
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={() => {
+                      setIsLiveShareDialogOpen(true);
+                    }}
+                    disabled={liveShareStatus === "starting"}
+                  >
+                    {t("home.householdMapLiveShareStart")}
+                  </Button>
+                )}
+                {myActiveLiveLocation ? (
+                  <span className="text-xs text-slate-500 dark:text-slate-400">
+                    {t("home.householdMapLiveShareActiveUntil", {
+                      at: formatDateTime(myActiveLiveLocation.expires_at, language, myActiveLiveLocation.expires_at)
+                    })}
+                  </span>
+                ) : null}
+              </div>
+              {liveShareError ? (
+                <div className="mt-1 text-xs text-rose-600 dark:text-rose-400">{liveShareError}</div>
+              ) : null}
             </CardContent>
           </Card>
+
+          <Card className="mt-6 rounded-xl border border-slate-300 bg-white/90 p-3 text-slate-800 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-100">
+            <CardHeader className="gap-1">
+              <CardTitle>{t("home.householdWeatherTitle")}</CardTitle>
+              <CardDescription>{t("home.householdWeatherDescription")}</CardDescription>
+            </CardHeader>
+            <CardContent className="pt-2">
+              {!mapHasPin ? (
+                <p className="text-xs text-slate-500 dark:text-slate-400">{t("home.householdWeatherNeedsAddress")}</p>
+              ) : householdWeatherQuery.isLoading ? (
+                <p className="text-xs text-slate-500 dark:text-slate-400">{t("home.householdWeatherLoading")}</p>
+              ) : householdWeatherQuery.isError ? (
+                <p className="text-xs text-rose-600 dark:text-rose-400">{t("home.householdWeatherError")}</p>
+              ) : householdWeatherHourly.length === 0 ? (
+                <p className="text-xs text-slate-500 dark:text-slate-400">{t("home.householdWeatherEmpty")}</p>
+              ) : (
+                <div className="space-y-2">
+                  {householdWeatherDays.length > 0 ? (
+                    <div className="-mx-1 overflow-x-auto px-1 pb-1">
+                      <div className="flex min-w-max gap-3">
+                        {householdWeatherDays.map((day, index) => (
+                          <div
+                            key={`weather-day-${day.date}`}
+                            className="w-[168px] shrink-0 rounded-2xl border border-slate-200/90 bg-gradient-to-b from-white/95 to-slate-50/90 p-3 shadow-sm dark:border-slate-700/90 dark:from-slate-900/85 dark:to-slate-900/65"
+                          >
+                            <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+                              {index === 0
+                                ? t("home.householdWeatherRelativeToday")
+                                : index === 1
+                                  ? t("home.householdWeatherRelativeTomorrow")
+                                  : index === 2
+                                    ? t("home.householdWeatherRelativeDayAfterTomorrow")
+                                    : formatDateOnly(day.date, language, day.date)}
+                            </p>
+                            {(() => {
+                              const warnings = getDailyWeatherWarnings(day);
+                              return (
+                                <div className="relative mt-2 flex items-center justify-center rounded-xl bg-white/70 py-2 dark:bg-slate-800/65">
+                                  {(warnings.icy || warnings.heat || warnings.storm || warnings.uv) ? (
+                                    <div className="absolute left-1.5 top-1.5 flex items-center gap-1">
+                                      {warnings.icy ? (
+                                        <span
+                                          className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-cyan-200/90 bg-cyan-50/95 text-cyan-700 dark:border-cyan-800 dark:bg-cyan-900/40 dark:text-cyan-200"
+                                          title={t("home.householdWeatherWarningIcy")}
+                                          aria-label={t("home.householdWeatherWarningIcy")}
+                                        >
+                                          <Snowflake className="h-3 w-3" />
+                                        </span>
+                                      ) : null}
+                                      {warnings.heat ? (
+                                        <span
+                                          className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-orange-200/90 bg-orange-50/95 text-orange-700 dark:border-orange-800 dark:bg-orange-900/40 dark:text-orange-200"
+                                          title={t("home.householdWeatherWarningHeat")}
+                                          aria-label={t("home.householdWeatherWarningHeat")}
+                                        >
+                                          <Flame className="h-3 w-3" />
+                                        </span>
+                                      ) : null}
+                                      {warnings.storm ? (
+                                        <span
+                                          className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-indigo-200/90 bg-indigo-50/95 text-indigo-700 dark:border-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-200"
+                                          title={t("home.householdWeatherWarningStorm")}
+                                          aria-label={t("home.householdWeatherWarningStorm")}
+                                        >
+                                          <Wind className="h-3 w-3" />
+                                        </span>
+                                      ) : null}
+                                      {warnings.uv ? (
+                                        <span
+                                          className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-amber-200/90 bg-amber-50/95 text-amber-700 dark:border-amber-800 dark:bg-amber-900/40 dark:text-amber-200"
+                                          title={t("home.householdWeatherWarningUv")}
+                                          aria-label={t("home.householdWeatherWarningUv")}
+                                        >
+                                          <Sun className="h-3 w-3" />
+                                        </span>
+                                      ) : null}
+                                    </div>
+                                  ) : null}
+                                  <WeatherSvg state={getAnimatedWeatherState(day)} width={52} height={52} />
+                                  <span className="absolute bottom-1.5 right-2 rounded-full border border-slate-200/90 bg-white/90 px-2 py-0.5 text-[10px] font-medium text-slate-700 dark:border-slate-700 dark:bg-slate-900/90 dark:text-slate-200">
+                                    {t(getWeatherConditionLabelKey(day))}
+                                  </span>
+                                </div>
+                              );
+                            })()}
+                            <p className="mt-2 text-xs font-semibold text-slate-700 dark:text-slate-300">
+                              {t("home.householdWeatherTemp", {
+                                max: day.tempMaxC === null ? "—" : Math.round(day.tempMaxC),
+                                min: day.tempMinC === null ? "—" : Math.round(day.tempMinC)
+                              })}
+                            </p>
+                            <p className="mt-1 text-[11px] text-slate-600 dark:text-slate-300">
+                              {t("home.householdWeatherPrecip", {
+                                mm: day.precipitationMm === null ? "—" : Number(day.precipitationMm.toFixed(1)),
+                                prob:
+                                  day.precipitationProbabilityPercent === null
+                                    ? "—"
+                                    : Math.round(day.precipitationProbabilityPercent)
+                              })}
+                            </p>
+                            <p className="mt-1 text-[11px] text-slate-600 dark:text-slate-300">
+                              {t("home.householdWeatherWind", {
+                                min:
+                                  day.windSpeedKmh === null && day.windGustKmh === null
+                                    ? "—"
+                                    : Math.min(
+                                        day.windSpeedKmh ?? Number.POSITIVE_INFINITY,
+                                        day.windGustKmh ?? Number.POSITIVE_INFINITY
+                                      ) === Number.POSITIVE_INFINITY
+                                      ? "—"
+                                      : Math.round(
+                                          Math.min(
+                                            day.windSpeedKmh ?? Number.POSITIVE_INFINITY,
+                                            day.windGustKmh ?? Number.POSITIVE_INFINITY
+                                          )
+                                        ),
+                                max:
+                                  day.windSpeedKmh === null && day.windGustKmh === null
+                                    ? "—"
+                                    : Math.max(day.windSpeedKmh ?? 0, day.windGustKmh ?? 0),
+                                dir: getWindDirectionLabel(day.windDirectionDeg)
+                              })}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                  {isMobileBucketComposer ? (
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-xs text-slate-500 dark:text-slate-400">
+                        {t("home.householdWeatherChartHint")}
+                      </p>
+                      {weatherLegendItems.length > 0 ? (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button type="button" size="sm" variant="outline" className="h-8 px-2 text-xs">
+                              <SlidersHorizontal className="mr-1 h-3.5 w-3.5" />
+                              {t("home.householdWeatherLegendButton")}
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="w-56">
+                            <DropdownMenuLabel>{t("home.householdWeatherLegendButton")}</DropdownMenuLabel>
+                            <DropdownMenuSeparator />
+                            {weatherLegendItems.map((item) => (
+                              <DropdownMenuCheckboxItem
+                                key={`weather-legend-item-${item.index}`}
+                                checked={item.visible}
+                                onCheckedChange={() => toggleWeatherLegendDataset(item.index)}
+                              >
+                                {item.label}
+                              </DropdownMenuCheckboxItem>
+                            ))}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      ) : null}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      {t("home.householdWeatherChartHint")}
+                    </p>
+                  )}
+                  <div
+                    className="h-64 rounded-lg border border-slate-200/90 bg-white/80 p-2 dark:border-slate-700/90 dark:bg-slate-900/70"
+                    onDoubleClick={zoomOutWeatherChart}
+                    onTouchEndCapture={onWeatherChartTouchEndCapture}
+                  >
+                    <Chart
+                      ref={weatherChartRef}
+                      type="bar"
+                      data={householdWeatherChartData}
+                      options={householdWeatherChartOptions}
+                    />
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Dialog
+            open={isLiveShareDialogOpen}
+            onOpenChange={(open) => {
+              if (liveShareStatus === "starting") return;
+              setIsLiveShareDialogOpen(open);
+            }}
+          >
+            <DialogContent className="sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle>{t("home.householdMapLiveShareStart")}</DialogTitle>
+                <DialogDescription>{t("home.householdMapLiveShareDialogDescription")}</DialogDescription>
+              </DialogHeader>
+              <div className="space-y-3">
+                <div className="space-y-1">
+                  <Label>{t("home.householdMapLiveShareDurationLabel")}</Label>
+                  <Select
+                    value={String(liveShareDurationMinutes)}
+                    onValueChange={(value) => setLiveShareDurationMinutes(Number(value))}
+                    disabled={liveShareStatus === "starting"}
+                  >
+                    <SelectTrigger className="h-9">
+                      <SelectValue placeholder={t("home.householdMapLiveShareDurationLabel")} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {LIVE_LOCATION_DURATION_OPTIONS.map((minutes) => (
+                        <SelectItem key={`live-duration-dialog-${minutes}`} value={String(minutes)}>
+                          {t("home.householdMapLiveShareMinutes", { minutes })}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex justify-end gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setIsLiveShareDialogOpen(false)}
+                    disabled={liveShareStatus === "starting"}
+                  >
+                    {t("common.cancel")}
+                  </Button>
+                  <Button
+                    type="button"
+                    onClick={onConfirmStartLiveShare}
+                    disabled={liveShareStatus === "starting"}
+                  >
+                    {t("home.householdMapLiveShareStart")}
+                  </Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
 
           <Dialog
             open={isWhiteboardFullscreenOpen}
@@ -4813,6 +7083,22 @@ export const HomePage = ({
                   <DialogDescription>
                     {t("home.whiteboardDescription")}
                   </DialogDescription>
+                  {whiteboardOnlineMembers.length > 0 ? (
+                    <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                      <span className="text-[11px] font-medium text-emerald-700 dark:text-emerald-300">
+                        {t("home.whiteboardOnlineNow", { count: whiteboardOnlineMembers.length })}
+                      </span>
+                      {whiteboardOnlineMembers.slice(0, 10).map((member) => (
+                        <span
+                          key={`wb-online-full-${member.user_id}`}
+                          className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-200"
+                        >
+                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                          {memberLabel(member.user_id)}
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
                 </div>
                 <div className="flex items-center gap-3">
                   {whiteboardStatusIndicator}
@@ -4879,6 +7165,111 @@ export const HomePage = ({
           </Dialog>
         </>
       ) : null}
+
+      <Dialog
+        open={editingMarkerDraft !== null}
+        onOpenChange={(open) => {
+          if (!open && !editingMarkerSaving) {
+            setEditingMarkerDraft(null);
+            setEditingMarkerError(null);
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{t("home.bucketEdit")}</DialogTitle>
+            <DialogDescription>{t("home.householdMapMarkersTitle")}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <Label>{t("home.householdMapMarkerIconLabel")}</Label>
+              <Select
+                value={editingMarkerDraft?.icon ?? "star"}
+                onValueChange={(value) =>
+                  setEditingMarkerDraft((current) =>
+                    current
+                      ? {
+                          ...current,
+                          icon: value as HouseholdMapMarkerIcon
+                        }
+                      : current
+                  )
+                }
+                disabled={editingMarkerSaving}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {MANUAL_MARKER_ICON_OPTIONS.map((option) => (
+                    <SelectItem key={`marker-edit-icon-${option.id}`} value={option.id}>
+                      <span className="inline-flex items-center gap-2">
+                        <span>{getMarkerEmoji(option.id)}</span>
+                        <span>{t(option.labelKey as never)}</span>
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label>{t("home.householdMapMarkerTitleLabel")}</Label>
+              <Input
+                value={editingMarkerDraft?.title ?? ""}
+                onChange={(event) =>
+                  setEditingMarkerDraft((current) =>
+                    current
+                      ? {
+                          ...current,
+                          title: event.target.value
+                        }
+                      : current
+                  )
+                }
+                placeholder={t("home.householdMapMarkerTitlePlaceholder")}
+                disabled={editingMarkerSaving}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label>{t("home.householdMapMarkerDescriptionLabel")}</Label>
+              <Input
+                value={editingMarkerDraft?.description ?? ""}
+                onChange={(event) =>
+                  setEditingMarkerDraft((current) =>
+                    current
+                      ? {
+                          ...current,
+                          description: event.target.value
+                        }
+                      : current
+                  )
+                }
+                placeholder={t("home.householdMapMarkerDescriptionPlaceholder")}
+                disabled={editingMarkerSaving}
+              />
+            </div>
+            {editingMarkerError ? (
+              <p className="text-xs text-rose-600 dark:text-rose-400">{editingMarkerError}</p>
+            ) : null}
+            <div className="flex justify-end gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setEditingMarkerDraft(null);
+                  setEditingMarkerError(null);
+                }}
+                disabled={editingMarkerSaving}
+              >
+                {t("common.cancel")}
+              </Button>
+              <Button type="button" onClick={() => void saveEditedMarker()} disabled={editingMarkerSaving}>
+                {editingMarkerSaving ? t("home.householdMapPoiOverrideSaving") : t("common.save")}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={pendingCompleteTask !== null}

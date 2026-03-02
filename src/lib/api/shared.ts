@@ -305,7 +305,8 @@ const householdEventSchema = z.object({
     "admin_hint",
     "pimpers_reset",
     "vacation_mode_enabled",
-    "vacation_mode_disabled"
+    "vacation_mode_disabled",
+    "live_location_started"
   ]),
   actor_user_id: z.string().uuid().nullable().optional().transform((value) => value ?? null),
   subject_user_id: z.string().uuid().nullable().optional().transform((value) => value ?? null),

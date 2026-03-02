@@ -344,6 +344,7 @@ export type HouseholdEventType =
   | "cash_audit_requested"
   | "vacation_mode_enabled"
   | "vacation_mode_disabled"
+  | "live_location_started"
   | "admin_hint";
 
 export interface HouseholdEvent {
@@ -360,6 +361,16 @@ export interface HouseholdWhiteboard {
   household_id: string;
   scene_json: string;
   updated_by: string | null;
+  updated_at: string;
+}
+
+export interface HouseholdLiveLocation {
+  household_id: string;
+  user_id: string;
+  lat: number;
+  lon: number;
+  started_at: string;
+  expires_at: string;
   updated_at: string;
 }
 

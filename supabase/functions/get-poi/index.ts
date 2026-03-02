@@ -81,7 +81,12 @@ serve(async (req) => {
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY");
   const supabaseServiceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  const overpassEndpoint = Deno.env.get("OVERPASS_ENDPOINT") ?? "https://overpass-api.de/api/interpreter";
+  const primaryOverpassEndpoint = Deno.env.get("OVERPASS_ENDPOINT") ?? "https://overpass-api.de/api/interpreter";
+  const overpassEndpoints = [
+    primaryOverpassEndpoint,
+    "https://overpass.kumi.systems/api/interpreter",
+    "https://overpass.private.coffee/api/interpreter"
+  ].filter((endpoint, index, all) => all.indexOf(endpoint) === index);
   const cacheTtlSeconds = Math.max(300, Number(Deno.env.get("POI_CACHE_TTL_SECONDS") ?? 21600));
   if (!supabaseUrl || !supabaseAnonKey || !supabaseServiceRoleKey) {
     return new Response("Missing Supabase env", { status: 500, headers: corsHeaders });
@@ -148,25 +153,50 @@ serve(async (req) => {
     );
   }
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 20_000);
-  let response: Response;
-  try {
-    response = await fetch(overpassEndpoint, {
-      method: "POST",
-      headers: { "content-type": "text/plain" },
-      body: buildOverpassQuery(lat, lon, radiusMeters, categories),
-      signal: controller.signal
-    });
-  } catch {
-    clearTimeout(timeout);
-    return new Response("Failed to reach Overpass", { status: 502, headers: corsHeaders });
-  } finally {
-    clearTimeout(timeout);
+  const { data: staleCachedRow } = await serviceClient
+    .from("poi_cache")
+    .select("payload,expires_at")
+    .eq("cache_key", cacheKey)
+    .maybeSingle();
+
+  let response: Response | null = null;
+  for (const endpoint of overpassEndpoints) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 20_000);
+    try {
+      const candidate = await fetch(endpoint, {
+        method: "POST",
+        headers: { "content-type": "text/plain" },
+        body: buildOverpassQuery(lat, lon, radiusMeters, categories),
+        signal: controller.signal
+      });
+      if (candidate.ok) {
+        response = candidate;
+        break;
+      }
+    } catch {
+      // Try next endpoint.
+    } finally {
+      clearTimeout(timeout);
+    }
   }
 
-  if (!response.ok) {
-    return new Response(`Overpass error (${response.status})`, { status: 502, headers: corsHeaders });
+  if (!response) {
+    if (staleCachedRow && Array.isArray((staleCachedRow as { payload?: unknown }).payload)) {
+      const row = staleCachedRow as { payload: unknown[]; expires_at: string };
+      return new Response(
+        JSON.stringify({
+          rows: row.payload,
+          cached: true,
+          expiresAt: row.expires_at
+        }),
+        {
+          status: 200,
+          headers: { "content-type": "application/json", ...corsHeaders }
+        }
+      );
+    }
+    return new Response("Failed to reach Overpass", { status: 502, headers: corsHeaders });
   }
 
   const body = (await response.json()) as { elements?: OverpassElement[] };

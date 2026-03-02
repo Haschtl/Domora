@@ -221,7 +221,7 @@ create table if not exists one_off_task_claim_votes (
 create table if not exists household_events (
   id uuid primary key default gen_random_uuid(),
   household_id uuid not null references households(id) on delete cascade,
-  event_type text not null check (event_type in ('task_completed', 'task_skipped', 'task_rated', 'shopping_completed', 'finance_created', 'role_changed', 'member_joined', 'member_left', 'rent_updated', 'contract_created', 'contract_updated', 'contract_deleted', 'cash_audit_requested', 'admin_hint', 'pimpers_reset', 'vacation_mode_enabled', 'vacation_mode_disabled')),
+  event_type text not null check (event_type in ('task_completed', 'task_skipped', 'task_rated', 'shopping_completed', 'finance_created', 'role_changed', 'member_joined', 'member_left', 'rent_updated', 'contract_created', 'contract_updated', 'contract_deleted', 'cash_audit_requested', 'admin_hint', 'pimpers_reset', 'vacation_mode_enabled', 'vacation_mode_disabled', 'live_location_started')),
   actor_user_id uuid references auth.users(id) on delete set null,
   subject_user_id uuid references auth.users(id) on delete set null,
   payload jsonb not null default '{}'::jsonb,
@@ -234,6 +234,18 @@ create table if not exists household_whiteboards (
   updated_by uuid references auth.users(id) on delete set null,
   updated_at timestamptz not null default now(),
   check (char_length(scene_json) <= 10485760)
+);
+
+create table if not exists household_live_locations (
+  household_id uuid not null references households(id) on delete cascade,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  lat numeric(9, 6) not null check (lat >= -90 and lat <= 90),
+  lon numeric(9, 6) not null check (lon >= -180 and lon <= 180),
+  started_at timestamptz not null default now(),
+  expires_at timestamptz not null,
+  updated_at timestamptz not null default now(),
+  primary key (household_id, user_id),
+  check (expires_at > started_at)
 );
 
 create table if not exists finance_entries (
@@ -629,6 +641,11 @@ for each row execute function set_updated_at();
 drop trigger if exists trg_household_whiteboards_updated_at on household_whiteboards;
 create trigger trg_household_whiteboards_updated_at
 before update on household_whiteboards
+for each row execute function set_updated_at();
+
+drop trigger if exists trg_household_live_locations_updated_at on household_live_locations;
+create trigger trg_household_live_locations_updated_at
+before update on household_live_locations
 for each row execute function set_updated_at();
 
 drop trigger if exists trg_one_off_task_claim_votes_set_updated_at on one_off_task_claim_votes;
@@ -1603,7 +1620,8 @@ begin
           'admin_hint',
           'pimpers_reset',
           'vacation_mode_enabled',
-          'vacation_mode_disabled'
+          'vacation_mode_disabled',
+          'live_location_started'
         )
       );
   end if;
@@ -1826,6 +1844,7 @@ create index if not exists idx_household_events_actor_user_id on household_event
 create index if not exists idx_household_events_subject_user_id on household_events (subject_user_id);
 create index if not exists idx_household_member_pimpers_user_id on household_member_pimpers (user_id);
 create index if not exists idx_household_whiteboards_updated_by on household_whiteboards (updated_by);
+create index if not exists idx_household_live_locations_expires_at on household_live_locations (expires_at);
 create index if not exists idx_households_created_by on households (created_by);
 create index if not exists idx_push_jobs_household_id on push_jobs (household_id);
 create index if not exists idx_push_jobs_user_id on push_jobs (user_id);
@@ -3061,6 +3080,7 @@ alter table one_off_task_claims enable row level security;
 alter table one_off_task_claim_votes enable row level security;
 alter table household_events enable row level security;
 alter table household_whiteboards enable row level security;
+alter table household_live_locations enable row level security;
 alter table finance_entries enable row level security;
 alter table cash_audit_requests enable row level security;
 alter table finance_subscriptions enable row level security;
@@ -3378,6 +3398,31 @@ for update
 to authenticated
 using (is_household_member(household_id))
 with check (is_household_member(household_id) and (updated_by is null or (select auth.uid()) = updated_by));
+
+drop policy if exists household_live_locations_select on household_live_locations;
+create policy household_live_locations_select on household_live_locations
+for select
+to authenticated
+using (is_household_member(household_id));
+
+drop policy if exists household_live_locations_insert on household_live_locations;
+create policy household_live_locations_insert on household_live_locations
+for insert
+to authenticated
+with check (is_household_member(household_id) and (select auth.uid()) = user_id);
+
+drop policy if exists household_live_locations_update on household_live_locations;
+create policy household_live_locations_update on household_live_locations
+for update
+to authenticated
+using (is_household_member(household_id) and (select auth.uid()) = user_id)
+with check (is_household_member(household_id) and (select auth.uid()) = user_id);
+
+drop policy if exists household_live_locations_delete on household_live_locations;
+create policy household_live_locations_delete on household_live_locations
+for delete
+to authenticated
+using (is_household_member(household_id) and (select auth.uid()) = user_id);
 
 drop policy if exists finance_entries_all on finance_entries;
 drop policy if exists finance_entries_select on finance_entries;
