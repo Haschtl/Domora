@@ -50,7 +50,14 @@ const householdMapMarkerIconSchema = z.enum([
   "hospital",
   "park",
   "work",
-  "star"
+  "star",
+  "school",
+  "cafe",
+  "bar",
+  "pharmacy",
+  "gym",
+  "parking",
+  "transit"
 ]);
 const markerImageB64Schema = z
   .string()

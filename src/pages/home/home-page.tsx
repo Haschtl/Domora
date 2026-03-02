@@ -7,7 +7,6 @@ import {
   useRef,
   useState,
   type FormEvent,
-  type ReactNode,
   type TouchEvent as ReactTouchEvent
 } from "react";
 import { useLocation, useNavigate } from "@tanstack/react-router";
@@ -28,6 +27,9 @@ import zoomPlugin from "chartjs-plugin-zoom";
 import "hammerjs";
 import "@geoman-io/leaflet-geoman-free";
 import "leaflet.locatecontrol";
+import "iso8601-js-period";
+import "leaflet-timedimension/dist/leaflet.timedimension.min.js";
+import "leaflet-timedimension/dist/leaflet.timedimension.control.min.css";
 import markerIcon2xUrl from "leaflet/dist/images/marker-icon-2x.png";
 import markerIconUrl from "leaflet/dist/images/marker-icon.png";
 import markerShadowUrl from "leaflet/dist/images/marker-shadow.png";
@@ -253,6 +255,12 @@ type MapWeatherLayerToggles = {
 };
 type ManualMarkerFilterMode = "all" | "mine" | "member" | "none";
 type MapMeasureMode = "distance" | "area";
+type MapMeasureResult = {
+  mode: MapMeasureMode;
+  distanceMeters?: number;
+  areaSqm?: number;
+  anchor?: [number, number];
+};
 type MapReachabilityMode = ReachabilityTravelMode;
 type MapSearchViewportBounds = {
   south: number;
@@ -355,7 +363,14 @@ const MANUAL_MARKER_ICON_OPTIONS: Array<{ id: HouseholdMapMarkerIcon; labelKey: 
   { id: "hospital", labelKey: "home.householdMapMarkerIconHospital" },
   { id: "park", labelKey: "home.householdMapMarkerIconPark" },
   { id: "work", labelKey: "home.householdMapMarkerIconWork" },
-  { id: "star", labelKey: "home.householdMapMarkerIconStar" }
+  { id: "star", labelKey: "home.householdMapMarkerIconStar" },
+  { id: "school", labelKey: "home.householdMapMarkerIconSchool" },
+  { id: "cafe", labelKey: "home.householdMapMarkerIconCafe" },
+  { id: "bar", labelKey: "home.householdMapMarkerIconBar" },
+  { id: "pharmacy", labelKey: "home.householdMapMarkerIconPharmacy" },
+  { id: "gym", labelKey: "home.householdMapMarkerIconGym" },
+  { id: "parking", labelKey: "home.householdMapMarkerIconParking" },
+  { id: "transit", labelKey: "home.householdMapMarkerIconTransit" }
 ];
 const LIVE_LOCATION_DURATION_OPTIONS = [5, 15, 30, 60] as const;
 const REACHABILITY_MINUTES_DEFAULT = 20;
@@ -442,69 +457,6 @@ type MapWithPm = L.Map & {
     enableDraw: (shape: "Line" | "Polygon", options?: Record<string, unknown>) => void;
     disableDraw: () => void;
   };
-};
-type MapWithTimeDimension = L.Map & {
-  timeDimension?: unknown;
-};
-
-const LEAFLET_TIME_DIMENSION_SCRIPT_ID = "domora-leaflet-time-dimension-script";
-const LEAFLET_TIME_DIMENSION_STYLE_ID = "domora-leaflet-time-dimension-style";
-const ISO8601_PERIOD_SCRIPT_ID = "domora-iso8601-period-script";
-
-const loadScriptOnce = (id: string, src: string) =>
-  new Promise<void>((resolve, reject) => {
-    if (typeof document === "undefined") {
-      reject(new Error("document_unavailable"));
-      return;
-    }
-
-    const existing = document.getElementById(id) as HTMLScriptElement | null;
-    if (existing) {
-      if (existing.dataset.loaded === "true") {
-        resolve();
-        return;
-      }
-      existing.addEventListener("load", () => resolve(), { once: true });
-      existing.addEventListener("error", () => reject(new Error(`script_load_failed:${id}`)), { once: true });
-      return;
-    }
-
-    const script = document.createElement("script");
-    script.id = id;
-    script.src = src;
-    script.async = true;
-    script.addEventListener("load", () => {
-      script.dataset.loaded = "true";
-      resolve();
-    });
-    script.addEventListener("error", () => reject(new Error(`script_load_failed:${id}`)));
-    document.head.appendChild(script);
-  });
-
-const loadStylesheetOnce = (id: string, href: string) => {
-  if (typeof document === "undefined") return;
-  const existing = document.getElementById(id);
-  if (existing) return;
-  const link = document.createElement("link");
-  link.id = id;
-  link.rel = "stylesheet";
-  link.href = href;
-  document.head.appendChild(link);
-};
-
-const ensureLeafletTimeDimension = async () => {
-  loadStylesheetOnce(
-    LEAFLET_TIME_DIMENSION_STYLE_ID,
-    "https://unpkg.com/leaflet-timedimension@1.1.1/dist/leaflet.timedimension.control.min.css"
-  );
-  await loadScriptOnce(
-    ISO8601_PERIOD_SCRIPT_ID,
-    "https://unpkg.com/iso8601-js-period@0.2.1/iso8601.min.js"
-  );
-  await loadScriptOnce(
-    LEAFLET_TIME_DIMENSION_SCRIPT_ID,
-    "https://unpkg.com/leaflet-timedimension@1.1.1/dist/leaflet.timedimension.min.js"
-  );
 };
 
 const toLinearLatLngs = (latLngs: L.LatLng[] | L.LatLng[][]) =>
@@ -627,11 +579,13 @@ const serializeHouseholdLayer = (
 
 const GeomanEditorBridge = ({
   enabled,
+  suppressCreate,
   userId,
   defaultTitle,
   onMarkersChange
 }: {
   enabled: boolean;
+  suppressCreate: boolean;
   userId: string;
   defaultTitle: string;
   onMarkersChange: (markers: HouseholdMapMarker[]) => void;
@@ -678,6 +632,7 @@ const GeomanEditorBridge = ({
     };
 
     const handleCreate = (event: { layer?: L.Layer }) => {
+      if (suppressCreate) return;
       const createdLayer = event.layer as DomoraLeafletLayer | undefined;
       if (!createdLayer) return;
       if (createdLayer._domoraMeasure) return;
@@ -720,7 +675,7 @@ const GeomanEditorBridge = ({
       map.off("pm:cut", emitMarkers as L.LeafletEventHandlerFn);
       mapWithPm.pm?.removeControls();
     };
-  }, [defaultTitle, enabled, map, onMarkersChange, userId]);
+  }, [defaultTitle, enabled, map, onMarkersChange, suppressCreate, userId]);
 
   return null;
 };
@@ -817,7 +772,7 @@ const GeomanMeasureBridge = ({
   enabled: boolean;
   mode: MapMeasureMode | null;
   onModeChange: (nextMode: MapMeasureMode | null) => void;
-  onMeasured: (result: { mode: MapMeasureMode; distanceMeters?: number; areaSqm?: number }) => void;
+  onMeasured: (result: MapMeasureResult) => void;
 }) => {
   const map = useMap();
   const latestModeRef = useRef<MapMeasureMode | null>(mode);
@@ -861,13 +816,32 @@ const GeomanMeasureBridge = ({
 
       if (currentMode === "distance" && createdLayer instanceof L.Polyline) {
         const points = toLinearLatLngs(createdLayer.getLatLngs() as L.LatLng[] | L.LatLng[][]);
-        onMeasured({ mode: "distance", distanceMeters: calculatePolylineDistanceMeters(map, points) });
+        const lastPoint = points.length > 0 ? points[points.length - 1] : undefined;
+        onMeasured({
+          mode: "distance",
+          distanceMeters: calculatePolylineDistanceMeters(map, points),
+          anchor: lastPoint ? [lastPoint.lat, lastPoint.lng] : undefined
+        });
       }
 
       if (currentMode === "area" && createdLayer instanceof L.Polygon) {
         const polygonLatLngs = createdLayer.getLatLngs();
         const firstRing = Array.isArray(polygonLatLngs[0]) ? (polygonLatLngs[0] as L.LatLng[]) : [];
-        onMeasured({ mode: "area", areaSqm: calculatePolygonAreaSqm(firstRing) });
+        let anchorLatLng: L.LatLng | undefined;
+        if (firstRing.length > 0) {
+          const last = firstRing.length > 0 ? firstRing[firstRing.length - 1] : undefined;
+          const first = firstRing[0];
+          if (last && first && firstRing.length > 1 && last.lat === first.lat && last.lng === first.lng) {
+            anchorLatLng = firstRing[firstRing.length - 2] ?? last;
+          } else {
+            anchorLatLng = last;
+          }
+        }
+        onMeasured({
+          mode: "area",
+          areaSqm: calculatePolygonAreaSqm(firstRing),
+          anchor: anchorLatLng ? [anchorLatLng.lat, anchorLatLng.lng] : undefined
+        });
       }
 
       onModeChange(null);
@@ -1119,6 +1093,23 @@ const RouteTargetPickBridge = ({
   return null;
 };
 
+const MapOverlayDismissBridge = ({
+  enabled,
+  onDismiss
+}: {
+  enabled: boolean;
+  onDismiss: () => void;
+}) => {
+  useMapEvents({
+    click: () => {
+      if (!enabled) return;
+      onDismiss();
+    }
+  });
+
+  return null;
+};
+
 const DwdTimeDimensionBridge = ({
   enabled,
   layers
@@ -1128,12 +1119,141 @@ const DwdTimeDimensionBridge = ({
 }) => {
   const map = useMap();
   const controlRef = useRef<L.Control | null>(null);
+  const timeDimensionRef = useRef<unknown>(null);
   const radarLayerRef = useRef<L.Layer | null>(null);
   const lightningLayerRef = useRef<L.Layer | null>(null);
   const warningLayerRef = useRef<L.Layer | null>(null);
+  const speedButtonHandlerRef = useRef<((event: Event) => void) | null>(null);
+  const speedSyncHandlerRef = useRef<(() => void) | null>(null);
+
+  const cleanupCustomTimeControls = () => {
+    const control = controlRef.current as (L.Control & { _container?: HTMLElement; _player?: L.Evented }) | null;
+    const container = control?._container;
+    if (container) {
+      const speedButton = container.querySelector(".domora-timecontrol-speedcycle");
+      if (speedButton && speedButtonHandlerRef.current) {
+        speedButton.removeEventListener("click", speedButtonHandlerRef.current);
+      }
+      container.classList.remove("domora-timecontrol-custom");
+    }
+    if (control?._player && speedSyncHandlerRef.current) {
+      control._player.off("speedchange", speedSyncHandlerRef.current as L.LeafletEventHandlerFn);
+    }
+    speedButtonHandlerRef.current = null;
+    speedSyncHandlerRef.current = null;
+  };
+
+  const applyCustomTimeControls = () => {
+    const control = controlRef.current as (L.Control & {
+      _container?: HTMLElement;
+      _player?: L.Evented & { getTransitionTime?: () => number; setTransitionTime?: (transitionTime: number) => void };
+      _getDisplayDateFormat?: (date: Date) => string;
+      _update?: () => void;
+    }) | null;
+    const container = control?._container;
+    if (!container) return;
+
+    cleanupCustomTimeControls();
+
+    if (control?._getDisplayDateFormat) {
+      control._getDisplayDateFormat = (date: Date) =>
+        new Intl.DateTimeFormat("de-DE", {
+          weekday: "short",
+          day: "2-digit",
+          month: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit"
+        }).format(date);
+      control._update?.();
+    }
+
+    const playButton = container.querySelector("a.timecontrol-play");
+    const dateLabel = container.querySelector("a.timecontrol-date");
+    const dateSlider = container.querySelector(".timecontrol-dateslider");
+    const loopButton = container.querySelector("a.timecontrol-loop");
+    const backwardButton = container.querySelector("a.timecontrol-backward");
+    const forwardButton = container.querySelector("a.timecontrol-forward");
+    const speedSlider = container.querySelector(".timecontrol-speed");
+
+    if (backwardButton instanceof HTMLElement) {
+      backwardButton.style.display = "none";
+    }
+    if (forwardButton instanceof HTMLElement) {
+      forwardButton.style.display = "none";
+    }
+    if (speedSlider instanceof HTMLElement) {
+      speedSlider.style.display = "none";
+    }
+
+    const left = (container.querySelector(".domora-time-left") as HTMLElement | null)
+      ?? L.DomUtil.create("div", "domora-time-left");
+    const center = (container.querySelector(".domora-time-center") as HTMLElement | null)
+      ?? L.DomUtil.create("div", "domora-time-center");
+    const right = (container.querySelector(".domora-time-right") as HTMLElement | null)
+      ?? L.DomUtil.create("div", "domora-time-right");
+
+    if (left.parentElement !== container) container.appendChild(left);
+    if (center.parentElement !== container) container.appendChild(center);
+    if (right.parentElement !== container) container.appendChild(right);
+
+    if (playButton) left.appendChild(playButton);
+    if (dateLabel) center.appendChild(dateLabel);
+    if (dateSlider) center.appendChild(dateSlider);
+
+    const speedButton =
+      right.querySelector(".domora-timecontrol-speedcycle")
+      ?? (() => {
+        const button = L.DomUtil.create("a", "leaflet-control-timecontrol domora-timecontrol-speedcycle", right) as HTMLAnchorElement;
+        button.href = "#";
+        button.setAttribute("role", "button");
+        button.title = "Playback speed";
+        return button;
+      })();
+
+    const supportedSpeeds = [0.1, 0.5, 1, 2, 5, 10];
+    const player = control?._player;
+
+    const setSpeedLabel = () => {
+      const transitionTime = player?.getTransitionTime?.() ?? 1000;
+      const currentSpeed = Math.max(0.05, 1000 / Math.max(transitionTime, 1));
+      const nearest = supportedSpeeds.reduce((best, candidate) =>
+        Math.abs(candidate - currentSpeed) < Math.abs(best - currentSpeed) ? candidate : best
+      );
+      speedButton.textContent = `x${nearest}`;
+    };
+
+    const onSpeedButtonClick = (event: Event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const transitionTime = player?.getTransitionTime?.() ?? 1000;
+      const currentSpeed = Math.max(0.05, 1000 / Math.max(transitionTime, 1));
+      const nearestIndex = supportedSpeeds.reduce(
+        (bestIndex, candidate, index) =>
+          Math.abs(candidate - currentSpeed) < Math.abs(supportedSpeeds[bestIndex] - currentSpeed)
+            ? index
+            : bestIndex,
+        0
+      );
+      const nextSpeed = supportedSpeeds[(nearestIndex + 1) % supportedSpeeds.length] ?? 1;
+      player?.setTransitionTime?.(Math.round(1000 / nextSpeed));
+      setSpeedLabel();
+    };
+
+    speedButton.addEventListener("click", onSpeedButtonClick);
+    speedButtonHandlerRef.current = onSpeedButtonClick;
+
+    const syncSpeedLabel = () => setSpeedLabel();
+    player?.on("speedchange", syncSpeedLabel as L.LeafletEventHandlerFn);
+    speedSyncHandlerRef.current = syncSpeedLabel;
+    setSpeedLabel();
+
+    if (loopButton) right.appendChild(loopButton);
+
+    container.classList.add("domora-timecontrol-custom");
+  };
 
   useEffect(() => {
-    let disposed = false;
+    const hasTimeControlledLayer = layers.radar || layers.lightning;
 
     const clearLayers = () => {
       if (radarLayerRef.current) {
@@ -1149,6 +1269,7 @@ const DwdTimeDimensionBridge = ({
         warningLayerRef.current = null;
       }
       if (controlRef.current) {
+        cleanupCustomTimeControls();
         controlRef.current.remove();
         controlRef.current = null;
       }
@@ -1159,126 +1280,129 @@ const DwdTimeDimensionBridge = ({
       return () => undefined;
     }
 
-    void (async () => {
-      try {
-        await ensureLeafletTimeDimension();
-      } catch {
-        return;
-      }
-      if (disposed) return;
-
-      const leafletWithTd = L as typeof L & {
-        TimeDimension?: new (options?: Record<string, unknown>) => unknown;
-        Control?: typeof L.Control & {
-          TimeDimension?: new (options?: Record<string, unknown>) => L.Control;
-        };
-        timeDimension?: {
-          layer?: {
-            wms?: (layer: L.TileLayer.WMS, options?: Record<string, unknown>) => L.Layer;
-          };
+    const leafletWithTd = L as typeof L & {
+      TimeDimension?: new (options?: Record<string, unknown>) => unknown;
+      Control?: typeof L.Control & {
+        TimeDimension?: new (options?: Record<string, unknown>) => L.Control;
+      };
+      timeDimension?: {
+        layer?: {
+          wms?: (layer: L.TileLayer.WMS, options?: Record<string, unknown>) => L.Layer;
         };
       };
+    };
 
-      if (!leafletWithTd.TimeDimension || !leafletWithTd.timeDimension?.layer?.wms) {
-        return;
-      }
+    if (!leafletWithTd.TimeDimension || !leafletWithTd.timeDimension?.layer?.wms) {
+      return () => undefined;
+    }
 
-      const mapWithTd = map as MapWithTimeDimension;
-      if (!mapWithTd.timeDimension) {
-        mapWithTd.timeDimension = new leafletWithTd.TimeDimension({
-          currentTime: Date.now(),
-          period: "PT5M"
-        });
-      }
+    if (!timeDimensionRef.current) {
+      timeDimensionRef.current = new leafletWithTd.TimeDimension({
+        currentTime: Date.now(),
+        period: "PT5M"
+      });
+    }
 
-      if (leafletWithTd.Control?.TimeDimension && !controlRef.current) {
-        const control = new leafletWithTd.Control.TimeDimension({
-          position: "bottomleft",
-          timeDimension: mapWithTd.timeDimension,
-          autoPlay: false,
-          loopButton: true,
-          timeSliderDragUpdate: true,
-          playerOptions: {
-            transitionTime: 400,
-            loop: false,
-            startOver: true
-          }
-        });
-        control.addTo(map);
-        controlRef.current = control;
-      }
+    if (leafletWithTd.Control?.TimeDimension && hasTimeControlledLayer && !controlRef.current) {
+      const control = new leafletWithTd.Control.TimeDimension({
+        position: "bottomleft",
+        timeDimension: timeDimensionRef.current,
+        autoPlay: false,
+        backwardButton: false,
+        forwardButton: false,
+        loopButton: true,
+        speedSlider: false,
+        timeSliderDragUpdate: true,
+        playerOptions: {
+          transitionTime: 400,
+          loop: false,
+          startOver: true
+        }
+      });
+      control.addTo(map);
+      controlRef.current = control;
+      applyCustomTimeControls();
+    }
+    if (!hasTimeControlledLayer && controlRef.current) {
+      cleanupCustomTimeControls();
+      controlRef.current.remove();
+      controlRef.current = null;
+    }
 
-      const dwdWmsUrl = "https://maps.dwd.de/geoserver/ows";
+    const dwdWmsUrl = "https://maps.dwd.de/geoserver/ows";
 
-      if (layers.radar && !radarLayerRef.current) {
-        const radarWms = L.tileLayer.wms(dwdWmsUrl, {
-          layers: "dwd:Radar_wn-product_1x1km_ger",
-          styles: "radar_wn-product_1x1km_ger",
-          format: "image/png",
-          transparent: true,
-          opacity: 0.78,
-          version: "1.3.0",
-          attribution: "Deutscher Wetterdienst (DWD)"
-        });
-        const radarTd = leafletWithTd.timeDimension.layer.wms(radarWms, {
-          updateTimeDimension: true,
-          setDefaultTime: true,
-          cacheBackward: 3,
-          cacheForward: 24
-        });
-        radarTd.addTo(map);
-        radarLayerRef.current = radarTd;
-      }
-      if (!layers.radar && radarLayerRef.current) {
-        map.removeLayer(radarLayerRef.current);
-        radarLayerRef.current = null;
-      }
+    if (layers.radar && !radarLayerRef.current) {
+      const radarWms = L.tileLayer.wms(dwdWmsUrl, {
+        layers: "dwd:Radar_wn-product_1x1km_ger",
+        styles: "radar_wn-product_1x1km_ger",
+        format: "image/png",
+        transparent: true,
+        opacity: 0.92,
+        pane: "overlayPane",
+        version: "1.3.0",
+        attribution: "Deutscher Wetterdienst (DWD)"
+      });
+      const radarTd = leafletWithTd.timeDimension.layer.wms(radarWms, {
+        timeDimension: timeDimensionRef.current,
+        updateTimeDimension: true,
+        setDefaultTime: true,
+        cacheBackward: 3,
+        cacheForward: 24
+      });
+      radarTd.addTo(map);
+      radarLayerRef.current = radarTd;
+    }
+    if (!layers.radar && radarLayerRef.current) {
+      map.removeLayer(radarLayerRef.current);
+      radarLayerRef.current = null;
+    }
 
-      if (layers.lightning && !lightningLayerRef.current) {
-        const lightningWms = L.tileLayer.wms(dwdWmsUrl, {
-          layers: "dwd:Blitzdichte",
-          styles: "blitzdichte",
-          format: "image/png",
-          transparent: true,
-          opacity: 0.9,
-          version: "1.3.0",
-          attribution: "Deutscher Wetterdienst (DWD)"
-        });
-        const lightningTd = leafletWithTd.timeDimension.layer.wms(lightningWms, {
-          updateTimeDimension: true,
-          setDefaultTime: true,
-          cacheBackward: 2,
-          cacheForward: 12
-        });
-        lightningTd.addTo(map);
-        lightningLayerRef.current = lightningTd;
-      }
-      if (!layers.lightning && lightningLayerRef.current) {
-        map.removeLayer(lightningLayerRef.current);
-        lightningLayerRef.current = null;
-      }
+    if (layers.lightning && !lightningLayerRef.current) {
+      const lightningWms = L.tileLayer.wms(dwdWmsUrl, {
+        layers: "dwd:Blitzdichte",
+        styles: "blitzdichte",
+        format: "image/png",
+        transparent: true,
+        opacity: 0.9,
+        pane: "overlayPane",
+        version: "1.3.0",
+        attribution: "Deutscher Wetterdienst (DWD)"
+      });
+      const lightningTd = leafletWithTd.timeDimension.layer.wms(lightningWms, {
+        timeDimension: timeDimensionRef.current,
+        updateTimeDimension: true,
+        setDefaultTime: true,
+        cacheBackward: 2,
+        cacheForward: 12
+      });
+      lightningTd.addTo(map);
+      lightningLayerRef.current = lightningTd;
+    }
+    if (!layers.lightning && lightningLayerRef.current) {
+      map.removeLayer(lightningLayerRef.current);
+      lightningLayerRef.current = null;
+    }
 
-      if (layers.warnings && !warningLayerRef.current) {
-        const warnings = L.tileLayer.wms(dwdWmsUrl, {
-          layers: "dwd:Warngebiete_Gemeinden",
-          styles: "warngebiete_gemeinden_env",
-          format: "image/png",
-          transparent: true,
-          opacity: 0.72,
-          version: "1.3.0",
-          attribution: "Deutscher Wetterdienst (DWD)"
-        });
-        warnings.addTo(map);
-        warningLayerRef.current = warnings;
-      }
-      if (!layers.warnings && warningLayerRef.current) {
-        map.removeLayer(warningLayerRef.current);
-        warningLayerRef.current = null;
-      }
-    })();
+    if (layers.warnings && !warningLayerRef.current) {
+      const warnings = L.tileLayer.wms(dwdWmsUrl, {
+        layers: "dwd:Warngebiete_Gemeinden",
+        styles: "warngebiete_gemeinden_env",
+        format: "image/png",
+        transparent: true,
+        opacity: 0.72,
+        pane: "overlayPane",
+        version: "1.3.0",
+        attribution: "Deutscher Wetterdienst (DWD)"
+      });
+      warnings.addTo(map);
+      warningLayerRef.current = warnings;
+    }
+    if (!layers.warnings && warningLayerRef.current) {
+      map.removeLayer(warningLayerRef.current);
+      warningLayerRef.current = null;
+    }
 
     return () => {
-      disposed = true;
       if (radarLayerRef.current) {
         map.removeLayer(radarLayerRef.current);
         radarLayerRef.current = null;
@@ -1292,6 +1416,7 @@ const DwdTimeDimensionBridge = ({
         warningLayerRef.current = null;
       }
       if (controlRef.current) {
+        cleanupCustomTimeControls();
         controlRef.current.remove();
         controlRef.current = null;
       }
@@ -1319,6 +1444,20 @@ const getMarkerEmoji = (icon: HouseholdMapMarkerIcon) => {
       return "💼";
     case "star":
       return "⭐";
+    case "school":
+      return "🏫";
+    case "cafe":
+      return "☕";
+    case "bar":
+      return "🍸";
+    case "pharmacy":
+      return "💊";
+    case "gym":
+      return "🏋️";
+    case "parking":
+      return "🅿️";
+    case "transit":
+      return "🚉";
     default:
       return "📍";
   }
@@ -1374,18 +1513,6 @@ const getHouseholdMarkerCenter = (marker: HouseholdMapMarker): [number, number] 
       return null;
   }
 };
-
-const renderHouseholdMarkerTooltip = (marker: HouseholdMapMarker, action?: ReactNode) => (
-  <LeafletTooltip interactive={Boolean(action)}>
-    <div className="space-y-1">
-      <p className="font-semibold">
-        {getMarkerEmoji(marker.icon)} {marker.title}
-      </p>
-      {marker.description ? <p className="text-xs">{marker.description}</p> : null}
-      {action ? <div className="pt-1">{action}</div> : null}
-    </div>
-  </LeafletTooltip>
-);
 
 const poiDivIconCache = new Map<string, L.DivIcon>();
 const getPoiEmoji = (category: PoiCategory) => {
@@ -1446,6 +1573,13 @@ const getSearchResultMarkerIcon = () => {
   searchDivIconCache.set(cacheKey, divIcon);
   return divIcon;
 };
+
+const mapMeasureAnchorIcon = L.divIcon({
+  className: "domora-measure-anchor-icon",
+  html: "",
+  iconSize: [1, 1],
+  iconAnchor: [0, 0]
+});
 
 const getMapStyleIcon = (styleId: MapStyleId) => {
   switch (styleId) {
@@ -2165,14 +2299,20 @@ export const HomePage = ({
   const [editingMarkerError, setEditingMarkerError] = useState<string | null>(null);
   const [editingMarkerSaving, setEditingMarkerSaving] = useState(false);
   const [mapStyle, setMapStyle] = useState<MapStyleId>("street");
-  const [mapWeatherLayersOpen, setMapWeatherLayersOpen] = useState(false);
   const [mapWeatherLayers, setMapWeatherLayers] = useState<MapWeatherLayerToggles>({
     radar: true,
     warnings: true,
     lightning: false
   });
+  const [mapMeasurePanelOpen, setMapMeasurePanelOpen] = useState(false);
   const [mapMeasureMode, setMapMeasureMode] = useState<MapMeasureMode | null>(null);
   const [mapMeasureResult, setMapMeasureResult] = useState<string | null>(null);
+  const [mapMeasureResultAnchor, setMapMeasureResultAnchor] = useState<[number, number] | null>(null);
+  const [mapRenderVersion, setMapRenderVersion] = useState(0);
+  const [mapDeleteConfirm, setMapDeleteConfirm] = useState<{
+    nextMarkers: HouseholdMapMarker[];
+    removedMarkers: HouseholdMapMarker[];
+  } | null>(null);
   const [mapReachabilityMode, setMapReachabilityMode] = useState<MapReachabilityMode>("walk");
   const [mapReachabilityMinutes, setMapReachabilityMinutes] = useState<number>(REACHABILITY_MINUTES_DEFAULT);
   const [mapReachabilityGeoJson, setMapReachabilityGeoJson] = useState<ReachabilityGeoJson | null>(null);
@@ -2485,6 +2625,7 @@ export const HomePage = ({
       setMapReachabilityPanelOpen(false);
       setMapRoutePanelOpen(false);
       setMapRoutePickTargetActive(false);
+      setMapMeasurePanelOpen(false);
     }
   }, [isMapFullscreenOpen]);
   const nearbyPoiQuery = useQuery({
@@ -3535,9 +3676,8 @@ export const HomePage = ({
     }
   }, [buildHouseholdUpdatePayload, household.household_map_markers, onUpdateHousehold]);
 
-  const onGeomanMarkersChanged = useCallback(
+  const queueMapMarkerAutosave = useCallback(
     (markers: HouseholdMapMarker[]) => {
-      if (!isHouseholdOwner) return;
       pendingMapMarkerSaveRef.current = markers;
       if (mapMarkerSaveTimerRef.current !== null) {
         window.clearTimeout(mapMarkerSaveTimerRef.current);
@@ -3547,8 +3687,35 @@ export const HomePage = ({
         void flushQueuedMapMarkerSave();
       }, 500);
     },
-    [flushQueuedMapMarkerSave, isHouseholdOwner]
+    [flushQueuedMapMarkerSave]
   );
+
+  const onGeomanMarkersChanged = useCallback(
+    (markers: HouseholdMapMarker[]) => {
+      if (!isHouseholdOwner) return;
+
+      const nextIds = new Set(markers.map((entry) => entry.id));
+      const removedMarkers = household.household_map_markers.filter((entry) => !nextIds.has(entry.id));
+      if (removedMarkers.length > 0) {
+        setMapDeleteConfirm({ nextMarkers: markers, removedMarkers });
+        return;
+      }
+
+      queueMapMarkerAutosave(markers);
+    },
+    [household.household_map_markers, isHouseholdOwner, queueMapMarkerAutosave]
+  );
+
+  const confirmMapDeletion = useCallback(() => {
+    if (!mapDeleteConfirm) return;
+    queueMapMarkerAutosave(mapDeleteConfirm.nextMarkers);
+    setMapDeleteConfirm(null);
+  }, [mapDeleteConfirm, queueMapMarkerAutosave]);
+
+  const cancelMapDeletion = useCallback(() => {
+    setMapDeleteConfirm(null);
+    setMapRenderVersion((current) => current + 1);
+  }, []);
 
   const onLocateControlReady = useCallback((control: LocateControlHandle | null) => {
     locateControlRef.current = control;
@@ -3931,33 +4098,6 @@ export const HomePage = ({
     ),
     [buildExternalMapsHref, t]
   );
-  const renderMarkerTooltipAction = useCallback(
-    (marker: HouseholdMapMarker) => {
-      const center = getHouseholdMarkerCenter(marker);
-      const canShowMaps = Boolean(center);
-      if (!canShowMaps && !isHouseholdOwner) return undefined;
-      return (
-        <div className="flex flex-wrap items-center gap-1">
-          {center ? renderOpenInMapsButton(center[0], center[1], true) : null}
-          {isHouseholdOwner ? (
-            <button
-              type="button"
-              className="inline-flex h-6 items-center gap-1 rounded-md border border-slate-300 bg-white/95 px-2 text-[11px] font-medium text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-900/95 dark:text-slate-200 dark:hover:bg-slate-800"
-              onClick={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                openMarkerEdit(marker);
-              }}
-            >
-              <Pencil className="h-3 w-3" />
-              {t("home.bucketEdit")}
-            </button>
-          ) : null}
-        </div>
-      );
-    },
-    [isHouseholdOwner, openMarkerEdit, renderOpenInMapsButton, t]
-  );
   const renderManualHouseholdMarkerPopup = useCallback(
     (marker: HouseholdMapMarker) => {
       const center = getHouseholdMarkerCenter(marker);
@@ -3988,25 +4128,32 @@ export const HomePage = ({
               onClick={() => openMarkerEdit(marker)}
             >
               <Pencil className="mr-1 h-3.5 w-3.5" />
-              {t("home.bucketEdit")}
+              {t("home.householdMapMarkerEditAction")}
             </Button>
           ) : null}
           {center ? renderOpenInMapsButton(center[0], center[1]) : null}
-          {markerHistoryNode(marker)}
           </div>
         </Popup>
       );
     },
-    [isHouseholdOwner, markerHistoryNode, openMarkerEdit, renderOpenInMapsButton, t]
+    [isHouseholdOwner, openMarkerEdit, renderOpenInMapsButton, t]
+  );
+  const editingMarkerMeta = useMemo(
+    () =>
+      editingMarkerDraft
+        ? household.household_map_markers.find((marker) => marker.id === editingMarkerDraft.id) ?? null
+        : null,
+    [editingMarkerDraft, household.household_map_markers]
   );
   const onMeasuredWithGeoman = useCallback(
-    (result: { mode: MapMeasureMode; distanceMeters?: number; areaSqm?: number }) => {
+    (result: MapMeasureResult) => {
       if (result.mode === "distance" && typeof result.distanceMeters === "number") {
         const value =
           result.distanceMeters >= 1000
             ? `${(result.distanceMeters / 1000).toFixed(2)} km`
             : `${Math.round(result.distanceMeters)} m`;
         setMapMeasureResult(t("home.householdMapMeasureResultDistance", { value }));
+        setMapMeasureResultAnchor(result.anchor ?? null);
         return;
       }
       if (result.mode === "area" && typeof result.areaSqm === "number") {
@@ -4015,14 +4162,36 @@ export const HomePage = ({
             ? `${(result.areaSqm / 1000000).toFixed(2)} km²`
             : `${Math.round(result.areaSqm)} m²`;
         setMapMeasureResult(t("home.householdMapMeasureResultArea", { value }));
+        setMapMeasureResultAnchor(result.anchor ?? null);
       }
     },
     [t]
   );
+  const dismissMapPanelsOnMapClick = useCallback(() => {
+    if (mapRoutePickTargetActive) return;
+    setMapReachabilityPanelOpen(false);
+    setMapRoutePanelOpen(false);
+    setMapMeasurePanelOpen(false);
+  }, [mapRoutePickTargetActive]);
   const renderHouseholdMapSurface = useCallback(
     (containerClassName: string, isFullscreen: boolean) => (
       <div className={containerClassName}>
         <div className={`absolute right-2 z-[1000] flex flex-col gap-2 ${isFullscreen ? "bottom-[7.5rem]" : "bottom-2"}`}>
+          {isFullscreen ? (
+            <Button
+              type="button"
+              size="sm"
+              variant={mapMeasurePanelOpen || mapMeasureMode ? "default" : "outline"}
+              className="h-8 w-8 border-slate-200/80 bg-white/95 p-0 backdrop-blur dark:border-slate-600/80 dark:bg-slate-900/95"
+              onClick={() => {
+                setMapMeasurePanelOpen((current) => !current);
+              }}
+              aria-label={t("home.householdMapMeasureLabel")}
+              title={t("home.householdMapMeasureLabel")}
+            >
+              <Ruler className="h-4 w-4" />
+            </Button>
+          ) : null}
           <Button
             type="button"
             size="sm"
@@ -4159,24 +4328,41 @@ export const HomePage = ({
                   </span>
                 </DropdownMenuCheckboxItem>
               ))}
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel>{t("home.householdMapWeatherLayers")}</DropdownMenuLabel>
+              <DropdownMenuCheckboxItem
+                checked={mapWeatherLayers.radar}
+                onCheckedChange={(checked) =>
+                  setMapWeatherLayers((current) => ({ ...current, radar: Boolean(checked) }))
+                }
+              >
+                {t("home.householdMapWeatherLayerRadar")}
+              </DropdownMenuCheckboxItem>
+              <DropdownMenuCheckboxItem
+                checked={mapWeatherLayers.warnings}
+                onCheckedChange={(checked) =>
+                  setMapWeatherLayers((current) => ({ ...current, warnings: Boolean(checked) }))
+                }
+              >
+                {t("home.householdMapWeatherLayerWarnings")}
+              </DropdownMenuCheckboxItem>
+              <DropdownMenuCheckboxItem
+                checked={mapWeatherLayers.lightning}
+                onCheckedChange={(checked) =>
+                  setMapWeatherLayers((current) => ({ ...current, lightning: Boolean(checked) }))
+                }
+              >
+                {t("home.householdMapWeatherLayerLightning")}
+              </DropdownMenuCheckboxItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel className="text-[11px] font-normal text-slate-500 dark:text-slate-400">
+                {t("home.householdMapWeatherLayersHint")}
+              </DropdownMenuLabel>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
         {isFullscreen ? (
           <div className="absolute bottom-[7.5rem] left-2 z-[1000] flex flex-col gap-2">
-            <Button
-              type="button"
-              size="sm"
-              variant={mapWeatherLayersOpen ? "default" : "outline"}
-              className="h-8 w-8 border-slate-200/80 bg-white/95 p-0 backdrop-blur dark:border-slate-600/80 dark:bg-slate-900/95"
-              onClick={() => {
-                setMapWeatherLayersOpen((current) => !current);
-              }}
-              aria-label={t("home.householdMapWeatherLayers")}
-              title={t("home.householdMapWeatherLayers")}
-            >
-              <CloudRain className="h-4 w-4" />
-            </Button>
             <Button
               type="button"
               size="sm"
@@ -4203,51 +4389,10 @@ export const HomePage = ({
             >
               <Route className="h-4 w-4" />
             </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant={mapMeasureMode === "distance" ? "default" : "outline"}
-              className="h-8 w-8 border-slate-200/80 bg-white/95 p-0 backdrop-blur dark:border-slate-600/80 dark:bg-slate-900/95"
-              onClick={() => {
-                setMapMeasureResult(null);
-                setMapMeasureMode((current) => (current === "distance" ? null : "distance"));
-              }}
-              aria-label={t("home.householdMapMeasureDistance")}
-              title={t("home.householdMapMeasureDistance")}
-            >
-              <Ruler className="h-4 w-4" />
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant={mapMeasureMode === "area" ? "default" : "outline"}
-              className="h-8 w-8 border-slate-200/80 bg-white/95 p-0 backdrop-blur dark:border-slate-600/80 dark:bg-slate-900/95"
-              onClick={() => {
-                setMapMeasureResult(null);
-                setMapMeasureMode((current) => (current === "area" ? null : "area"));
-              }}
-              aria-label={t("home.householdMapMeasureArea")}
-              title={t("home.householdMapMeasureArea")}
-            >
-              <CircleDot className="h-4 w-4" />
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              className="h-8 w-8 border-slate-200/80 bg-white/95 p-0 backdrop-blur dark:border-slate-600/80 dark:bg-slate-900/95"
-              onClick={() => {
-                setMapMeasureMode(null);
-                setMapMeasureResult(null);
-              }}
-              aria-label={t("home.householdMapMeasureClear")}
-              title={t("home.householdMapMeasureClear")}
-            >
-              <X className="h-4 w-4" />
-            </Button>
           </div>
         ) : null}
         <MapContainer
+          key={`household-map-${isFullscreen ? "fullscreen" : "inline"}-${mapRenderVersion}`}
           className="domora-map-surface"
           center={mapCenter}
           zoom={mapZoom}
@@ -4256,6 +4401,7 @@ export const HomePage = ({
         >
           <GeomanEditorBridge
             enabled={isHouseholdOwner && isFullscreen}
+            suppressCreate={Boolean(mapMeasureMode)}
             userId={userId}
             defaultTitle={t("home.householdMapMarkerPending")}
             onMarkersChange={onGeomanMarkersChanged}
@@ -4282,6 +4428,10 @@ export const HomePage = ({
               setMapRouteTarget([lat, lon]);
               setMapRoutePickTargetActive(false);
             }}
+          />
+          <MapOverlayDismissBridge
+            enabled={isFullscreen}
+            onDismiss={dismissMapPanelsOnMapClick}
           />
           <RouteLayerBridge geojson={mapRouteGeoJson} color={mapRouteColor} />
           <RouteFitBoundsBridge geojson={mapRouteGeoJson} requestToken={mapRouteFitRequestToken} />
@@ -4320,7 +4470,7 @@ export const HomePage = ({
             detectRetina
           />
           {mapHasPin ? (
-            <Marker position={mapCenter} pmIgnore>
+            <Marker position={mapCenter} icon={getManualMarkerIcon("home")} pmIgnore>
               <LeafletTooltip interactive>
                 <div
                   className="min-w-[180px] rounded-md border border-white/30 bg-white/92 p-2 text-slate-900 shadow-md dark:border-slate-600/70 dark:bg-slate-900/90 dark:text-slate-100"
@@ -4422,7 +4572,6 @@ export const HomePage = ({
                     }
                   }}
                 >
-                  {renderHouseholdMarkerTooltip(marker, renderMarkerTooltipAction(marker))}
                   {marker.poi_ref ? (
                     <Popup>
                       <div className="space-y-2">
@@ -4480,7 +4629,6 @@ export const HomePage = ({
                             <ReactMarkdown remarkPlugins={[remarkGfm]}>{marker.description}</ReactMarkdown>
                           </div>
                         ) : null}
-                        {markerHistoryNode(marker)}
                         {renderOpenInMapsButton(marker.lat, marker.lon)}
                       </div>
                     </Popup>
@@ -4504,7 +4652,6 @@ export const HomePage = ({
                     }
                   }}
                 >
-                  {renderHouseholdMarkerTooltip(marker, renderMarkerTooltipAction(marker))}
                   {renderManualHouseholdMarkerPopup(marker)}
                 </Polyline>
               );
@@ -4524,7 +4671,6 @@ export const HomePage = ({
                     }
                   }}
                 >
-                  {renderHouseholdMarkerTooltip(marker, renderMarkerTooltipAction(marker))}
                   {renderManualHouseholdMarkerPopup(marker)}
                 </Circle>
               );
@@ -4545,7 +4691,6 @@ export const HomePage = ({
                   }
                 }}
               >
-                {renderHouseholdMarkerTooltip(marker, renderMarkerTooltipAction(marker))}
                 {renderManualHouseholdMarkerPopup(marker)}
               </Rectangle>
             );
@@ -4627,10 +4772,28 @@ export const HomePage = ({
               </Popup>
             </Marker>
           ))}
+          {isFullscreen && mapMeasureResult && mapMeasureResultAnchor ? (
+            <Marker
+              position={mapMeasureResultAnchor}
+              icon={mapMeasureAnchorIcon}
+              interactive={false}
+              pmIgnore
+            >
+              <LeafletTooltip
+                permanent
+                direction="top"
+                offset={[0, -10]}
+                opacity={1}
+                className="domora-measure-result-tooltip"
+              >
+                {mapMeasureResult}
+              </LeafletTooltip>
+            </Marker>
+          ) : null}
         </MapContainer>
         {isFullscreen ? (
           <div className="absolute bottom-2 left-1/2 z-[1000] w-[min(560px,calc(100%-1rem))] -translate-x-1/2">
-            <div className="rounded-xl border border-slate-200/85 bg-white/95 p-2 shadow-sm backdrop-blur dark:border-slate-600/80 dark:bg-slate-900/95">
+            <div className="rounded-xl z-100 border border-slate-200/85 bg-white/95 p-2 shadow-sm backdrop-blur dark:border-slate-600/80 dark:bg-slate-900/95">
               <div className="flex items-center gap-2">
                 <Search className="h-4 w-4 shrink-0 text-slate-500 dark:text-slate-300" />
                 <Input
@@ -4754,42 +4917,51 @@ export const HomePage = ({
             </div>
           </div>
         ) : null}
-        {isFullscreen && mapWeatherLayersOpen ? (
-          <div className="absolute bottom-[11rem] left-2 z-[1000] w-[min(320px,calc(100%-1rem))] rounded-xl border border-slate-200/85 bg-white/95 p-2 shadow-sm backdrop-blur dark:border-slate-600/80 dark:bg-slate-900/95">
-            <div className="space-y-2">
-              <p className="text-xs font-semibold text-slate-700 dark:text-slate-200">
-                {t("home.householdMapWeatherLayers")}
-              </p>
-              <label className="flex items-center gap-2 text-xs text-slate-700 dark:text-slate-200">
-                <Checkbox
-                  checked={mapWeatherLayers.radar}
-                  onCheckedChange={(checked) =>
-                    setMapWeatherLayers((current) => ({ ...current, radar: Boolean(checked) }))
-                  }
-                />
-                <span>{t("home.householdMapWeatherLayerRadar")}</span>
-              </label>
-              <label className="flex items-center gap-2 text-xs text-slate-700 dark:text-slate-200">
-                <Checkbox
-                  checked={mapWeatherLayers.warnings}
-                  onCheckedChange={(checked) =>
-                    setMapWeatherLayers((current) => ({ ...current, warnings: Boolean(checked) }))
-                  }
-                />
-                <span>{t("home.householdMapWeatherLayerWarnings")}</span>
-              </label>
-              <label className="flex items-center gap-2 text-xs text-slate-700 dark:text-slate-200">
-                <Checkbox
-                  checked={mapWeatherLayers.lightning}
-                  onCheckedChange={(checked) =>
-                    setMapWeatherLayers((current) => ({ ...current, lightning: Boolean(checked) }))
-                  }
-                />
-                <span>{t("home.householdMapWeatherLayerLightning")}</span>
-              </label>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                {t("home.householdMapWeatherLayersHint")}
-              </p>
+        {isFullscreen && mapMeasurePanelOpen ? (
+          <div className="absolute bottom-[11rem] right-2 z-[1000] w-[min(280px,calc(100%-1rem))] rounded-xl border border-slate-200/85 bg-white/95 p-2 shadow-sm backdrop-blur dark:border-slate-600/80 dark:bg-slate-900/95">
+            <div className="grid grid-cols-1 gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant={mapMeasureMode === "distance" ? "default" : "outline"}
+                className="h-8 justify-start"
+                onClick={() => {
+                  setMapMeasureResult(null);
+                  setMapMeasureResultAnchor(null);
+                  setMapMeasureMode((current) => (current === "distance" ? null : "distance"));
+                }}
+              >
+                <Ruler className="mr-2 h-4 w-4" />
+                {t("home.householdMapMeasureDistance")}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant={mapMeasureMode === "area" ? "default" : "outline"}
+                className="h-8 justify-start"
+                onClick={() => {
+                  setMapMeasureResult(null);
+                  setMapMeasureResultAnchor(null);
+                  setMapMeasureMode((current) => (current === "area" ? null : "area"));
+                }}
+              >
+                <CircleDot className="mr-2 h-4 w-4" />
+                {t("home.householdMapMeasureArea")}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-8 justify-start"
+                onClick={() => {
+                  setMapMeasureMode(null);
+                  setMapMeasureResult(null);
+                  setMapMeasureResultAnchor(null);
+                }}
+              >
+                <X className="mr-2 h-4 w-4" />
+                {t("home.householdMapMeasureClear")}
+              </Button>
             </div>
           </div>
         ) : null}
@@ -4891,11 +5063,6 @@ export const HomePage = ({
             </div>
           </div>
         ) : null}
-        {isFullscreen && mapMeasureResult ? (
-          <div className="absolute bottom-[8.75rem] left-2 z-[1000] rounded-md border border-slate-200/80 bg-white/95 px-2.5 py-1.5 text-xs text-slate-700 shadow-sm backdrop-blur dark:border-slate-600/80 dark:bg-slate-900/95 dark:text-slate-200">
-            {mapMeasureResult}
-          </div>
-        ) : null}
       </div>
     ),
     [
@@ -4915,6 +5082,8 @@ export const HomePage = ({
       manualMarkerFilterMode,
       mapMeasureMode,
       mapMeasureResult,
+      mapMeasureResultAnchor,
+      mapRenderVersion,
       mapRouteColor,
       mapRouteError,
       mapRouteFitRequestToken,
@@ -4927,7 +5096,8 @@ export const HomePage = ({
       mapRoutePickTargetActive,
       mapRouteTarget,
       mapWeatherLayers,
-      mapWeatherLayersOpen,
+      mapMeasurePanelOpen,
+      dismissMapPanelsOnMapClick,
       mapReachabilityColor,
       mapReachabilityError,
       mapReachabilityFitRequestToken,
@@ -4943,8 +5113,6 @@ export const HomePage = ({
       mapSearchResults,
       mapSearchZoomRequest,
       memberOptionsForMarkerFilter,
-      markerHistoryNode,
-      renderMarkerTooltipAction,
       renderOpenInMapsButton,
       mapMemberLabel,
       myLocationCenter,
@@ -4959,6 +5127,8 @@ export const HomePage = ({
       onMeasuredWithGeoman,
       clearReachability,
       clearRoutePlanning,
+      cancelMapDeletion,
+      confirmMapDeletion,
       applyMapSearchResult,
       onSaveExistingPoiOverride,
       onSavePoiOverride,
@@ -8506,6 +8676,53 @@ export const HomePage = ({
       ) : null}
 
       <Dialog
+        open={mapDeleteConfirm !== null}
+        onOpenChange={(open) => {
+          if (open) return;
+          cancelMapDeletion();
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{t("home.householdMapDeleteConfirmTitle")}</DialogTitle>
+            <DialogDescription>
+              {mapDeleteConfirm && mapDeleteConfirm.removedMarkers.length === 1
+                ? t("home.householdMapDeleteConfirmDescriptionOne")
+                : t("home.householdMapDeleteConfirmDescriptionMany", {
+                    count: mapDeleteConfirm?.removedMarkers.length ?? 0
+                  })}
+            </DialogDescription>
+          </DialogHeader>
+          {mapDeleteConfirm?.removedMarkers?.length ? (
+            <div className="max-h-44 space-y-1 overflow-auto rounded-md border border-slate-200/80 bg-slate-50/70 p-2 text-xs dark:border-slate-700/80 dark:bg-slate-900/60">
+              {mapDeleteConfirm.removedMarkers.slice(0, 8).map((marker) => (
+                <p key={`remove-preview-${marker.id}`} className="truncate">
+                  {getMarkerEmoji(marker.icon)} {marker.title}
+                </p>
+              ))}
+              {mapDeleteConfirm.removedMarkers.length > 8 ? (
+                <p className="text-slate-500 dark:text-slate-400">
+                  +{mapDeleteConfirm.removedMarkers.length - 8}
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="outline" onClick={cancelMapDeletion}>
+              {t("common.cancel")}
+            </Button>
+            <Button
+              type="button"
+              className="bg-rose-600 text-white hover:bg-rose-700 dark:bg-rose-500 dark:hover:bg-rose-600"
+              onClick={confirmMapDeletion}
+            >
+              {t("home.householdMapDeleteConfirmAction")}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
         open={editingMarkerDraft !== null}
         onOpenChange={(open) => {
           if (!open && !editingMarkerSaving) {
@@ -8516,9 +8733,9 @@ export const HomePage = ({
       >
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>{t("home.bucketEdit")}</DialogTitle>
+            <DialogTitle>{t("home.householdMapMarkerEditTitle")}</DialogTitle>
             <DialogDescription>
-              {t("home.householdMapMarkersTitle")}
+              {t("home.householdMapMarkerEditDescription")}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
@@ -8592,6 +8809,7 @@ export const HomePage = ({
                 disabled={editingMarkerSaving}
               />
             </div>
+            {editingMarkerMeta ? markerHistoryNode(editingMarkerMeta) : null}
             {editingMarkerError ? (
               <p className="text-xs text-rose-600 dark:text-rose-400">
                 {editingMarkerError}

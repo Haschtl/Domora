@@ -149,9 +149,15 @@ importers:
       i18next:
         specifier: ^25.8.13
         version: 25.8.13(typescript@5.9.3)
+      iso8601-js-period:
+        specifier: ^0.2.1
+        version: 0.2.1
       leaflet:
         specifier: ^1.9.4
         version: 1.9.4
+      leaflet-timedimension:
+        specifier: ^1.1.1
+        version: 1.1.1
       leaflet.locatecontrol:
         specifier: ^0.88.0
         version: 0.88.0
@@ -5630,6 +5636,9 @@ packages:
   isexe@2.0.0:
     resolution: {integrity: sha512-RHxMLp9lnKHGHRng9QFhRCMbYAcVpn69smSGcq3f36xjgVVWThj4qqLbTLlq7Ssj8B+fIQ1EuCEGI2lKsyQeIw==}
 
+  iso8601-js-period@0.2.1:
+    resolution: {integrity: sha512-iDyz2TQFBd5WhCZjruOwHj01JkQGu7YbVLCVdpA7lCGEcBzE3ffCPAhLh/M8TAp//kCixPpYN4XU54WHCxvD2Q==}
+
   isomorphic.js@0.2.5:
     resolution: {integrity: sha512-PIeMbHqMt4DnUP3MA/Flc0HElYjMXArsw1qwJZcm9sqR8mq3l8NYizFMty0pWwE/tzIGH3EKK5+jes5mAr85yw==}
 
@@ -5740,6 +5749,9 @@ packages:
 
   layout-base@1.0.2:
     resolution: {integrity: sha512-8h2oVEZNktL4BH2JCOI90iD1yXwL6iNW7KcCKT2QZgQJR2vbqDsldCTPRU9NifTCqHZci57XvQQ15YTu+sTYPg==}
+
+  leaflet-timedimension@1.1.1:
+    resolution: {integrity: sha512-ejXldN94veRsWka1vpC+4rbH+2+3d3ztn2xYx4jcXtjYDrKC/sNnoqCmyH2UEYIy51PI2851aI2k8uGdOEbhlw==}
 
   leaflet.locatecontrol@0.88.0:
     resolution: {integrity: sha512-9c+06VDCWyJIFWpVTS33RpcifXpNIRLQ5TJkK6bGUPoftEhA0cGGIAwV8iYBAhYPlr+aEsL2ZLMpQZBDSOUaTQ==}
@@ -14373,6 +14385,8 @@ snapshots:
 
   isexe@2.0.0: {}
 
+  iso8601-js-period@0.2.1: {}
+
   isomorphic.js@0.2.5: {}
 
   jackspeak@4.2.3:
@@ -14450,6 +14464,11 @@ snapshots:
   kleur@4.1.5: {}
 
   layout-base@1.0.2: {}
+
+  leaflet-timedimension@1.1.1:
+    dependencies:
+      iso8601-js-period: 0.2.1
+      leaflet: 1.9.4
 
   leaflet.locatecontrol@0.88.0: {}
 

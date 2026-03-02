@@ -264,6 +264,14 @@ input[type="number"] {
   z-index: 950;
 }
 
+.domora-map-surface .leaflet-bottom {
+  z-index: 1000;
+}
+
+.domora-map-surface .leaflet-control-attribution {
+  z-index: 90;
+}
+
 .domora-map-surface .leaflet-bar {
   border: 1px solid rgb(226 232 240 / 0.9);
   border-radius: var(--radius-xl);
@@ -416,43 +424,105 @@ input[type="number"] {
   overflow: hidden;
   box-shadow: 0 2px 8px rgb(15 23 42 / 0.14);
   background: rgb(255 255 255 / 0.95);
+  width: min(56rem, calc(100vw - 2.5rem));
+  max-width: calc(100vw - 2.5rem);
+}
+
+.domora-map-surface .leaflet-bottom.leaflet-left .leaflet-bar-timecontrol {
+  margin-bottom: 3.9rem;
+}
+
+.domora-map-surface .leaflet-bar-timecontrol.domora-timecontrol-custom {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+}
+
+.domora-map-surface .leaflet-bar-timecontrol.domora-timecontrol-custom .domora-time-left,
+.domora-map-surface .leaflet-bar-timecontrol.domora-timecontrol-custom .domora-time-right {
+  display: flex;
+  align-items: stretch;
+  flex: 0 0 auto;
+}
+
+.domora-map-surface .leaflet-bar-timecontrol.domora-timecontrol-custom .domora-time-center {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.06rem;
+  padding: 0.18rem 0.4rem 0.14rem;
+  border-left: 1px solid rgb(226 232 240 / 0.9);
+  border-right: 1px solid rgb(226 232 240 / 0.9);
 }
 
 .domora-map-surface .leaflet-bar-timecontrol .leaflet-control-timecontrol {
-  height: 2rem;
-  min-height: 2rem;
-  line-height: 2rem;
   border: 0;
-  border-right: 1px solid rgb(226 232 240 / 0.9);
   color: rgb(15 23 42 / 0.92);
   background: rgb(255 255 255 / 0.95);
   font-size: 0.75rem;
   font-weight: 600;
 }
 
-.domora-map-surface .leaflet-bar-timecontrol .leaflet-control-timecontrol:last-child {
-  border-right: 0;
+.leaflet-bar-timecontrol .leaflet-control-timecontrol {
+  height:auto !important;
+  line-height:normal !important;
 }
 
-.domora-map-surface .leaflet-bar-timecontrol a.leaflet-control-timecontrol {
-  width: 2rem;
-  min-width: 2rem;
+.domora-map-surface .leaflet-bar-timecontrol.domora-timecontrol-custom a.leaflet-control-timecontrol {
+  width: 2.05rem;
+  min-width: 2.05rem;
+  height: 1.72rem;
+  line-height: 1.72rem;
   padding: 0;
   text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  vertical-align: middle;
 }
 
-.domora-map-surface .leaflet-bar-timecontrol a.timecontrol-date {
-  width: auto;
-  min-width: 7.5rem;
-  padding: 0 0.55rem;
+.domora-map-surface .leaflet-bar-timecontrol.domora-timecontrol-custom .domora-timecontrol-speedcycle {
+  width: 2.85rem;
+  min-width: 2.85rem;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.66rem;
 }
 
-.domora-map-surface .leaflet-bar-timecontrol .timecontrol-slider .slider {
+.domora-map-surface .leaflet-bar-timecontrol.domora-timecontrol-custom .domora-time-center a.timecontrol-date {
+  width: 100%;
+  min-width: 0;
+  height: auto;
+  min-height: 0.86rem;
+  line-height: 0.86rem;
+  padding: 0 0.2rem;
+  justify-content: flex-start;
+  text-align: left;
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0;
+  background: transparent;
+}
+
+.domora-map-surface .leaflet-bar-timecontrol.domora-timecontrol-custom .domora-time-center .timecontrol-dateslider {
+  width: 100%;
+}
+
+.domora-map-surface .leaflet-bar-timecontrol.domora-timecontrol-custom .domora-time-center .timecontrol-slider .slider {
+  width: 100%;
+  margin: 0;
+  height: 0.58rem;
   border-color: rgb(203 213 225 / 0.9);
   background: rgb(241 245 249 / 0.95);
 }
 
 .domora-map-surface .leaflet-bar-timecontrol .timecontrol-slider .knob {
+  width: 7px;
+  height: 15px;
+  margin-top: -4px;
+  margin-left: -3px;
   border-color: rgb(15 118 110 / 0.4);
   background: rgb(20 184 166 / 0.2);
 }
@@ -463,17 +533,24 @@ input[type="number"] {
 .domora-map-surface .leaflet-bar-timecontrol .timecontrol-backward::before,
 .domora-map-surface .leaflet-bar-timecontrol .timecontrol-loop::before {
   font-family: inherit !important;
-  font-size: 0.8rem;
+  font-size: 0.72rem;
   font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  line-height: 1;
 }
 
 .domora-map-surface .leaflet-bar-timecontrol .timecontrol-play::before {
   content: "▶";
+  position: static;
 }
 
 .domora-map-surface .leaflet-bar-timecontrol .timecontrol-play.pause::before {
   content: "❚❚";
-  font-size: 0.62rem;
+  font-size: 0.54rem;
 }
 
 .domora-map-surface .leaflet-bar-timecontrol .timecontrol-stop::before {
@@ -505,14 +582,26 @@ input[type="number"] {
 }
 
 .dark .domora-map-surface .leaflet-bar-timecontrol .leaflet-control-timecontrol {
-  border-right-color: rgb(51 65 85 / 0.85);
   background: rgb(15 23 42 / 0.94);
   color: rgb(226 232 240 / 0.96);
 }
 
+.dark .domora-map-surface .leaflet-bar-timecontrol.domora-timecontrol-custom .domora-time-center {
+  border-left-color: rgb(51 65 85 / 0.85);
+  border-right-color: rgb(51 65 85 / 0.85);
+}
+
 .dark .domora-map-surface .leaflet-bar-timecontrol .timecontrol-slider .slider {
-  border-color: rgb(71 85 105 / 0.9);
-  background: rgb(30 41 59 / 0.95);
+  border-color: rgb(71 85 105 / 0.9) !important;
+  background: rgb(30 41 59 / 0.95) !important; 
+}
+
+.dark .domora-map-surface .leaflet-bar-timecontrol .timecontrol-slider .slider.has-limits {
+  background: rgb(15 23 42 / 0.96);
+}
+
+.dark .domora-map-surface .leaflet-bar-timecontrol .timecontrol-slider .slider.has-limits .range {
+  background: rgb(30 41 59 / 0.98);
 }
 
 .dark .domora-map-surface .leaflet-bar-timecontrol .timecontrol-slider .knob {
@@ -524,6 +613,50 @@ input[type="number"] {
 .dark .domora-map-surface .leaflet-bar-timecontrol .leaflet-control-timecontrol:focus {
   background: rgb(30 41 59 / 0.98);
   color: rgb(45 212 191 / 0.98);
+}
+
+.domora-map-surface .domora-measure-anchor-icon {
+  background: transparent;
+  border: 0;
+}
+
+.domora-map-surface .leaflet-tooltip.domora-measure-result-tooltip {
+  border-radius: 0.6rem;
+  border: 1px solid rgb(226 232 240 / 0.9);
+  background: rgb(255 255 255 / 0.95);
+  color: rgb(51 65 85 / 0.98);
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1.15;
+  box-shadow: 0 2px 10px rgb(15 23 42 / 0.16);
+  padding: 0.32rem 0.5rem;
+}
+
+.domora-map-surface .leaflet-tooltip-top.domora-measure-result-tooltip:before {
+  border-top-color: rgb(226 232 240 / 0.9);
+}
+
+.dark .domora-map-surface .leaflet-tooltip.domora-measure-result-tooltip {
+  border-color: rgb(71 85 105 / 0.9);
+  background: rgb(15 23 42 / 0.96);
+  color: rgb(226 232 240 / 0.98);
+}
+
+.dark .domora-map-surface .leaflet-tooltip-top.domora-measure-result-tooltip:before {
+  border-top-color: rgb(71 85 105 / 0.9);
+}
+
+@media (max-width: 640px) {
+  .domora-map-surface .leaflet-bar-timecontrol {
+    width: calc(100vw - 1.35rem);
+    max-width: calc(100vw - 1.35rem);
+  }
+
+  .domora-map-surface .leaflet-bar-timecontrol.domora-timecontrol-custom .domora-timecontrol-speedcycle {
+    width: 2.5rem;
+    min-width: 2.5rem;
+    font-size: 0.64rem;
+  }
 }
 
 .excalidraw-embed canvas {

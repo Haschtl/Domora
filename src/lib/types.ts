@@ -14,7 +14,14 @@ export type HouseholdMapMarkerIcon =
   | "hospital"
   | "park"
   | "work"
-  | "star";
+  | "star"
+  | "school"
+  | "cafe"
+  | "bar"
+  | "pharmacy"
+  | "gym"
+  | "parking"
+  | "transit";
 
 export interface HouseholdMapMarkerPoint {
   id: string;
