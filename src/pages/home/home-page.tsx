@@ -45,7 +45,6 @@ import {
   Map as MapIcon,
   Mountain,
   LocateFixed,
-  Maximize2,
   Moon,
   Pencil,
   Receipt,
@@ -174,7 +173,6 @@ import {
 } from "../../features/tasks-calendar";
 import {
   HouseholdCalendarWidget,
-  HouseholdMapWidget,
   HouseholdWhiteboardWidget,
 } from "../../features/components/widgets";
 import { FileExplorer } from "../../features/components/file-explorer";
@@ -259,6 +257,7 @@ import {
   GeomanMeasureBridge,
   LocateControlBridge,
   MapClosePopupBridge,
+  MapInlineFullscreenBridge,
   MapOverlayDismissBridge,
   MapSearchZoomBridge,
   MapZoomBridge,
@@ -1773,6 +1772,7 @@ export const HomePage = ({
   );
   const [editingMarkerSaving, setEditingMarkerSaving] = useState(false);
   const [mapStyle, setMapStyle] = useState<MapStyleId>("street");
+  const [isMapSettingsHydrated, setIsMapSettingsHydrated] = useState(false);
   const [mapWeatherLayers, setMapWeatherLayers] =
     useState<MapWeatherLayerToggles>({
       radar: true,
@@ -1891,8 +1891,22 @@ export const HomePage = ({
   const lastSavedWhiteboardRef = useRef(whiteboardSceneJson);
 
   useEffect(() => {
+    setIsMapSettingsHydrated(false);
     const persisted = readPersistedMapSettings(household.id);
-    if (!persisted) return;
+    if (!persisted) {
+      setIsMapSettingsHydrated(true);
+      return;
+    }
+
+    if (
+      persisted.mapStyle === "street" ||
+      persisted.mapStyle === "nature" ||
+      persisted.mapStyle === "satellite" ||
+      persisted.mapStyle === "light" ||
+      persisted.mapStyle === "dark"
+    ) {
+      setMapStyle(persisted.mapStyle);
+    }
 
     if (
       persisted.mapTravelMode === "walk" ||
@@ -1960,10 +1974,14 @@ export const HomePage = ({
           typeof persistedPoi.fuel === "boolean" ? persistedPoi.fuel : false,
       });
     }
+
+    setIsMapSettingsHydrated(true);
   }, [household.id]);
 
   useEffect(() => {
+    if (!isMapSettingsHydrated) return;
     writePersistedMapSettings(household.id, {
+      mapStyle,
       mapTravelMode,
       mapWeatherLayers,
       mapMobilityLayers,
@@ -1973,9 +1991,11 @@ export const HomePage = ({
     });
   }, [
     household.id,
+    isMapSettingsHydrated,
     manualMarkerFilterMemberId,
     manualMarkerFilterMode,
     mapMobilityLayers,
+    mapStyle,
     mapTravelMode,
     mapWeatherLayers,
     poiCategoriesEnabled,
@@ -2417,7 +2437,7 @@ export const HomePage = ({
       mapMobilityLayers.transitLive ? mapCenter[0].toFixed(3) : null,
       mapMobilityLayers.transitLive ? mapCenter[1].toFixed(3) : null,
     ],
-    enabled: isMapFullscreenOpen && mapMobilityLayers.transitLive,
+    enabled: mapMobilityLayers.transitLive,
     staleTime: Math.floor(TRANSIT_LAYER_REFRESH_MS * 0.5),
     refetchInterval: TRANSIT_LAYER_REFRESH_MS,
     queryFn: async () => {
@@ -2603,10 +2623,7 @@ export const HomePage = ({
       mapMobilityLayers.trafficLive,
       hasGermanMapCenter,
     ],
-    enabled:
-      isMapFullscreenOpen &&
-      mapMobilityLayers.trafficLive &&
-      hasGermanMapCenter,
+    enabled: mapMobilityLayers.trafficLive && hasGermanMapCenter,
     staleTime: Math.floor(TRAFFIC_LAYER_REFRESH_MS * 0.5),
     refetchInterval: TRAFFIC_LAYER_REFRESH_MS,
     queryFn: async () => {
@@ -4136,6 +4153,74 @@ export const HomePage = ({
   const renderHouseholdMapSurface = useCallback(
     (containerClassName: string, isFullscreen: boolean) => (
       <div className={containerClassName}>
+        <div className="absolute left-2 top-2 z-[1000] flex max-w-[min(320px,calc(100%-1rem))] flex-col items-start gap-1.5">
+            {myActiveLiveLocation ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-8 w-8 border-slate-200/85 bg-white/95 p-0 shadow-sm backdrop-blur dark:border-slate-600/80 dark:bg-slate-900/95"
+                onClick={() => {
+                  void stopLiveLocationShareNow();
+                }}
+                disabled={liveShareStatus === "stopping"}
+                aria-label={t("home.householdMapLiveShareStop")}
+                title={t("home.householdMapLiveShareStop")}
+              >
+                {liveShareStatus === "stopping" ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Satellite className="h-4 w-4" />
+                )}
+              </Button>
+            ) : (
+              <Button
+                type="button"
+                size="sm"
+                className="h-8 w-8 border-slate-200/85 bg-white/95 p-0 shadow-sm backdrop-blur dark:border-slate-600/80 dark:bg-slate-900/95"
+                onClick={() => {
+                  setIsLiveShareDialogOpen(true);
+                }}
+                disabled={liveShareStatus === "starting"}
+                aria-label={t("home.householdMapLiveShareStart")}
+                title={t("home.householdMapLiveShareStart")}
+              >
+                {liveShareStatus === "starting" ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Satellite className="h-4 w-4" />
+                )}
+              </Button>
+            )}
+            {myActiveLiveLocation ? (
+              <p className="rounded-md border border-slate-200/85 bg-white/95 px-2 py-1 text-[11px] text-slate-500 shadow-sm backdrop-blur dark:border-slate-600/80 dark:bg-slate-900/95 dark:text-slate-400">
+                {t("home.householdMapLiveShareActiveUntil", {
+                  at: formatDateTime(
+                    myActiveLiveLocation.expires_at,
+                    language,
+                    myActiveLiveLocation.expires_at,
+                  ),
+                })}
+              </p>
+            ) : null}
+            {activeLiveLocations.length > 0 ? (
+              <div className="flex flex-wrap gap-1">
+                {activeLiveLocations.map((entry) => (
+                  <span
+                    key={`live-active-chip-${entry.user_id}`}
+                    className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300"
+                  >
+                    {mapMemberLabel(entry.user_id)}
+                  </span>
+                ))}
+              </div>
+            ) : null}
+            {liveShareError ? (
+              <p className="rounded-md border border-rose-200/85 bg-white/95 px-2 py-1 text-[11px] text-rose-600 shadow-sm backdrop-blur dark:border-rose-900/80 dark:bg-slate-900/95 dark:text-rose-400">
+                {liveShareError}
+              </p>
+            ) : null}
+        </div>
         <div
           className={`absolute right-2 left-auto z-[1000] flex flex-col gap-2 ${isFullscreen ? "bottom-[7.5rem]" : "bottom-2"}`}
         >
@@ -4172,262 +4257,270 @@ export const HomePage = ({
               <Ruler className="h-4 w-4" />
             </Button>
           ) : null}
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            className="h-8 w-8 border-slate-200/80 bg-white/95 p-0 backdrop-blur dark:border-slate-600/80 dark:bg-slate-900/95"
-            onClick={() => setMapRecenterRequestToken((current) => current + 1)}
-            aria-label={t("home.householdMapBackToWg")}
-            title={t("home.householdMapBackToWg")}
-          >
-            <House className="h-4 w-4" />
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            className="h-8 w-8 border-slate-200/80 bg-white/95 p-0 backdrop-blur dark:border-slate-600/80 dark:bg-slate-900/95"
-            onClick={requestMyLocation}
-            disabled={myLocationStatus === "loading"}
-            aria-label={t("home.householdMapMyLocation")}
-            title={t("home.householdMapMyLocation")}
-          >
-            {myLocationStatus === "loading" ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <LocateFixed className="h-4 w-4" />
-            )}
-          </Button>
-        </div>
-        <div className="absolute right-2 top-2 z-[1000] flex items-center gap-2">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
+          {isFullscreen ? (
+            <>
               <Button
                 type="button"
                 size="sm"
                 variant="outline"
                 className="h-8 w-8 border-slate-200/80 bg-white/95 p-0 backdrop-blur dark:border-slate-600/80 dark:bg-slate-900/95"
-                aria-label={t("home.householdMapTravelModeLabel")}
-                title={t("home.householdMapTravelModeLabel")}
+                onClick={() =>
+                  setMapRecenterRequestToken((current) => current + 1)
+                }
+                aria-label={t("home.householdMapBackToWg")}
+                title={t("home.householdMapBackToWg")}
               >
-                <span className="text-sm leading-none">
-                  {getTravelModeGlyph(mapTravelMode)}
-                </span>
+                <House className="h-4 w-4" />
               </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="min-w-[170px]">
-              {REACHABILITY_OPTIONS.map((option) => (
-                <DropdownMenuCheckboxItem
-                  key={`global-travel-mode-${option.id}`}
-                  checked={mapTravelMode === option.id}
-                  onCheckedChange={(checked) => {
-                    if (!checked) return;
-                    setMapTravelMode(option.id);
-                  }}
-                >
-                  <span className="inline-flex items-center gap-2">
-                    <span>{getTravelModeGlyph(option.id)}</span>
-                    <span>{t(option.labelKey as never)}</span>
-                  </span>
-                </DropdownMenuCheckboxItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
               <Button
                 type="button"
                 size="sm"
                 variant="outline"
-                className="h-8 gap-2 border-slate-200/80 bg-white/95 px-2.5 backdrop-blur dark:border-slate-600/80 dark:bg-slate-900/95"
+                className="h-8 w-8 border-slate-200/80 bg-white/95 p-0 backdrop-blur dark:border-slate-600/80 dark:bg-slate-900/95"
+                onClick={requestMyLocation}
+                disabled={myLocationStatus === "loading"}
+                aria-label={t("home.householdMapMyLocation")}
+                title={t("home.householdMapMyLocation")}
               >
-                <SlidersHorizontal className="h-4 w-4" />
-                <span>
-                  {t("home.calendarFilterAction")} (
-                  {selectedPoiCategories.length})
-                </span>
+                {myLocationStatus === "loading" ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <LocateFixed className="h-4 w-4" />
+                )}
               </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="min-w-[220px]">
-              {POI_CATEGORY_OPTIONS.map((option) => (
+            </>
+          ) : null}
+        </div>
+        {isFullscreen ? (
+          <div className="absolute right-2 top-2 z-[1000] flex items-center gap-2">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-8 w-8 border-slate-200/80 bg-white/95 p-0 backdrop-blur dark:border-slate-600/80 dark:bg-slate-900/95"
+                  aria-label={t("home.householdMapTravelModeLabel")}
+                  title={t("home.householdMapTravelModeLabel")}
+                >
+                  <span className="text-sm leading-none">
+                    {getTravelModeGlyph(mapTravelMode)}
+                  </span>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="min-w-[170px]">
+                {REACHABILITY_OPTIONS.map((option) => (
+                  <DropdownMenuCheckboxItem
+                    key={`global-travel-mode-${option.id}`}
+                    checked={mapTravelMode === option.id}
+                    onCheckedChange={(checked) => {
+                      if (!checked) return;
+                      setMapTravelMode(option.id);
+                    }}
+                  >
+                    <span className="inline-flex items-center gap-2">
+                      <span>{getTravelModeGlyph(option.id)}</span>
+                      <span>{t(option.labelKey as never)}</span>
+                    </span>
+                  </DropdownMenuCheckboxItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-8 gap-2 border-slate-200/80 bg-white/95 px-2.5 backdrop-blur dark:border-slate-600/80 dark:bg-slate-900/95"
+                >
+                  <SlidersHorizontal className="h-4 w-4" />
+                  <span>
+                    {t("home.calendarFilterAction")} (
+                    {selectedPoiCategories.length})
+                  </span>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="min-w-[220px]">
+                {POI_CATEGORY_OPTIONS.map((option) => (
+                  <DropdownMenuCheckboxItem
+                    key={option.id}
+                    checked={poiCategoriesEnabled[option.id]}
+                    onCheckedChange={(checked) =>
+                      setPoiCategoriesEnabled((current) => ({
+                        ...current,
+                        [option.id]: Boolean(checked),
+                      }))
+                    }
+                  >
+                    <span className="inline-flex items-center gap-2">
+                      <span>{option.emoji}</span>
+                      <span>{t(option.labelKey as never)}</span>
+                    </span>
+                  </DropdownMenuCheckboxItem>
+                ))}
+                <DropdownMenuSeparator />
+                <DropdownMenuLabel>
+                  {t("home.householdMapManualFilterLabel")}
+                </DropdownMenuLabel>
                 <DropdownMenuCheckboxItem
-                  key={option.id}
-                  checked={poiCategoriesEnabled[option.id]}
+                  checked={manualMarkerFilterMode === "all"}
+                  onCheckedChange={(checked) => {
+                    if (!checked) return;
+                    setManualMarkerFilterMode("all");
+                  }}
+                >
+                  {t("home.householdMapManualFilterAll")}
+                </DropdownMenuCheckboxItem>
+                <DropdownMenuCheckboxItem
+                  checked={manualMarkerFilterMode === "mine"}
+                  onCheckedChange={(checked) => {
+                    if (!checked) return;
+                    setManualMarkerFilterMode("mine");
+                  }}
+                >
+                  {t("home.householdMapManualFilterMine")}
+                </DropdownMenuCheckboxItem>
+                <DropdownMenuCheckboxItem
+                  checked={manualMarkerFilterMode === "none"}
+                  onCheckedChange={(checked) => {
+                    if (!checked) return;
+                    setManualMarkerFilterMode("none");
+                  }}
+                >
+                  {t("home.householdMapManualFilterNone")}
+                </DropdownMenuCheckboxItem>
+                <div className="hidden md:block">
+                  <DropdownMenuSeparator />
+                  <DropdownMenuLabel>
+                    {t("home.householdMapManualFilterByMember")}
+                  </DropdownMenuLabel>
+                  {memberOptionsForMarkerFilter.map((memberOption) => (
+                    <DropdownMenuCheckboxItem
+                      key={memberOption.id}
+                      checked={
+                        manualMarkerFilterMode === "member" &&
+                        manualMarkerFilterMemberId === memberOption.id
+                      }
+                      onCheckedChange={(checked) => {
+                        if (!checked) return;
+                        setManualMarkerFilterMode("member");
+                        setManualMarkerFilterMemberId(memberOption.id);
+                      }}
+                    >
+                      {memberOption.label}
+                    </DropdownMenuCheckboxItem>
+                  ))}
+                </div>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-8 w-8 border-slate-200/80 bg-white/95 p-0 backdrop-blur dark:border-slate-600/80 dark:bg-slate-900/95"
+                  aria-label={t("home.householdMapStyleLabel")}
+                  title={t("home.householdMapStyleLabel")}
+                >
+                  {getMapStyleIcon(mapStyle)}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="min-w-[180px]">
+                {MAP_STYLE_OPTIONS.map((option) => (
+                  <DropdownMenuCheckboxItem
+                    key={option.id}
+                    checked={mapStyle === option.id}
+                    onCheckedChange={(checked) => {
+                      if (!checked) return;
+                      setMapStyle(option.id);
+                    }}
+                  >
+                    <span className="inline-flex items-center gap-2">
+                      {getMapStyleIcon(option.id)}
+                      <span>{t(option.labelKey as never)}</span>
+                    </span>
+                  </DropdownMenuCheckboxItem>
+                ))}
+                <DropdownMenuSeparator />
+                <DropdownMenuLabel>
+                  {t("home.householdMapWeatherLayers")}
+                </DropdownMenuLabel>
+                <DropdownMenuCheckboxItem
+                  checked={mapWeatherLayers.radar}
                   onCheckedChange={(checked) =>
-                    setPoiCategoriesEnabled((current) => ({
+                    setMapWeatherLayers((current) => ({
                       ...current,
-                      [option.id]: Boolean(checked),
+                      radar: Boolean(checked),
                     }))
                   }
                 >
-                  <span className="inline-flex items-center gap-2">
-                    <span>{option.emoji}</span>
-                    <span>{t(option.labelKey as never)}</span>
-                  </span>
+                  {t("home.householdMapWeatherLayerRadar")}
                 </DropdownMenuCheckboxItem>
-              ))}
-              <DropdownMenuSeparator />
-              <DropdownMenuLabel>
-                {t("home.householdMapManualFilterLabel")}
-              </DropdownMenuLabel>
-              <DropdownMenuCheckboxItem
-                checked={manualMarkerFilterMode === "all"}
-                onCheckedChange={(checked) => {
-                  if (!checked) return;
-                  setManualMarkerFilterMode("all");
-                }}
-              >
-                {t("home.householdMapManualFilterAll")}
-              </DropdownMenuCheckboxItem>
-              <DropdownMenuCheckboxItem
-                checked={manualMarkerFilterMode === "mine"}
-                onCheckedChange={(checked) => {
-                  if (!checked) return;
-                  setManualMarkerFilterMode("mine");
-                }}
-              >
-                {t("home.householdMapManualFilterMine")}
-              </DropdownMenuCheckboxItem>
-              <DropdownMenuCheckboxItem
-                checked={manualMarkerFilterMode === "none"}
-                onCheckedChange={(checked) => {
-                  if (!checked) return;
-                  setManualMarkerFilterMode("none");
-                }}
-              >
-                {t("home.householdMapManualFilterNone")}
-              </DropdownMenuCheckboxItem>
-              <div className="hidden md:block">
+                <DropdownMenuCheckboxItem
+                  checked={mapWeatherLayers.warnings}
+                  onCheckedChange={(checked) =>
+                    setMapWeatherLayers((current) => ({
+                      ...current,
+                      warnings: Boolean(checked),
+                    }))
+                  }
+                >
+                  {t("home.householdMapWeatherLayerWarnings")}
+                </DropdownMenuCheckboxItem>
+                <DropdownMenuCheckboxItem
+                  checked={mapWeatherLayers.lightning}
+                  onCheckedChange={(checked) =>
+                    setMapWeatherLayers((current) => ({
+                      ...current,
+                      lightning: Boolean(checked),
+                    }))
+                  }
+                >
+                  {t("home.householdMapWeatherLayerLightning")}
+                </DropdownMenuCheckboxItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuLabel>
-                  {t("home.householdMapManualFilterByMember")}
+                  {t("home.householdMapMobilityLayers")}
                 </DropdownMenuLabel>
-                {memberOptionsForMarkerFilter.map((memberOption) => (
-                  <DropdownMenuCheckboxItem
-                    key={memberOption.id}
-                    checked={
-                      manualMarkerFilterMode === "member" &&
-                      manualMarkerFilterMemberId === memberOption.id
-                    }
-                    onCheckedChange={(checked) => {
-                      if (!checked) return;
-                      setManualMarkerFilterMode("member");
-                      setManualMarkerFilterMemberId(memberOption.id);
-                    }}
-                  >
-                    {memberOption.label}
-                  </DropdownMenuCheckboxItem>
-                ))}
-              </div>
-            </DropdownMenuContent>
-          </DropdownMenu>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                className="h-8 w-8 border-slate-200/80 bg-white/95 p-0 backdrop-blur dark:border-slate-600/80 dark:bg-slate-900/95"
-                aria-label={t("home.householdMapStyleLabel")}
-                title={t("home.householdMapStyleLabel")}
-              >
-                {getMapStyleIcon(mapStyle)}
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="min-w-[180px]">
-              {MAP_STYLE_OPTIONS.map((option) => (
                 <DropdownMenuCheckboxItem
-                  key={option.id}
-                  checked={mapStyle === option.id}
-                  onCheckedChange={(checked) => {
-                    if (!checked) return;
-                    setMapStyle(option.id);
-                  }}
+                  checked={mapMobilityLayers.transitLive}
+                  onCheckedChange={(checked) =>
+                    setMapMobilityLayers((current) => ({
+                      ...current,
+                      transitLive: Boolean(checked),
+                    }))
+                  }
                 >
-                  <span className="inline-flex items-center gap-2">
-                    {getMapStyleIcon(option.id)}
-                    <span>{t(option.labelKey as never)}</span>
-                  </span>
+                  {t("home.householdMapMobilityLayerTransit")}
                 </DropdownMenuCheckboxItem>
-              ))}
-              <DropdownMenuSeparator />
-              <DropdownMenuLabel>
-                {t("home.householdMapWeatherLayers")}
-              </DropdownMenuLabel>
-              <DropdownMenuCheckboxItem
-                checked={mapWeatherLayers.radar}
-                onCheckedChange={(checked) =>
-                  setMapWeatherLayers((current) => ({
-                    ...current,
-                    radar: Boolean(checked),
-                  }))
-                }
-              >
-                {t("home.householdMapWeatherLayerRadar")}
-              </DropdownMenuCheckboxItem>
-              <DropdownMenuCheckboxItem
-                checked={mapWeatherLayers.warnings}
-                onCheckedChange={(checked) =>
-                  setMapWeatherLayers((current) => ({
-                    ...current,
-                    warnings: Boolean(checked),
-                  }))
-                }
-              >
-                {t("home.householdMapWeatherLayerWarnings")}
-              </DropdownMenuCheckboxItem>
-              <DropdownMenuCheckboxItem
-                checked={mapWeatherLayers.lightning}
-                onCheckedChange={(checked) =>
-                  setMapWeatherLayers((current) => ({
-                    ...current,
-                    lightning: Boolean(checked),
-                  }))
-                }
-              >
-                {t("home.householdMapWeatherLayerLightning")}
-              </DropdownMenuCheckboxItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuLabel>
-                {t("home.householdMapMobilityLayers")}
-              </DropdownMenuLabel>
-              <DropdownMenuCheckboxItem
-                checked={mapMobilityLayers.transitLive}
-                onCheckedChange={(checked) =>
-                  setMapMobilityLayers((current) => ({
-                    ...current,
-                    transitLive: Boolean(checked),
-                  }))
-                }
-              >
-                {t("home.householdMapMobilityLayerTransit")}
-              </DropdownMenuCheckboxItem>
-              <DropdownMenuCheckboxItem
-                checked={mapMobilityLayers.bikeNetwork}
-                onCheckedChange={(checked) =>
-                  setMapMobilityLayers((current) => ({
-                    ...current,
-                    bikeNetwork: Boolean(checked),
-                  }))
-                }
-              >
-                {t("home.householdMapMobilityLayerBike")}
-              </DropdownMenuCheckboxItem>
-              <DropdownMenuCheckboxItem
-                checked={mapMobilityLayers.trafficLive}
-                onCheckedChange={(checked) =>
-                  setMapMobilityLayers((current) => ({
-                    ...current,
-                    trafficLive: Boolean(checked),
-                  }))
-                }
-              >
-                {t("home.householdMapMobilityLayerTraffic")}
-              </DropdownMenuCheckboxItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
+                <DropdownMenuCheckboxItem
+                  checked={mapMobilityLayers.bikeNetwork}
+                  onCheckedChange={(checked) =>
+                    setMapMobilityLayers((current) => ({
+                      ...current,
+                      bikeNetwork: Boolean(checked),
+                    }))
+                  }
+                >
+                  {t("home.householdMapMobilityLayerBike")}
+                </DropdownMenuCheckboxItem>
+                <DropdownMenuCheckboxItem
+                  checked={mapMobilityLayers.trafficLive}
+                  onCheckedChange={(checked) =>
+                    setMapMobilityLayers((current) => ({
+                      ...current,
+                      trafficLive: Boolean(checked),
+                    }))
+                  }
+                >
+                  {t("home.householdMapMobilityLayerTraffic")}
+                </DropdownMenuCheckboxItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        ) : null}
         {isFullscreen ? (
           <div className="absolute right-2 top-12 z-[1000] flex max-w-[280px] flex-col gap-1">
             {mapMobilityLayers.transitLive && transitLiveQuery.isLoading ? (
@@ -4528,6 +4621,7 @@ export const HomePage = ({
           className="domora-map-surface"
           center={mapCenter}
           zoom={mapZoom}
+          zoomControl={false}
           scrollWheelZoom
           style={{ height: "100%", width: "100%" }}
         >
@@ -4553,8 +4647,14 @@ export const HomePage = ({
             onMeasured={onMeasuredWithGeoman}
           />
           <DwdTimeDimensionBridge
-            enabled={isFullscreen}
+            enabled={
+              isFullscreen ||
+              mapWeatherLayers.radar ||
+              mapWeatherLayers.warnings ||
+              mapWeatherLayers.lightning
+            }
             layers={mapWeatherLayers}
+            showTimelineControl={isFullscreen}
           />
           <RouteTargetPickBridge
             enabled={
@@ -4589,6 +4689,7 @@ export const HomePage = ({
           />
           <QuickPinDropBridge
             enabled={
+              isFullscreen &&
               !mapRoutePickOriginActive &&
               !mapRoutePickTargetActive &&
               !mapReachabilityPickOriginActive &&
@@ -4605,6 +4706,10 @@ export const HomePage = ({
           <MapOverlayDismissBridge
             enabled={isFullscreen}
             onDismiss={dismissMapPanelsOnMapClick}
+          />
+          <MapInlineFullscreenBridge
+            enabled={!isFullscreen}
+            onOpen={openMapFullscreen}
           />
           <RouteLayerBridge
             geojson={mapRouteGeoJson}
@@ -7925,7 +8030,7 @@ export const HomePage = ({
         return (
           <Suspense
             fallback={
-              <div className="flex h-[560px] items-center justify-center rounded-xl border border-brand-100 bg-white/70 text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-300">
+              <div className="flex h-[280px] items-center justify-center rounded-xl border border-brand-100 bg-white/70 text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-300">
                 {t("common.loading")}
               </div>
             }
@@ -7937,7 +8042,7 @@ export const HomePage = ({
                   setWhiteboardDraft(nextValue);
                 }}
                 className="rounded-xl border border-brand-100 bg-white dark:border-slate-700"
-                height={560}
+                height={280}
                 previewMode
               />
               <button
@@ -7959,17 +8064,6 @@ export const HomePage = ({
               "relative h-72 overflow-hidden rounded-lg border border-brand-100 dark:border-slate-700",
               false,
             )}
-            <div className="pointer-events-none absolute inset-x-3 bottom-3 z-[1200] flex items-end justify-start">
-              <button
-                type="button"
-                className="pointer-events-auto z-[1201] inline-flex h-8 w-8 items-center justify-center rounded-xl border border-slate-200 bg-white/95 text-slate-700 shadow-sm transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900/95 dark:text-brand-100 dark:hover:bg-slate-800"
-                onClick={openMapFullscreen}
-                aria-label={t("home.householdMapFullscreen")}
-                title={t("home.householdMapFullscreen")}
-              >
-                <Maximize2 className="h-4 w-4" />
-              </button>
-            </div>
           </div>
         );
       }
@@ -8241,45 +8335,50 @@ export const HomePage = ({
     <WeatherProvider {...weatherProviderProps}>
       <div className="space-y-4">
         {showSummary ? (
-            <div className="relative overflow-hidden rounded-xl border border-brand-100 dark:border-slate-700">
+          <div className="relative z-0 isolate">
+            <div className="relative z-0 overflow-hidden rounded-xl border border-brand-100 dark:border-slate-700">
               <div
                 ref={headerSwiperRef}
                 className="flex snap-x snap-mandatory overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
               >
-                <div className="min-h-44 min-w-full snap-center sm:min-h-56">
+                <div className="min-h-34 sm:min-h-56  min-w-full snap-center">
                   <div
-                    className="h-full min-h-44 bg-cover bg-center sm:min-h-56"
+                    className="h-full min-h-34 sm:min-h-56 bg-cover bg-center"
                     style={{ backgroundImage: bannerBackgroundImage }}
                   />
                 </div>
-                <div className="min-h-44 min-w-full snap-center sm:min-h-56">
-                  <MapContainer
-                    key={`household-map-header-minimal-${mapRenderVersion}`}
-                    center={mapCenter}
-                    zoom={mapZoom}
-                    scrollWheelZoom={false}
-                    dragging
-                    zoomControl={false}
-                    attributionControl={false}
-                    style={{ height: "100%", width: "100%" }}
-                    className="h-full min-h-44 w-full sm:min-h-56"
-                  >
-                    <AddressMapView center={mapCenter} />
-                    <TileLayer
-                      key={`header-${activeMapStyle.id}`}
-                      attribution={activeMapStyle.attribution}
-                      url={activeMapStyle.tileUrl}
-                      subdomains={activeMapStyle.subdomains ?? "abc"}
-                      maxZoom={activeMapStyle.maxZoom}
-                      updateWhenIdle={false}
-                      updateWhenZooming
-                      keepBuffer={2}
-                      detectRetina
+                <div className="min-h-34 sm:min-h-56 min-w-full snap-center ">
+                  {showSummaryMapCard ? (
+                    <div className="h-full min-h-34 sm:min-h-56 bg-white/90 text-slate-800 dark:bg-slate-800/60 dark:text-slate-100">
+                      {renderHouseholdMapSurface(
+                        "relative h-40 overflow-hidden rounded-lg border border-brand-100 dark:border-slate-700",
+                        false,
+                      )}
+                      {myLocationStatus === "loading" ? (
+                        <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                          {t("home.householdMapLocating")}
+                        </div>
+                      ) : null}
+                      {myLocationError ? (
+                        <div className="mt-1 text-xs text-rose-600 dark:text-rose-400">
+                          {myLocationError}
+                        </div>
+                      ) : null}
+                      {poiOverrideError ? (
+                        <div className="mt-1 text-xs text-rose-600 dark:text-rose-400">
+                          {poiOverrideError}
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : (
+                    <div
+                      className="h-full min-h-34 sm:min-h-56 bg-cover bg-center"
+                      style={{ backgroundImage: bannerBackgroundImage }}
                     />
-                  </MapContainer>
+                  )}
                 </div>
               </div>
-              <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-slate-900/45 via-slate-900/25 to-slate-900/55" />
+              <div className="pointer-events-none absolute inset-0 z-[1900] bg-gradient-to-r from-slate-900/45 via-slate-900/25 to-slate-900/55" />
               <div className="pointer-events-none absolute inset-0 z-[2000]">
                 <div className="pointer-events-auto absolute right-4 top-4">
                   <WeatherTodayIcon
@@ -8297,6 +8396,7 @@ export const HomePage = ({
                 </div>
               </div>
             </div>
+          </div>
         ) : null}
 
         {showSummary ? (
@@ -8442,7 +8542,7 @@ export const HomePage = ({
           </Card>
         ) : null}
 
-        {showBucket ? <BucketList bucketItems={bucketItems}/> : null}
+        {showBucket ? <BucketList bucketItems={bucketItems} /> : null}
 
         {showFeed ? (
           <>
@@ -8452,7 +8552,9 @@ export const HomePage = ({
             <Card className="rounded-xl border border-slate-300 bg-white/88 p-3 text-slate-800 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-100 mb-4">
               <CardHeader>
                 <CardTitle>{t("home.activityTitle")}</CardTitle>
-                <CardDescription>{t("home.activityDescription")}</CardDescription>
+                <CardDescription>
+                  {t("home.activityDescription")}
+                </CardDescription>
               </CardHeader>
               <CardContent>
                 {recentActivity.length > 0 ? (
@@ -8559,7 +8661,7 @@ export const HomePage = ({
                   >
                     <Suspense
                       fallback={
-                        <div className="flex h-[560px] items-center justify-center rounded-xl border border-brand-100 bg-white/70 text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-300">
+                        <div className="flex h-[280px] items-center justify-center rounded-xl border border-brand-100 bg-white/70 text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-300">
                           {t("common.loading")}
                         </div>
                       }
@@ -8571,7 +8673,7 @@ export const HomePage = ({
                             setWhiteboardDraft(nextValue);
                           }}
                           className="rounded-xl border border-brand-100 bg-white dark:border-slate-700"
-                          height={560}
+                          height={280}
                           previewMode
                         />
                         <button
@@ -8585,101 +8687,6 @@ export const HomePage = ({
                     </Suspense>
                   </ErrorBoundary>
                 </HouseholdWhiteboardWidget>
-              </Card>
-            ) : null}
-
-            {showSummaryMapCard ? (
-              <Card className="mt-6 rounded-xl border border-slate-300 bg-white/90 p-3 text-slate-800 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-100">
-                <HouseholdMapWidget
-                  title={t("home.householdMapTitle")}
-                  description={t("home.householdMapDescription")}
-                  headerActions={
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        className="inline-flex h-8 w-8 items-center justify-center rounded-xl text-slate-700 hover:bg-slate-200/80 dark:text-brand-100 dark:hover:bg-slate-800"
-                        onClick={openMapFullscreen}
-                        aria-label={t("home.householdMapFullscreen")}
-                        title={t("home.householdMapFullscreen")}
-                      >
-                        <Maximize2 className="h-4 w-4" />
-                      </button>
-                    </div>
-                  }
-                >
-                  {renderHouseholdMapSurface(
-                    "relative h-72 overflow-hidden rounded-lg border border-brand-100 dark:border-slate-700",
-                    false,
-                  )}
-                  <div className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-                    {!hasPoiQueryCenter
-                      ? t("home.householdMapPoiNeedsAddress")
-                      : nearbyPoiQuery.isFetching
-                        ? t("home.householdMapPoiLoading")
-                        : nearbyPoiQuery.isError
-                          ? t("home.householdMapPoiError")
-                          : t("home.householdMapPoiCount", {
-                              count: nearbyPois.length,
-                            })}
-                  </div>
-                  {myLocationStatus === "loading" ? (
-                    <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                      {t("home.householdMapLocating")}
-                    </div>
-                  ) : null}
-                  {myLocationError ? (
-                    <div className="mt-1 text-xs text-rose-600 dark:text-rose-400">
-                      {myLocationError}
-                    </div>
-                  ) : null}
-                  {poiOverrideError ? (
-                    <div className="mt-1 text-xs text-rose-600 dark:text-rose-400">
-                      {poiOverrideError}
-                    </div>
-                  ) : null}
-                  <div className="mt-3 flex flex-wrap items-center gap-2">
-                    {myActiveLiveLocation ? (
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        onClick={() => {
-                          void stopLiveLocationShareNow();
-                        }}
-                        disabled={liveShareStatus === "stopping"}
-                      >
-                        {t("home.householdMapLiveShareStop")}
-                      </Button>
-                    ) : (
-                      <Button
-                        type="button"
-                        size="sm"
-                        onClick={() => {
-                          setIsLiveShareDialogOpen(true);
-                        }}
-                        disabled={liveShareStatus === "starting"}
-                      >
-                        {t("home.householdMapLiveShareStart")}
-                      </Button>
-                    )}
-                    {myActiveLiveLocation ? (
-                      <span className="text-xs text-slate-500 dark:text-slate-400">
-                        {t("home.householdMapLiveShareActiveUntil", {
-                          at: formatDateTime(
-                            myActiveLiveLocation.expires_at,
-                            language,
-                            myActiveLiveLocation.expires_at,
-                          ),
-                        })}
-                      </span>
-                    ) : null}
-                  </div>
-                  {liveShareError ? (
-                    <div className="mt-1 text-xs text-rose-600 dark:text-rose-400">
-                      {liveShareError}
-                    </div>
-                  ) : null}
-                </HouseholdMapWidget>
               </Card>
             ) : null}
 

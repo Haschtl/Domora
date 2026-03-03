@@ -272,7 +272,7 @@ export const FileExplorer = ({ household }: { household: Household }) => {
                           variant="danger"
                           disabled={isBusy}
                           onClick={() => {
-                            if (!window.confirm(`\"${entry.name}\" löschen?`)) return;
+                            if (!window.confirm(`"${entry.name}" löschen?`)) return;
                             deleteMutation.mutate(entry.path);
                           }}
                         >

@@ -502,5 +502,6 @@ export {
   RouteTargetPickBridge,
   QuickPinDropBridge,
   MapOverlayDismissBridge,
+  MapInlineFullscreenBridge,
   DwdTimeDimensionBridge
 } from "./map-overlays";

@@ -171,6 +171,7 @@ export const MAP_STYLE_OPTIONS: MapStyleOption[] = [
 ];
 
 export type PersistedMapSettings = {
+  mapStyle: MapStyleId;
   mapTravelMode: MapReachabilityMode;
   mapWeatherLayers: MapWeatherLayerToggles;
   mapMobilityLayers: MapMobilityLayerToggles;

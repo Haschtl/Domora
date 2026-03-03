@@ -80,7 +80,11 @@ export const ReachabilityLayerBridge = ({
         );
         const fillColor = reachabilityPalette[paletteIndex] ?? color;
         return {
-          stroke: false,
+          // Keep border visually hidden, but enlarge pointer hit area for tooltips.
+          stroke: true,
+          color: fillColor,
+          opacity: 0,
+          weight: 25,
           fillColor,
           fillOpacity: 0.46 - ratio * 0.18,
           lineCap: "round",
@@ -418,12 +422,31 @@ export const MapOverlayDismissBridge = ({
   return null;
 };
 
+export const MapInlineFullscreenBridge = ({
+  enabled,
+  onOpen
+}: {
+  enabled: boolean;
+  onOpen: () => void;
+}) => {
+  useMapEvents({
+    click: () => {
+      if (!enabled) return;
+      onOpen();
+    }
+  });
+
+  return null;
+};
+
 export const DwdTimeDimensionBridge = ({
   enabled,
-  layers
+  layers,
+  showTimelineControl = true
 }: {
   enabled: boolean;
   layers: MapWeatherLayerToggles;
+  showTimelineControl?: boolean;
 }) => {
   const map = useMap();
   const controlRef = useRef<L.Control | null>(null);
@@ -611,7 +634,12 @@ export const DwdTimeDimensionBridge = ({
       });
     }
 
-    if (leafletWithTd.Control?.TimeDimension && hasTimeControlledLayer && !controlRef.current) {
+    if (
+      leafletWithTd.Control?.TimeDimension &&
+      showTimelineControl &&
+      hasTimeControlledLayer &&
+      !controlRef.current
+    ) {
       const control = new leafletWithTd.Control.TimeDimension({
         position: "bottomleft",
         timeDimension: timeDimensionRef.current,
@@ -631,7 +659,7 @@ export const DwdTimeDimensionBridge = ({
       controlRef.current = control;
       applyCustomTimeControls();
     }
-    if (!hasTimeControlledLayer && controlRef.current) {
+    if ((!hasTimeControlledLayer || !showTimelineControl) && controlRef.current) {
       cleanupCustomTimeControls();
       controlRef.current.remove();
       controlRef.current = null;
@@ -729,7 +757,7 @@ export const DwdTimeDimensionBridge = ({
         controlRef.current = null;
       }
     };
-  }, [enabled, layers.lightning, layers.radar, layers.warnings, map]);
+  }, [enabled, layers.lightning, layers.radar, layers.warnings, map, showTimelineControl]);
 
   return null;
 };
