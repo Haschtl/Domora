@@ -3380,7 +3380,7 @@ export const deleteFinanceSubscription = async (
 const poiCategorySchema = z.enum(["restaurant", "shop", "supermarket", "fuel"]);
 const nearbyPoiSchema = z.object({
   id: z.string().min(1),
-  source: z.literal("overpass"),
+  source: z.enum(["overpass", "targomo"]),
   osm_type: z.enum(["node", "way", "relation"]),
   osm_id: z.coerce.number().int().nonnegative(),
   lat: z.coerce.number().finite().min(-90).max(90),

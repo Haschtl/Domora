@@ -120,7 +120,7 @@ export interface HouseholdStorageEntry {
 
 export interface NearbyPoi {
   id: string;
-  source: "overpass";
+  source: "overpass" | "targomo";
   osm_type: "node" | "way" | "relation";
   osm_id: number;
   lat: number;
