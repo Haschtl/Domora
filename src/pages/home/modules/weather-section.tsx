@@ -219,32 +219,64 @@ export const useHouseholdWeatherData = ({
   address: string;
 }) => {
   const normalizedAddress = address.trim();
+  const geocodeCandidates = useMemo(() => {
+    const candidates = new Set<string>();
+    if (normalizedAddress.length > 0) {
+      candidates.add(normalizedAddress);
+      const withoutStreetNumber = normalizedAddress
+        .replace(/\b\d+[a-zA-Z]?\b/g, "")
+        .replace(/\s+/g, " ")
+        .trim();
+      if (withoutStreetNumber.length > 3) {
+        candidates.add(withoutStreetNumber);
+      }
+      const cityFromPostalPattern =
+        normalizedAddress.match(/\b\d{4,5}\s+([^,\d][^,]*)/u)?.[1]?.trim() ??
+        "";
+      if (cityFromPostalPattern.length > 1) {
+        candidates.add(cityFromPostalPattern);
+      }
+      const commaParts = normalizedAddress
+        .split(",")
+        .map((part) => part.trim())
+        .filter((part) => part.length > 1);
+      for (const part of commaParts) {
+        candidates.add(part);
+      }
+    }
+    return Array.from(candidates).filter((entry) => entry.length > 3);
+  }, [normalizedAddress]);
+
   const geocodeQuery = useQuery<{ lat: number; lon: number } | null>({
-    queryKey: ["weather-geocode", householdId, normalizedAddress],
-    enabled: normalizedAddress.length > 3,
+    queryKey: ["weather-geocode", householdId, geocodeCandidates],
+    enabled: geocodeCandidates.length > 0,
     staleTime: 24 * 60 * 60 * 1000,
     queryFn: async () => {
-      const params = new URLSearchParams({
-        name: normalizedAddress,
-        count: "1",
-        format: "json",
-      });
-      const response = await fetch(
-        `https://geocoding-api.open-meteo.com/v1/search?${params.toString()}`,
-        {
-          method: "GET",
-          headers: { Accept: "application/json" },
-        },
-      );
-      if (!response.ok) throw new Error("weather_geocode_failed");
-      const payload = (await response.json()) as {
-        results?: Array<{ latitude?: unknown; longitude?: unknown }>;
-      };
-      const first = payload.results?.[0];
-      const lat = Number(first?.latitude);
-      const lon = Number(first?.longitude);
-      if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
-      return { lat, lon };
+      for (const candidate of geocodeCandidates) {
+        const params = new URLSearchParams({
+          name: candidate,
+          count: "1",
+          format: "json",
+        });
+        const response = await fetch(
+          `https://geocoding-api.open-meteo.com/v1/search?${params.toString()}`,
+          {
+            method: "GET",
+            headers: { Accept: "application/json" },
+          },
+        );
+        if (!response.ok) throw new Error("weather_geocode_failed");
+        const payload = (await response.json()) as {
+          results?: Array<{ latitude?: unknown; longitude?: unknown }>;
+        };
+        const first = payload.results?.[0];
+        const lat = Number(first?.latitude);
+        const lon = Number(first?.longitude);
+        if (Number.isFinite(lat) && Number.isFinite(lon)) {
+          return { lat, lon };
+        }
+      }
+      return null;
     },
   });
 
@@ -343,6 +375,7 @@ export const WeatherProvider = ({
   children: ReactNode;
 }) => {
   const householdWeather = useHouseholdWeatherData({ householdId, address });
+  const hasAddress = address.trim().length > 3;
   const householdWeatherDays = householdWeather.days;
 
   const householdWeatherByDay = useMemo(() => {
@@ -360,12 +393,14 @@ export const WeatherProvider = ({
   }, [householdWeather.days]);
 
   const state = useMemo(() => {
-    if (!householdWeather.hasPin) return "needsAddress";
     if (householdWeather.isLoading) return "loading";
     if (householdWeather.isError) return "error";
+    if (!hasAddress) return "needsAddress";
+    if (!householdWeather.hasPin) return "error";
     if (householdWeather.hourly.length === 0) return "empty";
     return "ready";
   }, [
+    hasAddress,
     householdWeather.hasPin,
     householdWeather.hourly.length,
     householdWeather.isError,

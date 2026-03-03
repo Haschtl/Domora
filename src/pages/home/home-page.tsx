@@ -7997,10 +7997,17 @@ export const HomePage = ({
       memberOfMonthLabel,
       memberOfMonthProfile,
       memberLabel,
+      memberVacations,
+      todayIso,
       navigate,
-      onCompleteTask,
       busy,
+      isMobileBucketComposer,
+      openMapFullscreen,
+      openWhiteboardFullscreen,
+      renderHouseholdCalendarCard,
+      renderHouseholdMapSurface,
       t,
+      whiteboardDraft,
     ],
   );
   const landingWidgetJsxDescriptors = useMemo<JsxComponentDescriptor[]>(
