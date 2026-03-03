@@ -13,7 +13,7 @@ export const resources = {
         home: {
           summary: "Summary",
           bucket: "Bucket",
-          feed: "Feed",
+          feed: "Kalender",
         },
         tasks: {
           overview: "Übersicht",
@@ -1502,7 +1502,7 @@ export const resources = {
         home: {
           summary: "Summary",
           bucket: "Bucket",
-          feed: "Feed",
+          feed: "Calendar",
         },
         tasks: {
           overview: "Overview",

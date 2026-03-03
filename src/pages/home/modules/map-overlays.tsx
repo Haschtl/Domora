@@ -24,7 +24,7 @@ export const ReachabilityLayerBridge = ({
   }, [onSaveReachability]);
 
   const reachabilityPalette = useMemo(
-    () => ["#22c55e", "#84cc16", "#facc15", "#f97316", "#ef4444"],
+    () => ["#ef4444", "#f97316", "#facc15", "#84cc16", "#22c55e"],
     []
   );
 
@@ -79,13 +79,10 @@ export const ReachabilityLayerBridge = ({
           Math.max(0, Math.round(ratio * (reachabilityPalette.length - 1)))
         );
         const fillColor = reachabilityPalette[paletteIndex] ?? color;
-        const haloWeight = 8 + (1 - ratio) * 8;
         return {
-          color: fillColor,
-          weight: haloWeight,
-          opacity: 0.22 + (1 - ratio) * 0.16,
+          stroke: false,
           fillColor,
-          fillOpacity: 0.1 + ratio * 0.2,
+          fillOpacity: 0.46 - ratio * 0.18,
           lineCap: "round",
           lineJoin: "round"
         };

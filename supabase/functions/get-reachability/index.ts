@@ -185,6 +185,7 @@ serve(async (req) => {
       serializer: "geojson",
       srid: 4326,
       values: reachabilityBandSeconds,
+      strokeWidth: 25,
       intersectionMode: "union"
     }
   };

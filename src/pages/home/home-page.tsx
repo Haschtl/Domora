@@ -1746,6 +1746,7 @@ export const HomePage = ({
     useState<number>(15);
   const [isLiveShareDialogOpen, setIsLiveShareDialogOpen] = useState(false);
   const [isWeatherFullscreenOpen, setIsWeatherFullscreenOpen] = useState(false);
+  const [headerSlideIndex, setHeaderSlideIndex] = useState<0 | 1>(0);
   const [liveShareStatus, setLiveShareStatus] = useState<
     "idle" | "starting" | "active" | "stopping" | "error"
   >("idle");
@@ -1877,6 +1878,8 @@ export const HomePage = ({
     fuel: false,
   });
   const whiteboardSaveTimerRef = useRef<number | null>(null);
+  const headerSwiperRef = useRef<HTMLDivElement | null>(null);
+  const headerLastInteractionAtRef = useRef<number>(Date.now());
   const mapMarkerSaveTimerRef = useRef<number | null>(null);
   const pendingMapMarkerSaveRef = useRef<HouseholdMapMarker[] | null>(null);
   const locateControlRef = useRef<LocateControlHandle | null>(null);
@@ -6869,13 +6872,6 @@ export const HomePage = ({
   );
   const showSummaryMapCard =
     hasHouseholdAddress && !landingWidgetKeySet.has("household-map");
-  const hasWeatherWidgetInLanding =
-    landingWidgetKeySet.has("household-weather") ||
-    landingWidgetKeySet.has("household-weather-daily") ||
-    landingWidgetKeySet.has("household-weather-plot");
-  const showSummaryWeatherCard =
-    hasHouseholdAddress && !hasWeatherWidgetInLanding;
-
   const weatherProviderProps = useMemo(
     () => ({
       householdId: household.id,
@@ -8203,36 +8199,104 @@ export const HomePage = ({
     mediaQuery.addEventListener("change", onChange);
     return () => mediaQuery.removeEventListener("change", onChange);
   }, []);
+  useEffect(() => {
+    const container = headerSwiperRef.current;
+    if (!container) return;
+
+    const markActive = () => {
+      headerLastInteractionAtRef.current = Date.now();
+    };
+    const syncIndexFromScroll = () => {
+      const width = container.clientWidth;
+      if (width <= 0) return;
+      const nextIndex = Math.round(container.scrollLeft / width) === 0 ? 0 : 1;
+      setHeaderSlideIndex(nextIndex);
+      markActive();
+    };
+
+    container.addEventListener("pointerdown", markActive, { passive: true });
+    container.addEventListener("wheel", markActive, { passive: true });
+    container.addEventListener("touchstart", markActive, { passive: true });
+    container.addEventListener("scroll", syncIndexFromScroll, { passive: true });
+
+    const interval = window.setInterval(() => {
+      if (Date.now() - headerLastInteractionAtRef.current < 10000) return;
+      const nextIndex = headerSlideIndex === 0 ? 1 : 0;
+      const targetLeft = nextIndex * container.clientWidth;
+      container.scrollTo({ left: targetLeft, behavior: "smooth" });
+      setHeaderSlideIndex(nextIndex);
+      headerLastInteractionAtRef.current = Date.now();
+    }, 1000);
+
+    return () => {
+      window.clearInterval(interval);
+      container.removeEventListener("pointerdown", markActive);
+      container.removeEventListener("wheel", markActive);
+      container.removeEventListener("touchstart", markActive);
+      container.removeEventListener("scroll", syncIndexFromScroll);
+    };
+  }, [headerSlideIndex]);
 
   return (
     <WeatherProvider {...weatherProviderProps}>
       <div className="space-y-4">
         {showSummary ? (
-          <div className="relative overflow-hidden rounded-2xl border border-brand-200 shadow-card dark:border-slate-700">
-            <div
-              className="absolute inset-0 bg-cover bg-center"
-              style={{ backgroundImage: bannerBackgroundImage }}
-            />
-            <div className="absolute inset-0 bg-gradient-to-r from-slate-900/45 via-slate-900/25 to-slate-900/55" />
-            <div className="relative flex min-h-44 items-end p-5 sm:min-h-56 sm:p-7">
-              {/* {householdWeatherDays.length > 0 ? ( */}
-              <div className="absolute right-4 top-4">
-                <WeatherTodayIcon
-                  onOpenFullscreen={() => setIsWeatherFullscreenOpen(true)}
-                  title={householdWeatherTitle}
-                />
+            <div className="relative overflow-hidden rounded-xl border border-brand-100 dark:border-slate-700">
+              <div
+                ref={headerSwiperRef}
+                className="flex snap-x snap-mandatory overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+              >
+                <div className="min-h-44 min-w-full snap-center sm:min-h-56">
+                  <div
+                    className="h-full min-h-44 bg-cover bg-center sm:min-h-56"
+                    style={{ backgroundImage: bannerBackgroundImage }}
+                  />
+                </div>
+                <div className="min-h-44 min-w-full snap-center sm:min-h-56">
+                  <MapContainer
+                    key={`household-map-header-minimal-${mapRenderVersion}`}
+                    center={mapCenter}
+                    zoom={mapZoom}
+                    scrollWheelZoom={false}
+                    dragging
+                    zoomControl={false}
+                    attributionControl={false}
+                    style={{ height: "100%", width: "100%" }}
+                    className="h-full min-h-44 w-full sm:min-h-56"
+                  >
+                    <AddressMapView center={mapCenter} />
+                    <TileLayer
+                      key={`header-${activeMapStyle.id}`}
+                      attribution={activeMapStyle.attribution}
+                      url={activeMapStyle.tileUrl}
+                      subdomains={activeMapStyle.subdomains ?? "abc"}
+                      maxZoom={activeMapStyle.maxZoom}
+                      updateWhenIdle={false}
+                      updateWhenZooming
+                      keepBuffer={2}
+                      detectRetina
+                    />
+                  </MapContainer>
+                </div>
               </div>
-              {/* ) : null} */}
-              <div className="min-w-0">
-                <p className="truncate text-xs font-medium uppercase tracking-[0.12em] text-white/80">
-                  {userLabel ?? t("app.noUserLabel")}
-                </p>
-                <h1 className="mt-1 truncate text-2xl font-semibold text-white sm:text-3xl">
-                  {household.name}
-                </h1>
+              <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-slate-900/45 via-slate-900/25 to-slate-900/55" />
+              <div className="pointer-events-none absolute inset-0 z-[2000]">
+                <div className="pointer-events-auto absolute right-4 top-4">
+                  <WeatherTodayIcon
+                    onOpenFullscreen={() => setIsWeatherFullscreenOpen(true)}
+                    title={householdWeatherTitle}
+                  />
+                </div>
+                <div className="absolute bottom-4 left-4 right-4 min-w-0">
+                  <p className="truncate text-xs font-medium uppercase tracking-[0.12em] text-white/80 [text-shadow:0_2px_8px_rgba(0,0,0,0.65)]">
+                    {userLabel ?? t("app.noUserLabel")}
+                  </p>
+                  <h1 className="mt-1 truncate text-2xl font-semibold text-white [text-shadow:0_3px_12px_rgba(0,0,0,0.75)] sm:text-3xl">
+                    {household.name}
+                  </h1>
+                </div>
               </div>
             </div>
-          </div>
         ) : null}
 
         {showSummary ? (
@@ -8381,81 +8445,82 @@ export const HomePage = ({
         {showBucket ? <BucketList bucketItems={bucketItems}/> : null}
 
         {showFeed ? (
-          <Card className="rounded-xl border border-slate-300 bg-white/88 p-3 text-slate-800 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-100 mb-4">
-            <CardHeader>
-              <CardTitle>{t("home.activityTitle")}</CardTitle>
-              <CardDescription>{t("home.activityDescription")}</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {recentActivity.length > 0 ? (
-                <ul className="space-y-2">
-                  {recentActivity.map((entry) => {
-                    const Icon =
-                      entry.icon === "task"
-                        ? CalendarCheck2
-                        : entry.icon === "shopping"
-                          ? ShoppingCart
-                          : entry.icon === "finance"
-                            ? Wallet
-                            : Receipt;
-                    return (
-                      <li
-                        key={entry.id}
-                        className="flex items-start justify-between gap-2 rounded-xl border border-brand-100 bg-white/80 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900/70"
-                      >
-                        <div className="flex min-w-0 items-start gap-2">
-                          <Icon className="mt-0.5 h-4 w-4 shrink-0 text-brand-600 dark:text-brand-300" />
-                          {entry.navigateTo ? (
-                            <button
-                              type="button"
-                              className="min-w-0 text-left text-slate-700 underline-offset-2 hover:underline dark:text-slate-300"
-                              onClick={() => {
-                                const target = entry.navigateTo;
-                                if (!target) return;
-                                void navigate({ to: target });
-                              }}
-                            >
-                              {entry.text}
-                            </button>
-                          ) : (
-                            <span className="min-w-0 text-slate-700 dark:text-slate-300">
-                              {entry.text}
-                            </span>
-                          )}
-                        </div>
-                        <span className="shrink-0 text-xs text-slate-500 dark:text-slate-400">
-                          {formatDateTime(entry.at, language, entry.at)}
-                        </span>
-                      </li>
-                    );
-                  })}
-                </ul>
-              ) : (
-                <p className="text-sm text-slate-500 dark:text-slate-400">
-                  {t("home.activityEmpty")}
-                </p>
-              )}
-              {eventsHasMore ? (
-                <div className="mt-3 flex justify-center">
-                  <Button
-                    variant="outline"
-                    onClick={() => onLoadMoreEvents?.()}
-                    disabled={eventsLoadingMore}
-                  >
-                    {t("common.loadMore")}
-                  </Button>
-                </div>
-              ) : null}
-            </CardContent>
-          </Card>
+          <>
+            {showSummaryCalendarCard
+              ? renderHouseholdCalendarCard(false, true)
+              : null}
+            <Card className="rounded-xl border border-slate-300 bg-white/88 p-3 text-slate-800 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-100 mb-4">
+              <CardHeader>
+                <CardTitle>{t("home.activityTitle")}</CardTitle>
+                <CardDescription>{t("home.activityDescription")}</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {recentActivity.length > 0 ? (
+                  <ul className="space-y-2">
+                    {recentActivity.map((entry) => {
+                      const Icon =
+                        entry.icon === "task"
+                          ? CalendarCheck2
+                          : entry.icon === "shopping"
+                            ? ShoppingCart
+                            : entry.icon === "finance"
+                              ? Wallet
+                              : Receipt;
+                      return (
+                        <li
+                          key={entry.id}
+                          className="flex items-start justify-between gap-2 rounded-xl border border-brand-100 bg-white/80 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900/70"
+                        >
+                          <div className="flex min-w-0 items-start gap-2">
+                            <Icon className="mt-0.5 h-4 w-4 shrink-0 text-brand-600 dark:text-brand-300" />
+                            {entry.navigateTo ? (
+                              <button
+                                type="button"
+                                className="min-w-0 text-left text-slate-700 underline-offset-2 hover:underline dark:text-slate-300"
+                                onClick={() => {
+                                  const target = entry.navigateTo;
+                                  if (!target) return;
+                                  void navigate({ to: target });
+                                }}
+                              >
+                                {entry.text}
+                              </button>
+                            ) : (
+                              <span className="min-w-0 text-slate-700 dark:text-slate-300">
+                                {entry.text}
+                              </span>
+                            )}
+                          </div>
+                          <span className="shrink-0 text-xs text-slate-500 dark:text-slate-400">
+                            {formatDateTime(entry.at, language, entry.at)}
+                          </span>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                ) : (
+                  <p className="text-sm text-slate-500 dark:text-slate-400">
+                    {t("home.activityEmpty")}
+                  </p>
+                )}
+                {eventsHasMore ? (
+                  <div className="mt-3 flex justify-center">
+                    <Button
+                      variant="outline"
+                      onClick={() => onLoadMoreEvents?.()}
+                      disabled={eventsLoadingMore}
+                    >
+                      {t("common.loadMore")}
+                    </Button>
+                  </div>
+                ) : null}
+              </CardContent>
+            </Card>
+          </>
         ) : null}
 
         {showSummary ? (
           <>
-            {showSummaryCalendarCard
-              ? renderHouseholdCalendarCard(true, true)
-              : null}
-
             {showSummaryWhiteboardCard ? (
               <Card className="mt-6 rounded-xl border border-slate-300 bg-white/90 p-3 text-slate-800 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-100">
                 <HouseholdWhiteboardWidget
@@ -8621,23 +8686,6 @@ export const HomePage = ({
             <div className="mt-6">
               <FileExplorer household={household} />
             </div>
-
-            {showSummaryWeatherCard ? (
-              <Card className="mt-6 rounded-xl border border-slate-300 bg-white/90 p-3 text-slate-800 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-100">
-                <CardHeader className="gap-1">
-                  <CardTitle>{householdWeatherTitle}</CardTitle>
-                  <CardDescription>
-                    {t("home.householdWeatherDescription")}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="pt-2">
-                  <WeatherPanelContent
-                    // dayLimit={dayLimit}
-                    getWindDirectionLabel={getWindDirectionLabel}
-                  />
-                </CardContent>
-              </Card>
-            ) : null}
 
             <Dialog
               open={isWeatherFullscreenOpen}

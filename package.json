@@ -91,6 +91,7 @@
     "react-toastify": "^11.0.5",
     "recaptz": "^2.0.0",
     "remark-gfm": "^4.0.1",
+    "swiper": "^12.1.2",
     "tailwind-merge": "^3.5.0",
     "tesseract.js": "^7.0.0",
     "trianglify": "^4.1.1",

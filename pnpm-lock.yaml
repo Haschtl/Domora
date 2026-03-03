@@ -203,6 +203,9 @@ importers:
       remark-gfm:
         specifier: ^4.0.1
         version: 4.0.1
+      swiper:
+        specifier: ^12.1.2
+        version: 12.1.2
       tailwind-merge:
         specifier: ^3.5.0
         version: 3.5.0
@@ -7384,6 +7387,10 @@ packages:
 
   sweepline-intersections@1.5.0:
     resolution: {integrity: sha512-AoVmx72QHpKtItPu72TzFL+kcYjd67BPLDoR0LarIk+xyaRg+pDTMFXndIEvZf9xEKnJv6JdhgRMnocoG0D3AQ==}
+
+  swiper@12.1.2:
+    resolution: {integrity: sha512-4gILrI3vXZqoZh71I1PALqukCFgk+gpOwe1tOvz5uE9kHtl2gTDzmYflYCwWvR4LOvCrJi6UEEU+gnuW5BtkgQ==}
+    engines: {node: '>= 4.7.0'}
 
   tabbable@6.4.0:
     resolution: {integrity: sha512-05PUHKSNE8ou2dwIxTngl4EzcnsCDZGJ/iCLtDflR/SHB/ny14rXc+qU5P4mG9JkusiV7EivzY9Mhm55AzAvCg==}
@@ -16691,6 +16698,8 @@ snapshots:
   sweepline-intersections@1.5.0:
     dependencies:
       tinyqueue: 2.0.3
+
+  swiper@12.1.2: {}
 
   tabbable@6.4.0: {}
 
