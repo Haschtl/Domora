@@ -9,7 +9,6 @@ import {
   useState,
   type FormEvent,
   type ReactNode,
-  type TouchEvent as ReactTouchEvent
 } from "react";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
@@ -41,14 +40,7 @@ import {
   ChevronLeft,
   ChevronRight,
   CircleDot,
-  Cloud,
-  CloudFog,
-  CloudRain,
-  CloudSnow,
-  CloudSun,
-  CloudLightning,
   ExternalLink,
-  Flame,
   House,
   Loader2,
   Map as MapIcon,
@@ -67,10 +59,8 @@ import {
   SlidersHorizontal,
   Sun,
   ShoppingCart,
-  Snowflake,
   Trash2,
   Wallet,
-  Wind,
   X
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
@@ -144,16 +134,12 @@ import { Label } from "../../components/ui/label";
 import { MultiDateCalendarSelect } from "../../components/ui/multi-date-calendar-select";
 import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "../../components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
-import { Chart } from "react-chartjs-2";
-import { WeatherSvg } from "weather-icons-animated";
 import { buildMonthGrid, dayKey, startOfMonth } from "../../features/tasks-calendar";
 import {
   HouseholdCalendarWidget,
   HouseholdMapWidget,
-  HouseholdWeatherDailyPreview,
-  HouseholdWeatherPlot,
   HouseholdWhiteboardWidget
-} from "../../features/components/home-widgets";
+} from "../../features/components/widgets";
 import { queryKeys } from "../../lib/query-keys";
 import { supabase } from "../../lib/supabase";
 import {   
@@ -256,26 +242,13 @@ import {
 } from "./modules/map-bridges";
 import { MAX_WHITEBOARD_BYTES } from "./modules/whiteboard";
 import {
-  addDaysToDateKey,
-  getAnimatedWeatherState,
-  getDailyWeatherWarnings,
-  getDateKeyFromIsoDateTime,
-  getMoonIllumination,
-  getMoonPhaseEmoji,
-  getMoonPhaseFraction,
-  getMoonPhaseLabel,
-  getMoonPhasePointStyle,
-  getPrecipitationAxisMax,
-  getPrecipitationBarBorderColor,
-  getPrecipitationBarColor,
-  getUvAxisMax,
-  getWeatherConditionLabelKey,
-  getWeatherPrimaryAxisRange,
-  getWeatherXAxisDensity,
-  resolveChartTickIndex,
-  type HouseholdWeatherDay,
-  type HouseholdWeatherHourlyPoint
-} from "./modules/weather";
+  StaticWeatherCalendarIcon,
+  WeatherDailyForecast,
+  WeatherForecastGraph,
+  WeatherPanelContent,
+  WeatherProvider,
+  WeatherTodayIcon,
+} from "./modules/weather-section";
 
 const MXEditorLazy = lazy(() =>
   import("../../components/mx-editor").then((module) => ({ default: module.MXEditor }))
@@ -1372,30 +1345,6 @@ const formatTransitDepartureTimeLabel = (iso: string, language: string) => {
   return language.toLowerCase().startsWith("de") ? `${base} Uhr` : base;
 };
 
-const getStaticWeatherCalendarIcon = (day: HouseholdWeatherDay) => {
-  const code = day.weatherCode;
-  const wind = day.windSpeedKmh ?? 0;
-  const iconClassName = "h-3.5 w-3.5";
-  if (wind >= 45 && (code === 0 || code === 1 || code === 2 || code === 3)) {
-    return <Wind className={`${iconClassName} text-teal-600 dark:text-teal-300`} />;
-  }
-  if (code === null) return null;
-  if (code === 0) return <Sun className={`${iconClassName} text-amber-500 dark:text-amber-300`} />;
-  if (code === 1 || code === 2) return <CloudSun className={`${iconClassName} text-amber-500 dark:text-amber-300`} />;
-  if (code === 3) return <Cloud className={`${iconClassName} text-slate-500 dark:text-slate-300`} />;
-  if (code === 45 || code === 48) return <CloudFog className={`${iconClassName} text-slate-500 dark:text-slate-300`} />;
-  if ((code >= 51 && code <= 67) || (code >= 80 && code <= 82)) {
-    return <CloudRain className={`${iconClassName} text-sky-600 dark:text-sky-300`} />;
-  }
-  if ((code >= 71 && code <= 77) || code === 85 || code === 86) {
-    return <CloudSnow className={`${iconClassName} text-cyan-600 dark:text-cyan-300`} />;
-  }
-  if (code >= 95 && code <= 99) {
-    return <CloudLightning className={`${iconClassName} text-violet-600 dark:text-violet-300`} />;
-  }
-  return null;
-};
-
 export const HomePage = ({
   section = "summary",
   household,
@@ -2377,847 +2326,7 @@ export const HomePage = ({
       })
       .sort((a, b) => a.earliestTs - b.earliestTs);
   }, [transitDialogStop]);
-  const householdWeatherQuery = useQuery<{ days: HouseholdWeatherDay[]; hourly: HouseholdWeatherHourlyPoint[] }>({
-    queryKey: [
-      "household-weather",
-      household.id,
-      mapHasPin ? addressMapCenter?.[0] : null,
-      mapHasPin ? addressMapCenter?.[1] : null
-    ],
-    queryFn: async () => {
-      const latitude = addressMapCenter![0];
-      const longitude = addressMapCenter![1];
-      const params = new URLSearchParams({
-        latitude: String(latitude),
-        longitude: String(longitude),
-        daily: [
-          "weather_code",
-          "temperature_2m_max",
-          "temperature_2m_min",
-          "precipitation_sum",
-          "precipitation_probability_max",
-          "uv_index_max",
-          "wind_speed_10m_max",
-          "wind_gusts_10m_max",
-          "wind_direction_10m_dominant",
-          "sunrise",
-          "sunset"
-        ].join(","),
-        hourly: [
-          "temperature_2m",
-          "apparent_temperature",
-          "precipitation",
-          "snowfall",
-          "precipitation_probability",
-          "cloud_cover",
-          "uv_index",
-          "wind_speed_10m"
-        ].join(","),
-        timezone: "auto",
-        forecast_days: "7"
-      });
-      const response = await fetch(`https://api.open-meteo.com/v1/forecast?${params.toString()}`, {
-        method: "GET",
-        headers: { Accept: "application/json" }
-      });
-      if (!response.ok) {
-        throw new Error("weather_fetch_failed");
-      }
-      const payload = (await response.json()) as {
-        daily?: {
-          time?: unknown[];
-          weather_code?: unknown[];
-          temperature_2m_max?: unknown[];
-          temperature_2m_min?: unknown[];
-          precipitation_sum?: unknown[];
-          precipitation_probability_max?: unknown[];
-          uv_index_max?: unknown[];
-          wind_speed_10m_max?: unknown[];
-          wind_gusts_10m_max?: unknown[];
-          wind_direction_10m_dominant?: unknown[];
-          sunrise?: unknown[];
-          sunset?: unknown[];
-        };
-        hourly?: {
-          time?: unknown[];
-          temperature_2m?: unknown[];
-          apparent_temperature?: unknown[];
-          precipitation?: unknown[];
-          snowfall?: unknown[];
-          precipitation_probability?: unknown[];
-          cloud_cover?: unknown[];
-          uv_index?: unknown[];
-          wind_speed_10m?: unknown[];
-        };
-      };
-      const daily = payload.daily ?? {};
-      const times = Array.isArray(daily.time) ? daily.time : [];
-      const days: HouseholdWeatherDay[] = times
-        .slice(0, 7)
-        .map((entry, index) => {
-          const date = typeof entry === "string" ? entry : "";
-          const readNumber = (values: unknown[] | undefined): number | null => {
-            const raw = values?.[index];
-            const parsed = typeof raw === "number" ? raw : Number(raw);
-            return Number.isFinite(parsed) ? parsed : null;
-          };
-          return {
-            date,
-            weatherCode: readNumber(Array.isArray(daily.weather_code) ? daily.weather_code : undefined),
-            tempMaxC: readNumber(Array.isArray(daily.temperature_2m_max) ? daily.temperature_2m_max : undefined),
-            tempMinC: readNumber(Array.isArray(daily.temperature_2m_min) ? daily.temperature_2m_min : undefined),
-            precipitationMm: readNumber(Array.isArray(daily.precipitation_sum) ? daily.precipitation_sum : undefined),
-            precipitationProbabilityPercent: readNumber(
-              Array.isArray(daily.precipitation_probability_max) ? daily.precipitation_probability_max : undefined
-            ),
-            uvIndexMax: readNumber(Array.isArray(daily.uv_index_max) ? daily.uv_index_max : undefined),
-            windSpeedKmh: readNumber(Array.isArray(daily.wind_speed_10m_max) ? daily.wind_speed_10m_max : undefined),
-            windGustKmh: readNumber(Array.isArray(daily.wind_gusts_10m_max) ? daily.wind_gusts_10m_max : undefined),
-            windDirectionDeg: readNumber(
-              Array.isArray(daily.wind_direction_10m_dominant) ? daily.wind_direction_10m_dominant : undefined
-            ),
-            sunrise: (() => {
-              const raw = Array.isArray(daily.sunrise) ? daily.sunrise[index] : null;
-              return typeof raw === "string" && raw.length > 0 ? raw : null;
-            })(),
-            sunset: (() => {
-              const raw = Array.isArray(daily.sunset) ? daily.sunset[index] : null;
-              return typeof raw === "string" && raw.length > 0 ? raw : null;
-            })()
-          };
-        })
-        .filter((entry) => entry.date.length > 0);
-      const hourly = payload.hourly ?? {};
-      const hourlyTimes = Array.isArray(hourly.time) ? hourly.time : [];
-      const hourlyReadNumber = (values: unknown[] | undefined, index: number): number | null => {
-        const raw = values?.[index];
-        const parsed = typeof raw === "number" ? raw : Number(raw);
-        return Number.isFinite(parsed) ? parsed : null;
-      };
-      const next7DaysHourly: HouseholdWeatherHourlyPoint[] = hourlyTimes
-        .slice(0, 24 * 7)
-        .map((entry, index) => ({
-          time: typeof entry === "string" ? entry : "",
-          tempC: hourlyReadNumber(Array.isArray(hourly.temperature_2m) ? hourly.temperature_2m : undefined, index),
-          apparentTempC: hourlyReadNumber(
-            Array.isArray(hourly.apparent_temperature) ? hourly.apparent_temperature : undefined,
-            index
-          ),
-          precipitationMm: hourlyReadNumber(Array.isArray(hourly.precipitation) ? hourly.precipitation : undefined, index),
-          snowfallCm: hourlyReadNumber(Array.isArray(hourly.snowfall) ? hourly.snowfall : undefined, index),
-          precipitationProbabilityPercent: hourlyReadNumber(
-            Array.isArray(hourly.precipitation_probability) ? hourly.precipitation_probability : undefined,
-            index
-          ),
-          cloudCoverPercent: hourlyReadNumber(Array.isArray(hourly.cloud_cover) ? hourly.cloud_cover : undefined, index),
-          uvIndex: hourlyReadNumber(Array.isArray(hourly.uv_index) ? hourly.uv_index : undefined, index),
-          windSpeedKmh: hourlyReadNumber(Array.isArray(hourly.wind_speed_10m) ? hourly.wind_speed_10m : undefined, index)
-        }))
-        .filter((entry) => entry.time.length > 0);
-      return { days, hourly: next7DaysHourly };
-    },
-    enabled: mapHasPin,
-    staleTime: 15 * 60 * 1000
-  });
-  const householdWeatherDays = householdWeatherQuery.data?.days ?? [];
-  const householdWeatherHourly = householdWeatherQuery.data?.hourly ?? [];
-  const hasPrecipitationInForecast = useMemo(
-    () => householdWeatherHourly.some((entry) => (entry.precipitationMm ?? 0) > 0),
-    [householdWeatherHourly]
-  );
-  const hasSnowfallInForecast = useMemo(
-    () => householdWeatherHourly.some((entry) => (entry.snowfallCm ?? 0) > 0),
-    [householdWeatherHourly]
-  );
-  const weatherChartRef = useRef<ChartJS<"bar"> | null>(null);
-  const weatherChartContainerRef = useRef<HTMLDivElement | null>(null);
-  const lastWeatherChartTapRef = useRef<{ at: number; x: number; y: number } | null>(null);
-  const [weatherLegendVersion, setWeatherLegendVersion] = useState(0);
-  const zoomOutWeatherChart = useCallback(() => {
-    const chart = weatherChartRef.current as (ChartJS<"bar"> & { resetZoom?: () => void; zoom?: (amount: number) => void }) | null;
-    if (!chart) return;
-    if (typeof chart.resetZoom === "function") {
-      chart.resetZoom();
-      return;
-    }
-    if (typeof chart.zoom === "function") {
-      chart.zoom(0.8);
-    }
-  }, []);
-  const onWeatherChartTouchEndCapture = useCallback((event: ReactTouchEvent<HTMLDivElement>) => {
-    if (event.changedTouches.length !== 1) {
-      lastWeatherChartTapRef.current = null;
-      return;
-    }
-    const touch = event.changedTouches[0];
-    const now = Date.now();
-    const lastTap = lastWeatherChartTapRef.current;
-    if (
-      lastTap &&
-      now - lastTap.at <= 360 &&
-      Math.hypot(touch.clientX - lastTap.x, touch.clientY - lastTap.y) <= 32
-    ) {
-      event.preventDefault();
-      zoomOutWeatherChart();
-      lastWeatherChartTapRef.current = null;
-      return;
-    }
-    lastWeatherChartTapRef.current = {
-      at: now,
-      x: touch.clientX,
-      y: touch.clientY
-    };
-  }, [zoomOutWeatherChart]);
-  useEffect(() => {
-    const hideWeatherTooltip = () => {
-      const chart = weatherChartRef.current as
-        | (ChartJS<"bar"> & {
-            tooltip?: { setActiveElements?: (elements: unknown[], position: { x: number; y: number }) => void };
-            setActiveElements?: (elements: unknown[]) => void;
-          })
-        | null;
-      if (!chart) return;
-      chart.tooltip?.setActiveElements?.([], { x: 0, y: 0 });
-      chart.setActiveElements?.([]);
-      chart.update();
-    };
-
-    const handlePointerOutside = (event: MouseEvent | TouchEvent) => {
-      const targetNode = event.target as Node | null;
-      if (!targetNode) return;
-      const container = weatherChartContainerRef.current;
-      if (!container) return;
-      if (container.contains(targetNode)) return;
-      hideWeatherTooltip();
-    };
-
-    document.addEventListener("mousedown", handlePointerOutside, true);
-    document.addEventListener("touchstart", handlePointerOutside, true);
-    return () => {
-      document.removeEventListener("mousedown", handlePointerOutside, true);
-      document.removeEventListener("touchstart", handlePointerOutside, true);
-    };
-  }, []);
-  const householdWeatherByDay = useMemo(() => {
-    const byDay = new Map<string, HouseholdWeatherDay>();
-    householdWeatherDays.forEach((day) => {
-      byDay.set(day.date, day);
-    });
-    return byDay;
-  }, [householdWeatherDays]);
-  const householdWeatherChartData = useMemo(() => {
-    const dailyAstronomy = new Map<
-      string,
-      {
-        sunrise: Date | null;
-        sunset: Date | null;
-        moonPhase: number;
-        moonIllumination: number;
-      }
-    >();
-
-    householdWeatherDays.forEach((day) => {
-      const dayDate = new Date(`${day.date}T12:00:00`);
-      const moonPhase = Number.isNaN(dayDate.getTime()) ? 0 : getMoonPhaseFraction(dayDate);
-      dailyAstronomy.set(day.date, {
-        sunrise: day.sunrise ? new Date(day.sunrise) : null,
-        sunset: day.sunset ? new Date(day.sunset) : null,
-        moonPhase,
-        moonIllumination: getMoonIllumination(moonPhase)
-      });
-    });
-
-    const labels = householdWeatherHourly.map((entry, index) => {
-      const date = new Date(entry.time);
-      if (Number.isNaN(date.getTime())) return `${index + 1}`;
-      const day = date.toLocaleDateString(language, { day: "2-digit", month: "2-digit" });
-      const hour = date.toLocaleTimeString(language, { hour: "2-digit", minute: "2-digit" });
-      return `${day} ${hour}`;
-    });
-
-    const sunTrack: Array<number | null> = [];
-    const moonTrack: Array<number | null> = [];
-    const moonPhaseTrack: number[] = [];
-    const moonPointRadius: number[] = new Array(householdWeatherHourly.length).fill(0);
-    const moonPointStyle: Array<string | HTMLCanvasElement> = new Array(householdWeatherHourly.length).fill("circle");
-    const moonPointHoverRadius: number[] = new Array(householdWeatherHourly.length).fill(0);
-    const moonPeakByDay = new Map<string, { index: number; distance: number }>();
-
-    householdWeatherHourly.forEach((entry, index) => {
-      const current = new Date(entry.time);
-      if (Number.isNaN(current.getTime())) {
-        sunTrack.push(null);
-        moonTrack.push(null);
-        moonPhaseTrack.push(0);
-        return;
-      }
-
-      const dateKey = getDateKeyFromIsoDateTime(entry.time);
-      const dayAstronomy = dailyAstronomy.get(dateKey);
-      const sunrise = dayAstronomy?.sunrise;
-      const sunset = dayAstronomy?.sunset;
-      const hourMs = 60 * 60 * 1000;
-
-      let sunValue: number | null = null;
-      if (sunrise && sunset && current >= sunrise && current <= sunset) {
-        const msSinceSunrise = current.getTime() - sunrise.getTime();
-        const msUntilSunset = sunset.getTime() - current.getTime();
-        if (msSinceSunrise < hourMs || msUntilSunset < hourMs) {
-          // Force clear endpoints at sunrise/sunset on hourly data.
-          sunValue = 0;
-        } else {
-          const dayDurationMs = sunset.getTime() - sunrise.getTime();
-          if (dayDurationMs > 0) {
-            const progress = (current.getTime() - sunrise.getTime()) / dayDurationMs;
-            sunValue = Math.sin(Math.PI * Math.min(1, Math.max(0, progress)));
-          }
-        }
-      }
-      sunTrack.push(sunValue);
-
-      const prevKey = addDaysToDateKey(dateKey, -1);
-      const nextKey = addDaysToDateKey(dateKey, 1);
-      const prevAstronomy = dailyAstronomy.get(prevKey);
-      const nextAstronomy = dailyAstronomy.get(nextKey);
-
-      let nightStart: Date | null = null;
-      let nightEnd: Date | null = null;
-      let moonPhase = dayAstronomy?.moonPhase ?? getMoonPhaseFraction(current);
-      let moonIllumination = dayAstronomy?.moonIllumination ?? getMoonIllumination(moonPhase);
-
-      if (sunrise && current < sunrise && prevAstronomy?.sunset) {
-        nightStart = prevAstronomy.sunset;
-        nightEnd = sunrise;
-        moonPhase = prevAstronomy.moonPhase;
-        moonIllumination = prevAstronomy.moonIllumination;
-      } else if (sunset && current >= sunset && nextAstronomy?.sunrise) {
-        nightStart = sunset;
-        nightEnd = nextAstronomy.sunrise;
-      }
-
-      if (!nightStart || !nightEnd) {
-        moonTrack.push(null);
-        moonPhaseTrack.push(moonPhase);
-        return;
-      }
-
-      const nightDurationMs = nightEnd.getTime() - nightStart.getTime();
-      if (nightDurationMs <= 0) {
-        moonTrack.push(null);
-        moonPhaseTrack.push(moonPhase);
-        return;
-      }
-
-      const progress = (current.getTime() - nightStart.getTime()) / nightDurationMs;
-      const clamped = Math.min(1, Math.max(0, progress));
-      const msSinceNightStart = current.getTime() - nightStart.getTime();
-      const msUntilNightEnd = nightEnd.getTime() - current.getTime();
-      const moonHeight =
-        msSinceNightStart < hourMs || msUntilNightEnd < hourMs
-          ? 0
-          : Math.sin(Math.PI * clamped) * (0.55 + moonIllumination * 0.45);
-      moonTrack.push(moonHeight);
-      moonPhaseTrack.push(moonPhase);
-
-      const peakDistance = Math.abs(clamped - 0.5);
-      const existingPeak = moonPeakByDay.get(dateKey);
-      if (!existingPeak || peakDistance < existingPeak.distance) {
-        moonPeakByDay.set(dateKey, { index, distance: peakDistance });
-      }
-    });
-
-    moonPeakByDay.forEach(({ index }) => {
-      const phase = moonPhaseTrack[index] ?? 0;
-      const emoji = getMoonPhaseEmoji(phase);
-      moonPointRadius[index] = 5;
-      moonPointHoverRadius[index] = 7;
-      moonPointStyle[index] = getMoonPhasePointStyle(emoji);
-    });
-
-    return {
-      labels,
-      datasets: [
-        {
-          type: "line" as const,
-          label: t("home.householdWeatherChartTemp"),
-          data: householdWeatherHourly.map((entry) => entry.tempC),
-          yAxisID: "y",
-          borderColor: "rgba(234, 88, 12, 0.95)",
-          backgroundColor: "rgba(234, 88, 12, 0.22)",
-          pointRadius: 0,
-          pointHoverRadius: 3,
-          borderWidth: 2,
-          tension: 0.3
-        },
-        {
-          type: "line" as const,
-          label: t("home.householdWeatherChartApparentTemp"),
-          data: householdWeatherHourly.map((entry) => entry.apparentTempC),
-          yAxisID: "y",
-          hidden: true,
-          borderColor: "rgba(251, 146, 60, 0.82)",
-          backgroundColor: "rgba(251, 146, 60, 0.2)",
-          pointRadius: 0,
-          pointHoverRadius: 2,
-          borderWidth: 1.8,
-          borderDash: [5, 4],
-          tension: 0.3
-        },
-        {
-          type: "bar" as const,
-          label: t("home.householdWeatherChartCloudCover"),
-          hidden: true,
-          data: householdWeatherHourly.map((entry) => {
-            if (typeof entry.cloudCoverPercent !== "number" || !Number.isFinite(entry.cloudCoverPercent)) return null;
-            return 100 - Math.min(100, Math.max(0, entry.cloudCoverPercent));
-          }),
-          yAxisID: "yCloud",
-          base: 100,
-          backgroundColor: householdWeatherHourly.map((entry) => {
-            const cover = Math.min(100, Math.max(0, entry.cloudCoverPercent ?? 0));
-            const alpha = 0.08 + (cover / 100) * 0.26;
-            return `rgba(148, 163, 184, ${alpha})`;
-          }),
-          borderWidth: 0,
-          barPercentage: 1,
-          categoryPercentage: 1
-        },
-        ...(hasPrecipitationInForecast
-          ? [
-              {
-                type: "bar" as const,
-                label: t("home.householdWeatherChartPrecip"),
-                data: householdWeatherHourly.map((entry) => entry.precipitationMm),
-                yAxisID: "yPrecip",
-                backgroundColor: householdWeatherHourly.map((entry) =>
-                  getPrecipitationBarColor(entry.precipitationProbabilityPercent)
-                ),
-                borderColor: householdWeatherHourly.map((entry) =>
-                  getPrecipitationBarBorderColor(entry.precipitationProbabilityPercent)
-                ),
-                borderWidth: 1,
-                barPercentage: 0.9,
-                categoryPercentage: 1
-              }
-            ]
-          : []),
-        ...(hasSnowfallInForecast
-          ? [
-              {
-                type: "bar" as const,
-                label: t("home.householdWeatherChartSnowfall"),
-                data: householdWeatherHourly.map((entry) => entry.snowfallCm),
-                yAxisID: "ySnow",
-                backgroundColor: householdWeatherHourly.map((entry) =>
-                  getPrecipitationBarColor(entry.precipitationProbabilityPercent)
-                ),
-                borderColor: householdWeatherHourly.map((entry) =>
-                  getPrecipitationBarBorderColor(entry.precipitationProbabilityPercent)
-                ),
-                borderWidth: 1,
-                barPercentage: 0.9,
-                categoryPercentage: 1
-              }
-            ]
-          : []),
-        {
-          type: "line" as const,
-          label: t("home.householdWeatherChartWind"),
-          data: householdWeatherHourly.map((entry) => entry.windSpeedKmh),
-          yAxisID: "y",
-          borderColor: "rgba(16, 185, 129, 0.92)",
-          backgroundColor: "rgba(16, 185, 129, 0.2)",
-          pointRadius: 0,
-          pointHoverRadius: 3,
-          borderWidth: 2,
-          tension: 0.25
-        },
-        {
-          type: "line" as const,
-          label: t("home.householdWeatherChartUvIndex"),
-          data: householdWeatherHourly.map((entry) => entry.uvIndex),
-          yAxisID: "yUv",
-          hidden: true,
-          borderColor: "rgba(236, 72, 153, 0.88)",
-          backgroundColor: "rgba(236, 72, 153, 0.18)",
-          pointRadius: 0,
-          pointHoverRadius: 3,
-          borderWidth: 2,
-          tension: 0.3
-        },
-        {
-          type: "line" as const,
-          label: "Sonnenverlauf",
-          data: sunTrack,
-          yAxisID: "ySky",
-          hidden: true,
-          borderColor: "rgba(250, 204, 21, 0.9)",
-          backgroundColor: "rgba(250, 204, 21, 0.18)",
-          pointRadius: 0,
-          pointHoverRadius: 0,
-          borderWidth: 2,
-          fill: "origin" as const,
-          tension: 0.35
-        },
-        {
-          type: "line" as const,
-          label: "Mondstand",
-          data: moonTrack,
-          yAxisID: "ySky",
-          hidden: true,
-          borderColor: "rgba(167, 139, 250, 0.88)",
-          backgroundColor: "rgba(167, 139, 250, 0.15)",
-          borderWidth: 2,
-          tension: 0.35,
-          pointRadius: moonPointRadius,
-          pointHoverRadius: moonPointHoverRadius,
-          pointStyle: moonPointStyle
-        }
-      ]
-    };
-  }, [hasPrecipitationInForecast, hasSnowfallInForecast, householdWeatherDays, householdWeatherHourly, language, t]);
-  const weatherLegendItems = useMemo(() => {
-    const activeDatasets =
-      (weatherChartRef.current?.data.datasets as Array<{ label?: string; hidden?: boolean }> | undefined) ??
-      (householdWeatherChartData.datasets as Array<{ label?: string; hidden?: boolean }>);
-    const chart = weatherChartRef.current;
-    return activeDatasets
-      .map((dataset, index) => ({
-        index,
-        label: dataset.label ?? `${t("common.loading")} ${index + 1}`,
-        visible: chart ? chart.isDatasetVisible(index) : !(dataset.hidden ?? false)
-      }))
-      .filter((item) => item.label.trim().length > 0);
-  }, [householdWeatherChartData.datasets, t, weatherLegendVersion]);
-  const toggleWeatherLegendDataset = useCallback((datasetIndex: number) => {
-    const chart = weatherChartRef.current;
-    if (!chart) return;
-    const nextVisible = !chart.isDatasetVisible(datasetIndex);
-    chart.setDatasetVisibility(datasetIndex, nextVisible);
-    chart.update();
-    setWeatherLegendVersion((version) => version + 1);
-  }, []);
-  const householdWeatherChartOptions = useMemo(
-    () => {
-      const precipitationAxisMax = getPrecipitationAxisMax(
-        householdWeatherHourly.map((entry) => entry.precipitationMm)
-      );
-      const snowfallAxisMax = getPrecipitationAxisMax(
-        householdWeatherHourly.map((entry) => entry.snowfallCm)
-      );
-      const uvAxisMax = getUvAxisMax(
-        householdWeatherHourly.map((entry) => entry.uvIndex)
-      );
-      const primaryAxisRange = getWeatherPrimaryAxisRange(householdWeatherHourly);
-      const initialVisibleHours = 48;
-      const initialXMin = 0;
-      const initialXMax = Math.max(0, Math.min(householdWeatherHourly.length - 1, initialVisibleHours - 1));
-      const options: Record<string, unknown> = {
-      responsive: true,
-      maintainAspectRatio: false,
-      interaction: {
-        mode: "index" as const,
-        intersect: false
-      },
-      plugins: {
-        legend: {
-          display: !isMobileBucketComposer,
-          labels: {
-            boxWidth: 12,
-            boxHeight: 8,
-            color: "rgb(100 116 139)"
-          }
-        },
-        tooltip: {
-          callbacks: {
-            title: (items: Array<{ dataIndex: number }>) => {
-              const index = items[0]?.dataIndex ?? 0;
-              const row = householdWeatherHourly[index];
-              if (!row) return "";
-              const parsedDate = new Date(row.time);
-              if (Number.isNaN(parsedDate.getTime())) return row.time;
-              return parsedDate.toLocaleString(language, {
-                weekday: "short",
-                hour: "2-digit",
-                minute: "2-digit"
-              });
-            },
-            label: (context: { dataset: { label?: string; yAxisID?: string }; parsed: { y?: number }; dataIndex: number }) => {
-              const datasetLabel = context.dataset.label ?? "";
-              const numericValue = context.parsed.y;
-              if (context.dataset.yAxisID === "ySky") {
-                if (datasetLabel === "Sonnenverlauf") {
-                  return `${datasetLabel}: ${Math.round((numericValue ?? 0) * 100)} %`;
-                }
-                const hourly = householdWeatherHourly[context.dataIndex];
-                const phase = hourly
-                  ? getMoonPhaseFraction(new Date(hourly.time))
-                  : 0;
-                return `${datasetLabel}: ${getMoonPhaseEmoji(phase)} ${getMoonPhaseLabel(phase)} (${Math.round(
-                  getMoonIllumination(phase) * 100
-                )} %)`;
-              }
-              if (context.dataset.yAxisID === "yCloud") {
-                const cover = householdWeatherHourly[context.dataIndex]?.cloudCoverPercent ?? 0;
-                return `${datasetLabel}: ${Math.round(cover)} %`;
-              }
-              if (datasetLabel === t("home.householdWeatherChartPrecip")) {
-                const probability = householdWeatherHourly[context.dataIndex]?.precipitationProbabilityPercent ?? 0;
-                return `${datasetLabel}: ${numericValue ?? 0} mm (${Math.round(probability)} %)`;
-              }
-              if (datasetLabel === t("home.householdWeatherChartSnowfall")) {
-                const probability = householdWeatherHourly[context.dataIndex]?.precipitationProbabilityPercent ?? 0;
-                return `${datasetLabel}: ${numericValue ?? 0} cm (${Math.round(probability)} %)`;
-              }
-              if (datasetLabel === t("home.householdWeatherChartWind")) {
-                return `${datasetLabel}: ${numericValue ?? 0} km/h`;
-              }
-              if (datasetLabel === t("home.householdWeatherChartUvIndex")) {
-                return `${datasetLabel}: ${numericValue ?? 0}`;
-              }
-              return `${datasetLabel}: ${numericValue ?? 0} °C`;
-            }
-          }
-        }
-      },
-      scales: {
-        x: {
-          min: initialXMin,
-          max: initialXMax,
-          ticks: {
-            autoSkip: false,
-            maxTicksLimit: isMobileBucketComposer ? 6 : 14,
-            maxRotation: 0,
-            color: "rgb(100 116 139)",
-            padding: isMobileBucketComposer ? 6 : 4,
-            font: isMobileBucketComposer ? { size: 10 } : undefined,
-            callback: function (this: { min?: number; max?: number }, value: string | number, index: number) {
-              const visibleMin = Number.isFinite(this.min) ? Number(this.min) : 0;
-              const visibleMax = Number.isFinite(this.max)
-                ? Number(this.max)
-                : Math.max(0, householdWeatherHourly.length - 1);
-              const visibleHours = Math.max(1, Math.round(visibleMax - visibleMin + 1));
-              const density = getWeatherXAxisDensity(visibleHours);
-              const labelEvery = isMobileBucketComposer
-                ? Math.max(
-                    density.labelEvery * 4,
-                    visibleHours <= 30 ? 6 : visibleHours <= 96 ? 8 : 12
-                  )
-                : density.labelEvery;
-              const parsedIndex = resolveChartTickIndex(value, index);
-              const clampedIndex = Math.max(0, Math.min(householdWeatherHourly.length - 1, parsedIndex));
-              const row = householdWeatherHourly[clampedIndex];
-              if (!row) return "";
-              const date = new Date(row.time);
-              if (Number.isNaN(date.getTime())) return "";
-
-              const firstVisibleIndex = Math.max(
-                0,
-                Math.min(householdWeatherHourly.length - 1, Math.round(visibleMin))
-              );
-              const lastVisibleIndex = Math.max(
-                0,
-                Math.min(householdWeatherHourly.length - 1, Math.round(visibleMax))
-              );
-              const relativeIndex = Math.max(0, clampedIndex - firstVisibleIndex);
-              const isEdgeTick = clampedIndex === firstVisibleIndex || clampedIndex === lastVisibleIndex;
-
-              if (!isEdgeTick && relativeIndex % labelEvery !== 0) {
-                return "";
-              }
-
-              if (visibleHours <= 30) {
-                return isMobileBucketComposer
-                  ? date.toLocaleTimeString(language, { hour: "2-digit" })
-                  : date.toLocaleTimeString(language, { hour: "2-digit", minute: "2-digit" });
-              }
-
-              if (visibleHours <= 96) {
-                if (date.getHours() === 0) {
-                  return date.toLocaleDateString(language, { day: "2-digit", month: "2-digit" });
-                }
-                return date.toLocaleTimeString(language, { hour: "2-digit" });
-              }
-
-              if (date.getHours() === 0) {
-                return date.toLocaleDateString(language, { day: "2-digit", month: "2-digit" });
-              }
-              if (date.getHours() % 12 === 0) {
-                return date.toLocaleTimeString(language, { hour: "2-digit" });
-              }
-              return "";
-            }
-          },
-          grid: {
-            color: (ctx: { chart: { scales?: Record<string, { min?: number; max?: number }> }; tick?: { value?: number | string }; index: number }) => {
-              const xScale = ctx.chart.scales?.x;
-              const visibleMin = Number.isFinite(xScale?.min) ? Number(xScale?.min) : 0;
-              const visibleMax = Number.isFinite(xScale?.max)
-                ? Number(xScale?.max)
-                : Math.max(0, householdWeatherHourly.length - 1);
-              const visibleHours = Math.max(1, Math.round(visibleMax - visibleMin + 1));
-              const density = getWeatherXAxisDensity(visibleHours);
-              const tickIndex = resolveChartTickIndex(ctx.tick?.value, ctx.index);
-              const normalized = Math.max(0, tickIndex);
-              const row = householdWeatherHourly[Math.min(householdWeatherHourly.length - 1, normalized)];
-              if (row) {
-                const isMidnightByRawTime = /T00:00(?::00)?$/.test(row.time);
-                const date = new Date(row.time);
-                const isMidnightByParsedTime = !Number.isNaN(date.getTime()) && date.getHours() === 0;
-                if (isMidnightByRawTime || isMidnightByParsedTime) {
-                  return "rgba(100, 116, 139, 0.5)";
-                }
-              }
-
-              if (normalized % density.majorGridEvery === 0) {
-                return "rgba(148, 163, 184, 0.24)";
-              }
-              if (normalized % density.minorGridEvery === 0) {
-                return "rgba(148, 163, 184, 0.12)";
-              }
-              return "rgba(148, 163, 184, 0.04)";
-            },
-            lineWidth: (ctx: { chart: { scales?: Record<string, { min?: number; max?: number }> }; tick?: { value?: number | string }; index: number }) => {
-              const xScale = ctx.chart.scales?.x;
-              const visibleMin = Number.isFinite(xScale?.min) ? Number(xScale?.min) : 0;
-              const visibleMax = Number.isFinite(xScale?.max)
-                ? Number(xScale?.max)
-                : Math.max(0, householdWeatherHourly.length - 1);
-              const visibleHours = Math.max(1, Math.round(visibleMax - visibleMin + 1));
-              const density = getWeatherXAxisDensity(visibleHours);
-              const tickIndex = resolveChartTickIndex(ctx.tick?.value, ctx.index);
-              const normalized = Math.max(0, tickIndex);
-              const row = householdWeatherHourly[Math.min(householdWeatherHourly.length - 1, normalized)];
-              if (row) {
-                const isMidnightByRawTime = /T00:00(?::00)?$/.test(row.time);
-                const date = new Date(row.time);
-                const isMidnightByParsedTime = !Number.isNaN(date.getTime()) && date.getHours() === 0;
-                if (isMidnightByRawTime || isMidnightByParsedTime) return 1.8;
-              }
-              if (normalized % density.majorGridEvery === 0) return 1.1;
-              if (normalized % density.minorGridEvery === 0) return 0.7;
-              return 0.35;
-            }
-          }
-        },
-        y: {
-          position: "left" as const,
-          min: primaryAxisRange.min,
-          max: primaryAxisRange.max,
-          ticks: {
-            display: !isMobileBucketComposer,
-            color: "rgb(100 116 139)",
-            callback: (value: number | string) => `${value}°C / kmh`
-          },
-          grid: {
-            color: "rgba(148, 163, 184, 0.2)"
-          }
-        },
-        yPrecip: {
-          display: false,
-          position: "right" as const,
-          min: 0,
-          max: precipitationAxisMax,
-          ticks: {
-            display: false,
-            color: "rgb(100 116 139)",
-            callback: (value: number | string) => `${value} mm`
-          },
-          grid: {
-            display: false,
-            drawOnChartArea: false
-          }
-        },
-        ySnow: {
-          display: false,
-          position: "right" as const,
-          min: 0,
-          max: snowfallAxisMax,
-          ticks: {
-            display: false
-          },
-          grid: {
-            display: false,
-            drawOnChartArea: false
-          }
-        },
-        yCloud: {
-          display: false,
-          position: "right" as const,
-          min: 0,
-          max: 100,
-          grid: {
-            display: false,
-            drawOnChartArea: false
-          },
-          ticks: {
-            display: false
-          }
-        },
-        yUv: {
-          display: false,
-          position: "right" as const,
-          min: 0,
-          max: uvAxisMax,
-          grid: {
-            display: false,
-            drawOnChartArea: false
-          },
-          ticks: {
-            display: false
-          }
-        },
-        ySky: {
-          position: "right" as const,
-          min: 0,
-          max: 1,
-          display: false,
-          grid: {
-            display: false,
-            drawOnChartArea: false
-          },
-          ticks: {
-            display: false
-          }
-        }
-      }
-    };
-      const plugins = options.plugins as Record<string, unknown>;
-      plugins.zoom = {
-        pan: {
-          enabled: true,
-          mode: "x",
-          scaleMode: "x"
-        },
-        zoom: {
-          wheel: {
-            enabled: true
-          },
-          pinch: {
-            enabled: true
-          },
-          drag: {
-            enabled: true,
-            backgroundColor: "rgba(59, 130, 246, 0.12)"
-          },
-          mode: "x",
-          scaleMode: "x"
-        },
-        limits: {
-          x: { min: 0, max: Math.max(0, householdWeatherHourly.length - 1) },
-          y: { min: primaryAxisRange.min, max: primaryAxisRange.max },
-          yPrecip: { min: 0, max: precipitationAxisMax },
-          ySnow: { min: 0, max: snowfallAxisMax },
-          yCloud: { min: 0, max: 100 },
-          yUv: { min: 0, max: uvAxisMax },
-          ySky: { min: 0, max: 1 }
-        }
-      };
-
-      return options;
-    },
-    [householdWeatherHourly, isMobileBucketComposer, language, t]
-  );
+  
   const liveLocationsQuery = useQuery<HouseholdLiveLocation[]>({
     queryKey: queryKeys.householdLiveLocations(household.id),
     queryFn: () => getHouseholdLiveLocations(household.id),
@@ -6918,186 +6027,16 @@ export const HomePage = ({
     setPendingCompleteTask(null);
   }, [onCompleteTask, pendingCompleteTask]);
 
-  const todayWeatherDay = householdWeatherDays[0] ?? null;
-  const weatherBannerTempLabel = useMemo(() => {
-    if (!todayWeatherDay) return null;
-    const max = todayWeatherDay.tempMaxC === null ? "—" : Math.round(todayWeatherDay.tempMaxC);
-    const min = todayWeatherDay.tempMinC === null ? "—" : Math.round(todayWeatherDay.tempMinC);
-    return `${max}° / ${min}°`;
-  }, [todayWeatherDay]);
 
-  const renderHouseholdWeatherContent = useCallback((dayLimit?: number) => {
-    if (!mapHasPin) {
-      return (
-        <p className="text-xs text-slate-500 dark:text-slate-400">
-          {t("home.householdWeatherNeedsAddress")}
-        </p>
-      );
-    }
-    if (householdWeatherQuery.isLoading) {
-      return (
-        <p className="text-xs text-slate-500 dark:text-slate-400">
-          {t("home.householdWeatherLoading")}
-        </p>
-      );
-    }
-    if (householdWeatherQuery.isError) {
-      return (
-        <p className="text-xs text-rose-600 dark:text-rose-400">
-          {t("home.householdWeatherError")}
-        </p>
-      );
-    }
-    if (householdWeatherHourly.length === 0) {
-      return (
-        <p className="text-xs text-slate-500 dark:text-slate-400">
-          {t("home.householdWeatherEmpty")}
-        </p>
-      );
-    }
 
-    const weatherDaysToRender =
-      typeof dayLimit === "number" ? householdWeatherDays.slice(0, Math.max(0, dayLimit)) : householdWeatherDays;
-
-    return (
-      <div className="space-y-2">
-        {weatherDaysToRender.length > 0 ? (
-          <HouseholdWeatherDailyPreview>
-            {weatherDaysToRender.map((day, index) => (
-              <div
-                key={`weather-day-${day.date}`}
-                className="w-[168px] shrink-0 rounded-2xl border border-slate-200/90 bg-gradient-to-b from-white/95 to-slate-50/90 p-1 shadow-sm dark:border-slate-700/90 dark:from-slate-900/85 dark:to-slate-900/65"
-              >
-                {(() => {
-                  const warnings = getDailyWeatherWarnings(day);
-                  return (
-                    <div className="relative flex items-center justify-center rounded-xl bg-white/70 py-1 pt-4 dark:bg-slate-800/65">
-                      <p className="absolute top-2 left-2 text-sm font-semibold text-slate-800 dark:text-slate-100">
-                        {index === 0
-                          ? t("home.householdWeatherRelativeToday")
-                          : index === 1
-                            ? t("home.householdWeatherRelativeTomorrow")
-                            : index === 2
-                              ? t("home.householdWeatherRelativeDayAfterTomorrow")
-                              : formatDateOnly(day.date, language, day.date)}
-                      </p>
-                      {warnings.icy || warnings.heat || warnings.storm || warnings.uv ? (
-                        <div className="absolute left-1.5 top-1.5 flex items-center gap-1">
-                          {warnings.icy ? (
-                            <span
-                              className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-cyan-200/90 bg-cyan-50/95 text-cyan-700 dark:border-cyan-800 dark:bg-cyan-900/40 dark:text-cyan-200"
-                              title={t("home.householdWeatherWarningIcy")}
-                              aria-label={t("home.householdWeatherWarningIcy")}
-                            >
-                              <Snowflake className="h-3 w-3" />
-                            </span>
-                          ) : null}
-                          {warnings.heat ? (
-                            <span
-                              className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-orange-200/90 bg-orange-50/95 text-orange-700 dark:border-orange-800 dark:bg-orange-900/40 dark:text-orange-200"
-                              title={t("home.householdWeatherWarningHeat")}
-                              aria-label={t("home.householdWeatherWarningHeat")}
-                            >
-                              <Flame className="h-3 w-3" />
-                            </span>
-                          ) : null}
-                          {warnings.storm ? (
-                            <span
-                              className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-indigo-200/90 bg-indigo-50/95 text-indigo-700 dark:border-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-200"
-                              title={t("home.householdWeatherWarningStorm")}
-                              aria-label={t("home.householdWeatherWarningStorm")}
-                            >
-                              <Wind className="h-3 w-3" />
-                            </span>
-                          ) : null}
-                          {warnings.uv ? (
-                            <span
-                              className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-amber-200/90 bg-amber-50/95 text-amber-700 dark:border-amber-800 dark:bg-amber-900/40 dark:text-amber-200"
-                              title={t("home.householdWeatherWarningUv")}
-                              aria-label={t("home.householdWeatherWarningUv")}
-                            >
-                              <Sun className="h-3 w-3" />
-                            </span>
-                          ) : null}
-                        </div>
-                      ) : null}
-                      <WeatherSvg state={getAnimatedWeatherState(day)} width={52} height={52} />
-                      <span className="absolute bottom-1.5 right-2 rounded-full border border-slate-200/90 bg-white/90 px-2 py-0.5 text-[10px] font-medium text-slate-700 dark:border-slate-700 dark:bg-slate-900/90 dark:text-slate-200">
-                        {t(getWeatherConditionLabelKey(day))}
-                      </span>
-                    </div>
-                  );
-                })()}
-                <p className="p-2 text-xs font-semibold text-slate-700 dark:text-slate-300">
-                  {t("home.householdWeatherTemp", {
-                    max: day.tempMaxC === null ? "—" : Math.round(day.tempMaxC),
-                    min: day.tempMinC === null ? "—" : Math.round(day.tempMinC)
-                  })}
-                </p>
-                <p className="mt-1 px-2 text-[11px] text-slate-600 dark:text-slate-300">
-                  {t("home.householdWeatherPrecip", {
-                    mm: day.precipitationMm === null ? "—" : Number(day.precipitationMm.toFixed(1)),
-                    prob: day.precipitationProbabilityPercent === null ? "—" : Math.round(day.precipitationProbabilityPercent)
-                  })}
-                </p>
-                <p className="mt-1 px-2 text-[11px] text-slate-600 dark:text-slate-300">
-                  {t("home.householdWeatherWind", {
-                    min:
-                      day.windSpeedKmh === null && day.windGustKmh === null
-                        ? "—"
-                        : Math.min(day.windSpeedKmh ?? Number.POSITIVE_INFINITY, day.windGustKmh ?? Number.POSITIVE_INFINITY) === Number.POSITIVE_INFINITY
-                          ? "—"
-                          : Math.round(Math.min(day.windSpeedKmh ?? Number.POSITIVE_INFINITY, day.windGustKmh ?? Number.POSITIVE_INFINITY)),
-                    max:
-                      day.windSpeedKmh === null && day.windGustKmh === null
-                        ? "—"
-                        : Math.max(day.windSpeedKmh ?? 0, day.windGustKmh ?? 0),
-                    dir: getWindDirectionLabel(day.windDirectionDeg)
-                  })}
-                </p>
-              </div>
-            ))}
-          </HouseholdWeatherDailyPreview>
-        ) : null}
-        <HouseholdWeatherPlot
-          hint={t("home.householdWeatherChartHint")}
-          isMobile={isMobileBucketComposer}
-          legendButtonLabel={t("home.householdWeatherLegendButton")}
-          legendItems={weatherLegendItems}
-          onToggleLegendItem={toggleWeatherLegendDataset}
-        >
-          <div
-            ref={weatherChartContainerRef}
-            className="h-64 overflow-hidden rounded-lg border border-slate-200/90 bg-white/80 dark:border-slate-700/90 dark:bg-slate-900/70"
-            onDoubleClick={zoomOutWeatherChart}
-            onTouchEndCapture={onWeatherChartTouchEndCapture}
-          >
-            <Chart
-              ref={weatherChartRef}
-              type="bar"
-              data={householdWeatherChartData}
-              options={householdWeatherChartOptions}
-            />
-          </div>
-        </HouseholdWeatherPlot>
-      </div>
-    );
-  }, [
-    householdWeatherDays,
-    householdWeatherHourly.length,
-    householdWeatherQuery.isError,
-    householdWeatherQuery.isLoading,
-    householdWeatherChartData,
-    householdWeatherChartOptions,
-    isMobileBucketComposer,
-    language,
-    mapHasPin,
-    t,
-    toggleWeatherLegendDataset,
-    weatherLegendItems,
-    zoomOutWeatherChart,
-    onWeatherChartTouchEndCapture
-  ]);
+  const weatherProviderProps = useMemo(
+    () => ({
+      householdId: household.id,
+      address: household.address ?? "",
+      language,
+    }),
+    [household.address, household.id, language]
+  );
 
   const renderHouseholdCalendarCard = (withTopMargin: boolean, showTitle: boolean) => (
               <Card className={`${withTopMargin ? "mt-6 " : ""}rounded-xl border border-slate-300 bg-white/90 p-3 text-slate-800 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-100`}>
@@ -7299,7 +6238,6 @@ export const HomePage = ({
                     <div className="grid grid-cols-7 gap-1">
                       {calendarMonthCells.map((cell) => {
                         const cellDayKey = dayKey(cell.date);
-                        const dayWeather = householdWeatherByDay.get(cellDayKey) ?? null;
                         const isToday = cellDayKey === dayKey(new Date());
                         const entry = homeCalendarEntries.get(cellDayKey);
                         const vacationSpans = vacationSpansByDay.get(cellDayKey) ?? [];
@@ -7368,11 +6306,9 @@ export const HomePage = ({
                                   >
                                     {cell.date.getDate()}
                                   </p>
-                                  {dayWeather ? (
                                     <span className="inline-flex items-center justify-center">
-                                      {getStaticWeatherCalendarIcon(dayWeather)}
+                                      <StaticWeatherCalendarIcon date={cellDayKey}/>
                                     </span>
-                                  ) : null}
                                 </div>
                                 <div className="mt-1 flex min-h-[16px] flex-col justify-end">
                                   {hasEntries ? (
@@ -8040,130 +6976,14 @@ export const HomePage = ({
     }
 
     if (key === "household-weather-daily") {
-      return !mapHasPin ? (
-        <p className="text-xs text-slate-500 dark:text-slate-400">
-          {t("home.householdWeatherNeedsAddress")}
-        </p>
-      ) : householdWeatherQuery.isLoading ? (
-        <p className="text-xs text-slate-500 dark:text-slate-400">
-          {t("home.householdWeatherLoading")}
-        </p>
-      ) : householdWeatherQuery.isError ? (
-        <p className="text-xs text-rose-600 dark:text-rose-400">
-          {t("home.householdWeatherError")}
-        </p>
-      ) : householdWeatherHourly.length === 0 ? (
-        <p className="text-xs text-slate-500 dark:text-slate-400">
-          {t("home.householdWeatherEmpty")}
-        </p>
-      ) : (
-        <HouseholdWeatherDailyPreview>
-          {householdWeatherDays.slice(0, 4).map((day, index) => (
-            <div
-              key={`landing-weather-day-${day.date}`}
-              className="w-[168px] shrink-0 rounded-2xl border border-slate-200/90 bg-gradient-to-b from-white/95 to-slate-50/90 p-1 shadow-sm dark:border-slate-700/90 dark:from-slate-900/85 dark:to-slate-900/65"
-            >
-              <div className="relative flex items-center justify-center rounded-xl bg-white/70 py-1 pt-4 dark:bg-slate-800/65">
-                <WeatherSvg
-                  state={getAnimatedWeatherState(day)}
-                  width={52}
-                  height={52}
-                />
-                <p className="absolute top-2 left-2 text-sm font-semibold text-slate-800 dark:text-slate-100">
-                  {index === 0
-                    ? t("home.householdWeatherRelativeToday")
-                    : index === 1
-                      ? t("home.householdWeatherRelativeTomorrow")
-                      : index === 2
-                        ? t("home.householdWeatherRelativeDayAfterTomorrow")
-                        : formatDateOnly(day.date, language, day.date)}
-                </p>
-                <span className="absolute bottom-1.5 right-2 rounded-full border border-slate-200/90 bg-white/90 px-2 py-0.5 text-[10px] font-medium text-slate-700 dark:border-slate-700 dark:bg-slate-900/90 dark:text-slate-200">
-                  {t(getWeatherConditionLabelKey(day))}
-                </span>
-              </div>
-              <p className="p-2 text-xs font-semibold text-slate-700 dark:text-slate-300">
-                {t("home.householdWeatherTemp", {
-                  max: day.tempMaxC === null ? "—" : Math.round(day.tempMaxC),
-                  min: day.tempMinC === null ? "—" : Math.round(day.tempMinC),
-                })}
-              </p>
-              <p className="px-2 mt-1 text-[11px] text-slate-600 dark:text-slate-300">
-                {t("home.householdWeatherPrecip", {
-                  mm:
-                    day.precipitationMm === null
-                      ? "—"
-                      : Number(day.precipitationMm.toFixed(1)),
-                  prob:
-                    day.precipitationProbabilityPercent === null
-                      ? "—"
-                      : Math.round(day.precipitationProbabilityPercent),
-                })}
-              </p>
-              <p className="px-2 mt-1 text-[11px] text-slate-600 dark:text-slate-300">
-                {t("home.householdWeatherWind", {
-                  min:
-                    day.windSpeedKmh === null && day.windGustKmh === null
-                      ? "—"
-                      : Math.min(
-                            day.windSpeedKmh ?? Number.POSITIVE_INFINITY,
-                            day.windGustKmh ?? Number.POSITIVE_INFINITY,
-                          ) === Number.POSITIVE_INFINITY
-                        ? "—"
-                        : Math.round(
-                            Math.min(
-                              day.windSpeedKmh ?? Number.POSITIVE_INFINITY,
-                              day.windGustKmh ?? Number.POSITIVE_INFINITY,
-                            ),
-                          ),
-                  max:
-                    day.windSpeedKmh === null && day.windGustKmh === null
-                      ? "—"
-                      : Math.round(
-                          Math.max(day.windSpeedKmh ?? 0, day.windGustKmh ?? 0),
-                        ),
-                  dir: getWindDirectionLabel(day.windDirectionDeg),
-                })}
-              </p>
-            </div>
-          ))}
-        </HouseholdWeatherDailyPreview>
+      return (
+          <WeatherDailyForecast dayLimit={4} getWindDirectionLabel={getWindDirectionLabel} />
       );
     }
 
     if (key === "household-weather-plot") {
       return (
-        !mapHasPin ? (
-          <p className="text-xs text-slate-500 dark:text-slate-400">{t("home.householdWeatherNeedsAddress")}</p>
-        ) : householdWeatherQuery.isLoading ? (
-          <p className="text-xs text-slate-500 dark:text-slate-400">{t("home.householdWeatherLoading")}</p>
-        ) : householdWeatherQuery.isError ? (
-          <p className="text-xs text-rose-600 dark:text-rose-400">{t("home.householdWeatherError")}</p>
-        ) : householdWeatherHourly.length === 0 ? (
-          <p className="text-xs text-slate-500 dark:text-slate-400">{t("home.householdWeatherEmpty")}</p>
-        ) : (
-          <HouseholdWeatherPlot
-            hint={t("home.householdWeatherChartHint")}
-            isMobile={isMobileBucketComposer}
-            legendButtonLabel={t("home.householdWeatherLegendButton")}
-            legendItems={weatherLegendItems}
-            onToggleLegendItem={toggleWeatherLegendDataset}
-          >
-            <div
-              ref={weatherChartContainerRef}
-              className="h-64 rounded-lg border border-slate-200/90 bg-white/80 p-2 dark:border-slate-700/90 dark:bg-slate-900/70"
-              onDoubleClick={zoomOutWeatherChart}
-              onTouchEndCapture={onWeatherChartTouchEndCapture}
-            >
-              <Chart
-                ref={weatherChartRef}
-                type="bar"
-                data={householdWeatherChartData}
-                options={householdWeatherChartOptions}
-              />
-            </div>
-          </HouseholdWeatherPlot>
-        )
+          <WeatherForecastGraph isMobile={isMobileBucketComposer}/>
       );
     }
 
@@ -8517,591 +7337,881 @@ export const HomePage = ({
   );
 
   return (
-    <div className="space-y-4">
-      {showSummary ? (
-        <div className="relative overflow-hidden rounded-2xl border border-brand-200 shadow-card dark:border-slate-700">
-          <div
-            className="absolute inset-0 bg-cover bg-center"
-            style={{ backgroundImage: bannerBackgroundImage }}
-          />
-          <div className="absolute inset-0 bg-gradient-to-r from-slate-900/45 via-slate-900/25 to-slate-900/55" />
-          <div className="relative flex min-h-44 items-end p-5 sm:min-h-56 sm:p-7">
-            {todayWeatherDay ? (
-              <button
-                type="button"
-                onClick={() => setIsWeatherFullscreenOpen(true)}
-                className="absolute right-4 top-4 inline-flex items-center gap-2 rounded-xl border border-white/25 bg-slate-900/45 px-2.5 py-1.5 text-left text-white backdrop-blur transition hover:bg-slate-900/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
-                aria-label={householdWeatherTitle}
-                title={householdWeatherTitle}
-              >
-                <WeatherSvg
-                  state={getAnimatedWeatherState(todayWeatherDay)}
-                  width={34}
-                  height={34}
+    <WeatherProvider {...weatherProviderProps}>
+      <div className="space-y-4">
+        {showSummary ? (
+          <div className="relative overflow-hidden rounded-2xl border border-brand-200 shadow-card dark:border-slate-700">
+            <div
+              className="absolute inset-0 bg-cover bg-center"
+              style={{ backgroundImage: bannerBackgroundImage }}
+            />
+            <div className="absolute inset-0 bg-gradient-to-r from-slate-900/45 via-slate-900/25 to-slate-900/55" />
+            <div className="relative flex min-h-44 items-end p-5 sm:min-h-56 sm:p-7">
+              {/* {householdWeatherDays.length > 0 ? ( */}
+              <div className="absolute right-4 top-4">
+                <WeatherTodayIcon
+                  onOpenFullscreen={() => setIsWeatherFullscreenOpen(true)}
+                  title={householdWeatherTitle}
                 />
-                <div className="min-w-0">
-                  <p className="text-[10px] font-medium uppercase tracking-[0.08em] text-white/80">
-                    {t("home.householdWeatherRelativeToday")}
-                  </p>
-                  <p className="truncate text-sm font-semibold text-white">
-                    {weatherBannerTempLabel ?? "—"}
-                  </p>
-                </div>
-              </button>
-            ) : null}
-            <div className="min-w-0">
-              <p className="truncate text-xs font-medium uppercase tracking-[0.12em] text-white/80">
-                {userLabel ?? t("app.noUserLabel")}
-              </p>
-              <h1 className="mt-1 truncate text-2xl font-semibold text-white sm:text-3xl">
-                {household.name}
-              </h1>
+              </div>
+              {/* ) : null} */}
+              <div className="min-w-0">
+                <p className="truncate text-xs font-medium uppercase tracking-[0.12em] text-white/80">
+                  {userLabel ?? t("app.noUserLabel")}
+                </p>
+                <h1 className="mt-1 truncate text-2xl font-semibold text-white sm:text-3xl">
+                  {household.name}
+                </h1>
+              </div>
             </div>
           </div>
-        </div>
-      ) : null}
+        ) : null}
 
-      {showSummary ? (
-        <Card className="rounded-xl border border-slate-300 bg-white/88 p-3 text-slate-800 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-100 mb-4">
-          <CardContent className="relative">
-            {households.length > 1 ? (
-              <div className="mb-4 sm:max-w-[280px]">
-                <Select value={household.id} onValueChange={onSelectHousehold}>
-                  <SelectTrigger>
-                    <SelectValue placeholder={t("home.switchHousehold")} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {households.map((entry) => (
-                      <SelectItem key={entry.id} value={entry.id}>
-                        {entry.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            ) : null}
-            {!isEditingLanding ? (
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      className="absolute right-2 top-2 z-10 h-9 w-9 rounded-full border-brand-200 bg-white/95 px-0 shadow-sm hover:bg-brand-50 dark:border-slate-700 dark:bg-slate-900/95 dark:hover:bg-slate-800"
-                      onMouseEnter={prefetchEditor}
-                      onFocus={prefetchEditor}
-                      onClick={() => setIsEditingLanding(true)}
-                      disabled={!canEdit}
-                      aria-label={t("home.editLanding")}
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>{t("home.editLanding")}</TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            ) : null}
-            {!canEdit ? (
-              <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">
-                {t("home.editLandingOwnerOnly")}
-              </p>
-            ) : null}
-            {canEdit && isEditingLanding ? (
-              <form
-                className="w-full space-y-3"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  void (async () => {
-                    try {
-                      setIsSaving(true);
-                      await onSaveLandingMarkdown(markdownDraft);
-                      setIsEditingLanding(false);
-                    } finally {
-                      setIsSaving(false);
-                    }
-                  })();
-                }}
-              >
-                <ErrorBoundary
-                  fallback={
-                    <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-6 text-sm text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-200">
-                      {t("home.editorError")}
-                    </div>
-                  }
+        {showSummary ? (
+          <Card className="rounded-xl border border-slate-300 bg-white/88 p-3 text-slate-800 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-100 mb-4">
+            <CardContent className="relative">
+              {households.length > 1 ? (
+                <div className="mb-4 sm:max-w-[280px]">
+                  <Select
+                    value={household.id}
+                    onValueChange={onSelectHousehold}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder={t("home.switchHousehold")} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {households.map((entry) => (
+                        <SelectItem key={entry.id} value={entry.id}>
+                          {entry.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              ) : null}
+              {!isEditingLanding ? (
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="absolute right-2 top-2 z-10 h-9 w-9 rounded-full border-brand-200 bg-white/95 px-0 shadow-sm hover:bg-brand-50 dark:border-slate-700 dark:bg-slate-900/95 dark:hover:bg-slate-800"
+                        onMouseEnter={prefetchEditor}
+                        onFocus={prefetchEditor}
+                        onClick={() => setIsEditingLanding(true)}
+                        disabled={!canEdit}
+                        aria-label={t("home.editLanding")}
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>{t("home.editLanding")}</TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              ) : null}
+              {!canEdit ? (
+                <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">
+                  {t("home.editLandingOwnerOnly")}
+                </p>
+              ) : null}
+              {canEdit && isEditingLanding ? (
+                <form
+                  className="w-full space-y-3"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    void (async () => {
+                      try {
+                        setIsSaving(true);
+                        await onSaveLandingMarkdown(markdownDraft);
+                        setIsEditingLanding(false);
+                      } finally {
+                        setIsSaving(false);
+                      }
+                    })();
+                  }}
                 >
-                  <Suspense
+                  <ErrorBoundary
                     fallback={
-                      <div className="rounded-xl border border-dashed border-brand-200 bg-brand-50/40 px-4 py-8 text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-300">
-                        {t("common.loading")}
+                      <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-6 text-sm text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-200">
+                        {t("home.editorError")}
                       </div>
                     }
                   >
-                    <MXEditorLazy
-                      editorRef={landingEditorRef}
-                      value={convertLandingTokensToEditorJsx(markdownDraft)}
-                      onChange={(nextValue) =>
-                        setMarkdownDraft(
-                          convertEditorJsxToLandingTokens(nextValue),
-                        )
+                    <Suspense
+                      fallback={
+                        <div className="rounded-xl border border-dashed border-brand-200 bg-brand-50/40 px-4 py-8 text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-300">
+                          {t("common.loading")}
+                        </div>
                       }
-                      placeholder={t("home.markdownPlaceholder")}
-                      chrome="flat"
-                      insertOptions={landingInsertOptionsForEditor}
-                      insertPlaceholder={t("home.insertWidgetPlaceholder")}
-                      insertButtonLabel={t("home.insertWidgetAction")}
-                      jsxComponentDescriptors={landingWidgetJsxDescriptors}
+                    >
+                      <MXEditorLazy
+                        editorRef={landingEditorRef}
+                        value={convertLandingTokensToEditorJsx(markdownDraft)}
+                        onChange={(nextValue) =>
+                          setMarkdownDraft(
+                            convertEditorJsxToLandingTokens(nextValue),
+                          )
+                        }
+                        placeholder={t("home.markdownPlaceholder")}
+                        chrome="flat"
+                        insertOptions={landingInsertOptionsForEditor}
+                        insertPlaceholder={t("home.insertWidgetPlaceholder")}
+                        insertButtonLabel={t("home.insertWidgetAction")}
+                        jsxComponentDescriptors={landingWidgetJsxDescriptors}
+                      />
+                    </Suspense>
+                  </ErrorBoundary>
+                  <div className="flex justify-end gap-2">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      onClick={() => {
+                        setMarkdownDraft(effectiveMarkdown);
+                        setIsEditingLanding(false);
+                      }}
+                    >
+                      {t("common.cancel")}
+                    </Button>
+                    <Button type="submit" disabled={busy || isSaving}>
+                      {t("home.saveLanding")}
+                    </Button>
+                  </div>
+                </form>
+              ) : hasContent ? (
+                <div className="prose prose-slate max-w-none dark:prose-invert [&_*]:break-words">
+                  {landingContentSegments.map((segment, index) =>
+                    segment.type === "markdown" ? (
+                      <ReactMarkdown
+                        key={`md-${index}`}
+                        remarkPlugins={[remarkGfm]}
+                        components={markdownComponents}
+                      >
+                        {segment.content}
+                      </ReactMarkdown>
+                    ) : (
+                      <div
+                        key={`widget-${segment.key}-${index}`}
+                        className="not-prose mt-4"
+                      >
+                        {renderLandingWidget(segment.key)}
+                      </div>
+                    ),
+                  )}
+                </div>
+              ) : (
+                <p className="text-sm text-slate-500 dark:text-slate-400">
+                  {t("home.landingEmpty")}
+                </p>
+              )}
+            </CardContent>
+          </Card>
+        ) : null}
+
+        {showBucket ? (
+          <>
+            <Card>
+              <CardHeader>
+                <CardTitle>{t("home.bucketTitle")}</CardTitle>
+                <CardDescription>{t("home.bucketDescription")}</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {!isMobileBucketComposer ? renderBucketComposer(false) : null}
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  {t("home.bucketProgress", {
+                    open: openBucketItemsCount,
+                    done: doneBucketItemsCount,
+                  })}
+                </p>
+                {doneBucketItemsCount > 0 ? (
+                  <div className="flex justify-end">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 text-xs"
+                      onClick={() =>
+                        setShowCompletedBucketItems((current) => !current)
+                      }
+                      disabled={busy}
+                    >
+                      {showCompletedBucketItems
+                        ? t("home.bucketHideCompleted")
+                        : t("home.bucketShowCompleted", {
+                            count: doneBucketItemsCount,
+                          })}
+                    </Button>
+                  </div>
+                ) : null}
+                {visibleBucketItems.length === 0 ? (
+                  <p className="text-sm text-slate-500 dark:text-slate-400">
+                    {t("home.bucketEmpty")}
+                  </p>
+                ) : null}
+              </CardContent>
+            </Card>
+            {visibleBucketItems.length > 0 ? (
+              <div
+                className={`space-y-3 ${isMobileBucketComposer ? "pb-40" : ""}`}
+              >
+                {visibleBucketItems.map((item) => (
+                  <Card
+                    className="rounded-xl border border-slate-300 bg-white/88 p-3 text-slate-800 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-100 mb-4"
+                    key={item.id}
+                  >
+                    <CardContent className="space-y-2 pt-0">
+                      <div className="flex items-center justify-between gap-2">
+                        <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-2">
+                          <Checkbox
+                            checked={item.done}
+                            onCheckedChange={() => {
+                              void onToggleBucketItem(item);
+                            }}
+                            aria-label={
+                              item.done
+                                ? t("home.bucketMarkOpen")
+                                : t("home.bucketMarkDone")
+                            }
+                            disabled={busy}
+                          />
+                          <span
+                            className={`truncate text-sm ${
+                              item.done
+                                ? "text-slate-400 line-through dark:text-slate-500"
+                                : "text-slate-700 dark:text-slate-300"
+                            }`}
+                          >
+                            {item.title}
+                          </span>
+                        </label>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              className="h-8 w-8 shrink-0 px-0"
+                              disabled={busy}
+                              aria-label={t("home.bucketItemActions")}
+                            >
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem
+                              onClick={() => onStartBucketEdit(item)}
+                              disabled={busy}
+                            >
+                              <Pencil className="mr-2 h-4 w-4" />
+                              {t("home.bucketEdit")}
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => setBucketItemPendingDelete(item)}
+                              disabled={busy}
+                              className="text-rose-600 dark:text-rose-300"
+                            >
+                              <Trash2 className="mr-2 h-4 w-4" />
+                              {t("home.bucketDelete")}
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+
+                      {item.description_markdown.trim().length > 0 ? (
+                        <div className="prose prose-slate max-w-none text-sm dark:prose-invert [&_*]:break-words">
+                          <ReactMarkdown
+                            remarkPlugins={[remarkGfm]}
+                            components={markdownComponents}
+                          >
+                            {item.description_markdown}
+                          </ReactMarkdown>
+                        </div>
+                      ) : null}
+                      {(item.address ?? "").trim().length > 0 ? (
+                        <p className="text-xs text-slate-600 dark:text-slate-300">
+                          {(item.address ?? "").trim()}
+                        </p>
+                      ) : null}
+
+                      {item.suggested_dates.length > 0 ? (
+                        <div className="space-y-2">
+                          <p className="text-xs font-medium text-slate-600 dark:text-slate-300">
+                            {t("home.bucketSuggestedDatesTitle")}
+                          </p>
+                          <ul className="space-y-1">
+                            {item.suggested_dates.map((dateValue) => {
+                              const voters =
+                                item.votes_by_date[dateValue] ?? [];
+                              const hasVoted = voters.includes(userId);
+                              return (
+                                <li
+                                  key={`${item.id}-${dateValue}`}
+                                  className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50/70 px-2 py-1.5 dark:border-slate-700 dark:bg-slate-800/60"
+                                >
+                                  <span className="text-xs text-slate-700 dark:text-slate-300">
+                                    {formatSuggestedDate(dateValue)}
+                                  </span>
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-xs text-slate-500 dark:text-slate-400">
+                                      {t("home.bucketVotes", {
+                                        count: voters.length,
+                                      })}
+                                    </span>
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      variant={hasVoted ? "default" : "outline"}
+                                      className="h-7 px-2 text-[11px]"
+                                      disabled={busy}
+                                      onClick={() => {
+                                        void onToggleBucketDateVote(
+                                          item,
+                                          dateValue,
+                                          !hasVoted,
+                                        );
+                                      }}
+                                    >
+                                      {hasVoted
+                                        ? t("home.bucketVotedAction")
+                                        : t("home.bucketVoteAction")}
+                                    </Button>
+                                  </div>
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        </div>
+                      ) : null}
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            ) : null}
+            <Dialog
+              open={bucketItemBeingEdited !== null}
+              onOpenChange={(open) => {
+                if (open) return;
+                setBucketItemBeingEdited(null);
+                setBucketEditTitle("");
+                setBucketEditDescriptionMarkdown("");
+                setBucketEditAddress("");
+                setBucketEditSuggestedDates([]);
+              }}
+            >
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>{t("home.bucketEditTitle")}</DialogTitle>
+                  <DialogDescription>
+                    {t("home.bucketEditDescription")}
+                  </DialogDescription>
+                </DialogHeader>
+                <form
+                  className="space-y-3"
+                  onSubmit={(event) => void onSubmitBucketEdit(event)}
+                >
+                  <div className="space-y-1">
+                    <Label>{t("home.bucketTitle")}</Label>
+                    <Input
+                      value={bucketEditTitle}
+                      onChange={(event) =>
+                        setBucketEditTitle(event.target.value)
+                      }
+                      placeholder={t("home.bucketPlaceholder")}
+                      required
                     />
-                  </Suspense>
-                </ErrorBoundary>
-                <div className="flex justify-end gap-2">
+                  </div>
+                  <div className="space-y-1">
+                    <Label>{t("home.bucketDescriptionPlaceholder")}</Label>
+                    <textarea
+                      value={bucketEditDescriptionMarkdown}
+                      onChange={(event) =>
+                        setBucketEditDescriptionMarkdown(event.target.value)
+                      }
+                      placeholder={t("home.bucketDescriptionPlaceholder")}
+                      className="min-h-[96px] w-full rounded-xl border border-brand-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label>{t("home.bucketAddressLabel")}</Label>
+                    <Input
+                      value={bucketEditAddress}
+                      onChange={(event) =>
+                        setBucketEditAddress(event.target.value)
+                      }
+                      placeholder={t("home.bucketAddressPlaceholder")}
+                      maxLength={300}
+                      disabled={busy}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium text-slate-600 dark:text-slate-300">
+                      {t("home.bucketDatesLabel")}
+                    </p>
+                    <MultiDateCalendarSelect
+                      value={bucketEditSuggestedDates}
+                      onChange={setBucketEditSuggestedDates}
+                      locale={language}
+                      placeholder={t("home.bucketDatePickerPlaceholder")}
+                      clearLabel={t("home.bucketDatePickerClear")}
+                      doneLabel={t("home.bucketDatePickerDone")}
+                      disabled={busy}
+                    />
+                  </div>
+                  <div className="flex justify-end gap-2">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      onClick={() => {
+                        setBucketItemBeingEdited(null);
+                        setBucketEditTitle("");
+                        setBucketEditDescriptionMarkdown("");
+                        setBucketEditAddress("");
+                        setBucketEditSuggestedDates([]);
+                      }}
+                    >
+                      {t("common.cancel")}
+                    </Button>
+                    <Button
+                      type="submit"
+                      disabled={busy || bucketEditTitle.trim().length === 0}
+                    >
+                      {t("home.bucketEditSave")}
+                    </Button>
+                  </div>
+                </form>
+              </DialogContent>
+            </Dialog>
+            <Dialog
+              open={bucketItemPendingDelete !== null}
+              onOpenChange={(open) => {
+                if (!open) setBucketItemPendingDelete(null);
+              }}
+            >
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>
+                    {t("home.bucketDeleteConfirmTitle")}
+                  </DialogTitle>
+                  <DialogDescription>
+                    {t("home.bucketDeleteConfirmDescription", {
+                      title: bucketItemPendingDelete?.title ?? "",
+                    })}
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="mt-4 flex justify-end gap-2">
                   <Button
-                    type="button"
                     variant="ghost"
-                    onClick={() => {
-                      setMarkdownDraft(effectiveMarkdown);
-                      setIsEditingLanding(false);
-                    }}
+                    onClick={() => setBucketItemPendingDelete(null)}
                   >
                     {t("common.cancel")}
                   </Button>
-                  <Button type="submit" disabled={busy || isSaving}>
-                    {t("home.saveLanding")}
-                  </Button>
-                </div>
-              </form>
-            ) : hasContent ? (
-              <div className="prose prose-slate max-w-none dark:prose-invert [&_*]:break-words">
-                {landingContentSegments.map((segment, index) =>
-                  segment.type === "markdown" ? (
-                    <ReactMarkdown
-                      key={`md-${index}`}
-                      remarkPlugins={[remarkGfm]}
-                      components={markdownComponents}
-                    >
-                      {segment.content}
-                    </ReactMarkdown>
-                  ) : (
-                    <div
-                      key={`widget-${segment.key}-${index}`}
-                      className="not-prose mt-4"
-                    >
-                      {renderLandingWidget(segment.key)}
-                    </div>
-                  ),
-                )}
-              </div>
-            ) : (
-              <p className="text-sm text-slate-500 dark:text-slate-400">
-                {t("home.landingEmpty")}
-              </p>
-            )}
-          </CardContent>
-        </Card>
-      ) : null}
-
-      {showBucket ? (
-        <>
-          <Card>
-            <CardHeader>
-              <CardTitle>{t("home.bucketTitle")}</CardTitle>
-              <CardDescription>{t("home.bucketDescription")}</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {!isMobileBucketComposer ? renderBucketComposer(false) : null}
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                {t("home.bucketProgress", {
-                  open: openBucketItemsCount,
-                  done: doneBucketItemsCount,
-                })}
-              </p>
-              {doneBucketItemsCount > 0 ? (
-                <div className="flex justify-end">
                   <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="h-8 text-xs"
-                    onClick={() =>
-                      setShowCompletedBucketItems((current) => !current)
-                    }
-                    disabled={busy}
+                    variant="danger"
+                    onClick={() => {
+                      void onConfirmDeleteBucketItem();
+                    }}
                   >
-                    {showCompletedBucketItems
-                      ? t("home.bucketHideCompleted")
-                      : t("home.bucketShowCompleted", {
-                          count: doneBucketItemsCount,
-                        })}
+                    {t("home.bucketDeleteConfirmAction")}
                   </Button>
                 </div>
-              ) : null}
-              {visibleBucketItems.length === 0 ? (
+              </DialogContent>
+            </Dialog>
+            {isMobileBucketComposer ? (
+              <div
+                className={`fixed inset-x-0 z-40 px-3 sm:hidden ${
+                  mobileTabBarVisible
+                    ? "bottom-[calc(env(safe-area-inset-bottom)+3.75rem)]"
+                    : "bottom-[calc(env(safe-area-inset-bottom)+0.2rem)]"
+                }`}
+              >
+                <div
+                  ref={bucketComposerContainerRef}
+                  className="rounded-2xl border border-brand-200/70 bg-white/75 p-1.5 shadow-xl backdrop-blur-xl dark:border-slate-700/70 dark:bg-slate-900/75"
+                >
+                  {renderBucketComposer(true)}
+                </div>
+              </div>
+            ) : null}
+          </>
+        ) : null}
+
+        {showFeed ? (
+          <Card className="rounded-xl border border-slate-300 bg-white/88 p-3 text-slate-800 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-100 mb-4">
+            <CardHeader>
+              <CardTitle>{t("home.activityTitle")}</CardTitle>
+              <CardDescription>{t("home.activityDescription")}</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {recentActivity.length > 0 ? (
+                <ul className="space-y-2">
+                  {recentActivity.map((entry) => {
+                    const Icon =
+                      entry.icon === "task"
+                        ? CalendarCheck2
+                        : entry.icon === "shopping"
+                          ? ShoppingCart
+                          : entry.icon === "finance"
+                            ? Wallet
+                            : Receipt;
+                    return (
+                      <li
+                        key={entry.id}
+                        className="flex items-start justify-between gap-2 rounded-xl border border-brand-100 bg-white/80 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900/70"
+                      >
+                        <div className="flex min-w-0 items-start gap-2">
+                          <Icon className="mt-0.5 h-4 w-4 shrink-0 text-brand-600 dark:text-brand-300" />
+                          {entry.navigateTo ? (
+                            <button
+                              type="button"
+                              className="min-w-0 text-left text-slate-700 underline-offset-2 hover:underline dark:text-slate-300"
+                              onClick={() => {
+                                const target = entry.navigateTo;
+                                if (!target) return;
+                                void navigate({ to: target });
+                              }}
+                            >
+                              {entry.text}
+                            </button>
+                          ) : (
+                            <span className="min-w-0 text-slate-700 dark:text-slate-300">
+                              {entry.text}
+                            </span>
+                          )}
+                        </div>
+                        <span className="shrink-0 text-xs text-slate-500 dark:text-slate-400">
+                          {formatDateTime(entry.at, language, entry.at)}
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : (
                 <p className="text-sm text-slate-500 dark:text-slate-400">
-                  {t("home.bucketEmpty")}
+                  {t("home.activityEmpty")}
                 </p>
+              )}
+              {eventsHasMore ? (
+                <div className="mt-3 flex justify-center">
+                  <Button
+                    variant="outline"
+                    onClick={() => onLoadMoreEvents?.()}
+                    disabled={eventsLoadingMore}
+                  >
+                    {t("common.loadMore")}
+                  </Button>
+                </div>
               ) : null}
             </CardContent>
           </Card>
-          {visibleBucketItems.length > 0 ? (
-            <div
-              className={`space-y-3 ${isMobileBucketComposer ? "pb-40" : ""}`}
-            >
-              {visibleBucketItems.map((item) => (
-                <Card
-                  className="rounded-xl border border-slate-300 bg-white/88 p-3 text-slate-800 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-100 mb-4"
-                  key={item.id}
-                >
-                  <CardContent className="space-y-2 pt-0">
-                    <div className="flex items-center justify-between gap-2">
-                      <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-2">
-                        <Checkbox
-                          checked={item.done}
-                          onCheckedChange={() => {
-                            void onToggleBucketItem(item);
-                          }}
-                          aria-label={
-                            item.done
-                              ? t("home.bucketMarkOpen")
-                              : t("home.bucketMarkDone")
-                          }
-                          disabled={busy}
-                        />
-                        <span
-                          className={`truncate text-sm ${
-                            item.done
-                              ? "text-slate-400 line-through dark:text-slate-500"
-                              : "text-slate-700 dark:text-slate-300"
-                          }`}
-                        >
-                          {item.title}
-                        </span>
-                      </label>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            className="h-8 w-8 shrink-0 px-0"
-                            disabled={busy}
-                            aria-label={t("home.bucketItemActions")}
-                          >
-                            <MoreHorizontal className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem
-                            onClick={() => onStartBucketEdit(item)}
-                            disabled={busy}
-                          >
-                            <Pencil className="mr-2 h-4 w-4" />
-                            {t("home.bucketEdit")}
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            onClick={() => setBucketItemPendingDelete(item)}
-                            disabled={busy}
-                            className="text-rose-600 dark:text-rose-300"
-                          >
-                            <Trash2 className="mr-2 h-4 w-4" />
-                            {t("home.bucketDelete")}
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </div>
+        ) : null}
 
-                    {item.description_markdown.trim().length > 0 ? (
-                      <div className="prose prose-slate max-w-none text-sm dark:prose-invert [&_*]:break-words">
-                        <ReactMarkdown
-                          remarkPlugins={[remarkGfm]}
-                          components={markdownComponents}
-                        >
-                          {item.description_markdown}
-                        </ReactMarkdown>
-                      </div>
-                    ) : null}
-                    {(item.address ?? "").trim().length > 0 ? (
-                      <p className="text-xs text-slate-600 dark:text-slate-300">
-                        {(item.address ?? "").trim()}
-                      </p>
-                    ) : null}
+        {showSummary ? (
+          <>
+            {showSummaryCalendarCard
+              ? renderHouseholdCalendarCard(true, true)
+              : null}
 
-                    {item.suggested_dates.length > 0 ? (
-                      <div className="space-y-2">
-                        <p className="text-xs font-medium text-slate-600 dark:text-slate-300">
-                          {t("home.bucketSuggestedDatesTitle")}
-                        </p>
-                        <ul className="space-y-1">
-                          {item.suggested_dates.map((dateValue) => {
-                            const voters = item.votes_by_date[dateValue] ?? [];
-                            const hasVoted = voters.includes(userId);
-                            return (
-                              <li
-                                key={`${item.id}-${dateValue}`}
-                                className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50/70 px-2 py-1.5 dark:border-slate-700 dark:bg-slate-800/60"
-                              >
-                                <span className="text-xs text-slate-700 dark:text-slate-300">
-                                  {formatSuggestedDate(dateValue)}
-                                </span>
-                                <div className="flex items-center gap-2">
-                                  <span className="text-xs text-slate-500 dark:text-slate-400">
-                                    {t("home.bucketVotes", {
-                                      count: voters.length,
-                                    })}
-                                  </span>
-                                  <Button
-                                    type="button"
-                                    size="sm"
-                                    variant={hasVoted ? "default" : "outline"}
-                                    className="h-7 px-2 text-[11px]"
-                                    disabled={busy}
-                                    onClick={() => {
-                                      void onToggleBucketDateVote(
-                                        item,
-                                        dateValue,
-                                        !hasVoted,
-                                      );
-                                    }}
-                                  >
-                                    {hasVoted
-                                      ? t("home.bucketVotedAction")
-                                      : t("home.bucketVoteAction")}
-                                  </Button>
-                                </div>
-                              </li>
-                            );
-                          })}
-                        </ul>
-                      </div>
-                    ) : null}
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          ) : null}
-          <Dialog
-            open={bucketItemBeingEdited !== null}
-            onOpenChange={(open) => {
-              if (open) return;
-              setBucketItemBeingEdited(null);
-              setBucketEditTitle("");
-              setBucketEditDescriptionMarkdown("");
-              setBucketEditAddress("");
-              setBucketEditSuggestedDates([]);
-            }}
-          >
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>{t("home.bucketEditTitle")}</DialogTitle>
-                <DialogDescription>
-                  {t("home.bucketEditDescription")}
-                </DialogDescription>
-              </DialogHeader>
-              <form
-                className="space-y-3"
-                onSubmit={(event) => void onSubmitBucketEdit(event)}
-              >
-                <div className="space-y-1">
-                  <Label>{t("home.bucketTitle")}</Label>
-                  <Input
-                    value={bucketEditTitle}
-                    onChange={(event) => setBucketEditTitle(event.target.value)}
-                    placeholder={t("home.bucketPlaceholder")}
-                    required
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label>{t("home.bucketDescriptionPlaceholder")}</Label>
-                  <textarea
-                    value={bucketEditDescriptionMarkdown}
-                    onChange={(event) =>
-                      setBucketEditDescriptionMarkdown(event.target.value)
-                    }
-                    placeholder={t("home.bucketDescriptionPlaceholder")}
-                    className="min-h-[96px] w-full rounded-xl border border-brand-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label>{t("home.bucketAddressLabel")}</Label>
-                  <Input
-                    value={bucketEditAddress}
-                    onChange={(event) => setBucketEditAddress(event.target.value)}
-                    placeholder={t("home.bucketAddressPlaceholder")}
-                    maxLength={300}
-                    disabled={busy}
-                  />
-                </div>
-                <div className="space-y-1">
-                  <p className="text-xs font-medium text-slate-600 dark:text-slate-300">
-                    {t("home.bucketDatesLabel")}
-                  </p>
-                  <MultiDateCalendarSelect
-                    value={bucketEditSuggestedDates}
-                    onChange={setBucketEditSuggestedDates}
-                    locale={language}
-                    placeholder={t("home.bucketDatePickerPlaceholder")}
-                    clearLabel={t("home.bucketDatePickerClear")}
-                    doneLabel={t("home.bucketDatePickerDone")}
-                    disabled={busy}
-                  />
-                </div>
-                <div className="flex justify-end gap-2">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    onClick={() => {
-                      setBucketItemBeingEdited(null);
-                      setBucketEditTitle("");
-                      setBucketEditDescriptionMarkdown("");
-                      setBucketEditAddress("");
-                      setBucketEditSuggestedDates([]);
-                    }}
-                  >
-                    {t("common.cancel")}
-                  </Button>
-                  <Button
-                    type="submit"
-                    disabled={busy || bucketEditTitle.trim().length === 0}
-                  >
-                    {t("home.bucketEditSave")}
-                  </Button>
-                </div>
-              </form>
-            </DialogContent>
-          </Dialog>
-          <Dialog
-            open={bucketItemPendingDelete !== null}
-            onOpenChange={(open) => {
-              if (!open) setBucketItemPendingDelete(null);
-            }}
-          >
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>{t("home.bucketDeleteConfirmTitle")}</DialogTitle>
-                <DialogDescription>
-                  {t("home.bucketDeleteConfirmDescription", {
-                    title: bucketItemPendingDelete?.title ?? "",
-                  })}
-                </DialogDescription>
-              </DialogHeader>
-              <div className="mt-4 flex justify-end gap-2">
-                <Button
-                  variant="ghost"
-                  onClick={() => setBucketItemPendingDelete(null)}
-                >
-                  {t("common.cancel")}
-                </Button>
-                <Button
-                  variant="danger"
-                  onClick={() => {
-                    void onConfirmDeleteBucketItem();
-                  }}
-                >
-                  {t("home.bucketDeleteConfirmAction")}
-                </Button>
-              </div>
-            </DialogContent>
-          </Dialog>
-          {isMobileBucketComposer ? (
-            <div
-              className={`fixed inset-x-0 z-40 px-3 sm:hidden ${
-                mobileTabBarVisible
-                  ? "bottom-[calc(env(safe-area-inset-bottom)+3.75rem)]"
-                  : "bottom-[calc(env(safe-area-inset-bottom)+0.2rem)]"
-              }`}
-            >
-              <div
-                ref={bucketComposerContainerRef}
-                className="rounded-2xl border border-brand-200/70 bg-white/75 p-1.5 shadow-xl backdrop-blur-xl dark:border-slate-700/70 dark:bg-slate-900/75"
-              >
-                {renderBucketComposer(true)}
-              </div>
-            </div>
-          ) : null}
-        </>
-      ) : null}
-
-      {showFeed ? (
-        <Card className="rounded-xl border border-slate-300 bg-white/88 p-3 text-slate-800 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-100 mb-4">
-          <CardHeader>
-            <CardTitle>{t("home.activityTitle")}</CardTitle>
-            <CardDescription>{t("home.activityDescription")}</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {recentActivity.length > 0 ? (
-              <ul className="space-y-2">
-                {recentActivity.map((entry) => {
-                  const Icon =
-                    entry.icon === "task"
-                      ? CalendarCheck2
-                      : entry.icon === "shopping"
-                        ? ShoppingCart
-                        : entry.icon === "finance"
-                          ? Wallet
-                          : Receipt;
-                  return (
-                    <li
-                      key={entry.id}
-                      className="flex items-start justify-between gap-2 rounded-xl border border-brand-100 bg-white/80 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900/70"
-                    >
-                      <div className="flex min-w-0 items-start gap-2">
-                        <Icon className="mt-0.5 h-4 w-4 shrink-0 text-brand-600 dark:text-brand-300" />
-                        {entry.navigateTo ? (
-                          <button
-                            type="button"
-                            className="min-w-0 text-left text-slate-700 underline-offset-2 hover:underline dark:text-slate-300"
-                            onClick={() => {
-                              const target = entry.navigateTo;
-                              if (!target) return;
-                              void navigate({ to: target });
-                            }}
-                          >
-                            {entry.text}
-                          </button>
-                        ) : (
-                          <span className="min-w-0 text-slate-700 dark:text-slate-300">
-                            {entry.text}
+            {showSummaryWhiteboardCard ? (
+              <Card className="mt-6 rounded-xl border border-slate-300 bg-white/90 p-3 text-slate-800 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-100">
+                <HouseholdWhiteboardWidget
+                  title={
+                    <>
+                      {t("home.whiteboardTitle")}
+                      {whiteboardOnlineMembers.length > 0 ? (
+                        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                          <span className="text-[11px] font-medium text-emerald-700 dark:text-emerald-300">
+                            {t("home.whiteboardOnlineNow", {
+                              count: whiteboardOnlineMembers.length,
+                            })}
                           </span>
-                        )}
-                      </div>
-                      <span className="shrink-0 text-xs text-slate-500 dark:text-slate-400">
-                        {formatDateTime(entry.at, language, entry.at)}
-                      </span>
-                    </li>
-                  );
-                })}
-              </ul>
-            ) : (
-              <p className="text-sm text-slate-500 dark:text-slate-400">
-                {t("home.activityEmpty")}
-              </p>
-            )}
-            {eventsHasMore ? (
-              <div className="mt-3 flex justify-center">
-                <Button
-                  variant="outline"
-                  onClick={() => onLoadMoreEvents?.()}
-                  disabled={eventsLoadingMore}
+                          {whiteboardOnlineMembers.slice(0, 6).map((member) => (
+                            <span
+                              key={`wb-online-card-${member.user_id}`}
+                              className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-200"
+                            >
+                              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                              {memberLabel(member.user_id)}
+                            </span>
+                          ))}
+                        </div>
+                      ) : null}
+                    </>
+                  }
+                  description={t("home.whiteboardDescription")}
+                  headerActions={<div className="flex items-center gap-2" />}
                 >
-                  {t("common.loadMore")}
-                </Button>
-              </div>
+                  <ErrorBoundary
+                    fallback={
+                      <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-6 text-sm text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-200">
+                        {t("home.whiteboardError")}
+                      </div>
+                    }
+                  >
+                    <Suspense
+                      fallback={
+                        <div className="flex h-[560px] items-center justify-center rounded-xl border border-brand-100 bg-white/70 text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-300">
+                          {t("common.loading")}
+                        </div>
+                      }
+                    >
+                      <div className="relative">
+                        <ExcalidrawBoardLazy
+                          sceneJson={whiteboardDraft}
+                          onSceneChange={(nextValue) => {
+                            setWhiteboardDraft(nextValue);
+                          }}
+                          className="rounded-xl border border-brand-100 bg-white dark:border-slate-700"
+                          height={560}
+                          previewMode
+                        />
+                        <button
+                          type="button"
+                          className="absolute inset-0 rounded-xl border border-transparent transition hover:border-brand-200 hover:bg-brand-50/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400/60"
+                          onClick={openWhiteboardFullscreen}
+                          aria-label={t("home.whiteboardFullscreen")}
+                          title={t("home.whiteboardFullscreen")}
+                        />
+                      </div>
+                    </Suspense>
+                  </ErrorBoundary>
+                </HouseholdWhiteboardWidget>
+              </Card>
             ) : null}
-          </CardContent>
-        </Card>
-      ) : null}
 
-      {showSummary ? (
-        <>
-          {showSummaryCalendarCard
-            ? renderHouseholdCalendarCard(true, true)
-            : null}
+            {showSummaryMapCard ? (
+              <Card className="mt-6 rounded-xl border border-slate-300 bg-white/90 p-3 text-slate-800 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-100">
+                <HouseholdMapWidget
+                  title={t("home.householdMapTitle")}
+                  description={t("home.householdMapDescription")}
+                  headerActions={
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-xl text-slate-700 hover:bg-slate-200/80 dark:text-brand-100 dark:hover:bg-slate-800"
+                        onClick={openMapFullscreen}
+                        aria-label={t("home.householdMapFullscreen")}
+                        title={t("home.householdMapFullscreen")}
+                      >
+                        <Maximize2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  }
+                >
+                  {renderHouseholdMapSurface(
+                    "relative h-72 overflow-hidden rounded-lg border border-brand-100 dark:border-slate-700",
+                    false,
+                  )}
+                  <div className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                    {!hasPoiQueryCenter
+                      ? t("home.householdMapPoiNeedsAddress")
+                      : nearbyPoiQuery.isFetching
+                        ? t("home.householdMapPoiLoading")
+                        : nearbyPoiQuery.isError
+                          ? t("home.householdMapPoiError")
+                          : t("home.householdMapPoiCount", {
+                              count: nearbyPois.length,
+                            })}
+                  </div>
+                  {myLocationStatus === "loading" ? (
+                    <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                      {t("home.householdMapLocating")}
+                    </div>
+                  ) : null}
+                  {myLocationError ? (
+                    <div className="mt-1 text-xs text-rose-600 dark:text-rose-400">
+                      {myLocationError}
+                    </div>
+                  ) : null}
+                  {poiOverrideError ? (
+                    <div className="mt-1 text-xs text-rose-600 dark:text-rose-400">
+                      {poiOverrideError}
+                    </div>
+                  ) : null}
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    {myActiveLiveLocation ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          void stopLiveLocationShareNow();
+                        }}
+                        disabled={liveShareStatus === "stopping"}
+                      >
+                        {t("home.householdMapLiveShareStop")}
+                      </Button>
+                    ) : (
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={() => {
+                          setIsLiveShareDialogOpen(true);
+                        }}
+                        disabled={liveShareStatus === "starting"}
+                      >
+                        {t("home.householdMapLiveShareStart")}
+                      </Button>
+                    )}
+                    {myActiveLiveLocation ? (
+                      <span className="text-xs text-slate-500 dark:text-slate-400">
+                        {t("home.householdMapLiveShareActiveUntil", {
+                          at: formatDateTime(
+                            myActiveLiveLocation.expires_at,
+                            language,
+                            myActiveLiveLocation.expires_at,
+                          ),
+                        })}
+                      </span>
+                    ) : null}
+                  </div>
+                  {liveShareError ? (
+                    <div className="mt-1 text-xs text-rose-600 dark:text-rose-400">
+                      {liveShareError}
+                    </div>
+                  ) : null}
+                </HouseholdMapWidget>
+              </Card>
+            ) : null}
 
-          {showSummaryWhiteboardCard ? (
-            <Card className="mt-6 rounded-xl border border-slate-300 bg-white/90 p-3 text-slate-800 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-100">
-              <HouseholdWhiteboardWidget
-                title={
-                  <>
-                    {t("home.whiteboardTitle")}
+            {showSummaryWeatherCard ? (
+              <Card className="mt-6 rounded-xl border border-slate-300 bg-white/90 p-3 text-slate-800 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-100">
+                <CardHeader className="gap-1">
+                  <CardTitle>{householdWeatherTitle}</CardTitle>
+                  <CardDescription>
+                    {t("home.householdWeatherDescription")}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="pt-2">
+                  <WeatherPanelContent
+                    // dayLimit={dayLimit}
+                    getWindDirectionLabel={getWindDirectionLabel}
+                  />
+                </CardContent>
+              </Card>
+            ) : null}
+
+            <Dialog
+              open={isWeatherFullscreenOpen}
+              onOpenChange={(open) => {
+                setIsWeatherFullscreenOpen(open);
+              }}
+            >
+              <DialogContent className="inset-0 left-0 top-0 flex h-[100dvh] w-[100vw] max-w-none -translate-x-0 -translate-y-0 flex-col overflow-hidden rounded-none border-0 p-0 [padding-bottom:var(--safe-area-bottom)] [padding-left:var(--safe-area-left)] [padding-right:var(--safe-area-right)] [padding-top:var(--safe-area-top)]">
+                <div className="flex flex-1 flex-col bg-slate-50 dark:bg-slate-950">
+                  <div className="flex items-start justify-between border-b border-slate-200 px-4 py-3 dark:border-slate-800">
+                    <div className="min-w-0">
+                      <DialogTitle className="truncate">
+                        {householdWeatherTitle}
+                      </DialogTitle>
+                      <DialogDescription>
+                        {t("home.householdWeatherDescription")}
+                      </DialogDescription>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 w-8 shrink-0 p-0"
+                      onClick={() => setIsWeatherFullscreenOpen(false)}
+                      aria-label={t("common.close")}
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                  <div className="flex-1 overflow-y-auto p-4">
+                    <WeatherPanelContent
+                      // dayLimit={dayLimit}
+                      getWindDirectionLabel={getWindDirectionLabel}
+                    />
+                  </div>
+                </div>
+              </DialogContent>
+            </Dialog>
+
+            <Dialog
+              open={isLiveShareDialogOpen}
+              onOpenChange={(open) => {
+                if (liveShareStatus === "starting") return;
+                setIsLiveShareDialogOpen(open);
+              }}
+            >
+              <DialogContent className="sm:max-w-md">
+                <DialogHeader>
+                  <DialogTitle>
+                    {t("home.householdMapLiveShareStart")}
+                  </DialogTitle>
+                  <DialogDescription>
+                    {t("home.householdMapLiveShareDialogDescription")}
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-3">
+                  <div className="space-y-1">
+                    <Label>
+                      {t("home.householdMapLiveShareDurationLabel")}
+                    </Label>
+                    <Select
+                      value={String(liveShareDurationMinutes)}
+                      onValueChange={(value) =>
+                        setLiveShareDurationMinutes(Number(value))
+                      }
+                      disabled={liveShareStatus === "starting"}
+                    >
+                      <SelectTrigger className="h-9">
+                        <SelectValue
+                          placeholder={t(
+                            "home.householdMapLiveShareDurationLabel",
+                          )}
+                        />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {LIVE_LOCATION_DURATION_OPTIONS.map((minutes) => (
+                          <SelectItem
+                            key={`live-duration-dialog-${minutes}`}
+                            value={String(minutes)}
+                          >
+                            {t("home.householdMapLiveShareMinutes", {
+                              minutes,
+                            })}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="flex justify-end gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setIsLiveShareDialogOpen(false)}
+                      disabled={liveShareStatus === "starting"}
+                    >
+                      {t("common.cancel")}
+                    </Button>
+                    <Button
+                      type="button"
+                      onClick={onConfirmStartLiveShare}
+                      disabled={liveShareStatus === "starting"}
+                    >
+                      {t("home.householdMapLiveShareStart")}
+                    </Button>
+                  </div>
+                </div>
+              </DialogContent>
+            </Dialog>
+
+            <Dialog
+              open={isWhiteboardFullscreenOpen}
+              onOpenChange={(open) => {
+                if (!open) closeWhiteboardFullscreen();
+              }}
+            >
+              <DialogContent className="inset-0 left-0 top-0 flex h-[100dvh] w-[100vw] max-w-none -translate-x-0 -translate-y-0 flex-col overflow-hidden rounded-none border-0 p-0 [padding-bottom:var(--safe-area-bottom)] [padding-left:var(--safe-area-left)] [padding-right:var(--safe-area-right)] [padding-top:var(--safe-area-top)]">
+                <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 dark:border-slate-700">
+                  <div>
+                    <DialogTitle>{t("home.whiteboardTitle")}</DialogTitle>
+                    <DialogDescription>
+                      {t("home.whiteboardDescription")}
+                    </DialogDescription>
                     {whiteboardOnlineMembers.length > 0 ? (
                       <div className="mt-2 flex flex-wrap items-center gap-1.5">
                         <span className="text-[11px] font-medium text-emerald-700 dark:text-emerald-300">
@@ -9109,9 +8219,9 @@ export const HomePage = ({
                             count: whiteboardOnlineMembers.length,
                           })}
                         </span>
-                        {whiteboardOnlineMembers.slice(0, 6).map((member) => (
+                        {whiteboardOnlineMembers.slice(0, 10).map((member) => (
                           <span
-                            key={`wb-online-card-${member.user_id}`}
+                            key={`wb-online-full-${member.user_id}`}
                             className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-200"
                           >
                             <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
@@ -9120,525 +8230,109 @@ export const HomePage = ({
                         ))}
                       </div>
                     ) : null}
-                  </>
-                }
-                description={t("home.whiteboardDescription")}
-                headerActions={<div className="flex items-center gap-2" />}
-              >
-                <ErrorBoundary
-                  fallback={
-                    <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-6 text-sm text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-200">
-                      {t("home.whiteboardError")}
-                    </div>
-                  }
-                >
+                  </div>
+                  <div className="flex items-center gap-3">
+                    {whiteboardStatusIndicator}
+                    <span className="hidden text-xs font-medium text-slate-500 dark:text-slate-400 sm:inline">
+                      {whiteboardStatusLabel}
+                    </span>
+                    <button
+                      type="button"
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-xl text-slate-700 hover:bg-slate-200/80 dark:text-brand-100 dark:hover:bg-slate-800"
+                      onClick={closeWhiteboardFullscreen}
+                      aria-label={t("common.close")}
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+                <div className="flex-1">
                   <Suspense
                     fallback={
-                      <div className="flex h-[560px] items-center justify-center rounded-xl border border-brand-100 bg-white/70 text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-300">
+                      <div className="flex h-full items-center justify-center border border-brand-100 bg-white/70 text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-300">
                         {t("common.loading")}
                       </div>
                     }
                   >
-                    <div className="relative">
-                      <ExcalidrawBoardLazy
-                        sceneJson={whiteboardDraft}
-                        onSceneChange={(nextValue) => {
-                          setWhiteboardDraft(nextValue);
-                        }}
-                        className="rounded-xl border border-brand-100 bg-white dark:border-slate-700"
-                        height={560}
-                        previewMode
-                      />
-                      <button
-                        type="button"
-                        className="absolute inset-0 rounded-xl border border-transparent transition hover:border-brand-200 hover:bg-brand-50/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400/60"
-                        onClick={openWhiteboardFullscreen}
-                        aria-label={t("home.whiteboardFullscreen")}
-                        title={t("home.whiteboardFullscreen")}
-                      />
-                    </div>
+                    <ExcalidrawBoardLazy
+                      sceneJson={whiteboardDraft}
+                      onSceneChange={(nextValue) => {
+                        setWhiteboardDraft(nextValue);
+                      }}
+                      className="border border-brand-100 bg-white dark:border-slate-700"
+                      height={1600}
+                      fullHeight
+                    />
                   </Suspense>
-                </ErrorBoundary>
-              </HouseholdWhiteboardWidget>
-            </Card>
-          ) : null}
+                </div>
+              </DialogContent>
+            </Dialog>
 
-          {showSummaryMapCard ? (
-            <Card className="mt-6 rounded-xl border border-slate-300 bg-white/90 p-3 text-slate-800 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-100">
-              <HouseholdMapWidget
-                title={t("home.householdMapTitle")}
-                description={t("home.householdMapDescription")}
-                headerActions={
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      className="inline-flex h-8 w-8 items-center justify-center rounded-xl text-slate-700 hover:bg-slate-200/80 dark:text-brand-100 dark:hover:bg-slate-800"
-                      onClick={openMapFullscreen}
-                      aria-label={t("home.householdMapFullscreen")}
-                      title={t("home.householdMapFullscreen")}
-                    >
-                      <Maximize2 className="h-4 w-4" />
-                    </button>
+            <Dialog
+              open={isMapFullscreenOpen}
+              onOpenChange={(open) => {
+                if (!open) closeMapFullscreen();
+              }}
+            >
+              <DialogContent className="inset-0 left-0 top-0 flex h-[100dvh] w-[100vw] max-w-none -translate-x-0 -translate-y-0 flex-col overflow-hidden rounded-none border-0 p-0 [padding-bottom:var(--safe-area-bottom)] [padding-left:var(--safe-area-left)] [padding-right:var(--safe-area-right)] [padding-top:var(--safe-area-top)]">
+                <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 dark:border-slate-700">
+                  <div>
+                    <DialogTitle>{t("home.householdMapTitle")}</DialogTitle>
                   </div>
-                }
-              >
-                {renderHouseholdMapSurface(
-                  "relative h-72 overflow-hidden rounded-lg border border-brand-100 dark:border-slate-700",
-                  false,
-                )}
-                <div className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-                  {!hasPoiQueryCenter
-                    ? t("home.householdMapPoiNeedsAddress")
-                    : nearbyPoiQuery.isFetching
-                      ? t("home.householdMapPoiLoading")
-                      : nearbyPoiQuery.isError
-                        ? t("home.householdMapPoiError")
-                        : t("home.householdMapPoiCount", {
-                            count: nearbyPois.length,
-                          })}
-                </div>
-                {myLocationStatus === "loading" ? (
-                  <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                    {t("home.householdMapLocating")}
-                  </div>
-                ) : null}
-                {myLocationError ? (
-                  <div className="mt-1 text-xs text-rose-600 dark:text-rose-400">
-                    {myLocationError}
-                  </div>
-                ) : null}
-                {poiOverrideError ? (
-                  <div className="mt-1 text-xs text-rose-600 dark:text-rose-400">
-                    {poiOverrideError}
-                  </div>
-                ) : null}
-                <div className="mt-3 flex flex-wrap items-center gap-2">
-                  {myActiveLiveLocation ? (
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      onClick={() => {
-                        void stopLiveLocationShareNow();
-                      }}
-                      disabled={liveShareStatus === "stopping"}
-                    >
-                      {t("home.householdMapLiveShareStop")}
-                    </Button>
-                  ) : (
-                    <Button
-                      type="button"
-                      size="sm"
-                      onClick={() => {
-                        setIsLiveShareDialogOpen(true);
-                      }}
-                      disabled={liveShareStatus === "starting"}
-                    >
-                      {t("home.householdMapLiveShareStart")}
-                    </Button>
-                  )}
-                  {myActiveLiveLocation ? (
-                    <span className="text-xs text-slate-500 dark:text-slate-400">
-                      {t("home.householdMapLiveShareActiveUntil", {
-                        at: formatDateTime(
-                          myActiveLiveLocation.expires_at,
-                          language,
-                          myActiveLiveLocation.expires_at,
-                        ),
-                      })}
-                    </span>
-                  ) : null}
-                </div>
-                {liveShareError ? (
-                  <div className="mt-1 text-xs text-rose-600 dark:text-rose-400">
-                    {liveShareError}
-                  </div>
-                ) : null}
-              </HouseholdMapWidget>
-            </Card>
-          ) : null}
-
-          {showSummaryWeatherCard ? (
-            <Card className="mt-6 rounded-xl border border-slate-300 bg-white/90 p-3 text-slate-800 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-100">
-              <CardHeader className="gap-1">
-                <CardTitle>{householdWeatherTitle}</CardTitle>
-                <CardDescription>
-                  {t("home.householdWeatherDescription")}
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="pt-2">
-                {renderHouseholdWeatherContent()}
-              </CardContent>
-            </Card>
-          ) : null}
-
-          <Dialog
-            open={isWeatherFullscreenOpen}
-            onOpenChange={(open) => {
-              setIsWeatherFullscreenOpen(open);
-            }}
-          >
-            <DialogContent className="inset-0 left-0 top-0 flex h-[100dvh] w-[100vw] max-w-none -translate-x-0 -translate-y-0 flex-col overflow-hidden rounded-none border-0 p-0 [padding-bottom:var(--safe-area-bottom)] [padding-left:var(--safe-area-left)] [padding-right:var(--safe-area-right)] [padding-top:var(--safe-area-top)]">
-              <div className="flex flex-1 flex-col bg-slate-50 dark:bg-slate-950">
-                <div className="flex items-start justify-between border-b border-slate-200 px-4 py-3 dark:border-slate-800">
-                  <div className="min-w-0">
-                    <DialogTitle className="truncate">{householdWeatherTitle}</DialogTitle>
-                    <DialogDescription>{t("home.householdWeatherDescription")}</DialogDescription>
-                  </div>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="h-8 w-8 shrink-0 p-0"
-                    onClick={() => setIsWeatherFullscreenOpen(false)}
-                    aria-label={t("common.close")}
-                  >
-                    <X className="h-4 w-4" />
-                  </Button>
-                </div>
-                <div className="flex-1 overflow-y-auto p-4">
-                  {renderHouseholdWeatherContent()}
-                </div>
-              </div>
-            </DialogContent>
-          </Dialog>
-
-          <Dialog
-            open={isLiveShareDialogOpen}
-            onOpenChange={(open) => {
-              if (liveShareStatus === "starting") return;
-              setIsLiveShareDialogOpen(open);
-            }}
-          >
-            <DialogContent className="sm:max-w-md">
-              <DialogHeader>
-                <DialogTitle>
-                  {t("home.householdMapLiveShareStart")}
-                </DialogTitle>
-                <DialogDescription>
-                  {t("home.householdMapLiveShareDialogDescription")}
-                </DialogDescription>
-              </DialogHeader>
-              <div className="space-y-3">
-                <div className="space-y-1">
-                  <Label>{t("home.householdMapLiveShareDurationLabel")}</Label>
-                  <Select
-                    value={String(liveShareDurationMinutes)}
-                    onValueChange={(value) =>
-                      setLiveShareDurationMinutes(Number(value))
-                    }
-                    disabled={liveShareStatus === "starting"}
-                  >
-                    <SelectTrigger className="h-9">
-                      <SelectValue
-                        placeholder={t(
-                          "home.householdMapLiveShareDurationLabel",
-                        )}
-                      />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {LIVE_LOCATION_DURATION_OPTIONS.map((minutes) => (
-                        <SelectItem
-                          key={`live-duration-dialog-${minutes}`}
-                          value={String(minutes)}
-                        >
-                          {t("home.householdMapLiveShareMinutes", { minutes })}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="flex justify-end gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => setIsLiveShareDialogOpen(false)}
-                    disabled={liveShareStatus === "starting"}
-                  >
-                    {t("common.cancel")}
-                  </Button>
-                  <Button
-                    type="button"
-                    onClick={onConfirmStartLiveShare}
-                    disabled={liveShareStatus === "starting"}
-                  >
-                    {t("home.householdMapLiveShareStart")}
-                  </Button>
-                </div>
-              </div>
-            </DialogContent>
-          </Dialog>
-
-          <Dialog
-            open={isWhiteboardFullscreenOpen}
-            onOpenChange={(open) => {
-              if (!open) closeWhiteboardFullscreen();
-            }}
-          >
-            <DialogContent className="inset-0 left-0 top-0 flex h-[100dvh] w-[100vw] max-w-none -translate-x-0 -translate-y-0 flex-col overflow-hidden rounded-none border-0 p-0 [padding-bottom:var(--safe-area-bottom)] [padding-left:var(--safe-area-left)] [padding-right:var(--safe-area-right)] [padding-top:var(--safe-area-top)]">
-              <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 dark:border-slate-700">
-                <div>
-                  <DialogTitle>{t("home.whiteboardTitle")}</DialogTitle>
-                  <DialogDescription>
-                    {t("home.whiteboardDescription")}
-                  </DialogDescription>
-                  {whiteboardOnlineMembers.length > 0 ? (
-                    <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                      <span className="text-[11px] font-medium text-emerald-700 dark:text-emerald-300">
-                        {t("home.whiteboardOnlineNow", {
-                          count: whiteboardOnlineMembers.length,
-                        })}
-                      </span>
-                      {whiteboardOnlineMembers.slice(0, 10).map((member) => (
-                        <span
-                          key={`wb-online-full-${member.user_id}`}
-                          className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-200"
-                        >
-                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                          {memberLabel(member.user_id)}
-                        </span>
-                      ))}
-                    </div>
-                  ) : null}
-                </div>
-                <div className="flex items-center gap-3">
-                  {whiteboardStatusIndicator}
-                  <span className="hidden text-xs font-medium text-slate-500 dark:text-slate-400 sm:inline">
-                    {whiteboardStatusLabel}
-                  </span>
                   <button
                     type="button"
                     className="inline-flex h-8 w-8 items-center justify-center rounded-xl text-slate-700 hover:bg-slate-200/80 dark:text-brand-100 dark:hover:bg-slate-800"
-                    onClick={closeWhiteboardFullscreen}
+                    onClick={closeMapFullscreen}
                     aria-label={t("common.close")}
                   >
                     <X className="h-4 w-4" />
                   </button>
                 </div>
-              </div>
-              <div className="flex-1">
-                <Suspense
-                  fallback={
-                    <div className="flex h-full items-center justify-center border border-brand-100 bg-white/70 text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-300">
-                      {t("common.loading")}
-                    </div>
-                  }
-                >
-                  <ExcalidrawBoardLazy
-                    sceneJson={whiteboardDraft}
-                    onSceneChange={(nextValue) => {
-                      setWhiteboardDraft(nextValue);
-                    }}
-                    className="border border-brand-100 bg-white dark:border-slate-700"
-                    height={1600}
-                    fullHeight
-                  />
-                </Suspense>
-              </div>
-            </DialogContent>
-          </Dialog>
-
-          <Dialog
-            open={isMapFullscreenOpen}
-            onOpenChange={(open) => {
-              if (!open) closeMapFullscreen();
-            }}
-          >
-            <DialogContent className="inset-0 left-0 top-0 flex h-[100dvh] w-[100vw] max-w-none -translate-x-0 -translate-y-0 flex-col overflow-hidden rounded-none border-0 p-0 [padding-bottom:var(--safe-area-bottom)] [padding-left:var(--safe-area-left)] [padding-right:var(--safe-area-right)] [padding-top:var(--safe-area-top)]">
-              <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 dark:border-slate-700">
-                <div>
-                  <DialogTitle>{t("home.householdMapTitle")}</DialogTitle>
+                <div className="flex-1">
+                  {renderHouseholdMapSurface(
+                    "relative h-full overflow-hidden border-brand-100 dark:border-slate-700",
+                    true,
+                  )}
                 </div>
-                <button
-                  type="button"
-                  className="inline-flex h-8 w-8 items-center justify-center rounded-xl text-slate-700 hover:bg-slate-200/80 dark:text-brand-100 dark:hover:bg-slate-800"
-                  onClick={closeMapFullscreen}
-                  aria-label={t("common.close")}
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-              <div className="flex-1">
-                {renderHouseholdMapSurface(
-                  "relative h-full overflow-hidden border-brand-100 dark:border-slate-700",
-                  true,
-                )}
-              </div>
-            </DialogContent>
-          </Dialog>
-        </>
-      ) : null}
+              </DialogContent>
+            </Dialog>
+          </>
+        ) : null}
 
-      <Dialog
-        open={mapDeleteConfirm !== null}
-        onOpenChange={(open) => {
-          if (open) return;
-          cancelMapDeletion();
-        }}
-      >
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>{t("home.householdMapDeleteConfirmTitle")}</DialogTitle>
-            <DialogDescription>
-              {mapDeleteConfirm && mapDeleteConfirm.removedMarkers.length === 1
-                ? t("home.householdMapDeleteConfirmDescriptionOne")
-                : t("home.householdMapDeleteConfirmDescriptionMany", {
-                    count: mapDeleteConfirm?.removedMarkers.length ?? 0
-                  })}
-            </DialogDescription>
-          </DialogHeader>
-          {mapDeleteConfirm?.removedMarkers?.length ? (
-            <div className="max-h-44 space-y-1 overflow-auto rounded-md border border-slate-200/80 bg-slate-50/70 p-2 text-xs dark:border-slate-700/80 dark:bg-slate-900/60">
-              {mapDeleteConfirm.removedMarkers.slice(0, 8).map((marker) => (
-                <p key={`remove-preview-${marker.id}`} className="truncate">
-                  {getMarkerEmoji(marker.icon)} {marker.title}
-                </p>
-              ))}
-              {mapDeleteConfirm.removedMarkers.length > 8 ? (
-                <p className="text-slate-500 dark:text-slate-400">
-                  +{mapDeleteConfirm.removedMarkers.length - 8}
-                </p>
-              ) : null}
-            </div>
-          ) : null}
-          <div className="flex justify-end gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                cancelMapDeletion();
-              }}
-            >
-              {t("common.cancel")}
-            </Button>
-            <Button
-              type="button"
-              className="bg-rose-600 text-white hover:bg-rose-700 dark:bg-rose-500 dark:hover:bg-rose-600"
-              onClick={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                confirmMapDeletion();
-              }}
-            >
-              {t("home.householdMapDeleteConfirmAction")}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
-        open={editingMarkerDraft !== null}
-        onOpenChange={(open) => {
-          if (!open && !editingMarkerSaving) {
-            setEditingMarkerDraft(null);
-            setEditingMarkerError(null);
-          }
-        }}
-      >
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>{t("home.householdMapMarkerEditTitle")}</DialogTitle>
-            <DialogDescription>
-              {t("home.householdMapMarkerEditDescription")}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3">
-            <div className="space-y-1">
-              <Label>{t("home.householdMapMarkerIconLabel")}</Label>
-              <Select
-                value={editingMarkerDraft?.icon ?? "star"}
-                onValueChange={(value) =>
-                  setEditingMarkerDraft((current) =>
-                    current
-                      ? {
-                          ...current,
-                          icon: value as HouseholdMapMarkerIcon,
-                        }
-                      : current,
-                  )
-                }
-                disabled={editingMarkerSaving}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {MANUAL_MARKER_ICON_OPTIONS.map((option) => (
-                    <SelectItem
-                      key={`marker-edit-icon-${option.id}`}
-                      value={option.id}
-                    >
-                      <span className="inline-flex items-center gap-2">
-                        <span>{getMarkerEmoji(option.id)}</span>
-                        <span>{t(option.labelKey as never)}</span>
-                      </span>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1">
-              <Label>{t("home.householdMapMarkerColorLabel")}</Label>
-              <Input
-                type="color"
-                value={normalizeMarkerColor(editingMarkerDraft?.color)}
-                onChange={(event) =>
-                  setEditingMarkerDraft((current) =>
-                    current
-                      ? {
-                          ...current,
-                          color: normalizeMarkerColor(event.target.value),
-                        }
-                      : current,
-                  )
-                }
-                disabled={editingMarkerSaving}
-                className="h-10 w-16 p-1"
-              />
-            </div>
-            <div className="space-y-1">
-              <Label>{t("home.householdMapMarkerTitleLabel")}</Label>
-              <Input
-                value={editingMarkerDraft?.title ?? ""}
-                onChange={(event) =>
-                  setEditingMarkerDraft((current) =>
-                    current
-                      ? {
-                          ...current,
-                          title: event.target.value,
-                        }
-                      : current,
-                  )
-                }
-                placeholder={t("home.householdMapMarkerTitlePlaceholder")}
-                disabled={editingMarkerSaving}
-              />
-            </div>
-            <div className="space-y-1">
-              <Label>{t("home.householdMapMarkerDescriptionLabel")}</Label>
-              <Input
-                value={editingMarkerDraft?.description ?? ""}
-                onChange={(event) =>
-                  setEditingMarkerDraft((current) =>
-                    current
-                      ? {
-                          ...current,
-                          description: event.target.value,
-                        }
-                      : current,
-                  )
-                }
-                placeholder={t("home.householdMapMarkerDescriptionPlaceholder")}
-                disabled={editingMarkerSaving}
-              />
-            </div>
-            {editingMarkerMeta ? markerHistoryNode(editingMarkerMeta) : null}
-            {editingMarkerError ? (
-              <p className="text-xs text-rose-600 dark:text-rose-400">
-                {editingMarkerError}
-              </p>
+        <Dialog
+          open={mapDeleteConfirm !== null}
+          onOpenChange={(open) => {
+            if (open) return;
+            cancelMapDeletion();
+          }}
+        >
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>
+                {t("home.householdMapDeleteConfirmTitle")}
+              </DialogTitle>
+              <DialogDescription>
+                {mapDeleteConfirm &&
+                mapDeleteConfirm.removedMarkers.length === 1
+                  ? t("home.householdMapDeleteConfirmDescriptionOne")
+                  : t("home.householdMapDeleteConfirmDescriptionMany", {
+                      count: mapDeleteConfirm?.removedMarkers.length ?? 0,
+                    })}
+              </DialogDescription>
+            </DialogHeader>
+            {mapDeleteConfirm?.removedMarkers?.length ? (
+              <div className="max-h-44 space-y-1 overflow-auto rounded-md border border-slate-200/80 bg-slate-50/70 p-2 text-xs dark:border-slate-700/80 dark:bg-slate-900/60">
+                {mapDeleteConfirm.removedMarkers.slice(0, 8).map((marker) => (
+                  <p key={`remove-preview-${marker.id}`} className="truncate">
+                    {getMarkerEmoji(marker.icon)} {marker.title}
+                  </p>
+                ))}
+                {mapDeleteConfirm.removedMarkers.length > 8 ? (
+                  <p className="text-slate-500 dark:text-slate-400">
+                    +{mapDeleteConfirm.removedMarkers.length - 8}
+                  </p>
+                ) : null}
+              </div>
             ) : null}
             <div className="flex justify-end gap-2">
               <Button
@@ -9647,70 +8341,212 @@ export const HomePage = ({
                 onClick={(event) => {
                   event.preventDefault();
                   event.stopPropagation();
-                  setEditingMarkerDraft(null);
-                  setEditingMarkerError(null);
+                  cancelMapDeletion();
                 }}
-                disabled={editingMarkerSaving}
               >
                 {t("common.cancel")}
               </Button>
               <Button
                 type="button"
-                onClick={() => void saveEditedMarker()}
-                disabled={editingMarkerSaving}
+                className="bg-rose-600 text-white hover:bg-rose-700 dark:bg-rose-500 dark:hover:bg-rose-600"
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  confirmMapDeletion();
+                }}
               >
-                {editingMarkerSaving
-                  ? t("home.householdMapPoiOverrideSaving")
-                  : t("common.save")}
+                {t("home.householdMapDeleteConfirmAction")}
               </Button>
             </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+          </DialogContent>
+        </Dialog>
 
-      <Dialog
-        open={pendingCompleteTask !== null}
-        onOpenChange={(open) => {
-          if (!open) setPendingCompleteTask(null);
-        }}
-      >
-        <DialogContent className="sm:max-w-lg">
-          <Button
-            type="button"
-            size="sm"
-            variant="ghost"
-            className="absolute right-3 top-3 h-8 w-8 p-0"
-            onClick={() => setPendingCompleteTask(null)}
-            aria-label={t("common.cancel")}
-          >
-            <X className="h-4 w-4" />
-          </Button>
-          <DialogHeader>
-            <DialogTitle>{t("tasks.confirmCompleteTitle")}</DialogTitle>
-            <DialogDescription>
-              {t("tasks.confirmCompleteDescription", {
-                title: pendingCompleteTask?.title ?? t("tasks.fallbackTitle"),
-              })}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex justify-end gap-2">
+        <Dialog
+          open={editingMarkerDraft !== null}
+          onOpenChange={(open) => {
+            if (!open && !editingMarkerSaving) {
+              setEditingMarkerDraft(null);
+              setEditingMarkerError(null);
+            }
+          }}
+        >
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>{t("home.householdMapMarkerEditTitle")}</DialogTitle>
+              <DialogDescription>
+                {t("home.householdMapMarkerEditDescription")}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3">
+              <div className="space-y-1">
+                <Label>{t("home.householdMapMarkerIconLabel")}</Label>
+                <Select
+                  value={editingMarkerDraft?.icon ?? "star"}
+                  onValueChange={(value) =>
+                    setEditingMarkerDraft((current) =>
+                      current
+                        ? {
+                            ...current,
+                            icon: value as HouseholdMapMarkerIcon,
+                          }
+                        : current,
+                    )
+                  }
+                  disabled={editingMarkerSaving}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {MANUAL_MARKER_ICON_OPTIONS.map((option) => (
+                      <SelectItem
+                        key={`marker-edit-icon-${option.id}`}
+                        value={option.id}
+                      >
+                        <span className="inline-flex items-center gap-2">
+                          <span>{getMarkerEmoji(option.id)}</span>
+                          <span>{t(option.labelKey as never)}</span>
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label>{t("home.householdMapMarkerColorLabel")}</Label>
+                <Input
+                  type="color"
+                  value={normalizeMarkerColor(editingMarkerDraft?.color)}
+                  onChange={(event) =>
+                    setEditingMarkerDraft((current) =>
+                      current
+                        ? {
+                            ...current,
+                            color: normalizeMarkerColor(event.target.value),
+                          }
+                        : current,
+                    )
+                  }
+                  disabled={editingMarkerSaving}
+                  className="h-10 w-16 p-1"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label>{t("home.householdMapMarkerTitleLabel")}</Label>
+                <Input
+                  value={editingMarkerDraft?.title ?? ""}
+                  onChange={(event) =>
+                    setEditingMarkerDraft((current) =>
+                      current
+                        ? {
+                            ...current,
+                            title: event.target.value,
+                          }
+                        : current,
+                    )
+                  }
+                  placeholder={t("home.householdMapMarkerTitlePlaceholder")}
+                  disabled={editingMarkerSaving}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label>{t("home.householdMapMarkerDescriptionLabel")}</Label>
+                <Input
+                  value={editingMarkerDraft?.description ?? ""}
+                  onChange={(event) =>
+                    setEditingMarkerDraft((current) =>
+                      current
+                        ? {
+                            ...current,
+                            description: event.target.value,
+                          }
+                        : current,
+                    )
+                  }
+                  placeholder={t(
+                    "home.householdMapMarkerDescriptionPlaceholder",
+                  )}
+                  disabled={editingMarkerSaving}
+                />
+              </div>
+              {editingMarkerMeta ? markerHistoryNode(editingMarkerMeta) : null}
+              {editingMarkerError ? (
+                <p className="text-xs text-rose-600 dark:text-rose-400">
+                  {editingMarkerError}
+                </p>
+              ) : null}
+              <div className="flex justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    setEditingMarkerDraft(null);
+                    setEditingMarkerError(null);
+                  }}
+                  disabled={editingMarkerSaving}
+                >
+                  {t("common.cancel")}
+                </Button>
+                <Button
+                  type="button"
+                  onClick={() => void saveEditedMarker()}
+                  disabled={editingMarkerSaving}
+                >
+                  {editingMarkerSaving
+                    ? t("home.householdMapPoiOverrideSaving")
+                    : t("common.save")}
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog
+          open={pendingCompleteTask !== null}
+          onOpenChange={(open) => {
+            if (!open) setPendingCompleteTask(null);
+          }}
+        >
+          <DialogContent className="sm:max-w-lg">
             <Button
               type="button"
-              variant="outline"
+              size="sm"
+              variant="ghost"
+              className="absolute right-3 top-3 h-8 w-8 p-0"
               onClick={() => setPendingCompleteTask(null)}
+              aria-label={t("common.cancel")}
             >
-              {t("common.cancel")}
+              <X className="h-4 w-4" />
             </Button>
-            <Button
-              type="button"
-              disabled={busy}
-              onClick={() => void onConfirmCompleteTask()}
-            >
-              {t("tasks.confirmCompleteAction")}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-    </div>
+            <DialogHeader>
+              <DialogTitle>{t("tasks.confirmCompleteTitle")}</DialogTitle>
+              <DialogDescription>
+                {t("tasks.confirmCompleteDescription", {
+                  title: pendingCompleteTask?.title ?? t("tasks.fallbackTitle"),
+                })}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex justify-end gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setPendingCompleteTask(null)}
+              >
+                {t("common.cancel")}
+              </Button>
+              <Button
+                type="button"
+                disabled={busy}
+                onClick={() => void onConfirmCompleteTask()}
+              >
+                {t("tasks.confirmCompleteAction")}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      </div>
+    </WeatherProvider>
   );
 };

@@ -81,7 +81,7 @@ type WeatherLegendItem = {
 
 type HouseholdWeatherPlotProps = {
   hint: ReactNode;
-  isMobile: boolean;
+  isMobile?: boolean;
   legendButtonLabel: ReactNode;
   legendItems: WeatherLegendItem[];
   onToggleLegendItem: (datasetIndex: number) => void;
