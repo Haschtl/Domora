@@ -23,7 +23,6 @@ interface HomePageContainerProps {
 export const HomePageContainer = ({ section }: HomePageContainerProps) => {
   const {
     activeHousehold,
-    households,
     currentMember,
     householdMembers,
     userId,
@@ -31,16 +30,6 @@ export const HomePageContainer = ({ section }: HomePageContainerProps) => {
     userDisplayName,
     busy,
     mobileTabBarVisible,
-    setActiveHousehold,
-    onUpdateHomeMarkdown,
-    onAddBucketItem,
-    onToggleBucketItem,
-    onUpdateBucketItem,
-    onDeleteBucketItem,
-    onToggleBucketDateVote,
-    onCompleteTask,
-    onUpdateHouseholdWhiteboard,
-    onUpdateHousehold
   } = useWorkspace();
 
   const homeBatchQuery = useHouseholdHomeBatch(activeHousehold?.id ?? null);
@@ -74,8 +63,6 @@ export const HomePageContainer = ({ section }: HomePageContainerProps) => {
   return (
     <HomePage
       section={section}
-      household={activeHousehold}
-      households={households}
       currentMember={currentMember}
       userId={userId}
       members={householdMembers}
@@ -95,19 +82,6 @@ export const HomePageContainer = ({ section }: HomePageContainerProps) => {
       whiteboardSceneJson={
         whiteboardQuery.data?.scene_json ?? homeData?.householdWhiteboard?.scene_json ?? ""
       }
-      onSelectHousehold={(householdId) => {
-        const next = households.find((entry) => entry.id === householdId);
-        if (next) setActiveHousehold(next);
-      }}
-      onSaveLandingMarkdown={onUpdateHomeMarkdown}
-      onSaveWhiteboard={onUpdateHouseholdWhiteboard}
-      onUpdateHousehold={onUpdateHousehold}
-      onAddBucketItem={onAddBucketItem}
-      onToggleBucketItem={onToggleBucketItem}
-      onUpdateBucketItem={onUpdateBucketItem}
-      onDeleteBucketItem={onDeleteBucketItem}
-      onToggleBucketDateVote={onToggleBucketDateVote}
-      onCompleteTask={onCompleteTask}
     />
   );
 };

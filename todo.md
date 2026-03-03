@@ -7,9 +7,12 @@ TEsten:
 - Finance OCR testen
 
 
-POI ist immeronch weg
+POI ist immeronch nur manchmal da, POI auch über targomo
 
-POI über targomo
-ÖPNV-Live als layer, 
-Farrad-Netz als Layer
-Verkehrslage als layer
+
+neues feature: storage
+wir bauen ein Storage ein wo die WG dateien verwalten kann.
+UI: voller File-Explorer (evtl. radix/shadcn library) eigene komponente, erstmal in homepage rendern.
+Settings:WG: Configure Storage: WebDAV oder Nextcloud (nextcloud nimmt nur den pfad und auth ab) mit konfigurierbarem pfad (default "/domora")
+
+Dann soll die ganze WG zugriff auf diesen ordner bekommen

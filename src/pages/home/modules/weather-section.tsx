@@ -613,7 +613,23 @@ export const WeatherForecastGraph = ({ isMobile }: { isMobile?: boolean }) => {
   } = useTranslation();
   const weather = useWeather();
 
-  const weatherChartRef = useRef<typeof ChartJS<"bar"> | null>(null);
+  type WeatherChartInstance = {
+    data: { datasets: Array<{ label?: string; hidden?: boolean }> };
+    isDatasetVisible: (datasetIndex: number) => boolean;
+    setDatasetVisibility: (datasetIndex: number, visible: boolean) => void;
+    update: () => void;
+    resetZoom?: () => void;
+    zoom?: (amount: number) => void;
+    tooltip?: {
+      setActiveElements?: (
+        elements: unknown[],
+        position: { x: number; y: number },
+      ) => void;
+    };
+    setActiveElements?: (elements: unknown[]) => void;
+  };
+
+  const weatherChartRef = useRef<WeatherChartInstance | null>(null);
   const weatherChartContainerRef = useRef<HTMLDivElement | null>(null);
   const lastWeatherChartTapRef = useRef<{
     at: number;
@@ -632,117 +648,6 @@ export const WeatherForecastGraph = ({ isMobile }: { isMobile?: boolean }) => {
     [householdWeatherHourly],
   );
   const [weatherLegendVersion, setWeatherLegendVersion] = useState(0);
-
-
-  const legendItems = useMemo(() => {
-    const activeDatasets =
-      (weatherChartRef.current?.data.datasets as
-        | Array<{ label?: string; hidden?: boolean }>
-        | undefined) ??
-      (chartData.datasets as Array<{
-        label?: string;
-        hidden?: boolean;
-      }>);
-    const chart = weatherChartRef.current;
-    return activeDatasets
-      .map((dataset, index) => ({
-        index,
-        label: dataset.label ?? `${t("common.loading")} ${index + 1}`,
-        visible: chart
-          ? chart.isDatasetVisible(index)
-          : !(dataset.hidden ?? false),
-      }))
-      .filter((item) => item.label.trim().length > 0);
-  }, [chartData.datasets, t, weatherLegendVersion]);
-
-
-  const toggleWeatherLegendDataset = useCallback((datasetIndex: number) => {
-    const chart = weatherChartRef.current;
-    if (!chart) return;
-    const nextVisible = !chart.isDatasetVisible(datasetIndex);
-    chart.setDatasetVisibility(datasetIndex, nextVisible);
-    chart.update();
-    setWeatherLegendVersion((version) => version + 1);
-  }, []);
-
-  const zoomOutWeatherChart = useCallback(() => {
-    const chart = weatherChartRef.current as
-      | (typeof ChartJS<"bar"> & {
-          resetZoom?: () => void;
-          zoom?: (amount: number) => void;
-        })
-      | null;
-    if (!chart) return;
-    if (typeof chart.resetZoom === "function") {
-      chart.resetZoom();
-      return;
-    }
-    if (typeof chart.zoom === "function") {
-      chart.zoom(0.8);
-    }
-  }, []);
-  const onWeatherChartTouchEndCapture = useCallback(
-    (event: ReactTouchEvent<HTMLDivElement>) => {
-      if (event.changedTouches.length !== 1) {
-        lastWeatherChartTapRef.current = null;
-        return;
-      }
-      const touch = event.changedTouches[0];
-      const now = Date.now();
-      const lastTap = lastWeatherChartTapRef.current;
-      if (
-        lastTap &&
-        now - lastTap.at <= 360 &&
-        Math.hypot(touch.clientX - lastTap.x, touch.clientY - lastTap.y) <= 32
-      ) {
-        event.preventDefault();
-        zoomOutWeatherChart();
-        lastWeatherChartTapRef.current = null;
-        return;
-      }
-      lastWeatherChartTapRef.current = {
-        at: now,
-        x: touch.clientX,
-        y: touch.clientY,
-      };
-    },
-    [zoomOutWeatherChart],
-  );
-  useEffect(() => {
-    const hideWeatherTooltip = () => {
-      const chart = weatherChartRef.current as
-        | (typeof ChartJS<"bar"> & {
-            tooltip?: {
-              setActiveElements?: (
-                elements: unknown[],
-                position: { x: number; y: number },
-              ) => void;
-            };
-            setActiveElements?: (elements: unknown[]) => void;
-          })
-        | null;
-      if (!chart) return;
-      chart.tooltip?.setActiveElements?.([], { x: 0, y: 0 });
-      chart.setActiveElements?.([]);
-      chart.update();
-    };
-
-    const handlePointerOutside = (event: MouseEvent | TouchEvent) => {
-      const targetNode = event.target as Node | null;
-      if (!targetNode) return;
-      const container = weatherChartContainerRef.current;
-      if (!container) return;
-      if (container.contains(targetNode)) return;
-      hideWeatherTooltip();
-    };
-
-    document.addEventListener("mousedown", handlePointerOutside, true);
-    document.addEventListener("touchstart", handlePointerOutside, true);
-    return () => {
-      document.removeEventListener("mousedown", handlePointerOutside, true);
-      document.removeEventListener("touchstart", handlePointerOutside, true);
-    };
-  }, []);
 
   const chartOptions = useMemo(() => {
     const precipitationAxisMax = getPrecipitationAxisMax(
@@ -1182,35 +1087,6 @@ export const WeatherForecastGraph = ({ isMobile }: { isMobile?: boolean }) => {
       return `${day} ${hour}`;
     });
 
-    if (weather.state === "needsAddress") {
-      return (
-        <p className="text-xs text-slate-500 dark:text-slate-400">
-          {t("home.householdWeatherNeedsAddress")}
-        </p>
-      );
-    }
-    if (weather.state === "loading") {
-      return (
-        <p className="text-xs text-slate-500 dark:text-slate-400">
-          {t("home.householdWeatherLoading")}
-        </p>
-      );
-    }
-    if (weather.state === "error") {
-      return (
-        <p className="text-xs text-rose-600 dark:text-rose-400">
-          {t("home.householdWeatherError")}
-        </p>
-      );
-    }
-    if (weather.state === "empty") {
-      return (
-        <p className="text-xs text-slate-500 dark:text-slate-400">
-          {t("home.householdWeatherEmpty")}
-        </p>
-      );
-    }
-
     const sunTrack: Array<number | null> = [];
     const moonTrack: Array<number | null> = [];
     const moonPhaseTrack: number[] = [];
@@ -1483,10 +1359,101 @@ export const WeatherForecastGraph = ({ isMobile }: { isMobile?: boolean }) => {
   }, [
     hasPrecipitationInForecast,
     hasSnowfallInForecast,
-    householdWeatherHourly,weather.state,weather.days,
+    householdWeatherHourly,
+    weather.days,
     language,
     t,
   ]);
+
+  const legendItems = useMemo(() => {
+    const activeDatasets =
+      weatherChartRef.current?.data.datasets ?? chartData.datasets;
+    const chart = weatherChartRef.current;
+    return activeDatasets
+      .map((dataset, index) => ({
+        index,
+        label: dataset.label ?? `${t("common.loading")} ${index + 1}`,
+        visible: chart
+          ? chart.isDatasetVisible(index)
+          : !(dataset.hidden ?? false),
+      }))
+      .filter((item) => item.label.trim().length > 0);
+  }, [chartData.datasets, t, weatherLegendVersion]);
+
+  const toggleWeatherLegendDataset = useCallback((datasetIndex: number) => {
+    const chart = weatherChartRef.current;
+    if (!chart) return;
+    const nextVisible = !chart.isDatasetVisible(datasetIndex);
+    chart.setDatasetVisibility(datasetIndex, nextVisible);
+    chart.update();
+    setWeatherLegendVersion((version) => version + 1);
+  }, []);
+
+  const zoomOutWeatherChart = useCallback(() => {
+    const chart = weatherChartRef.current;
+    if (!chart) return;
+    if (typeof chart.resetZoom === "function") {
+      chart.resetZoom();
+      return;
+    }
+    if (typeof chart.zoom === "function") {
+      chart.zoom(0.8);
+    }
+  }, []);
+
+  const onWeatherChartTouchEndCapture = useCallback(
+    (event: ReactTouchEvent<HTMLDivElement>) => {
+      if (event.changedTouches.length !== 1) {
+        lastWeatherChartTapRef.current = null;
+        return;
+      }
+      const touch = event.changedTouches[0];
+      const now = Date.now();
+      const lastTap = lastWeatherChartTapRef.current;
+      if (
+        lastTap &&
+        now - lastTap.at <= 360 &&
+        Math.hypot(touch.clientX - lastTap.x, touch.clientY - lastTap.y) <= 32
+      ) {
+        event.preventDefault();
+        zoomOutWeatherChart();
+        lastWeatherChartTapRef.current = null;
+        return;
+      }
+      lastWeatherChartTapRef.current = {
+        at: now,
+        x: touch.clientX,
+        y: touch.clientY,
+      };
+    },
+    [zoomOutWeatherChart],
+  );
+
+  useEffect(() => {
+    const hideWeatherTooltip = () => {
+      const chart = weatherChartRef.current;
+      if (!chart) return;
+      chart.tooltip?.setActiveElements?.([], { x: 0, y: 0 });
+      chart.setActiveElements?.([]);
+      chart.update();
+    };
+
+    const handlePointerOutside = (event: MouseEvent | TouchEvent) => {
+      const targetNode = event.target as Node | null;
+      if (!targetNode) return;
+      const container = weatherChartContainerRef.current;
+      if (!container) return;
+      if (container.contains(targetNode)) return;
+      hideWeatherTooltip();
+    };
+
+    document.addEventListener("mousedown", handlePointerOutside, true);
+    document.addEventListener("touchstart", handlePointerOutside, true);
+    return () => {
+      document.removeEventListener("mousedown", handlePointerOutside, true);
+      document.removeEventListener("touchstart", handlePointerOutside, true);
+    };
+  }, []);
   return (
     <HouseholdWeatherPlot
       hint={t("home.householdWeatherChartHint")}
