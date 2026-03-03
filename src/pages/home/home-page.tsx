@@ -8351,7 +8351,7 @@ export const HomePage = ({
                   {showSummaryMapCard ? (
                     <div className="h-full min-h-34 sm:min-h-56 bg-white/90 text-slate-800 dark:bg-slate-800/60 dark:text-slate-100">
                       {renderHouseholdMapSurface(
-                        "relative h-40 overflow-hidden rounded-lg border border-brand-100 dark:border-slate-700",
+                        "relative h-72 overflow-hidden rounded-lg border border-brand-100 dark:border-slate-700",
                         false,
                       )}
                       {myLocationStatus === "loading" ? (

@@ -647,6 +647,12 @@ export const WeatherForecastGraph = ({ isMobile }: { isMobile?: boolean }) => {
     i18n: { language },
   } = useTranslation();
   const weather = useWeather();
+  const isMobileLayout =
+    isMobile ??
+    (typeof window !== "undefined" &&
+    typeof window.matchMedia === "function"
+      ? window.matchMedia("(max-width: 639px)").matches
+      : false);
 
   type WeatherChartInstance = {
     data: { datasets: Array<{ label?: string; hidden?: boolean }> };
@@ -710,7 +716,7 @@ export const WeatherForecastGraph = ({ isMobile }: { isMobile?: boolean }) => {
       },
       plugins: {
         legend: {
-          display: !isMobile,
+          display: !isMobileLayout,
           labels: {
             boxWidth: 12,
             boxHeight: 8,
@@ -785,11 +791,11 @@ export const WeatherForecastGraph = ({ isMobile }: { isMobile?: boolean }) => {
           max: initialXMax,
           ticks: {
             autoSkip: false,
-            maxTicksLimit: isMobile ? 6 : 14,
+            maxTicksLimit: isMobileLayout ? 6 : 14,
             maxRotation: 0,
             color: "rgb(100 116 139)",
-            padding: isMobile ? 6 : 4,
-            font: isMobile ? { size: 10 } : undefined,
+            padding: isMobileLayout ? 6 : 4,
+            font: isMobileLayout ? { size: 10 } : undefined,
             callback: function (
               this: { min?: number; max?: number },
               value: string | number,
@@ -806,7 +812,7 @@ export const WeatherForecastGraph = ({ isMobile }: { isMobile?: boolean }) => {
                 Math.round(visibleMax - visibleMin + 1),
               );
               const density = getWeatherXAxisDensity(visibleHours);
-              const labelEvery = isMobile
+              const labelEvery = isMobileLayout
                 ? Math.max(
                     density.labelEvery * 4,
                     visibleHours <= 30 ? 6 : visibleHours <= 96 ? 8 : 12,
@@ -849,7 +855,7 @@ export const WeatherForecastGraph = ({ isMobile }: { isMobile?: boolean }) => {
               }
 
               if (visibleHours <= 30) {
-                return isMobile
+                return isMobileLayout
                   ? date.toLocaleTimeString(language, { hour: "2-digit" })
                   : date.toLocaleTimeString(language, {
                       hour: "2-digit",
@@ -972,7 +978,7 @@ export const WeatherForecastGraph = ({ isMobile }: { isMobile?: boolean }) => {
           min: primaryAxisRange.min,
           max: primaryAxisRange.max,
           ticks: {
-            display: !isMobile,
+            display: !isMobileLayout,
             color: "rgb(100 116 139)",
             callback: (value: number | string) => `${value}°C / kmh`,
           },
@@ -1082,7 +1088,7 @@ export const WeatherForecastGraph = ({ isMobile }: { isMobile?: boolean }) => {
     };
 
     return options;
-  }, [householdWeatherHourly, isMobile, language, t]);
+  }, [householdWeatherHourly, isMobileLayout, language, t]);
 
   const chartData = useMemo(() => {
     const dailyAstronomy = new Map<
@@ -1492,7 +1498,7 @@ export const WeatherForecastGraph = ({ isMobile }: { isMobile?: boolean }) => {
   return (
     <HouseholdWeatherPlot
       hint={t("home.householdWeatherChartHint")}
-      isMobile={isMobile}
+      isMobile={isMobileLayout}
       legendButtonLabel={t("home.householdWeatherLegendButton")}
       legendItems={legendItems}
       onToggleLegendItem={toggleWeatherLegendDataset}
