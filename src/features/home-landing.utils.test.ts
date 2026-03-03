@@ -4,6 +4,7 @@ import {
   getLandingWidgetKeysInMarkdown,
   getMissingLandingWidgetKeys,
   getSavedLandingMarkdown,
+  LANDING_WIDGET_KEYS,
   shouldResetDraftOnDialogClose
 } from "./home-landing.utils";
 
@@ -38,19 +39,9 @@ describe("home landing utils", () => {
   });
 
   it("returns missing widget keys", () => {
-    expect(getMissingLandingWidgetKeys("{{widget:tasks-overview}}")).toEqual([
-      "tasks-for-you",
-      "your-balance",
-      "household-balance",
-      "recent-activity",
-      "bucket-short-list",
-      "member-of-month",
-      "fairness-score",
-      "reliability-score",
-      "expenses-by-month",
-      "fairness-by-member",
-      "reliability-by-member"
-    ]);
+    expect(getMissingLandingWidgetKeys("{{widget:tasks-overview}}")).toEqual(
+      LANDING_WIDGET_KEYS.filter((key) => key !== "tasks-overview")
+    );
   });
 
   it("allows editing only for owners", () => {

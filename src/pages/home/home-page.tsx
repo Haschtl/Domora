@@ -9054,7 +9054,8 @@ export const HomePage = ({
               </div>
               <div className="space-y-1">
                 <Label>{t("home.householdMapMarkerDescriptionLabel")}</Label>
-                <Input
+                <textarea
+                  className="min-h-[96px] w-full rounded-xl border border-brand-200 bg-white p-3 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-200 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-400"
                   value={editingMarkerDraft?.description ?? ""}
                   onChange={(event) =>
                     setEditingMarkerDraft((current) =>
@@ -9070,6 +9071,7 @@ export const HomePage = ({
                     "home.householdMapMarkerDescriptionPlaceholder",
                   )}
                   disabled={editingMarkerSaving}
+                  rows={4}
                 />
               </div>
               {editingMarkerMeta ? markerHistoryNode(editingMarkerMeta) : null}
