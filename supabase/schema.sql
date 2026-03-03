@@ -21,6 +21,11 @@ create table if not exists households (
   feature_tasks_enabled boolean not null default true,
   feature_one_off_tasks_enabled boolean not null default true,
   feature_finances_enabled boolean not null default true,
+  storage_provider text not null default 'none' check (storage_provider in ('none', 'webdav', 'nextcloud')),
+  storage_url text not null default '',
+  storage_username text not null default '',
+  storage_password text not null default '',
+  storage_base_path text not null default '/domora' check (char_length(trim(storage_base_path)) > 0),
   one_off_claim_timeout_hours integer not null default 72 check (one_off_claim_timeout_hours >= 0 and one_off_claim_timeout_hours <= 336),
   one_off_claim_max_pimpers integer not null default 500 check (one_off_claim_max_pimpers >= 1 and one_off_claim_max_pimpers <= 5000),
   theme_primary_color text not null default '#1f8a7f',
@@ -249,6 +254,32 @@ create table if not exists household_live_locations (
   check (expires_at > started_at)
 );
 
+create table if not exists household_storage_secrets (
+  household_id uuid primary key references households(id) on delete cascade,
+  storage_username text not null,
+  storage_password text not null,
+  updated_by uuid references auth.users(id) on delete set null,
+  updated_at timestamptz not null default now(),
+  check (char_length(trim(storage_username)) > 0),
+  check (char_length(storage_password) > 0)
+);
+
+create table if not exists household_storage_login_flows (
+  flow_id uuid primary key,
+  household_id uuid not null references households(id) on delete cascade,
+  requested_by uuid not null references auth.users(id) on delete cascade,
+  status text not null default 'pending' check (status in ('pending', 'completed', 'expired', 'failed')),
+  nextcloud_login_url text not null,
+  nextcloud_poll_endpoint text not null,
+  nextcloud_poll_token text,
+  nextcloud_instance_url text not null,
+  expires_at timestamptz not null,
+  completed_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  check (expires_at > created_at)
+);
+
 create table if not exists finance_entries (
   id uuid primary key default gen_random_uuid(),
   household_id uuid not null references households(id) on delete cascade,
@@ -391,6 +422,11 @@ alter table households add column if not exists feature_shopping_enabled boolean
 alter table households add column if not exists feature_tasks_enabled boolean not null default true;
 alter table households add column if not exists feature_one_off_tasks_enabled boolean not null default true;
 alter table households add column if not exists feature_finances_enabled boolean not null default true;
+alter table households add column if not exists storage_provider text not null default 'none';
+alter table households add column if not exists storage_url text not null default '';
+alter table households add column if not exists storage_username text not null default '';
+alter table households add column if not exists storage_password text not null default '';
+alter table households add column if not exists storage_base_path text not null default '/domora';
 alter table households add column if not exists one_off_claim_timeout_hours integer not null default 72;
 alter table households add column if not exists one_off_claim_max_pimpers integer not null default 500;
 
@@ -438,6 +474,45 @@ where utilities_on_room_sqm_percent is null;
 update households
 set task_laziness_enabled = false
 where task_laziness_enabled is null;
+
+update households
+set storage_provider = 'none'
+where storage_provider is null
+   or storage_provider not in ('none', 'webdav', 'nextcloud');
+
+update households
+set storage_url = ''
+where storage_url is null;
+
+update households
+set storage_username = ''
+where storage_username is null;
+
+update households
+set storage_password = ''
+where storage_password is null;
+
+insert into household_storage_secrets (household_id, storage_username, storage_password, updated_by, updated_at)
+select
+  h.id,
+  h.storage_username,
+  h.storage_password,
+  h.created_by,
+  now()
+from households h
+where h.storage_provider <> 'none'
+  and char_length(trim(h.storage_username)) > 0
+  and char_length(h.storage_password) > 0
+  and not exists (
+    select 1
+    from household_storage_secrets hs
+    where hs.household_id = h.id
+  );
+
+update households
+set storage_base_path = '/domora'
+where storage_base_path is null
+   or char_length(trim(storage_base_path)) = 0;
 
 update households
 set theme_primary_color = '#1f8a7f'
@@ -647,6 +722,16 @@ for each row execute function set_updated_at();
 drop trigger if exists trg_household_live_locations_updated_at on household_live_locations;
 create trigger trg_household_live_locations_updated_at
 before update on household_live_locations
+for each row execute function set_updated_at();
+
+drop trigger if exists trg_household_storage_secrets_updated_at on household_storage_secrets;
+create trigger trg_household_storage_secrets_updated_at
+before update on household_storage_secrets
+for each row execute function set_updated_at();
+
+drop trigger if exists trg_household_storage_login_flows_updated_at on household_storage_login_flows;
+create trigger trg_household_storage_login_flows_updated_at
+before update on household_storage_login_flows
 for each row execute function set_updated_at();
 
 drop trigger if exists trg_one_off_task_claim_votes_set_updated_at on one_off_task_claim_votes;
@@ -967,6 +1052,26 @@ $$;
 
 do $$
 begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'households_storage_provider_allowed_check'
+  ) then
+    alter table households
+      add constraint households_storage_provider_allowed_check
+      check (storage_provider in ('none', 'webdav', 'nextcloud'));
+  end if;
+
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'households_storage_base_path_not_empty_check'
+  ) then
+    alter table households
+      add constraint households_storage_base_path_not_empty_check
+      check (char_length(trim(storage_base_path)) > 0);
+  end if;
+
   if not exists (
     select 1
     from pg_constraint
@@ -1848,6 +1953,8 @@ create index if not exists idx_household_events_subject_user_id on household_eve
 create index if not exists idx_household_member_pimpers_user_id on household_member_pimpers (user_id);
 create index if not exists idx_household_whiteboards_updated_by on household_whiteboards (updated_by);
 create index if not exists idx_household_live_locations_expires_at on household_live_locations (expires_at);
+create index if not exists idx_household_storage_login_flows_household_requested
+  on household_storage_login_flows (household_id, requested_by, created_at desc);
 create index if not exists idx_households_created_by on households (created_by);
 create index if not exists idx_push_jobs_household_id on push_jobs (household_id);
 create index if not exists idx_push_jobs_user_id on push_jobs (user_id);
@@ -3066,6 +3173,16 @@ revoke all on table poi_cache from anon;
 revoke all on table poi_cache from authenticated;
 grant all on table poi_cache to service_role;
 
+revoke all on table household_storage_secrets from public;
+revoke all on table household_storage_secrets from anon;
+revoke all on table household_storage_secrets from authenticated;
+grant all on table household_storage_secrets to service_role;
+
+revoke all on table household_storage_login_flows from public;
+revoke all on table household_storage_login_flows from anon;
+revoke all on table household_storage_login_flows from authenticated;
+grant all on table household_storage_login_flows to service_role;
+
 alter table households enable row level security;
 alter table household_members enable row level security;
 alter table member_vacations enable row level security;
@@ -3084,6 +3201,8 @@ alter table one_off_task_claim_votes enable row level security;
 alter table household_events enable row level security;
 alter table household_whiteboards enable row level security;
 alter table household_live_locations enable row level security;
+alter table household_storage_secrets enable row level security;
+alter table household_storage_login_flows enable row level security;
 alter table finance_entries enable row level security;
 alter table cash_audit_requests enable row level security;
 alter table finance_subscriptions enable row level security;

@@ -41,7 +41,14 @@ import { InputWithSuffix } from "../../components/ui/input-with-suffix";
 import { Label } from "../../components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
 import { Switch } from "../../components/ui/switch";
-import { getPushPreferences, upsertHouseholdWhiteboard, upsertPushPreferences } from "../../lib/api";
+import {
+  getPushPreferences,
+  pollNextcloudLoginFlow,
+  setHouseholdStorageCredentials,
+  startNextcloudLoginFlow,
+  upsertHouseholdWhiteboard,
+  upsertPushPreferences
+} from "../../lib/api";
 import { MemberAvatar } from "../../components/member-avatar";
 import { getFirebaseRuntimeConfig } from "../../lib/firebase-config";
 
@@ -225,6 +232,11 @@ export const SettingsPage = ({
   const [translationOverridesDraft, setTranslationOverridesDraft] = useState<HouseholdTranslationOverride[]>(
     () => household.translation_overrides ?? []
   );
+  const [storageConnectBusy, setStorageConnectBusy] = useState(false);
+  const [storageConnectStatus, setStorageConnectStatus] = useState<string | null>(null);
+  const [selectedStorageProviderUi, setSelectedStorageProviderUi] = useState<"none" | "webdav" | "nextcloud">(
+    household.storage_provider ?? "none"
+  );
   const dueTasksAssignedToYou = useMemo(() => {
     if (!userId) return [];
     return tasks.filter(
@@ -381,6 +393,11 @@ export const SettingsPage = ({
       featureTasksEnabled: household.feature_tasks_enabled ?? true,
       featureOneOffTasksEnabled: household.feature_one_off_tasks_enabled ?? true,
       featureFinancesEnabled: household.feature_finances_enabled ?? true,
+      storageProvider: household.storage_provider ?? "none",
+      storageUrl: household.storage_url ?? "",
+      storageUsername: household.storage_username ?? "",
+      storagePassword: "",
+      storageBasePath: household.storage_base_path ?? "/domora",
       oneOffClaimTimeoutHours: String(household.one_off_claim_timeout_hours ?? 72),
       oneOffClaimMaxPimpers: String(household.one_off_claim_max_pimpers ?? 500),
       themePrimaryColor: household.theme_primary_color ?? "#1f8a7f",
@@ -403,6 +420,11 @@ export const SettingsPage = ({
         featureTasksEnabled: boolean;
         featureOneOffTasksEnabled: boolean;
         featureFinancesEnabled: boolean;
+        storageProvider: "none" | "webdav" | "nextcloud";
+        storageUrl: string;
+        storageUsername: string;
+        storagePassword: string;
+        storageBasePath: string;
         oneOffClaimTimeoutHours: string;
         oneOffClaimMaxPimpers: string;
         themePrimaryColor: string;
@@ -439,6 +461,28 @@ export const SettingsPage = ({
         setFormError(t("settings.oneOffClaimMaxPimpersError"));
         return;
       }
+      const normalizedStorageProvider = value.storageProvider;
+      const normalizedStorageUrl = value.storageUrl.trim();
+      const normalizedStorageUsername = value.storageUsername.trim();
+      const normalizedStorageBasePath = value.storageBasePath.trim() || "/domora";
+      if (normalizedStorageProvider === "webdav") {
+        if (!normalizedStorageUrl) {
+          setFormError("Storage URL fehlt.");
+          return;
+        }
+        if (!normalizedStorageUsername) {
+          setFormError("Storage Benutzername fehlt.");
+          return;
+        }
+      }
+      if (normalizedStorageProvider === "nextcloud" && !normalizedStorageUrl) {
+        setFormError("Nextcloud URL fehlt.");
+        return;
+      }
+      if (normalizedStorageProvider === "nextcloud" && !normalizedStorageUsername) {
+        setFormError("Nextcloud Benutzername fehlt.");
+        return;
+      }
       await onUpdateHousehold({
         name: normalizedName,
         imageUrl: value.imageUrl,
@@ -457,6 +501,12 @@ export const SettingsPage = ({
         featureTasksEnabled: value.featureTasksEnabled,
         featureOneOffTasksEnabled: value.featureOneOffTasksEnabled,
         featureFinancesEnabled: value.featureFinancesEnabled,
+        storageProvider: normalizedStorageProvider,
+        storageUrl: normalizedStorageUrl,
+        storageUsername: normalizedStorageUsername,
+        storageBasePath: normalizedStorageBasePath.startsWith("/")
+          ? normalizedStorageBasePath
+          : `/${normalizedStorageBasePath}`,
         oneOffClaimTimeoutHours,
         oneOffClaimMaxPimpers,
         themePrimaryColor: value.themePrimaryColor,
@@ -466,6 +516,14 @@ export const SettingsPage = ({
         translationOverrides: normalizeTranslationOverrides(translationOverridesDraft),
         householdMapMarkers: household.household_map_markers ?? []
       });
+      if (normalizedStorageProvider === "webdav" && value.storagePassword.trim().length > 0) {
+        await setHouseholdStorageCredentials({
+          householdId: household.id,
+          username: normalizedStorageUsername,
+          password: value.storagePassword
+        });
+        householdForm.setFieldValue("storagePassword", "");
+      }
     }
   });
 
@@ -508,6 +566,12 @@ export const SettingsPage = ({
     householdForm.setFieldValue("featureTasksEnabled", household.feature_tasks_enabled ?? true);
     householdForm.setFieldValue("featureOneOffTasksEnabled", household.feature_one_off_tasks_enabled ?? true);
     householdForm.setFieldValue("featureFinancesEnabled", household.feature_finances_enabled ?? true);
+    householdForm.setFieldValue("storageProvider", household.storage_provider ?? "none");
+    setSelectedStorageProviderUi(household.storage_provider ?? "none");
+    householdForm.setFieldValue("storageUrl", household.storage_url ?? "");
+    householdForm.setFieldValue("storageUsername", household.storage_username ?? "");
+    householdForm.setFieldValue("storagePassword", "");
+    householdForm.setFieldValue("storageBasePath", household.storage_base_path ?? "/domora");
     householdForm.setFieldValue("oneOffClaimTimeoutHours", String(household.one_off_claim_timeout_hours ?? 72));
     householdForm.setFieldValue("oneOffClaimMaxPimpers", String(household.one_off_claim_max_pimpers ?? 500));
     householdForm.setFieldValue("themePrimaryColor", household.theme_primary_color ?? "#1f8a7f");
@@ -532,6 +596,10 @@ export const SettingsPage = ({
     household.feature_tasks_enabled,
     household.feature_one_off_tasks_enabled,
     household.feature_finances_enabled,
+    household.storage_provider,
+    household.storage_url,
+    household.storage_username,
+    household.storage_base_path,
     household.one_off_claim_timeout_hours,
     household.one_off_claim_max_pimpers,
     household.theme_primary_color,
@@ -622,6 +690,10 @@ export const SettingsPage = ({
         featureTasksEnabled: householdForm.state.values.featureTasksEnabled,
         featureOneOffTasksEnabled: householdForm.state.values.featureOneOffTasksEnabled,
         featureFinancesEnabled: householdForm.state.values.featureFinancesEnabled,
+        storageProvider: householdForm.state.values.storageProvider,
+        storageUrl: householdForm.state.values.storageUrl.trim(),
+        storageUsername: householdForm.state.values.storageUsername.trim(),
+        storageBasePath: householdForm.state.values.storageBasePath.trim() || "/domora",
         oneOffClaimTimeoutHours: Number(householdForm.state.values.oneOffClaimTimeoutHours),
         oneOffClaimMaxPimpers: Number(householdForm.state.values.oneOffClaimMaxPimpers),
         themePrimaryColor: householdForm.state.values.themePrimaryColor,
@@ -659,6 +731,10 @@ export const SettingsPage = ({
         featureTasksEnabled: householdForm.state.values.featureTasksEnabled,
         featureOneOffTasksEnabled: householdForm.state.values.featureOneOffTasksEnabled,
         featureFinancesEnabled: householdForm.state.values.featureFinancesEnabled,
+        storageProvider: householdForm.state.values.storageProvider,
+        storageUrl: householdForm.state.values.storageUrl.trim(),
+        storageUsername: householdForm.state.values.storageUsername.trim(),
+        storageBasePath: householdForm.state.values.storageBasePath.trim() || "/domora",
         oneOffClaimTimeoutHours: Number(householdForm.state.values.oneOffClaimTimeoutHours),
         oneOffClaimMaxPimpers: Number(householdForm.state.values.oneOffClaimMaxPimpers),
         themePrimaryColor: householdForm.state.values.themePrimaryColor,
@@ -692,7 +768,91 @@ export const SettingsPage = ({
     setTranslationOverridesDraft((current) => current.filter((_, entryIndex) => entryIndex !== index));
   };
 
+  const onConnectNextcloud = async () => {
+    if (!isOwner || busy || storageConnectBusy) return;
+
+    const storageUrl = householdForm.state.values.storageUrl.trim();
+    const storageUsername = householdForm.state.values.storageUsername.trim();
+    const storageBasePath = householdForm.state.values.storageBasePath.trim() || "/domora";
+    if (!storageUrl) {
+      setFormError("Nextcloud URL fehlt.");
+      return;
+    }
+    if (!storageUsername) {
+      setFormError("Nextcloud Benutzername fehlt.");
+      return;
+    }
+
+    setStorageConnectBusy(true);
+    setStorageConnectStatus(null);
+    setFormError(null);
+    try {
+      await onUpdateHousehold({
+        name: householdForm.state.values.name.trim(),
+        imageUrl: householdForm.state.values.imageUrl,
+        address: householdForm.state.values.address,
+        currency: normalizeCurrency(householdForm.state.values.currency),
+        apartmentSizeSqm: household.apartment_size_sqm,
+        coldRentMonthly: household.cold_rent_monthly,
+        utilitiesMonthly: household.utilities_monthly,
+        utilitiesOnRoomSqmPercent: household.utilities_on_room_sqm_percent,
+        taskLazinessEnabled: householdForm.state.values.taskLazinessEnabled,
+        vacationTasksExcludeEnabled: householdForm.state.values.vacationTasksExcludeEnabled,
+        vacationFinancesExcludeEnabled: householdForm.state.values.vacationFinancesExcludeEnabled,
+        taskSkipEnabled: householdForm.state.values.taskSkipEnabled,
+        featureBucketEnabled: householdForm.state.values.featureBucketEnabled,
+        featureShoppingEnabled: householdForm.state.values.featureShoppingEnabled,
+        featureTasksEnabled: householdForm.state.values.featureTasksEnabled,
+        featureOneOffTasksEnabled: householdForm.state.values.featureOneOffTasksEnabled,
+        featureFinancesEnabled: householdForm.state.values.featureFinancesEnabled,
+        storageProvider: "nextcloud",
+        storageUrl,
+        storageUsername,
+        storageBasePath: storageBasePath.startsWith("/") ? storageBasePath : `/${storageBasePath}`,
+        oneOffClaimTimeoutHours: Number(householdForm.state.values.oneOffClaimTimeoutHours),
+        oneOffClaimMaxPimpers: Number(householdForm.state.values.oneOffClaimMaxPimpers),
+        themePrimaryColor: householdForm.state.values.themePrimaryColor,
+        themeAccentColor: householdForm.state.values.themeAccentColor,
+        themeFontFamily: householdForm.state.values.themeFontFamily,
+        themeRadiusScale: normalizeThemeRadiusScale(householdForm.state.values.themeRadiusScale),
+        translationOverrides: normalizeTranslationOverrides(translationOverridesDraft),
+        householdMapMarkers: household.household_map_markers ?? []
+      });
+
+      const started = await startNextcloudLoginFlow({
+        householdId: household.id,
+        storageUrl
+      });
+      window.open(started.loginUrl, "_blank", "noopener,noreferrer");
+
+      const maxPollAttempts = 90;
+      for (let attempt = 0; attempt < maxPollAttempts; attempt += 1) {
+        await new Promise((resolve) => window.setTimeout(resolve, 2000));
+        const result = await pollNextcloudLoginFlow({
+          householdId: household.id,
+          flowId: started.flowId
+        });
+        if (result.status === "connected") {
+          householdForm.setFieldValue("storageProvider", "nextcloud");
+          householdForm.setFieldValue("storageUsername", result.username);
+          householdForm.setFieldValue("storageUrl", result.server);
+          setStorageConnectStatus(`Verbunden als ${result.username}`);
+          return;
+        }
+      }
+
+      setFormError("Nextcloud Login-Flow ist abgelaufen oder wurde nicht bestätigt.");
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : t("app.unknownError"));
+    } finally {
+      setStorageConnectBusy(false);
+    }
+  };
+
   const profileImageUrl = profileForm.state.values.profileImageUrl.trim();
+  useEffect(() => {
+    setStorageConnectStatus(null);
+  }, [selectedStorageProviderUi]);
   const profileSeed = useMemo(() => {
     const displayName = profileNameForm.state.values.displayName.trim();
     if (displayName) return displayName;
@@ -2637,6 +2797,266 @@ export const SettingsPage = ({
               <Button
                 type="button"
                 disabled={busy || !isOwner}
+                onClick={() => void householdForm.handleSubmit()}
+              >
+                {t("settings.householdSave")}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {showHousehold ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>
+              {t("settings.storageTitle", { defaultValue: "Storage" })}
+            </CardTitle>
+            <CardDescription>
+              {t("settings.storageDescription", {
+                defaultValue:
+                  "WebDAV/Nextcloud für die WG-Dateiablage konfigurieren."
+              })}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="max-w-sm">
+              <householdForm.Field
+                name="storageProvider"
+                children={(field: {
+                  state: { value: "none" | "webdav" | "nextcloud" };
+                  handleChange: (
+                    value: "none" | "webdav" | "nextcloud"
+                  ) => void;
+                }) => (
+                  <div className="space-y-1">
+                    <Label>
+                      {t("settings.storageProviderLabel", {
+                        defaultValue: "Provider"
+                      })}
+                    </Label>
+                    <Select
+                      value={field.state.value}
+                      onValueChange={(next) =>
+                        (() => {
+                          const normalized = next as "none" | "webdav" | "nextcloud";
+                          field.handleChange(normalized);
+                          setSelectedStorageProviderUi(normalized);
+                        })()
+                      }
+                      disabled={busy || !isOwner}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Deaktiviert</SelectItem>
+                        <SelectItem value="webdav">WebDAV</SelectItem>
+                        <SelectItem value="nextcloud">Nextcloud</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+              />
+            </div>
+            {selectedStorageProviderUi === "webdav" ? (
+              <>
+                <householdForm.Field
+                  name="storageUrl"
+                  children={(field: {
+                    state: { value: string };
+                    handleChange: (value: string) => void;
+                  }) => (
+                    <div className="space-y-1">
+                      <Label>
+                        {t("settings.storageWebdavUrlLabel", {
+                          defaultValue: "WebDAV URL"
+                        })}
+                      </Label>
+                      <Input
+                        value={field.state.value}
+                        onChange={(event) => field.handleChange(event.target.value)}
+                        disabled={busy || !isOwner}
+                        placeholder="https://cloud.example.com/remote.php/dav/files/USER"
+                      />
+                    </div>
+                  )}
+                />
+                <householdForm.Field
+                  name="storageBasePath"
+                  children={(field: {
+                    state: { value: string };
+                    handleChange: (value: string) => void;
+                  }) => (
+                    <div className="space-y-1">
+                      <Label>
+                        {t("settings.storagePathLabel", {
+                          defaultValue: "Basis-Pfad"
+                        })}
+                      </Label>
+                      <Input
+                        value={field.state.value}
+                        onChange={(event) =>
+                          field.handleChange(event.target.value)
+                        }
+                        disabled={busy || !isOwner}
+                        placeholder="/domora"
+                      />
+                    </div>
+                  )}
+                />
+              </>
+            ) : null}
+            {selectedStorageProviderUi === "webdav" ? (
+              <div className="grid gap-3 sm:grid-cols-2">
+                <householdForm.Field
+                  name="storageUsername"
+                  children={(field: {
+                    state: { value: string };
+                    handleChange: (value: string) => void;
+                  }) => (
+                    <div className="space-y-1">
+                      <Label>
+                        {t("settings.storageUsernameLabel", {
+                          defaultValue: "Benutzername"
+                        })}
+                      </Label>
+                      <Input
+                        value={field.state.value}
+                        onChange={(event) =>
+                          field.handleChange(event.target.value)
+                        }
+                        disabled={busy || !isOwner}
+                      />
+                    </div>
+                  )}
+                />
+                <householdForm.Field
+                  name="storagePassword"
+                  children={(field: {
+                    state: { value: string };
+                    handleChange: (value: string) => void;
+                  }) => (
+                    <div className="space-y-1">
+                      <Label>
+                        {t("settings.storagePasswordLabel", {
+                          defaultValue: "Passwort / App-Token"
+                        })}
+                      </Label>
+                      <Input
+                        type="password"
+                        value={field.state.value}
+                        onChange={(event) =>
+                          field.handleChange(event.target.value)
+                        }
+                        disabled={busy || !isOwner}
+                        placeholder={t("settings.storagePasswordPlaceholder", {
+                          defaultValue:
+                            "Leer lassen, um bestehendes Passwort zu behalten"
+                        })}
+                      />
+                    </div>
+                  )}
+                />
+              </div>
+            ) : null}
+            {selectedStorageProviderUi === "nextcloud" ? (
+              <div className="space-y-2 rounded-xl border border-brand-100 bg-white px-3 py-3 dark:border-slate-700 dark:bg-slate-900">
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <householdForm.Field
+                    name="storageUrl"
+                    children={(field: {
+                      state: { value: string };
+                      handleChange: (value: string) => void;
+                    }) => (
+                      <div className="space-y-1">
+                        <Label>
+                          {t("settings.storageNextcloudUrlLabel", {
+                            defaultValue: "Nextcloud URL"
+                          })}
+                        </Label>
+                        <Input
+                          value={field.state.value}
+                          onChange={(event) => field.handleChange(event.target.value)}
+                          disabled={busy || !isOwner}
+                          placeholder="https://cloud.example.com"
+                        />
+                      </div>
+                    )}
+                  />
+                  <householdForm.Field
+                    name="storageUsername"
+                    children={(field: {
+                      state: { value: string };
+                      handleChange: (value: string) => void;
+                    }) => (
+                      <div className="space-y-1">
+                        <Label>
+                          {t("settings.storageNextcloudUsernameLabel", {
+                            defaultValue: "Nextcloud Benutzername"
+                          })}
+                        </Label>
+                        <Input
+                          value={field.state.value}
+                          onChange={(event) =>
+                            field.handleChange(event.target.value)
+                          }
+                          disabled={busy || !isOwner || storageConnectBusy}
+                        />
+                      </div>
+                    )}
+                  />
+                  <householdForm.Field
+                    name="storageBasePath"
+                    children={(field: {
+                      state: { value: string };
+                      handleChange: (value: string) => void;
+                    }) => (
+                      <div className="space-y-1 sm:col-span-2">
+                        <Label>
+                          {t("settings.storagePathLabel", {
+                            defaultValue: "Basis-Pfad"
+                          })}
+                        </Label>
+                        <Input
+                          value={field.state.value}
+                          onChange={(event) =>
+                            field.handleChange(event.target.value)
+                          }
+                          disabled={busy || !isOwner || storageConnectBusy}
+                          placeholder="/domora"
+                        />
+                      </div>
+                    )}
+                  />
+                </div>
+                <p className="text-xs text-slate-600 dark:text-slate-300">
+                  {t("settings.storageNextcloudHint", {
+                    defaultValue:
+                      "Nextcloud verbindet per Login-Prompt und erstellt ein App-Passwort automatisch."
+                  })}
+                </p>
+                {storageConnectStatus ? (
+                  <p className="text-xs text-emerald-700 dark:text-emerald-300">{storageConnectStatus}</p>
+                ) : null}
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={busy || !isOwner || storageConnectBusy}
+                    onClick={() => void onConnectNextcloud()}
+                  >
+                    {storageConnectBusy
+                      ? t("common.loading")
+                      : t("settings.storageNextcloudConnect", { defaultValue: "Mit Nextcloud verbinden" })}
+                  </Button>
+                </div>
+              </div>
+            ) : null}
+            <div className="flex justify-end">
+              <Button
+                type="button"
+                disabled={busy || !isOwner || storageConnectBusy}
                 onClick={() => void householdForm.handleSubmit()}
               >
                 {t("settings.householdSave")}

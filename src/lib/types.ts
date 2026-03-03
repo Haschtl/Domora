@@ -107,6 +107,16 @@ export type HouseholdMapMarker =
   | HouseholdMapMarkerRectangle;
 
 export type PoiCategory = "restaurant" | "shop" | "supermarket" | "fuel";
+export type HouseholdStorageProvider = "none" | "webdav" | "nextcloud";
+
+export interface HouseholdStorageEntry {
+  path: string;
+  name: string;
+  isDirectory: boolean;
+  size: number | null;
+  updatedAt: string | null;
+  contentType: string | null;
+}
 
 export interface NearbyPoi {
   id: string;
@@ -139,6 +149,10 @@ export interface Household {
   feature_tasks_enabled: boolean;
   feature_one_off_tasks_enabled: boolean;
   feature_finances_enabled: boolean;
+  storage_provider: HouseholdStorageProvider;
+  storage_url: string;
+  storage_username: string;
+  storage_base_path: string;
   one_off_claim_timeout_hours: number;
   one_off_claim_max_pimpers: number;
   theme_primary_color: string;
@@ -171,6 +185,10 @@ export interface UpdateHouseholdInput {
   featureTasksEnabled: boolean;
   featureOneOffTasksEnabled: boolean;
   featureFinancesEnabled: boolean;
+  storageProvider?: HouseholdStorageProvider;
+  storageUrl?: string;
+  storageUsername?: string;
+  storageBasePath?: string;
   oneOffClaimTimeoutHours: number;
   oneOffClaimMaxPimpers: number;
   themePrimaryColor: string;

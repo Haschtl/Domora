@@ -197,6 +197,10 @@ const householdSchema = z.object({
   feature_tasks_enabled: z.coerce.boolean().default(true),
   feature_one_off_tasks_enabled: z.coerce.boolean().default(true),
   feature_finances_enabled: z.coerce.boolean().default(true),
+  storage_provider: z.enum(["none", "webdav", "nextcloud"]).default("none"),
+  storage_url: z.string().default(""),
+  storage_username: z.string().default(""),
+  storage_base_path: z.string().default("/domora"),
   one_off_claim_timeout_hours: z.coerce.number().int().min(0).max(336).default(72),
   one_off_claim_max_pimpers: z.coerce.number().int().min(1).max(5000).default(500),
   theme_primary_color: z

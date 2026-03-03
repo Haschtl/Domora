@@ -177,6 +177,7 @@ import {
   HouseholdMapWidget,
   HouseholdWhiteboardWidget,
 } from "../../features/components/widgets";
+import { FileExplorer } from "../../features/components/file-explorer";
 import { queryKeys } from "../../lib/query-keys";
 import { supabase } from "../../lib/supabase";
 import {
@@ -8616,6 +8617,10 @@ export const HomePage = ({
                 </HouseholdMapWidget>
               </Card>
             ) : null}
+
+            <div className="mt-6">
+              <FileExplorer household={household} />
+            </div>
 
             {showSummaryWeatherCard ? (
               <Card className="mt-6 rounded-xl border border-slate-300 bg-white/90 p-3 text-slate-800 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-100">

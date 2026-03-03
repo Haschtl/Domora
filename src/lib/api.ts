@@ -23,6 +23,7 @@ import type {
   HouseholdMember,
   HouseholdMemberVacation,
   HouseholdMemberPimpers,
+  HouseholdStorageEntry,
   NewFinanceSubscriptionInput,
   NewTaskInput,
   NearbyPoi,
@@ -41,7 +42,7 @@ import type {
 const buildInviteCode = () => Math.random().toString(36).slice(2, 8).toUpperCase();
 
 const SELECT_HOUSEHOLD_FIELDS =
-  "id,name,image_url,address,currency,apartment_size_sqm,cold_rent_monthly,utilities_monthly,utilities_on_room_sqm_percent,task_laziness_enabled,vacation_tasks_exclude_enabled,vacation_finances_exclude_enabled,task_skip_enabled,feature_bucket_enabled,feature_shopping_enabled,feature_tasks_enabled,feature_one_off_tasks_enabled,feature_finances_enabled,one_off_claim_timeout_hours,one_off_claim_max_pimpers,theme_primary_color,theme_accent_color,theme_font_family,theme_radius_scale,translation_overrides,household_map_markers,landing_page_markdown,invite_code,created_by,created_at";
+  "id,name,image_url,address,currency,apartment_size_sqm,cold_rent_monthly,utilities_monthly,utilities_on_room_sqm_percent,task_laziness_enabled,vacation_tasks_exclude_enabled,vacation_finances_exclude_enabled,task_skip_enabled,feature_bucket_enabled,feature_shopping_enabled,feature_tasks_enabled,feature_one_off_tasks_enabled,feature_finances_enabled,storage_provider,storage_url,storage_username,storage_base_path,one_off_claim_timeout_hours,one_off_claim_max_pimpers,theme_primary_color,theme_accent_color,theme_font_family,theme_radius_scale,translation_overrides,household_map_markers,landing_page_markdown,invite_code,created_by,created_at";
 const SELECT_HOUSEHOLD_MEMBER_FIELDS =
   "household_id,user_id,role,room_size_sqm,common_area_factor,task_laziness_factor,vacation_mode,created_at";
 const SELECT_HOUSEHOLD_MEMBER_WITH_PROFILE_FIELDS =
@@ -269,6 +270,10 @@ const householdSchema = z.object({
   feature_tasks_enabled: z.coerce.boolean().default(true),
   feature_one_off_tasks_enabled: z.coerce.boolean().default(true),
   feature_finances_enabled: z.coerce.boolean().default(true),
+  storage_provider: z.enum(["none", "webdav", "nextcloud"]).default("none"),
+  storage_url: z.string().default(""),
+  storage_username: z.string().default(""),
+  storage_base_path: z.string().default("/domora"),
   one_off_claim_timeout_hours: z.coerce.number().int().min(0).max(336).default(72),
   one_off_claim_max_pimpers: z.coerce.number().int().min(1).max(5000).default(500),
   theme_primary_color: z
@@ -1019,7 +1024,9 @@ export const updateHouseholdSettings = async (
   const actorUserId = await requireAuthenticatedUserId();
   const { data: before } = await supabase
     .from("households")
-    .select("apartment_size_sqm,cold_rent_monthly,utilities_monthly,utilities_on_room_sqm_percent")
+    .select(
+      "apartment_size_sqm,cold_rent_monthly,utilities_monthly,utilities_on_room_sqm_percent,storage_provider,storage_url,storage_username,storage_base_path"
+    )
     .eq("id", validatedHouseholdId)
     .maybeSingle();
   const parsedInput = z.object({
@@ -1040,6 +1047,10 @@ export const updateHouseholdSettings = async (
     featureTasksEnabled: z.coerce.boolean(),
     featureOneOffTasksEnabled: z.coerce.boolean(),
     featureFinancesEnabled: z.coerce.boolean(),
+    storageProvider: z.enum(["none", "webdav", "nextcloud"]).optional(),
+    storageUrl: z.string().trim().max(500).optional(),
+    storageUsername: z.string().trim().max(255).optional(),
+    storageBasePath: z.string().trim().max(500).optional(),
     oneOffClaimTimeoutHours: z.coerce.number().int().min(0).max(336),
     oneOffClaimMaxPimpers: z.coerce.number().int().min(1).max(5000),
     themePrimaryColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/),
@@ -1070,6 +1081,25 @@ export const updateHouseholdSettings = async (
       feature_tasks_enabled: parsedInput.featureTasksEnabled,
       feature_one_off_tasks_enabled: parsedInput.featureOneOffTasksEnabled,
       feature_finances_enabled: parsedInput.featureFinancesEnabled,
+      storage_provider:
+        parsedInput.storageProvider ??
+        ((before as { storage_provider?: string | null } | null)
+          ?.storage_provider as "none" | "webdav" | "nextcloud" | undefined) ??
+        "none",
+      storage_url:
+        parsedInput.storageUrl ??
+        (before as { storage_url?: string | null } | null)?.storage_url ??
+        "",
+      storage_username:
+        parsedInput.storageUsername ??
+        (before as { storage_username?: string | null } | null)
+          ?.storage_username ??
+        "",
+      storage_base_path:
+        parsedInput.storageBasePath ??
+        (before as { storage_base_path?: string | null } | null)
+          ?.storage_base_path ??
+        "/domora",
       one_off_claim_timeout_hours: parsedInput.oneOffClaimTimeoutHours,
       one_off_claim_max_pimpers: parsedInput.oneOffClaimMaxPimpers,
       theme_primary_color: parsedInput.themePrimaryColor,
@@ -3547,4 +3577,226 @@ export const getHouseholdRoute = async (input: {
   }).parse(data);
 
   return { geojson: parsedResponse.geojson };
+};
+
+const householdStorageEntrySchema = z.object({
+  path: z.string().min(1),
+  name: z.string().min(1),
+  isDirectory: z.coerce.boolean(),
+  size: z.coerce.number().int().nonnegative().nullable().optional().transform((value) => value ?? null),
+  updatedAt: z.string().nullable().optional().transform((value) => value ?? null),
+  contentType: z.string().nullable().optional().transform((value) => value ?? null)
+});
+
+export const listHouseholdStorage = async (input: {
+  householdId: string;
+  path?: string;
+}): Promise<{ entries: HouseholdStorageEntry[]; path: string }> => {
+  const parsedInput = z
+    .object({
+      householdId: z.string().uuid(),
+      path: z.string().optional()
+    })
+    .parse(input);
+
+  const { data, error } = await supabase.functions.invoke("storage-webdav", {
+    body: {
+      householdId: parsedInput.householdId,
+      action: "list",
+      path: parsedInput.path ?? "/"
+    }
+  });
+
+  if (error) {
+    const message = await extractFunctionInvokeErrorMessage(error, "Failed to load storage entries");
+    throw new Error(message);
+  }
+
+  const parsedResponse = z
+    .object({
+      path: z.string().min(1),
+      entries: z.array(householdStorageEntrySchema).default([])
+    })
+    .parse(data);
+
+  return {
+    path: parsedResponse.path,
+    entries: parsedResponse.entries as HouseholdStorageEntry[]
+  };
+};
+
+export const createHouseholdStorageFolder = async (input: {
+  householdId: string;
+  path: string;
+  name: string;
+}): Promise<void> => {
+  const parsedInput = z
+    .object({
+      householdId: z.string().uuid(),
+      path: z.string().min(1),
+      name: z.string().trim().min(1).max(255)
+    })
+    .parse(input);
+  const { error } = await supabase.functions.invoke("storage-webdav", {
+    body: {
+      householdId: parsedInput.householdId,
+      action: "mkdir",
+      path: parsedInput.path,
+      name: parsedInput.name
+    }
+  });
+  if (error) {
+    const message = await extractFunctionInvokeErrorMessage(error, "Failed to create folder");
+    throw new Error(message);
+  }
+};
+
+export const deleteHouseholdStorageEntry = async (input: {
+  householdId: string;
+  targetPath: string;
+}): Promise<void> => {
+  const parsedInput = z
+    .object({
+      householdId: z.string().uuid(),
+      targetPath: z.string().min(1)
+    })
+    .parse(input);
+  const { error } = await supabase.functions.invoke("storage-webdav", {
+    body: {
+      householdId: parsedInput.householdId,
+      action: "delete",
+      targetPath: parsedInput.targetPath
+    }
+  });
+  if (error) {
+    const message = await extractFunctionInvokeErrorMessage(error, "Failed to delete entry");
+    throw new Error(message);
+  }
+};
+
+export const uploadHouseholdStorageFile = async (input: {
+  householdId: string;
+  path: string;
+  fileName: string;
+  contentType: string;
+  contentBase64: string;
+}): Promise<void> => {
+  const parsedInput = z
+    .object({
+      householdId: z.string().uuid(),
+      path: z.string().min(1),
+      fileName: z.string().trim().min(1).max(255),
+      contentType: z.string().trim().max(255).optional().default("application/octet-stream"),
+      contentBase64: z.string().min(1)
+    })
+    .parse(input);
+  const { error } = await supabase.functions.invoke("storage-webdav", {
+    body: {
+      householdId: parsedInput.householdId,
+      action: "upload",
+      path: parsedInput.path,
+      fileName: parsedInput.fileName,
+      contentType: parsedInput.contentType,
+      contentBase64: parsedInput.contentBase64
+    }
+  });
+  if (error) {
+    const message = await extractFunctionInvokeErrorMessage(error, "Failed to upload file");
+    throw new Error(message);
+  }
+};
+
+export const setHouseholdStorageCredentials = async (input: {
+  householdId: string;
+  username: string;
+  password: string;
+}): Promise<void> => {
+  const parsedInput = z
+    .object({
+      householdId: z.string().uuid(),
+      username: z.string().trim().min(1).max(255),
+      password: z.string().min(1).max(500)
+    })
+    .parse(input);
+  const { error } = await supabase.functions.invoke("storage-webdav", {
+    body: {
+      householdId: parsedInput.householdId,
+      action: "set_credentials",
+      username: parsedInput.username,
+      password: parsedInput.password
+    }
+  });
+  if (error) {
+    const message = await extractFunctionInvokeErrorMessage(error, "Failed to save storage credentials");
+    throw new Error(message);
+  }
+};
+
+export const startNextcloudLoginFlow = async (input: {
+  householdId: string;
+  storageUrl: string;
+}): Promise<{ flowId: string; loginUrl: string; expiresAt: string }> => {
+  const parsedInput = z
+    .object({
+      householdId: z.string().uuid(),
+      storageUrl: z.string().trim().min(1).max(500)
+    })
+    .parse(input);
+  const { data, error } = await supabase.functions.invoke("storage-webdav", {
+    body: {
+      householdId: parsedInput.householdId,
+      action: "start_nextcloud_login",
+      storageUrl: parsedInput.storageUrl
+    }
+  });
+  if (error) {
+    const message = await extractFunctionInvokeErrorMessage(error, "Failed to start Nextcloud login");
+    throw new Error(message);
+  }
+  const parsedResponse = z
+    .object({
+      flowId: z.string().uuid(),
+      loginUrl: z.string().url(),
+      expiresAt: z.string().min(1)
+    })
+    .parse(data);
+  return parsedResponse;
+};
+
+export const pollNextcloudLoginFlow = async (input: {
+  householdId: string;
+  flowId: string;
+}): Promise<
+  | { status: "pending" }
+  | { status: "connected"; username: string; server: string }
+> => {
+  const parsedInput = z
+    .object({
+      householdId: z.string().uuid(),
+      flowId: z.string().uuid()
+    })
+    .parse(input);
+  const { data, error } = await supabase.functions.invoke("storage-webdav", {
+    body: {
+      householdId: parsedInput.householdId,
+      action: "poll_nextcloud_login",
+      flowId: parsedInput.flowId
+    }
+  });
+  if (error) {
+    const message = await extractFunctionInvokeErrorMessage(error, "Failed to complete Nextcloud login");
+    throw new Error(message);
+  }
+  return z
+    .discriminatedUnion("status", [
+      z.object({
+        status: z.literal("pending")
+      }),
+      z.object({
+        status: z.literal("connected"),
+        username: z.string().min(1),
+        server: z.string().url()
+      })
+    ])
+    .parse(data);
 };
