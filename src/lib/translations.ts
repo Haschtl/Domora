@@ -11,7 +11,7 @@ export const resources = {
       subnav: {
         title: "Unterseiten",
         home: {
-          summary: "Summary",
+          summary: "Start",
           bucket: "Bucket",
           feed: "Kalender",
         },

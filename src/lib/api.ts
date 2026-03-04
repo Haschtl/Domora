@@ -3706,6 +3706,88 @@ export const uploadHouseholdStorageFile = async (input: {
   }
 };
 
+export const downloadHouseholdStorageFile = async (input: {
+  householdId: string;
+  targetPath: string;
+}): Promise<{ fileName: string; contentType: string; contentBase64: string }> => {
+  const parsedInput = z
+    .object({
+      householdId: z.string().uuid(),
+      targetPath: z.string().min(1)
+    })
+    .parse(input);
+  const { data, error } = await supabase.functions.invoke("storage-webdav", {
+    body: {
+      householdId: parsedInput.householdId,
+      action: "download",
+      targetPath: parsedInput.targetPath
+    }
+  });
+  if (error) {
+    const message = await extractFunctionInvokeErrorMessage(error, "Failed to download file");
+    throw new Error(message);
+  }
+  return z
+    .object({
+      fileName: z.string().min(1),
+      contentType: z.string().min(1),
+      contentBase64: z.string().min(1)
+    })
+    .parse(data);
+};
+
+export const renameHouseholdStorageEntry = async (input: {
+  householdId: string;
+  targetPath: string;
+  newName: string;
+}): Promise<void> => {
+  const parsedInput = z
+    .object({
+      householdId: z.string().uuid(),
+      targetPath: z.string().min(1),
+      newName: z.string().trim().min(1).max(255)
+    })
+    .parse(input);
+  const { error } = await supabase.functions.invoke("storage-webdav", {
+    body: {
+      householdId: parsedInput.householdId,
+      action: "rename",
+      targetPath: parsedInput.targetPath,
+      newName: parsedInput.newName
+    }
+  });
+  if (error) {
+    const message = await extractFunctionInvokeErrorMessage(error, "Failed to rename entry");
+    throw new Error(message);
+  }
+};
+
+export const moveHouseholdStorageEntry = async (input: {
+  householdId: string;
+  targetPath: string;
+  destinationPath: string;
+}): Promise<void> => {
+  const parsedInput = z
+    .object({
+      householdId: z.string().uuid(),
+      targetPath: z.string().min(1),
+      destinationPath: z.string().min(1)
+    })
+    .parse(input);
+  const { error } = await supabase.functions.invoke("storage-webdav", {
+    body: {
+      householdId: parsedInput.householdId,
+      action: "move",
+      targetPath: parsedInput.targetPath,
+      destinationPath: parsedInput.destinationPath
+    }
+  });
+  if (error) {
+    const message = await extractFunctionInvokeErrorMessage(error, "Failed to move entry");
+    throw new Error(message);
+  }
+};
+
 export const setHouseholdStorageCredentials = async (input: {
   householdId: string;
   username: string;

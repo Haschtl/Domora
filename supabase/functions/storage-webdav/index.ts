@@ -12,6 +12,9 @@ type StorageAction =
   | "mkdir"
   | "delete"
   | "upload"
+  | "download"
+  | "rename"
+  | "move"
   | "set_credentials"
   | "start_nextcloud_login"
   | "poll_nextcloud_login";
@@ -88,6 +91,16 @@ const hasXmlTag = (xml: string, tagName: string) => {
 
 const splitWebdavResponseNodes = (xml: string) =>
   xml.match(/<(?:[A-Za-z0-9_-]+:)?response\b[\s\S]*?<\/(?:[A-Za-z0-9_-]+:)?response>/gi) ?? [];
+
+const looksLikeDirectoryFromHref = (href: string) => {
+  const trimmed = href.trim();
+  return /\/$/.test(trimmed);
+};
+
+const looksLikeDirectoryFromContentType = (contentType: string | null) => {
+  if (!contentType) return false;
+  return /directory/i.test(contentType);
+};
 
 const toAbsolutePathFromHref = (href: string, storageUrlPathPrefix: string) => {
   const hrefPath = (() => {
@@ -210,6 +223,9 @@ serve(async (req) => {
       "mkdir",
       "delete",
       "upload",
+      "download",
+      "rename",
+      "move",
       "set_credentials",
       "start_nextcloud_login",
       "poll_nextcloud_login"
@@ -551,7 +567,11 @@ serve(async (req) => {
           if (relative === "/") return null;
           const cleanRelative = sanitizeRelativePath(relative);
           const name = cleanRelative.split("/").filter(Boolean).at(-1) ?? cleanRelative;
-          const isDirectory = hasXmlTag(responseNode, "collection");
+          const contentType = extractXmlTagValue(responseNode, "getcontenttype");
+          const isDirectory =
+            hasXmlTag(responseNode, "collection") ||
+            looksLikeDirectoryFromHref(href) ||
+            looksLikeDirectoryFromContentType(contentType);
           const sizeRaw = extractXmlTagValue(responseNode, "getcontentlength");
           const size = sizeRaw ? Number(sizeRaw) : null;
           return {
@@ -560,7 +580,7 @@ serve(async (req) => {
             isDirectory,
             size: Number.isFinite(size) ? size : null,
             updatedAt: extractXmlTagValue(responseNode, "getlastmodified"),
-            contentType: extractXmlTagValue(responseNode, "getcontenttype")
+            contentType
           };
         })
         .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry))
@@ -638,6 +658,124 @@ serve(async (req) => {
       });
       if (!response.ok) {
         return json(response.status, { error: "webdav_upload_failed" });
+      }
+      return json(200, { ok: true });
+    }
+
+    if (actionTyped === "download") {
+      const targetPath = sanitizeRelativePath(payload.targetPath);
+      const absolutePath = joinNormalizedPaths(config.basePath, targetPath);
+      let activeWebdavBaseUrl = webdavBaseUrl;
+      let response = await fetch(buildWebdavUrl(activeWebdavBaseUrl, absolutePath), {
+        method: "GET",
+        headers: { Authorization: webdavAuth }
+      });
+      if (response.status === 404 && config.provider === "nextcloud") {
+        activeWebdavBaseUrl = resolveNextcloudLegacyWebdavBaseUrl(config.url);
+        response = await fetch(buildWebdavUrl(activeWebdavBaseUrl, absolutePath), {
+          method: "GET",
+          headers: { Authorization: webdavAuth }
+        });
+      }
+      if (!response.ok) {
+        return json(response.status, { error: "webdav_download_failed", baseUrl: activeWebdavBaseUrl });
+      }
+      const contentType = response.headers.get("content-type") ?? "application/octet-stream";
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      let binary = "";
+      const chunkSize = 0x8000;
+      for (let index = 0; index < bytes.length; index += chunkSize) {
+        binary += String.fromCharCode(...bytes.subarray(index, index + chunkSize));
+      }
+      const contentBase64 = btoa(binary);
+      const fileName = decodeURIComponent(targetPath.split("/").filter(Boolean).at(-1) ?? "download");
+      return json(200, {
+        fileName,
+        contentType,
+        contentBase64
+      });
+    }
+
+    if (actionTyped === "rename") {
+      const targetPath = sanitizeRelativePath(payload.targetPath);
+      const rawNewName = typeof payload.newName === "string" ? payload.newName.trim() : "";
+      if (targetPath === "/" || !rawNewName) {
+        return new Response("Invalid rename payload", { status: 400, headers: corsHeaders });
+      }
+      const safeNewName = rawNewName.replace(/[\\/]/g, "_").trim();
+      if (!safeNewName) {
+        return new Response("Invalid file name", { status: 400, headers: corsHeaders });
+      }
+      const sourceAbsolutePath = joinNormalizedPaths(config.basePath, targetPath);
+      const sourceSegments = targetPath.split("/").filter(Boolean);
+      if (sourceSegments.length === 0) {
+        return new Response("Invalid source path", { status: 400, headers: corsHeaders });
+      }
+      const targetDirRelative = `/${sourceSegments.slice(0, -1).join("/")}`;
+      const destinationAbsolutePath = joinNormalizedPaths(config.basePath, targetDirRelative, safeNewName);
+
+      let activeWebdavBaseUrl = webdavBaseUrl;
+      let response = await fetch(buildWebdavUrl(activeWebdavBaseUrl, sourceAbsolutePath), {
+        method: "MOVE",
+        headers: {
+          Authorization: webdavAuth,
+          Destination: buildWebdavUrl(activeWebdavBaseUrl, destinationAbsolutePath),
+          Overwrite: "T"
+        }
+      });
+      if (response.status === 404 && config.provider === "nextcloud") {
+        activeWebdavBaseUrl = resolveNextcloudLegacyWebdavBaseUrl(config.url);
+        response = await fetch(buildWebdavUrl(activeWebdavBaseUrl, sourceAbsolutePath), {
+          method: "MOVE",
+          headers: {
+            Authorization: webdavAuth,
+            Destination: buildWebdavUrl(activeWebdavBaseUrl, destinationAbsolutePath),
+            Overwrite: "T"
+          }
+        });
+      }
+      if (!(response.ok || response.status === 201 || response.status === 204)) {
+        return json(response.status, { error: "webdav_rename_failed", baseUrl: activeWebdavBaseUrl });
+      }
+      return json(200, { ok: true });
+    }
+
+    if (actionTyped === "move") {
+      const targetPath = sanitizeRelativePath(payload.targetPath);
+      const destinationPath = sanitizeRelativePath(payload.destinationPath);
+      if (targetPath === "/") {
+        return new Response("Invalid move payload", { status: 400, headers: corsHeaders });
+      }
+      const sourceSegments = targetPath.split("/").filter(Boolean);
+      const sourceName = sourceSegments.at(-1);
+      if (!sourceName) {
+        return new Response("Invalid source path", { status: 400, headers: corsHeaders });
+      }
+      const sourceAbsolutePath = joinNormalizedPaths(config.basePath, targetPath);
+      const destinationAbsolutePath = joinNormalizedPaths(config.basePath, destinationPath, sourceName);
+
+      let activeWebdavBaseUrl = webdavBaseUrl;
+      let response = await fetch(buildWebdavUrl(activeWebdavBaseUrl, sourceAbsolutePath), {
+        method: "MOVE",
+        headers: {
+          Authorization: webdavAuth,
+          Destination: buildWebdavUrl(activeWebdavBaseUrl, destinationAbsolutePath),
+          Overwrite: "T"
+        }
+      });
+      if (response.status === 404 && config.provider === "nextcloud") {
+        activeWebdavBaseUrl = resolveNextcloudLegacyWebdavBaseUrl(config.url);
+        response = await fetch(buildWebdavUrl(activeWebdavBaseUrl, sourceAbsolutePath), {
+          method: "MOVE",
+          headers: {
+            Authorization: webdavAuth,
+            Destination: buildWebdavUrl(activeWebdavBaseUrl, destinationAbsolutePath),
+            Overwrite: "T"
+          }
+        });
+      }
+      if (!(response.ok || response.status === 201 || response.status === 204)) {
+        return json(response.status, { error: "webdav_move_failed", baseUrl: activeWebdavBaseUrl });
       }
       return json(200, { ok: true });
     }
