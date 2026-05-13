@@ -71,15 +71,14 @@ void i18n
   })
   .use(initReactI18next)
   .init({
-  resources,
-  lng: resolveInitialLanguage(),
-  fallbackLng: defaultLanguage,
-  interpolation: {
-    escapeValue: false
-  },
-  showSupportNotice:false,
-  returnNull: false,
-  postProcess: ["householdReplace"]
+    resources,
+    lng: resolveInitialLanguage(),
+    fallbackLng: defaultLanguage,
+    interpolation: {
+      escapeValue: false
+    },
+    returnNull: false,
+    postProcess: ["householdReplace"]
   });
 
 export const getDateLocale = (language: string) => (language.startsWith("de") ? "de-DE" : "en-GB");
