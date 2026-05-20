@@ -24,8 +24,10 @@ import type {
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "../../components/ui/accordion";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../../components/ui/dialog";
 import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
 import { MemberAvatar } from "../../components/member-avatar";
 import { StarRating } from "../../components/ui/star-rating";
 import { createMemberLabelGetter } from "../../lib/member-label";
@@ -40,6 +42,8 @@ interface TimeTasksPageProps {
   members: HouseholdMember[];
   tasks: TaskItem[];
   entries: TaskTimeEntry[];
+  entriesHasMore?: boolean;
+  entriesLoadingMore?: boolean;
   comments: TaskComment[];
   correctionProposals: TaskTimeCorrectionProposal[];
   userId: string;
@@ -49,6 +53,9 @@ interface TimeTasksPageProps {
   onDeleteTaskTimeEntry: (entry: TaskTimeEntry) => Promise<void>;
   onUpdateTaskTimeEntry: (entry: TaskTimeEntry, input: NewTaskTimeEntryInput) => Promise<void>;
   onRateTaskTimeEntry: (entryId: string, rating: number) => Promise<void>;
+  onLoadMoreEntries?: () => void;
+  canResetTaskTimeData?: boolean;
+  onResetTaskTimeData?: () => Promise<void>;
   onCreateTaskTimeCorrectionProposal: (input: NewTaskTimeCorrectionProposalInput) => Promise<void>;
   onVoteTaskTimeCorrectionProposal: (proposalId: string, voteType: "approve" | "reject") => Promise<void>;
 }
@@ -80,6 +87,84 @@ const formatHours = (value: number) =>
   }).format(value);
 
 const normalizeJobName = (value: string) => value.trim().replace(/\s+/g, " ").toLocaleLowerCase();
+const effortHourOptions = Array.from({ length: 25 }, (_, index) => index);
+const effortMinuteOptions = [0, 15, 30, 45];
+
+const splitEffortValue = (value: string) => {
+  const parsed = Number(value.replace(",", "."));
+  const totalMinutes = Number.isFinite(parsed)
+    ? Math.max(0, Math.min(24 * 60, Math.round((parsed * 60) / 15) * 15))
+    : 60;
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = hours >= 24 ? 0 : totalMinutes % 60;
+  return {
+    hours: String(hours),
+    minutes: String(minutes)
+  };
+};
+
+const composeEffortValue = (hoursValue: string, minutesValue: string) => {
+  const nextHours = Math.max(0, Math.min(24, Number(hoursValue)));
+  const nextMinutes = nextHours >= 24 ? 0 : Math.max(0, Math.min(45, Number(minutesValue)));
+  return String((nextHours * 60 + nextMinutes) / 60);
+};
+
+const EffortDurationInput = ({
+  value,
+  onChange,
+  disabled,
+  hourLabel,
+  minuteLabel
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  disabled?: boolean;
+  hourLabel: string;
+  minuteLabel: string;
+}) => {
+  const parts = splitEffortValue(value);
+  const hourValue = parts.hours;
+  const minuteValue = hourValue === "24" ? "0" : parts.minutes;
+
+  return (
+    <div className="flex h-11 w-full max-w-[13rem] items-center gap-1 rounded-xl border border-brand-200 bg-white px-2 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
+      <Clock3 className="h-4 w-4 shrink-0 text-brand-600 dark:text-brand-300" />
+      <Select
+        value={hourValue}
+        onValueChange={(nextHours) => onChange(composeEffortValue(nextHours, minuteValue))}
+        disabled={disabled}
+      >
+        <SelectTrigger className="h-8 w-[4.5rem] rounded-md border-0 bg-transparent px-1 py-1 shadow-none focus:ring-0 dark:bg-transparent">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent position="item-aligned" className="max-h-72">
+          {effortHourOptions.map((option) => (
+            <SelectItem key={option} value={String(option)}>
+              {option} {hourLabel}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <span className="text-slate-300 dark:text-slate-600">:</span>
+      <Select
+        value={minuteValue}
+        onValueChange={(nextMinutes) => onChange(composeEffortValue(hourValue, nextMinutes))}
+        disabled={disabled || hourValue === "24"}
+      >
+        <SelectTrigger className="h-8 w-[5rem] rounded-md border-0 bg-transparent px-1 py-1 shadow-none focus:ring-0 dark:bg-transparent">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent position="item-aligned">
+          {effortMinuteOptions.map((option) => (
+            <SelectItem key={option} value={String(option)}>
+              {String(option).padStart(2, "0")} {minuteLabel}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  );
+};
 
 export const TimeTasksPage = ({
   section = "overview",
@@ -87,6 +172,8 @@ export const TimeTasksPage = ({
   members,
   tasks,
   entries,
+  entriesHasMore = false,
+  entriesLoadingMore = false,
   comments,
   correctionProposals,
   userId,
@@ -96,6 +183,9 @@ export const TimeTasksPage = ({
   onDeleteTaskTimeEntry,
   onUpdateTaskTimeEntry,
   onRateTaskTimeEntry,
+  onLoadMoreEntries,
+  canResetTaskTimeData = false,
+  onResetTaskTimeData,
   onCreateTaskTimeCorrectionProposal,
   onVoteTaskTimeCorrectionProposal
 }: TimeTasksPageProps) => {
@@ -119,6 +209,7 @@ export const TimeTasksPage = ({
   const [correctionReason, setCorrectionReason] = useState("");
   const [editError, setEditError] = useState<string | null>(null);
   const [commentDrafts, setCommentDrafts] = useState<Record<string, string>>({});
+  const [resetDialogOpen, setResetDialogOpen] = useState(false);
 
   const memberById = useMemo(
     () => new Map(members.map((member) => [member.user_id, member])),
@@ -365,12 +456,13 @@ export const TimeTasksPage = ({
   const myHours = ranking.find((entry) => entry.memberId === userId)?.totalHours ?? 0;
   // const manualEntries = entries.filter((entry) => entry.source === "manual");
   // const vacationCredits = entries.filter((entry) => entry.source === "vacation_credit");
-  const recentEntries = entries.slice(0, section === "history" ? 120 : 8);
+  const visibleEntries = entries;
   const entryById = useMemo(() => new Map(entries.map((entry) => [entry.id, entry])), [entries]);
   const openCorrectionProposals = useMemo(
     () => correctionProposals.filter((proposal) => proposal.status === "open"),
     [correctionProposals]
   );
+  const correctionEntry = correctingEntryId ? (entryById.get(correctingEntryId) ?? null) : null;
   const commentsByEntryId = useMemo(() => {
     const map = new Map<string, TaskComment[]>();
     comments
@@ -476,26 +568,25 @@ export const TimeTasksPage = ({
       reason: correctionReason
     });
     setCorrectingEntryId(null);
+    setCorrectionReason("");
+    setEditError(null);
   };
 
-  const renderEditFields = (entry: TaskTimeEntry, mode: "edit" | "correction") => (
+  const renderEditFields = (entry: TaskTimeEntry) => (
     <div className="mt-3 space-y-3 rounded-lg border border-brand-100 bg-brand-50/60 p-3 dark:border-slate-700 dark:bg-slate-800/70">
-      <div className="grid gap-3 sm:grid-cols-[1fr_8rem]">
+      <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
         <div className="space-y-1">
           <Label>{t("tasks.timeDescriptionLabel")}</Label>
           <Input value={editDescription} onChange={(event) => setEditDescription(event.target.value)} disabled={busy} />
         </div>
         <div className="space-y-1">
           <Label>{t("tasks.timeHoursLabel")}</Label>
-          <Input
+          <EffortDurationInput
             value={editHours}
-            onChange={(event) => setEditHours(event.target.value)}
-            type="number"
-            min={0.25}
-            max={24}
-            step={0.25}
-            inputMode="decimal"
+            onChange={setEditHours}
             disabled={busy}
+            hourLabel={t("tasks.timeHoursShort")}
+            minuteLabel={t("tasks.timeMinutesShort")}
           />
         </div>
       </div>
@@ -508,17 +599,6 @@ export const TimeTasksPage = ({
           className="min-h-20 w-full rounded-md border border-brand-100 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
         />
       </div>
-      {mode === "correction" ? (
-        <div className="space-y-1">
-          <Label>{t("tasks.timeCorrectionReasonLabel")}</Label>
-          <Input
-            value={correctionReason}
-            onChange={(event) => setCorrectionReason(event.target.value)}
-            placeholder={t("tasks.timeCorrectionReasonPlaceholder")}
-            disabled={busy}
-          />
-        </div>
-      ) : null}
       {editError ? <p className="text-sm text-rose-600 dark:text-rose-300">{editError}</p> : null}
       <div className="flex justify-end gap-2">
         <Button
@@ -536,10 +616,10 @@ export const TimeTasksPage = ({
         <Button
           type="button"
           disabled={busy}
-          onClick={() => void (mode === "edit" ? submitEdit(entry) : submitCorrection(entry))}
+          onClick={() => void submitEdit(entry)}
         >
           <Check className="mr-2 h-4 w-4" />
-          {mode === "edit" ? t("tasks.timeSaveEdit") : t("tasks.timeCreateCorrection")}
+          {t("tasks.timeSaveEdit")}
         </Button>
       </div>
     </div>
@@ -671,9 +751,20 @@ export const TimeTasksPage = ({
 
   const renderEntry = (entry: TaskTimeEntry) => {
     const member = memberById.get(entry.user_id);
+    const hasImage = Boolean(entry.image_url);
     return (
-      <div key={entry.id} className="rounded-lg border border-brand-100 bg-white px-3 py-3 dark:border-slate-700 dark:bg-slate-900">
-        <div className="flex items-start justify-between gap-3">
+      <div key={entry.id} className="relative overflow-hidden rounded-lg border border-brand-100 bg-white px-3 py-3 dark:border-slate-700 dark:bg-slate-900">
+        {hasImage ? (
+          <>
+            <div
+              aria-hidden="true"
+              className="absolute inset-0 bg-cover bg-center"
+              style={{ backgroundImage: `url(${entry.image_url})` }}
+            />
+            <div aria-hidden="true" className="absolute inset-0 bg-white/60 backdrop-blur-[1px] dark:bg-slate-950/65" />
+          </>
+        ) : null}
+        <div className="relative z-10 flex items-start justify-between gap-3">
           <div className="flex min-w-0 gap-3">
             <MemberAvatar
               src={member?.avatar_url?.trim() || createDiceBearAvatarDataUri(getMemberAvatarSeed(entry.user_id, member?.display_name))}
@@ -681,31 +772,29 @@ export const TimeTasksPage = ({
               className="h-9 w-9 rounded-full"
             />
             <div className="min-w-0">
-              <p className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">
-                {entry.description}
-              </p>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                {userLabel(entry.user_id)} | {new Date(entry.entry_date).toLocaleDateString()} | {formatHours(entry.hours)} h
-              </p>
+              <div className={hasImage ? "inline-flex max-w-full flex-col rounded-xl bg-white/75 px-2 py-1 backdrop-blur-md dark:bg-slate-900/70" : ""}>
+                <p className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">
+                  {entry.description}
+                </p>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  {userLabel(entry.user_id)} | {new Date(entry.entry_date).toLocaleDateString()} | {formatHours(entry.hours)} h
+                </p>
+              </div>
               {entry.details ? (
-                <p className="mt-2 whitespace-pre-line text-sm text-slate-600 dark:text-slate-300">{entry.details}</p>
+                <p className={`mt-2 whitespace-pre-line text-sm text-slate-600 dark:text-slate-300 ${
+                  hasImage ? "rounded-lg bg-white/75 px-2 py-1 backdrop-blur-md dark:bg-slate-900/70" : ""
+                }`}>{entry.details}</p>
               ) : null}
               {entry.source === "vacation_credit" ? (
-                <p className="mt-2 text-xs font-medium text-emerald-700 dark:text-emerald-300">
+                <p className={`mt-2 text-xs font-medium text-emerald-700 dark:text-emerald-300 ${
+                  hasImage ? "inline-flex rounded-lg bg-white/75 px-2 py-1 backdrop-blur-md dark:bg-slate-900/70" : ""
+                }`}>
                   {t("tasks.timeVacationCredit")}
                 </p>
               ) : null}
-              {entry.image_url ? (
-                <a
-                  href={entry.image_url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="mt-2 inline-flex text-xs font-medium text-brand-700 hover:underline dark:text-brand-300"
-                >
-                  {t("tasks.timeImageOpen")}
-                </a>
-              ) : null}
-              <div className="mt-2 flex flex-wrap items-center gap-2">
+              <div className={`mt-2 flex flex-wrap items-center gap-2 ${
+                hasImage ? "rounded-lg bg-white/75 px-2 py-1 backdrop-blur-md dark:bg-slate-900/70" : ""
+              }`}>
                 <StarRating
                   value={entry.my_rating ?? 0}
                   displayValue={entry.rating_average ?? 0}
@@ -760,8 +849,7 @@ export const TimeTasksPage = ({
           ) : null}
         </div>
         {renderComments(entry.id)}
-        {editingEntryId === entry.id ? renderEditFields(entry, "edit") : null}
-        {correctingEntryId === entry.id ? renderEditFields(entry, "correction") : null}
+        {editingEntryId === entry.id ? renderEditFields(entry) : null}
       </div>
     );
   };
@@ -787,7 +875,7 @@ export const TimeTasksPage = ({
             <CardDescription>{t("tasks.timeDescription")}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
-            <div className="grid gap-2 sm:grid-cols-[1fr_8rem]">
+            <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
               <div className="space-y-1">
                 <Label>{t("tasks.timeDescriptionLabel")}</Label>
                 <Input
@@ -805,15 +893,12 @@ export const TimeTasksPage = ({
               </div>
               <div className="space-y-1">
                 <Label>{t("tasks.timeHoursLabel")}</Label>
-                <Input
+                <EffortDurationInput
                   value={hours}
-                  onChange={(event) => setHours(event.target.value)}
-                  type="number"
-                  min={0.25}
-                  max={24}
-                  step={0.25}
-                  inputMode="decimal"
+                  onChange={setHours}
                   disabled={busy}
+                  hourLabel={t("tasks.timeHoursShort")}
+                  minuteLabel={t("tasks.timeMinutesShort")}
                 />
               </div>
             </div>
@@ -995,6 +1080,43 @@ export const TimeTasksPage = ({
         </div>
       ) : null}
 
+      {section === "settings" ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>{t("tasks.timeSettingsTitle")}</CardTitle>
+            <CardDescription>{t("tasks.timeSettingsDescription")}</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {canResetTaskTimeData ? (
+              <div className="flex flex-col gap-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-3 dark:border-rose-900/60 dark:bg-rose-950/30 sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-rose-950 dark:text-rose-100">
+                    {t("tasks.timeResetTitle")}
+                  </p>
+                  <p className="mt-1 text-sm text-rose-800 dark:text-rose-200">
+                    {t("tasks.timeResetDescription")}
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant="danger"
+                  disabled={busy}
+                  onClick={() => setResetDialogOpen(true)}
+                  className="shrink-0"
+                >
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  {t("tasks.timeResetAction")}
+                </Button>
+              </div>
+            ) : (
+              <p className="rounded-lg border border-brand-100 bg-white px-3 py-3 text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
+                {t("tasks.timeSettingsOwnerOnly")}
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      ) : null}
+
       {section === "stats" ? (
         <Card>
           <CardHeader>
@@ -1080,12 +1202,12 @@ export const TimeTasksPage = ({
                   .map((entry) => {
                     const member = memberById.get(entry.memberId);
                     return (
-                      <div key={entry.memberId} className="flex items-center justify-between gap-3 rounded-lg border border-brand-100 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900">
+                      <div key={entry.memberId} className="flex min-w-0 flex-col gap-2 rounded-lg border border-brand-100 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900 sm:flex-row sm:items-center sm:justify-between">
                         <div className="flex min-w-0 items-center gap-2">
                           <MemberAvatar
                             src={member?.avatar_url?.trim() || createDiceBearAvatarDataUri(getMemberAvatarSeed(entry.memberId, member?.display_name))}
                             alt={userLabel(entry.memberId)}
-                            className="h-8 w-8 rounded-full"
+                            className="h-8 w-8 shrink-0 rounded-full"
                           />
                           <div className="min-w-0">
                             <p className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">
@@ -1099,12 +1221,14 @@ export const TimeTasksPage = ({
                             </p>
                           </div>
                         </div>
-                        <StarRating
-                          value={0}
-                          displayValue={entry.average ?? 0}
-                          disabled
-                          onChange={() => undefined}
-                        />
+                        <div className="max-w-full overflow-hidden sm:shrink-0">
+                          <StarRating
+                            value={0}
+                            displayValue={entry.average ?? 0}
+                            disabled
+                            onChange={() => undefined}
+                          />
+                        </div>
                       </div>
                     );
                   })
@@ -1122,7 +1246,7 @@ export const TimeTasksPage = ({
             <CardContent className="space-y-2">
               {satisfactionByJob.length > 0 ? (
                 satisfactionByJob.map((entry) => (
-                  <div key={normalizeJobName(entry.name)} className="flex items-center justify-between gap-3 rounded-lg border border-brand-100 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900">
+                  <div key={normalizeJobName(entry.name)} className="flex min-w-0 flex-col gap-2 rounded-lg border border-brand-100 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900 sm:flex-row sm:items-center sm:justify-between">
                     <div className="min-w-0">
                       <p className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">
                         {entry.name}
@@ -1134,12 +1258,14 @@ export const TimeTasksPage = ({
                         })}
                       </p>
                     </div>
-                    <StarRating
-                      value={0}
-                      displayValue={entry.average ?? 0}
-                      disabled
-                      onChange={() => undefined}
-                    />
+                    <div className="max-w-full overflow-hidden sm:shrink-0">
+                      <StarRating
+                        value={0}
+                        displayValue={entry.average ?? 0}
+                        disabled
+                        onChange={() => undefined}
+                      />
+                    </div>
                   </div>
                 ))
               ) : (
@@ -1157,12 +1283,143 @@ export const TimeTasksPage = ({
             <CardDescription>{t("tasks.timeHistoryDescription")}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
-            {recentEntries.length > 0 ? recentEntries.map(renderEntry) : (
+            {visibleEntries.length > 0 ? visibleEntries.map(renderEntry) : (
               <p className="text-sm text-slate-500 dark:text-slate-400">{t("tasks.timeHistoryEmpty")}</p>
             )}
+            {entriesHasMore ? (
+              <div className="flex justify-center pt-1">
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={entriesLoadingMore}
+                  onClick={() => onLoadMoreEntries?.()}
+                >
+                  {entriesLoadingMore ? t("common.loading") : t("tasks.timeHistoryLoadMore")}
+                </Button>
+              </div>
+            ) : null}
           </CardContent>
         </Card>
       ) : null}
+
+      <Dialog
+        open={Boolean(correctionEntry)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setCorrectingEntryId(null);
+            setCorrectionReason("");
+            setEditError(null);
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{t("tasks.timeCreateCorrection")}</DialogTitle>
+            <DialogDescription>
+              {correctionEntry
+                ? t("tasks.timeCorrectionDialogDescription", {
+                    title: correctionEntry.description,
+                    hours: formatHours(correctionEntry.hours)
+                  })
+                : t("tasks.timeCorrectionReasonPlaceholder")}
+            </DialogDescription>
+          </DialogHeader>
+
+          {correctionEntry ? (
+            <div className="space-y-3">
+              <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
+                <div className="space-y-1">
+                  <Label>{t("tasks.timeDescriptionLabel")}</Label>
+                  <Input value={editDescription} onChange={(event) => setEditDescription(event.target.value)} disabled={busy} />
+                </div>
+                <div className="space-y-1">
+                  <Label>{t("tasks.timeHoursLabel")}</Label>
+                  <EffortDurationInput
+                    value={editHours}
+                    onChange={setEditHours}
+                    disabled={busy}
+                    hourLabel={t("tasks.timeHoursShort")}
+                    minuteLabel={t("tasks.timeMinutesShort")}
+                  />
+                </div>
+              </div>
+              <div className="space-y-1">
+                <Label>{t("tasks.timeDetailsLabel")}</Label>
+                <textarea
+                  value={editDetails}
+                  onChange={(event) => setEditDetails(event.target.value)}
+                  disabled={busy}
+                  className="min-h-20 w-full rounded-md border border-brand-100 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label>{t("tasks.timeCorrectionReasonLabel")}</Label>
+                <Input
+                  value={correctionReason}
+                  onChange={(event) => setCorrectionReason(event.target.value)}
+                  placeholder={t("tasks.timeCorrectionReasonPlaceholder")}
+                  disabled={busy}
+                />
+              </div>
+              {editError ? <p className="text-sm text-rose-600 dark:text-rose-300">{editError}</p> : null}
+              <div className="flex justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  disabled={busy}
+                  onClick={() => {
+                    setCorrectingEntryId(null);
+                    setCorrectionReason("");
+                    setEditError(null);
+                  }}
+                >
+                  <X className="mr-2 h-4 w-4" />
+                  {t("common.cancel")}
+                </Button>
+                <Button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void submitCorrection(correctionEntry)}
+                >
+                  <Check className="mr-2 h-4 w-4" />
+                  {t("tasks.timeCreateCorrection")}
+                </Button>
+              </div>
+            </div>
+          ) : null}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={resetDialogOpen} onOpenChange={setResetDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{t("tasks.timeResetConfirmTitle")}</DialogTitle>
+            <DialogDescription>{t("tasks.timeResetConfirmDescription")}</DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              disabled={busy}
+              onClick={() => setResetDialogOpen(false)}
+            >
+              {t("common.cancel")}
+            </Button>
+            <Button
+              type="button"
+              variant="danger"
+              disabled={busy || !onResetTaskTimeData}
+              onClick={() => {
+                setResetDialogOpen(false);
+                void onResetTaskTimeData?.();
+              }}
+            >
+              <Trash2 className="mr-2 h-4 w-4" />
+              {t("tasks.timeResetAction")}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

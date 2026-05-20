@@ -9,6 +9,7 @@ export const queryKeys = {
   householdTaskComments: (householdId: string) => ["household", householdId, "task-comments"] as const,
   householdTaskCompletions: (householdId: string) => ["household", householdId, "task-completions"] as const,
   householdTaskTimeEntries: (householdId: string) => ["household", householdId, "task-time-entries"] as const,
+  householdTaskTimeEntriesPages: (householdId: string) => ["household", householdId, "task-time-entries", "pages"] as const,
   householdTaskTimeCorrectionProposals: (householdId: string) => ["household", householdId, "task-time-correction-proposals"] as const,
   householdOneOffTaskClaims: (householdId: string) => ["household", householdId, "one-off-task-claims"] as const,
   householdFinances: (householdId: string) => ["household", householdId, "finances"] as const,

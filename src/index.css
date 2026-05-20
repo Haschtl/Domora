@@ -1459,6 +1459,12 @@ html:not(.dark) .text-brand-800 {
 .bg-brand-50\/50 { background-color: rgb(var(--brand-50-rgb) / 0.5); }
 .bg-brand-50\/60 { background-color: rgb(var(--brand-50-rgb) / 0.6); }
 .bg-brand-50\/70 { background-color: rgb(var(--brand-50-rgb) / 0.7); }
+.dark .bg-brand-50\/20 { background-color: rgb(30 41 59 / 0.2); }
+.dark .bg-brand-50\/30 { background-color: rgb(30 41 59 / 0.3); }
+.dark .bg-brand-50\/40 { background-color: rgb(30 41 59 / 0.4); }
+.dark .bg-brand-50\/50 { background-color: rgb(30 41 59 / 0.5); }
+.dark .bg-brand-50\/60 { background-color: rgb(30 41 59 / 0.6); }
+.dark .bg-brand-50\/70 { background-color: rgb(30 41 59 / 0.7); }
 .bg-brand-100\/40 { background-color: rgb(var(--brand-100-rgb) / 0.4); }
 .bg-brand-100\/70 { background-color: rgb(var(--brand-100-rgb) / 0.7); }
 .bg-brand-900\/30 { background-color: rgb(var(--brand-900-rgb) / 0.3); }

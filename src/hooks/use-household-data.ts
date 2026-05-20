@@ -10,8 +10,10 @@ import { householdQueryOptions, type HouseholdQueryKey } from "../lib/household-
 import {
   getFinanceEntriesPage,
   getHouseholdEventsPage,
+  getTaskTimeEntriesPage,
   type FinanceEntriesPage,
-  type HouseholdEventsPage
+  type HouseholdEventsPage,
+  type TaskTimeEntriesPage
 } from "../lib/api";
 import { queryKeys } from "../lib/query-keys";
 import type {
@@ -69,16 +71,23 @@ export const useHouseholdHomeBatch = (householdId: string | null, enabled = true
   });
 };
 
-export const useHouseholdTasksBatch = (householdId: string | null, enabled = true) => {
+export const useHouseholdTasksBatch = (
+  householdId: string | null,
+  enabled = true,
+  options: { includeTaskTimeEntries?: boolean } = {}
+) => {
   const queryClient = useQueryClient();
+  const includeTaskTimeEntries = options.includeTaskTimeEntries ?? true;
   return useQuery({
-    queryKey: householdId ? ["household", householdId, "batch", "tasks"] : ["household", "none", "batch", "tasks"],
+    queryKey: householdId
+      ? ["household", householdId, "batch", "tasks", includeTaskTimeEntries ? "with-time-entries" : "without-time-entries"]
+      : ["household", "none", "batch", "tasks"],
     queryFn: () =>
       resolveHouseholdBatch(queryClient, householdId!, [
         "tasks",
         "taskCompletions",
         "taskComments",
-        "taskTimeEntries",
+        ...(includeTaskTimeEntries ? (["taskTimeEntries"] as const) : []),
         "taskTimeCorrectionProposals",
         "oneOffTaskClaims",
         "memberPimpers"
@@ -165,6 +174,24 @@ export const useHouseholdTaskTimeEntries = (householdId: string | null, enabled 
       ? householdQueryOptions.taskTimeEntries(householdId)
       : { queryKey: ["household", "none", "task-time-entries"], ...emptyArrayQuery<TaskTimeEntry>() }),
     enabled: Boolean(householdId) && enabled
+  });
+
+export const useHouseholdTaskTimeEntriesPages = (
+  householdId: string | null,
+  enabled = true
+): UseInfiniteQueryResult<InfiniteData<TaskTimeEntriesPage, string | null>, Error> =>
+  useInfiniteQuery<
+    TaskTimeEntriesPage,
+    Error,
+    InfiniteData<TaskTimeEntriesPage, string | null>,
+    QueryKey,
+    string | null
+  >({
+    queryKey: householdId ? queryKeys.householdTaskTimeEntriesPages(householdId) : ["household", "none", "task-time-entries", "pages"],
+    queryFn: ({ pageParam }) => getTaskTimeEntriesPage(householdId!, { cursor: pageParam as string | null | undefined }),
+    enabled: Boolean(householdId) && enabled,
+    initialPageParam: null as string | null,
+    getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined
   });
 
 export const useHouseholdTaskTimeCorrectionProposals = (householdId: string | null, enabled = true) =>

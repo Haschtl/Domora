@@ -335,7 +335,9 @@ const AppLayout = () => {
   const financeSubTab = useMemo(() => resolveFinanceSubTabFromPathname(location.pathname), [location.pathname]);
   const settingsSubTab = useMemo(() => resolveSettingsSubTabFromPathname(location.pathname), [location.pathname]);
   const isTimeTaskMode = activeHousehold?.task_mode === "time";
-  const isTaskSettingsEnabled = !isTimeTaskMode && (activeHousehold?.task_laziness_enabled ?? false);
+  const isTaskSettingsEnabled = isTimeTaskMode
+    ? currentMember?.role === "owner"
+    : (activeHousehold?.task_laziness_enabled ?? false);
   const featureFlags = useMemo(
     () => ({
       bucket: activeHousehold?.feature_bucket_enabled ?? true,
@@ -398,7 +400,7 @@ const AppLayout = () => {
         "tasks",
         "taskCompletions",
         "taskComments",
-        "taskTimeEntries",
+        ...(activeHousehold.task_mode === "time" ? [] : (["taskTimeEntries"] as const)),
         "taskTimeCorrectionProposals",
         "cashAuditRequests",
         "financeSubscriptions",
@@ -498,7 +500,7 @@ const AppLayout = () => {
           "tasks",
           "taskCompletions",
           "taskComments",
-          "taskTimeEntries",
+          ...(activeHousehold.task_mode === "time" ? [] : (["taskTimeEntries"] as const)),
           "taskTimeCorrectionProposals",
           "cashAuditRequests",
           "memberVacations"
@@ -519,7 +521,7 @@ const AppLayout = () => {
           "tasks",
           "taskCompletions",
           "taskComments",
-          "taskTimeEntries",
+          ...(activeHousehold.task_mode === "time" ? [] : (["taskTimeEntries"] as const)),
           "taskTimeCorrectionProposals",
           "memberPimpers",
           "memberVacations"
@@ -540,7 +542,7 @@ const AppLayout = () => {
         void ensureHouseholdQueries(queryClient, householdId, ["householdMembers", "memberVacations"]);
       }
     },
-    [activeHousehold?.id, featureFlags.finances, featureFlags.shopping, featureFlags.tasks, queryClient]
+    [activeHousehold?.id, activeHousehold?.task_mode, featureFlags.finances, featureFlags.shopping, featureFlags.tasks, queryClient]
   );
 
   const subItems: Array<{ id: string; icon: LucideIcon; labelKey: string; path: string }> =

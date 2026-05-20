@@ -1610,6 +1610,18 @@ export const resetHouseholdPimpers = async (householdId: string): Promise<number
   return Number.isFinite(affected) ? affected : 0;
 };
 
+export const resetTaskTimeData = async (householdId: string): Promise<number> => {
+  const validatedHouseholdId = z.string().uuid().parse(householdId);
+
+  const { data, error } = await supabase.rpc("reset_task_time_data", {
+    p_household_id: validatedHouseholdId
+  });
+
+  if (error) throw error;
+  const affected = Number(data ?? 0);
+  return Number.isFinite(affected) ? affected : 0;
+};
+
 export const leaveHousehold = async (householdId: string, userId: string) => {
   const validatedHouseholdId = z.string().uuid().parse(householdId);
   const validatedUserId = z.string().uuid().parse(userId);
@@ -2679,6 +2691,7 @@ export const getTaskTimeEntries = async (householdId: string): Promise<TaskTimeE
     .from("task_time_entries")
     .select(SELECT_TASK_TIME_ENTRY_FIELDS)
     .eq("household_id", validatedHouseholdId)
+    .is("archived_at", null)
     .order("entry_date", { ascending: false })
     .order("created_at", { ascending: false });
 
@@ -2723,6 +2736,114 @@ export const getTaskTimeEntries = async (householdId: string): Promise<TaskTimeE
       my_rating: ratingStats.myRating
     };
   });
+};
+
+export type TaskTimeEntriesPage = {
+  rows: TaskTimeEntry[];
+  nextCursor: string | null;
+};
+
+const buildTaskTimeEntryCursor = (row: { entry_date: string; created_at: string; id: string }) =>
+  `${row.entry_date}::${row.created_at}::${row.id}`;
+
+const parseTaskTimeEntryCursor = (cursor?: string | null) => {
+  if (!cursor) return null;
+  const [entryDate, createdAt, id] = cursor.split("::");
+  if (!entryDate || !createdAt || !id) return null;
+  return { entryDate, createdAt, id };
+};
+
+export const getTaskTimeEntriesPage = async (
+  householdId: string,
+  {
+    limit = 30,
+    cursor
+  }: {
+    limit?: number;
+    cursor?: string | null;
+  } = {}
+): Promise<TaskTimeEntriesPage> => {
+  const validatedHouseholdId = z.string().uuid().parse(householdId);
+  const currentUserId = await requireAuthenticatedUserId();
+  const parsedCursor = parseTaskTimeEntryCursor(cursor);
+
+  if (!parsedCursor) {
+    const { error: settlementError } = await supabase.rpc("settle_task_time_vacation_credits", {
+      p_household_id: validatedHouseholdId
+    });
+    if (settlementError) throw settlementError;
+  }
+
+  let query = supabase
+    .from("task_time_entries")
+    .select(SELECT_TASK_TIME_ENTRY_FIELDS)
+    .eq("household_id", validatedHouseholdId)
+    .is("archived_at", null)
+    .order("entry_date", { ascending: false })
+    .order("created_at", { ascending: false })
+    .order("id", { ascending: false })
+    .limit(limit + 1);
+
+  if (parsedCursor) {
+    query = query.or(
+      `entry_date.lt.${parsedCursor.entryDate},and(entry_date.eq.${parsedCursor.entryDate},created_at.lt.${parsedCursor.createdAt}),and(entry_date.eq.${parsedCursor.entryDate},created_at.eq.${parsedCursor.createdAt},id.lt.${parsedCursor.id})`
+    );
+  }
+
+  const { data, error } = await query;
+  if (error) throw error;
+
+  const fetchedRows = (data ?? []).map((entry) => normalizeTaskTimeEntry(entry as Record<string, unknown>));
+  const rows = fetchedRows.slice(0, limit);
+  if (rows.length === 0) return { rows, nextCursor: null };
+
+  const entryIds = rows.map((entry) => entry.id);
+  const { data: ratingsData, error: ratingsError } = await supabase
+    .from("task_time_entry_ratings")
+    .select(SELECT_TASK_TIME_ENTRY_RATING_FIELDS)
+    .eq("household_id", validatedHouseholdId)
+    .in("task_time_entry_id", entryIds);
+
+  if (ratingsError) throw ratingsError;
+
+  const ratingsByEntryId = new Map<string, { total: number; count: number; myRating: number | null }>();
+  for (const row of ratingsData ?? []) {
+    const parsed = taskTimeEntryRatingSchema.parse(row);
+    const existing = ratingsByEntryId.get(parsed.task_time_entry_id) ?? {
+      total: 0,
+      count: 0,
+      myRating: null
+    };
+    existing.total += parsed.rating;
+    existing.count += 1;
+    if (parsed.user_id === currentUserId) {
+      existing.myRating = parsed.rating;
+    }
+    ratingsByEntryId.set(parsed.task_time_entry_id, existing);
+  }
+
+  const rowsWithRatings = rows.map((entry) => {
+    const ratingStats = ratingsByEntryId.get(entry.id);
+    if (!ratingStats) {
+      return { ...entry, rating_average: null, rating_count: 0, my_rating: null };
+    }
+    return {
+      ...entry,
+      rating_average: Number((ratingStats.total / ratingStats.count).toFixed(2)),
+      rating_count: ratingStats.count,
+      my_rating: ratingStats.myRating
+    };
+  });
+
+  if (fetchedRows.length <= limit) {
+    return { rows: rowsWithRatings, nextCursor: null };
+  }
+
+  const lastRow = rowsWithRatings[rowsWithRatings.length - 1];
+  return {
+    rows: rowsWithRatings,
+    nextCursor: lastRow ? buildTaskTimeEntryCursor(lastRow) : null
+  };
 };
 
 export const addTaskTimeEntry = async (
@@ -2806,6 +2927,7 @@ export const updateTaskTimeEntry = async (
     .update(updatePayload)
     .eq("id", parsed.entryId)
     .eq("source", "manual")
+    .is("archived_at", null)
     .select(SELECT_TASK_TIME_ENTRY_FIELDS)
     .single();
 
@@ -2819,7 +2941,8 @@ export const deleteTaskTimeEntry = async (entryId: string): Promise<void> => {
     .from("task_time_entries")
     .delete()
     .eq("id", validatedEntryId)
-    .eq("source", "manual");
+    .eq("source", "manual")
+    .is("archived_at", null);
   if (error) throw error;
 };
 
@@ -2832,6 +2955,7 @@ export const rateTaskTimeEntry = async (entryId: string, rating: number): Promis
     .from("task_time_entries")
     .select("household_id,user_id")
     .eq("id", validatedEntryId)
+    .is("archived_at", null)
     .single();
   if (entryError) throw entryError;
   if (String(entryRow.user_id) === userId) {
@@ -2873,7 +2997,19 @@ export const getTaskTimeCorrectionProposals = async (
 
   const proposals = (data ?? []) as Record<string, unknown>[];
   if (proposals.length === 0) return [];
-  const proposalIds = proposals.map((entry) => String(entry.id));
+  const proposalEntryIds = proposals.map((entry) => String(entry.task_time_entry_id));
+  const { data: activeEntryRows, error: activeEntryError } = await supabase
+    .from("task_time_entries")
+    .select("id")
+    .eq("household_id", validatedHouseholdId)
+    .is("archived_at", null)
+    .in("id", proposalEntryIds);
+  if (activeEntryError) throw activeEntryError;
+
+  const activeEntryIds = new Set((activeEntryRows ?? []).map((row) => String(row.id)));
+  const activeProposals = proposals.filter((proposal) => activeEntryIds.has(String(proposal.task_time_entry_id)));
+  if (activeProposals.length === 0) return [];
+  const proposalIds = activeProposals.map((entry) => String(entry.id));
 
   const { data: voteRows, error: voteError } = await supabase
     .from("task_time_correction_votes")
@@ -2888,7 +3024,7 @@ export const getTaskTimeCorrectionProposals = async (
     votesByProposalId.set(vote.proposal_id, [...(votesByProposalId.get(vote.proposal_id) ?? []), vote]);
   });
 
-  return proposals.map((proposal) =>
+  return activeProposals.map((proposal) =>
     normalizeTaskTimeCorrectionProposal(proposal, votesByProposalId.get(String(proposal.id)) ?? [])
   );
 };
@@ -2919,6 +3055,7 @@ export const createTaskTimeCorrectionProposal = async (
     .from("task_time_entries")
     .select("household_id,user_id")
     .eq("id", parsed.taskTimeEntryId)
+    .is("archived_at", null)
     .single();
   if (entryError) throw entryError;
   if (String(entryRow.user_id) === userId) {
@@ -2971,13 +3108,23 @@ export const voteTaskTimeCorrectionProposal = async (
 
   const { data: proposalRow, error: proposalError } = await supabase
     .from("task_time_correction_proposals")
-    .select("household_id,status")
+    .select("household_id,status,task_time_entry_id")
     .eq("id", parsed.proposalId)
     .single();
   if (proposalError) throw proposalError;
   if (String(proposalRow.status) !== "open") throw new Error("Correction proposal is already closed");
 
   const householdId = z.string().uuid().parse(String(proposalRow.household_id));
+  const { data: entryRow, error: entryError } = await supabase
+    .from("task_time_entries")
+    .select("id")
+    .eq("id", String(proposalRow.task_time_entry_id))
+    .eq("household_id", householdId)
+    .is("archived_at", null)
+    .single();
+  if (entryError) throw entryError;
+  if (!entryRow) throw new Error("Correction proposal entry is archived");
+
   const { error } = await supabase.from("task_time_correction_votes").upsert(
     {
       proposal_id: parsed.proposalId,

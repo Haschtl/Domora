@@ -4,6 +4,8 @@ import { TimeTasksPage } from "./time-tasks-page";
 import { useWorkspace } from "../../context/workspace-context";
 import {
   useHouseholdEvents,
+  useHouseholdTaskTimeEntries,
+  useHouseholdTaskTimeEntriesPages,
   useHouseholdTasksBatch
 } from "../../hooks/use-household-data";
 import type {
@@ -36,6 +38,7 @@ export const TasksPageContainer = ({ section }: TasksPageContainerProps) => {
     onRateTaskTimeEntry,
     onCreateTaskTimeCorrectionProposal,
     onVoteTaskTimeCorrectionProposal,
+    onResetTaskTimeData,
     onAddOneOffTaskClaim,
     onCompleteTask,
     onSkipTask,
@@ -51,7 +54,15 @@ export const TasksPageContainer = ({ section }: TasksPageContainerProps) => {
     onWithdrawOneOffTaskClaim
   } = useWorkspace();
 
-  const tasksBatchQuery = useHouseholdTasksBatch(activeHousehold?.id ?? null);
+  const isTimeTaskMode = activeHousehold?.task_mode === "time";
+  const tasksBatchQuery = useHouseholdTasksBatch(activeHousehold?.id ?? null, true, {
+    includeTaskTimeEntries: false
+  });
+  const taskTimeEntriesQuery = useHouseholdTaskTimeEntriesPages(activeHousehold?.id ?? null, isTimeTaskMode);
+  const taskTimeStatsEntriesQuery = useHouseholdTaskTimeEntries(
+    activeHousehold?.id ?? null,
+    isTimeTaskMode && section === "stats"
+  );
   const eventsQuery = useHouseholdEvents(activeHousehold?.id ?? null);
   const events = useMemo(
     () => eventsQuery.data?.pages.flatMap((page) => page.rows) ?? [],
@@ -83,13 +94,20 @@ export const TasksPageContainer = ({ section }: TasksPageContainerProps) => {
     | undefined;
 
   if (activeHousehold.task_mode === "time") {
+    const pagedTaskTimeEntries = taskTimeEntriesQuery.data?.pages.flatMap((page) => page.rows) ?? [];
+    const taskTimeEntries = section === "stats"
+      ? taskTimeStatsEntriesQuery.data ?? pagedTaskTimeEntries
+      : pagedTaskTimeEntries;
+    const canResetTaskTimeData = householdMembers.find((member) => member.user_id === userId)?.role === "owner";
     return (
       <TimeTasksPage
         section={section}
         household={activeHousehold}
         members={membersWithVacation}
         tasks={tasksData?.tasks ?? []}
-        entries={tasksData?.taskTimeEntries ?? []}
+        entries={taskTimeEntries}
+        entriesHasMore={taskTimeEntriesQuery.hasNextPage ?? false}
+        entriesLoadingMore={taskTimeEntriesQuery.isFetchingNextPage}
         comments={tasksData?.taskComments ?? []}
         correctionProposals={tasksData?.taskTimeCorrectionProposals ?? []}
         userId={userId}
@@ -99,6 +117,9 @@ export const TasksPageContainer = ({ section }: TasksPageContainerProps) => {
         onDeleteTaskTimeEntry={onDeleteTaskTimeEntry}
         onUpdateTaskTimeEntry={onUpdateTaskTimeEntry}
         onRateTaskTimeEntry={onRateTaskTimeEntry}
+        onLoadMoreEntries={() => void taskTimeEntriesQuery.fetchNextPage()}
+        canResetTaskTimeData={canResetTaskTimeData}
+        onResetTaskTimeData={onResetTaskTimeData}
         onCreateTaskTimeCorrectionProposal={onCreateTaskTimeCorrectionProposal}
         onVoteTaskTimeCorrectionProposal={onVoteTaskTimeCorrectionProposal}
       />

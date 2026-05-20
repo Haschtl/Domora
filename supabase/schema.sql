@@ -200,6 +200,14 @@ create table if not exists task_completion_ratings (
   primary key (task_completion_id, user_id)
 );
 
+create table if not exists task_time_archives (
+  id uuid primary key default gen_random_uuid(),
+  household_id uuid not null references households(id) on delete cascade,
+  archived_by uuid references auth.users(id) on delete set null,
+  entry_count integer not null default 0,
+  created_at timestamptz not null default now()
+);
+
 create table if not exists task_time_entries (
   id uuid primary key default gen_random_uuid(),
   household_id uuid not null references households(id) on delete cascade,
@@ -213,6 +221,9 @@ create table if not exists task_time_entries (
   entry_date date not null default current_date,
   created_by uuid not null references auth.users(id) on delete cascade,
   created_at timestamptz not null default now(),
+  archived_at timestamptz,
+  archived_by uuid references auth.users(id) on delete set null,
+  archive_batch_id uuid references task_time_archives(id) on delete set null,
   check (char_length(trim(description)) > 0),
   check (hours >= 0 and hours <= 24),
   check (
@@ -2012,11 +2023,18 @@ create index if not exists idx_task_completions_household_completed_at on task_c
 create index if not exists idx_task_completion_ratings_household_completion on task_completion_ratings (household_id, task_completion_id);
 create unique index if not exists idx_task_time_entries_vacation_credit
   on task_time_entries (vacation_id)
-  where source = 'vacation_credit';
+  where source = 'vacation_credit'
+    and archived_at is null;
 create index if not exists idx_task_time_entries_household_date
   on task_time_entries (household_id, entry_date desc, created_at desc);
+create index if not exists idx_task_time_entries_household_active_date
+  on task_time_entries (household_id, entry_date desc, created_at desc)
+  where archived_at is null;
 create index if not exists idx_task_time_entries_user
   on task_time_entries (household_id, user_id);
+create index if not exists idx_task_time_entries_archive_batch
+  on task_time_entries (archive_batch_id)
+  where archive_batch_id is not null;
 create index if not exists idx_task_time_entry_ratings_household_entry
   on task_time_entry_ratings (household_id, task_time_entry_id);
 create index if not exists idx_task_time_correction_proposals_household_status
@@ -2790,6 +2808,7 @@ begin
         from task_time_entries existing
         where existing.source = 'vacation_credit'
           and existing.vacation_id = mv.id
+          and existing.archived_at is null
       )
   loop
     with present_members as (
@@ -2815,6 +2834,7 @@ begin
         on tte.household_id = v_vacation.household_id
        and tte.user_id = pm.user_id
        and tte.source = 'manual'
+       and tte.archived_at is null
        and tte.entry_date between v_vacation.start_date and v_vacation.end_date
       group by pm.user_id
     )
@@ -2874,10 +2894,14 @@ begin
   where household_id = p_household_id;
 
   for v_proposal in
-    select *
-    from task_time_correction_proposals
-    where household_id = p_household_id
-      and status = 'open'
+    select tcp.*
+    from task_time_correction_proposals tcp
+    join task_time_entries tte
+      on tte.id = tcp.task_time_entry_id
+     and tte.household_id = tcp.household_id
+     and tte.archived_at is null
+    where tcp.household_id = p_household_id
+      and tcp.status = 'open'
   loop
     select
       count(*) filter (where vote_type = 'approve'),
@@ -2906,7 +2930,8 @@ begin
         image_url = v_proposal.proposed_image_url
       where id = v_proposal.task_time_entry_id
         and household_id = v_proposal.household_id
-        and source = 'manual';
+        and source = 'manual'
+        and archived_at is null;
     end if;
 
     update task_time_correction_proposals
@@ -3018,6 +3043,78 @@ begin
       now()
     );
   end if;
+
+  return affected;
+end;
+$$;
+
+create or replace function reset_task_time_data(p_household_id uuid)
+returns integer
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  affected integer;
+  v_archive_id uuid;
+begin
+  if not is_household_owner(p_household_id) then
+    raise exception 'Only household owners can reset task time data';
+  end if;
+
+  insert into task_time_archives (
+    household_id,
+    archived_by
+  )
+  values (
+    p_household_id,
+    auth.uid()
+  )
+  returning id into v_archive_id;
+
+  update task_time_entries
+  set
+    archived_at = now(),
+    archived_by = auth.uid(),
+    archive_batch_id = v_archive_id
+  where household_id = p_household_id
+    and archived_at is null;
+
+  get diagnostics affected = row_count;
+
+  update task_time_archives
+  set entry_count = affected
+  where id = v_archive_id;
+
+  update task_time_correction_proposals
+  set
+    status = 'rejected',
+    resolved_at = now()
+  where household_id = p_household_id
+    and status = 'open'
+    and exists (
+      select 1
+      from task_time_entries tte
+      where tte.id = task_time_correction_proposals.task_time_entry_id
+        and tte.archive_batch_id = v_archive_id
+    );
+
+  insert into household_events (
+    household_id,
+    event_type,
+    actor_user_id,
+    subject_user_id,
+    payload,
+    created_at
+  )
+  values (
+    p_household_id,
+    'task_time_reset',
+    auth.uid(),
+    null,
+    jsonb_build_object('total_archived', affected, 'archive_id', v_archive_id),
+    now()
+  );
 
   return affected;
 end;
@@ -3442,6 +3539,10 @@ revoke all on function reset_household_pimpers(uuid) from public;
 grant execute on function reset_household_pimpers(uuid) to authenticated, service_role;
 revoke execute on function reset_household_pimpers(uuid) from anon;
 
+revoke all on function reset_task_time_data(uuid) from public;
+grant execute on function reset_task_time_data(uuid) to authenticated, service_role;
+revoke execute on function reset_task_time_data(uuid) from anon;
+
 revoke all on function run_household_data_maintenance(uuid, boolean, boolean) from public;
 revoke execute on function run_household_data_maintenance(uuid, boolean, boolean) from anon, authenticated;
 grant execute on function run_household_data_maintenance(uuid, boolean, boolean) to service_role;
@@ -3509,6 +3610,7 @@ alter table task_rotation_members enable row level security;
 alter table household_member_pimpers enable row level security;
 alter table task_completions enable row level security;
 alter table task_completion_ratings enable row level security;
+alter table task_time_archives enable row level security;
 alter table task_time_entries enable row level security;
 alter table task_time_entry_ratings enable row level security;
 alter table task_time_correction_proposals enable row level security;
@@ -3767,6 +3869,12 @@ for select
 to authenticated
 using (is_household_member(household_id));
 
+drop policy if exists task_time_archives_select on task_time_archives;
+create policy task_time_archives_select on task_time_archives
+for select
+to authenticated
+using (is_household_member(household_id));
+
 drop policy if exists task_time_entries_select on task_time_entries;
 create policy task_time_entries_select on task_time_entries
 for select
@@ -3782,6 +3890,7 @@ with check (
   and (select auth.uid()) = user_id
   and (select auth.uid()) = created_by
   and source = 'manual'
+  and archived_at is null
 );
 
 drop policy if exists task_time_entries_delete_manual_own on task_time_entries;
@@ -3792,6 +3901,7 @@ using (
   is_household_member(household_id)
   and (select auth.uid()) = created_by
   and source = 'manual'
+  and archived_at is null
 );
 
 drop policy if exists task_time_entries_update_manual_own on task_time_entries;
@@ -3802,11 +3912,13 @@ using (
   is_household_member(household_id)
   and (select auth.uid()) = created_by
   and source = 'manual'
+  and archived_at is null
 )
 with check (
   is_household_member(household_id)
   and (select auth.uid()) = created_by
   and source = 'manual'
+  and archived_at is null
 );
 
 drop policy if exists task_time_entry_ratings_select on task_time_entry_ratings;
@@ -3828,6 +3940,7 @@ with check (
     where tte.id = task_time_entry_id
       and tte.household_id = task_time_entry_ratings.household_id
       and tte.user_id <> (select auth.uid())
+      and tte.archived_at is null
   )
 );
 
@@ -3835,8 +3948,28 @@ drop policy if exists task_time_entry_ratings_update on task_time_entry_ratings;
 create policy task_time_entry_ratings_update on task_time_entry_ratings
 for update
 to authenticated
-using (is_household_member(household_id) and (select auth.uid()) = user_id)
-with check (is_household_member(household_id) and (select auth.uid()) = user_id);
+using (
+  is_household_member(household_id)
+  and (select auth.uid()) = user_id
+  and exists (
+    select 1
+    from task_time_entries tte
+    where tte.id = task_time_entry_id
+      and tte.household_id = task_time_entry_ratings.household_id
+      and tte.archived_at is null
+  )
+)
+with check (
+  is_household_member(household_id)
+  and (select auth.uid()) = user_id
+  and exists (
+    select 1
+    from task_time_entries tte
+    where tte.id = task_time_entry_id
+      and tte.household_id = task_time_entry_ratings.household_id
+      and tte.archived_at is null
+  )
+);
 
 drop policy if exists task_time_correction_proposals_select on task_time_correction_proposals;
 create policy task_time_correction_proposals_select on task_time_correction_proposals
@@ -3858,6 +3991,7 @@ with check (
       and tte.household_id = task_time_correction_proposals.household_id
       and tte.user_id <> (select auth.uid())
       and tte.source = 'manual'
+      and tte.archived_at is null
   )
 );
 

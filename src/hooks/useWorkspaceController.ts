@@ -48,6 +48,7 @@ import {
   updateMemberSettings,
   updateMemberTaskLaziness,
   resetHouseholdPimpers,
+  resetTaskTimeData,
   updateMemberVacationMode,
   createMemberVacation,
   updateMemberVacation,
@@ -278,7 +279,7 @@ export const useWorkspaceController = () => {
     },
     [actionMutation, t]
   );
-  const { invalidateWorkspace, runWithOptimisticUpdate } = useWorkspaceActions({
+  const { invalidateWorkspace, runWithWorkspaceInvalidation, runWithOptimisticUpdate } = useWorkspaceActions({
     queryClient,
     activeHouseholdId,
     executeAction
@@ -1892,6 +1893,16 @@ export const useWorkspaceController = () => {
     });
   }, [activeHousehold, runWithOptimisticUpdate, t]);
 
+  const onResetTaskTimeData = useCallback(async () => {
+    if (!activeHousehold) return;
+
+    await runWithWorkspaceInvalidation(async () => {
+      await resetTaskTimeData(activeHousehold.id);
+      queryClient.removeQueries({ queryKey: queryKeys.householdTaskTimeEntriesPages(activeHousehold.id) });
+      setMessage(t("tasks.timeResetSuccess"));
+    });
+  }, [activeHousehold, queryClient, runWithWorkspaceInvalidation, t]);
+
   const onUpdateUserAvatar = useCallback(
     async (avatarUrl: string) => {
       await executeAction(async () => {
@@ -2082,6 +2093,7 @@ export const useWorkspaceController = () => {
     onUpdateMemberVacation,
     onDeleteMemberVacation,
     onResetHouseholdPimpers,
+    onResetTaskTimeData,
     onUpdateUserAvatar,
     onUpdateUserDisplayName,
     onUpdateUserColor,
