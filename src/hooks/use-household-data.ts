@@ -24,7 +24,10 @@ import type {
   OneOffTaskClaim,
   ShoppingItem,
   ShoppingItemCompletion,
+  TaskComment,
   TaskCompletion,
+  TaskTimeCorrectionProposal,
+  TaskTimeEntry,
   TaskItem
 } from "../lib/types";
 
@@ -71,7 +74,15 @@ export const useHouseholdTasksBatch = (householdId: string | null, enabled = tru
   return useQuery({
     queryKey: householdId ? ["household", householdId, "batch", "tasks"] : ["household", "none", "batch", "tasks"],
     queryFn: () =>
-      resolveHouseholdBatch(queryClient, householdId!, ["tasks", "taskCompletions", "oneOffTaskClaims", "memberPimpers"]),
+      resolveHouseholdBatch(queryClient, householdId!, [
+        "tasks",
+        "taskCompletions",
+        "taskComments",
+        "taskTimeEntries",
+        "taskTimeCorrectionProposals",
+        "oneOffTaskClaims",
+        "memberPimpers"
+      ]),
     enabled: Boolean(householdId) && enabled
   });
 };
@@ -137,6 +148,33 @@ export const useHouseholdTaskCompletions = (householdId: string | null, enabled 
     ...(householdId
       ? householdQueryOptions.taskCompletions(householdId)
       : { queryKey: ["household", "none", "task-completions"], ...emptyArrayQuery<TaskCompletion>() }),
+    enabled: Boolean(householdId) && enabled
+  });
+
+export const useHouseholdTaskComments = (householdId: string | null, enabled = true) =>
+  useQuery<TaskComment[]>({
+    ...(householdId
+      ? householdQueryOptions.taskComments(householdId)
+      : { queryKey: ["household", "none", "task-comments"], ...emptyArrayQuery<TaskComment>() }),
+    enabled: Boolean(householdId) && enabled
+  });
+
+export const useHouseholdTaskTimeEntries = (householdId: string | null, enabled = true) =>
+  useQuery<TaskTimeEntry[]>({
+    ...(householdId
+      ? householdQueryOptions.taskTimeEntries(householdId)
+      : { queryKey: ["household", "none", "task-time-entries"], ...emptyArrayQuery<TaskTimeEntry>() }),
+    enabled: Boolean(householdId) && enabled
+  });
+
+export const useHouseholdTaskTimeCorrectionProposals = (householdId: string | null, enabled = true) =>
+  useQuery<TaskTimeCorrectionProposal[]>({
+    ...(householdId
+      ? householdQueryOptions.taskTimeCorrectionProposals(householdId)
+      : {
+          queryKey: ["household", "none", "task-time-correction-proposals"],
+          ...emptyArrayQuery<TaskTimeCorrectionProposal>()
+        }),
     enabled: Boolean(householdId) && enabled
   });
 

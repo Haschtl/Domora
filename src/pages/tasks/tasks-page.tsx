@@ -48,6 +48,7 @@ import type {
   HouseholdEvent,
   NewTaskInput,
   OneOffTaskClaim,
+  TaskComment,
   TaskCompletion,
   TaskItem
 } from "../../lib/types";
@@ -100,6 +101,7 @@ interface TasksPageProps {
   tasks: TaskItem[];
   oneOffTaskClaims: OneOffTaskClaim[];
   completions: TaskCompletion[];
+  comments: TaskComment[];
   householdEvents: HouseholdEvent[];
   members: HouseholdMember[];
   memberVacations: HouseholdMemberVacation[];
@@ -107,6 +109,7 @@ interface TasksPageProps {
   userId: string;
   busy: boolean;
   onAdd: (input: NewTaskInput) => Promise<void>;
+  onAddTaskComment: (input: { targetType: "task"; targetId: string; message: string }) => Promise<void>;
   onComplete: (task: TaskItem) => Promise<void>;
   onAddOneOffTaskClaim: (input: { title: string; description?: string; requestedPimpers: number }) => Promise<void>;
   onSkip: (task: TaskItem) => Promise<void>;
@@ -484,6 +487,7 @@ export const TasksPage = ({
   tasks,
   oneOffTaskClaims,
   completions,
+  comments,
   householdEvents,
   members,
   memberVacations,
@@ -491,6 +495,7 @@ export const TasksPage = ({
   userId,
   busy,
   onAdd,
+  onAddTaskComment,
   onAddOneOffTaskClaim,
   onComplete,
   onSkip,
@@ -553,6 +558,7 @@ export const TasksPage = ({
   const [skipCaptchaAutoConfirm, setSkipCaptchaAutoConfirm] = useState(false);
   const [skipCaptchaUiState, setSkipCaptchaUiState] = useState<"ready" | "loading" | "error">("ready");
   const [skipCaptchaError, setSkipCaptchaError] = useState<string | null>(null);
+  const [commentDrafts, setCommentDrafts] = useState<Record<string, string>>({});
   const [lazinessInputs, setLazinessInputs] = useState<Record<string, string>>({});
   const [skipCaptchaKey, setSkipCaptchaKey] = useState(0);
   const [isSkipFinalDialogOpen, setIsSkipFinalDialogOpen] = useState(false);
@@ -1363,6 +1369,16 @@ export const TasksPage = ({
       }),
     [members, t, userId]
   );
+  const commentsByTaskId = useMemo(() => {
+    const map = new Map<string, TaskComment[]>();
+    comments
+      .filter((comment) => comment.target_type === "task" && comment.task_id)
+      .forEach((comment) => {
+        const targetId = comment.task_id!;
+        map.set(targetId, [...(map.get(targetId) ?? []), comment]);
+      });
+    return map;
+  }, [comments]);
 
   const allTaskSuggestions = useTaskSuggestions(tasks, completions, language);
   const existingTaskTitleSet = useMemo(() => {
@@ -1948,6 +1964,75 @@ export const TasksPage = ({
       userLabel
     ]
   );
+
+  const submitTaskComment = async (taskId: string) => {
+    const message = (commentDrafts[taskId] ?? "").trim();
+    if (!message) return;
+    setCommentDrafts((prev) => ({ ...prev, [taskId]: "" }));
+    await onAddTaskComment({ targetType: "task", targetId: taskId, message });
+  };
+
+  const renderTaskComments = (taskId: string) => {
+    const taskComments = commentsByTaskId.get(taskId) ?? [];
+    return (
+      <Accordion type="single" collapsible className="mt-3">
+        <AccordionItem value="comments" className="border-none">
+          <AccordionTrigger className="py-2 text-xs font-semibold uppercase tracking-wide text-slate-500 hover:no-underline dark:text-slate-400">
+            {t("tasks.commentsTitle", { count: taskComments.length })}
+          </AccordionTrigger>
+          <AccordionContent className="space-y-3 pb-1">
+            <div className="space-y-2">
+              {taskComments.length > 0 ? (
+                taskComments.map((comment) => {
+                  const own = comment.user_id === userId;
+                  return (
+                    <div key={comment.id} className={`flex ${own ? "justify-end" : "justify-start"}`}>
+                      <div
+                        className={`max-w-[85%] rounded-2xl px-3 py-2 text-sm ${
+                          own
+                            ? "bg-brand-600 text-white"
+                            : "bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-100"
+                        }`}
+                      >
+                        <p className={`mb-1 text-xs ${own ? "text-brand-50" : "text-slate-500 dark:text-slate-400"}`}>
+                          {userLabel(comment.user_id)} | {new Date(comment.created_at).toLocaleString(language)}
+                        </p>
+                        <p className="whitespace-pre-line break-words">{comment.message}</p>
+                      </div>
+                    </div>
+                  );
+                })
+              ) : (
+                <p className="text-sm text-slate-500 dark:text-slate-400">{t("tasks.commentsEmpty")}</p>
+              )}
+            </div>
+            <div className="flex gap-2">
+              <Input
+                value={commentDrafts[taskId] ?? ""}
+                onChange={(event) => setCommentDrafts((prev) => ({ ...prev, [taskId]: event.target.value }))}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && !event.shiftKey) {
+                    event.preventDefault();
+                    void submitTaskComment(taskId);
+                  }
+                }}
+                placeholder={t("tasks.commentPlaceholder")}
+                disabled={busy}
+              />
+              <Button
+                type="button"
+                size="sm"
+                disabled={busy || !(commentDrafts[taskId] ?? "").trim()}
+                onClick={() => void submitTaskComment(taskId)}
+              >
+                {t("tasks.commentSend")}
+              </Button>
+            </div>
+          </AccordionContent>
+        </AccordionItem>
+      </Accordion>
+    );
+  };
 
   const resetPimpersStatsCard = showStats && isOwner ? (
     <Card className="mt-6 border-rose-200 bg-rose-50/60 dark:border-rose-900/50 dark:bg-rose-950/30">
@@ -3688,6 +3773,7 @@ export const TasksPage = ({
                           </DropdownMenu>
                         </div>
                       </div>
+                      {renderTaskComments(task.id)}
                     </CardContent>
                   </Card>
                 );

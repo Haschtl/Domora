@@ -385,6 +385,7 @@ export const SettingsPage = ({
       address: household.address ?? "",
       currency: household.currency ?? "EUR",
       taskLazinessEnabled: household.task_laziness_enabled ?? false,
+      taskMode: household.task_mode ?? "rotation",
       vacationTasksExcludeEnabled: household.vacation_tasks_exclude_enabled ?? true,
       vacationFinancesExcludeEnabled: household.vacation_finances_exclude_enabled ?? true,
       taskSkipEnabled: household.task_skip_enabled ?? true,
@@ -412,6 +413,7 @@ export const SettingsPage = ({
         address: string;
         currency: string;
         taskLazinessEnabled: boolean;
+        taskMode: "rotation" | "time";
         vacationTasksExcludeEnabled: boolean;
         vacationFinancesExcludeEnabled: boolean;
         taskSkipEnabled: boolean;
@@ -493,6 +495,7 @@ export const SettingsPage = ({
         utilitiesMonthly: household.utilities_monthly,
         utilitiesOnRoomSqmPercent: household.utilities_on_room_sqm_percent,
         taskLazinessEnabled: value.taskLazinessEnabled,
+        taskMode: value.taskMode,
         vacationTasksExcludeEnabled: value.vacationTasksExcludeEnabled,
         vacationFinancesExcludeEnabled: value.vacationFinancesExcludeEnabled,
         taskSkipEnabled: value.taskSkipEnabled,
@@ -558,6 +561,7 @@ export const SettingsPage = ({
     householdForm.setFieldValue("address", household.address ?? "");
     householdForm.setFieldValue("currency", household.currency ?? "EUR");
     householdForm.setFieldValue("taskLazinessEnabled", household.task_laziness_enabled ?? false);
+    householdForm.setFieldValue("taskMode", household.task_mode ?? "rotation");
     householdForm.setFieldValue("vacationTasksExcludeEnabled", household.vacation_tasks_exclude_enabled ?? true);
     householdForm.setFieldValue("vacationFinancesExcludeEnabled", household.vacation_finances_exclude_enabled ?? true);
     householdForm.setFieldValue("taskSkipEnabled", household.task_skip_enabled ?? true);
@@ -682,6 +686,7 @@ export const SettingsPage = ({
         utilitiesMonthly: household.utilities_monthly,
         utilitiesOnRoomSqmPercent: household.utilities_on_room_sqm_percent,
         taskLazinessEnabled: householdForm.state.values.taskLazinessEnabled,
+        taskMode: householdForm.state.values.taskMode,
         vacationTasksExcludeEnabled: householdForm.state.values.vacationTasksExcludeEnabled,
         vacationFinancesExcludeEnabled: householdForm.state.values.vacationFinancesExcludeEnabled,
         taskSkipEnabled: householdForm.state.values.taskSkipEnabled,
@@ -723,6 +728,7 @@ export const SettingsPage = ({
         utilitiesMonthly: household.utilities_monthly,
         utilitiesOnRoomSqmPercent: household.utilities_on_room_sqm_percent,
         taskLazinessEnabled: householdForm.state.values.taskLazinessEnabled,
+        taskMode: householdForm.state.values.taskMode,
         vacationTasksExcludeEnabled: householdForm.state.values.vacationTasksExcludeEnabled,
         vacationFinancesExcludeEnabled: householdForm.state.values.vacationFinancesExcludeEnabled,
         taskSkipEnabled: householdForm.state.values.taskSkipEnabled,
@@ -797,6 +803,7 @@ export const SettingsPage = ({
         utilitiesMonthly: household.utilities_monthly,
         utilitiesOnRoomSqmPercent: household.utilities_on_room_sqm_percent,
         taskLazinessEnabled: householdForm.state.values.taskLazinessEnabled,
+        taskMode: householdForm.state.values.taskMode,
         vacationTasksExcludeEnabled: householdForm.state.values.vacationTasksExcludeEnabled,
         vacationFinancesExcludeEnabled: householdForm.state.values.vacationFinancesExcludeEnabled,
         taskSkipEnabled: householdForm.state.values.taskSkipEnabled,
@@ -2549,6 +2556,38 @@ export const SettingsPage = ({
             </div>
 
             <div className="space-y-3">
+              <householdForm.Field
+                name="taskMode"
+                children={(field: {
+                  state: { value: "rotation" | "time" };
+                  handleChange: (value: "rotation" | "time") => void;
+                }) => (
+                  <div className="flex items-center justify-between gap-3 rounded-xl border border-brand-100 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900">
+                    <div>
+                      <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
+                        {t("settings.taskModeTitle")}
+                      </p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">
+                        {t("settings.taskModeDescription")}
+                      </p>
+                    </div>
+                    <Select
+                      value={field.state.value}
+                      onValueChange={(value) => field.handleChange(value as "rotation" | "time")}
+                      disabled={busy || !isOwner}
+                    >
+                      <SelectTrigger className="w-44">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="rotation">{t("settings.taskModeRotation")}</SelectItem>
+                        <SelectItem value="time">{t("settings.taskModeTime")}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+              />
+
               <div className="flex items-center justify-between gap-3 rounded-xl border border-brand-100 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900">
                 <div>
                   <p className="text-sm font-medium text-slate-900 dark:text-slate-100">

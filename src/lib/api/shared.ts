@@ -189,6 +189,7 @@ const householdSchema = z.object({
   utilities_monthly: nonNegativeOptionalNumberSchema,
   utilities_on_room_sqm_percent: percentageNumberSchema.default(0),
   task_laziness_enabled: z.coerce.boolean().default(false),
+  task_mode: z.enum(["rotation", "time"]).default("rotation"),
   vacation_tasks_exclude_enabled: z.coerce.boolean().default(true),
   vacation_finances_exclude_enabled: z.coerce.boolean().default(true),
   task_skip_enabled: z.coerce.boolean().default(true),

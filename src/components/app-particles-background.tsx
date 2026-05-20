@@ -1,26 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
-import Particles, { initParticlesEngine } from "@tsparticles/react";
-import { loadSlim } from "@tsparticles/slim";
+import Particles, { ParticlesProvider } from "@tsparticles/react";
 import type { ISourceOptions } from "@tsparticles/engine";
+import { initDomoraParticles } from "../lib/particles";
 import { useTheme } from "../lib/use-theme";
 
 export const AppParticlesBackground = () => {
   const { resolvedTheme } = useTheme();
-  const [engineReady, setEngineReady] = useState(false);
   const [reduceMotion, setReduceMotion] = useState(false);
-
-  useEffect(() => {
-    let mounted = true;
-    void initParticlesEngine(async (engine) => {
-      await loadSlim(engine);
-    }).then(() => {
-      if (mounted) setEngineReady(true);
-    });
-
-    return () => {
-      mounted = false;
-    };
-  }, []);
 
   useEffect(() => {
     const media = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -36,18 +22,23 @@ export const AppParticlesBackground = () => {
       fullScreen: { enable: false },
       detectRetina: true,
       fpsLimit: 60,
-      pauseOnOutsideViewport: true,
+      pauseOnOutsideViewport: false,
       particles: {
-        number: { value: resolvedTheme === "dark" ? 30 : 34, density: { enable: true, area: 1000 } },
-        color: { value: resolvedTheme === "dark" ? ["#22c55e", "#0ea5a4", "#94a3b8"] : ["#0f766e", "#14b8a6", "#0d9488"] },
-        shape: { type: ["circle", "square"] },
-        opacity: { value: resolvedTheme === "dark" ? 0.2 : 0.18 },
-        size: { value: { min: 1, max: 3 } },
+        number: { value: resolvedTheme === "dark" ? 52 : 58, density: { enable: true, area: 900 } },
+        color: {
+          value:
+            resolvedTheme === "dark"
+              ? ["#34d399", "#22d3ee", "#a7f3d0"]
+              : ["#0f766e", "#14b8a6", "#0891b2"]
+        },
+        shape: { type: "circle" },
+        opacity: { value: resolvedTheme === "dark" ? 0.42 : 0.34 },
+        size: { value: { min: 2, max: 5 } },
         links: {
           enable: true,
           distance: 140,
-          color: resolvedTheme === "dark" ? "#1f3a35" : "#8dd8cb",
-          opacity: resolvedTheme === "dark" ? 0.16 : 0.2,
+          color: resolvedTheme === "dark" ? "#34d399" : "#0f766e",
+          opacity: resolvedTheme === "dark" ? 0.24 : 0.28,
           width: 1
         },
         move: {
@@ -78,11 +69,16 @@ export const AppParticlesBackground = () => {
     [reduceMotion, resolvedTheme]
   );
 
-  if (!engineReady) return null;
-
   return (
-    <div className="pointer-events-none absolute inset-0 z-0 opacity-95">
-      <Particles id="domora-particles" className="h-full w-full" options={options} />
-    </div>
+    <ParticlesProvider init={initDomoraParticles}>
+      <div className="pointer-events-none fixed inset-0 z-0 h-dvh w-dvw opacity-95">
+        <Particles
+          id="domora-particles"
+          className="absolute inset-0 h-full w-full"
+          style={{ height: "100%", width: "100%" }}
+          options={options}
+        />
+      </div>
+    </ParticlesProvider>
   );
 };

@@ -50,6 +50,21 @@ export const taskTitles = [
   "Waschmaschine reinigen"
 ];
 
+export const taskTimeDescriptions = [
+  "Bad geputzt",
+  "Küche grundgereinigt",
+  "Müll und Glas entsorgt",
+  "Flur gesaugt und gewischt",
+  "WG-Einkauf verräumt",
+  "Vorräte sortiert",
+  "Pflanzen gegossen",
+  "Kühlschrank ausgewischt",
+  "Reparatur am Spülkasten erledigt",
+  "Fenster im Wohnzimmer geputzt",
+  "Waschmaschine gereinigt",
+  "WG-Orga und Abrechnung vorbereitet"
+];
+
 export const financeDescriptions = [
   "Wocheneinkauf",
   "Putzmittel",
@@ -415,6 +430,137 @@ export const buildCompletionRows = ({ insertedTasks, householdId }) => {
         completed_at: completedAt.toISOString()
       });
     }
+  });
+
+  return rows;
+};
+
+export const buildTaskTimeEntryRows = ({ householdId, users, now, entryCount = 56 }) => {
+  const rows = [];
+  if (!users.length) return rows;
+  const dayMs = 24 * 60 * 60 * 1000;
+
+  for (let i = 0; i < entryCount; i += 1) {
+    const user = users[(i * 2 + Math.floor(i / 5)) % users.length];
+    const description = taskTimeDescriptions[i % taskTimeDescriptions.length];
+    const dayOffset = Math.floor(i * 1.7) + (i % 4);
+    const entryDate = new Date(now.getTime() - dayOffset * dayMs);
+    const createdAt = new Date(entryDate.getTime() + (16 + (i % 6)) * 60 * 60 * 1000 + (i % 3) * 11 * 60 * 1000);
+    const hours = Number((0.5 + (i % 7) * 0.25 + (i % 5 === 0 ? 0.75 : 0)).toFixed(2));
+
+    rows.push({
+      household_id: householdId,
+      user_id: user.id,
+      description,
+      hours,
+      details:
+        i % 3 === 0
+          ? `Erledigt im Demo-Zeitkonto. Bereich: ${["Bad", "Küche", "Flur", "Wohnzimmer"][i % 4]}.`
+          : "",
+      image_url: i % 9 === 0 ? `https://picsum.photos/seed/domora-time-${i}/900/600` : null,
+      source: "manual",
+      vacation_id: null,
+      entry_date: entryDate.toISOString().slice(0, 10),
+      created_by: user.id,
+      created_at: createdAt.toISOString()
+    });
+  }
+
+  return rows;
+};
+
+export const buildTaskTimeEntryRatingRows = ({ insertedEntries, users, householdId }) => {
+  const rows = [];
+  if (!insertedEntries?.length || !users.length) return rows;
+
+  insertedEntries.forEach((entry, entryIndex) => {
+    users.forEach((user, userIndex) => {
+      if (user.id === entry.user_id) return;
+      if ((entryIndex + userIndex) % 3 !== 0) return;
+      const createdAt = new Date(new Date(entry.created_at).getTime() + (userIndex + 1) * 45 * 60 * 1000);
+      rows.push({
+        task_time_entry_id: entry.id,
+        household_id: householdId,
+        user_id: user.id,
+        rating: 3 + ((entryIndex + userIndex) % 3),
+        created_at: createdAt.toISOString(),
+        updated_at: createdAt.toISOString()
+      });
+    });
+  });
+
+  return rows;
+};
+
+export const buildTaskTimeCorrectionProposalRows = ({ insertedEntries, users, householdId, now }) => {
+  if (!insertedEntries?.length || users.length < 2) return [];
+  const candidate = insertedEntries.find((entry) => users.some((user) => user.id !== entry.user_id));
+  if (!candidate) return [];
+  const proposer = users.find((user) => user.id !== candidate.user_id);
+  if (!proposer) return [];
+  const createdAt = new Date(now.getTime() - 10 * 60 * 60 * 1000);
+
+  return [
+    {
+      task_time_entry_id: candidate.id,
+      household_id: householdId,
+      proposed_description: `${candidate.description} + Nacharbeit`,
+      proposed_hours: Number(Math.max(0.25, Number(candidate.hours ?? 1) - 0.25).toFixed(2)),
+      proposed_details: `${candidate.details || "Demo-Eintrag"}\nKorrekturvorschlag: Aufwand etwas niedriger ansetzen.`,
+      proposed_image_url: candidate.image_url ?? null,
+      reason: "Demo: Aufwand wirkt etwas hoch, bitte kurz abstimmen.",
+      status: "open",
+      resolved_at: null,
+      expires_at: new Date(now.getTime() + 6 * 24 * 60 * 60 * 1000).toISOString(),
+      created_by: proposer.id,
+      created_at: createdAt.toISOString()
+    }
+  ];
+};
+
+export const buildTaskTimeCorrectionVoteRows = ({ insertedProposals, users, householdId, now }) => {
+  const rows = [];
+  if (!insertedProposals?.length || !users.length) return rows;
+
+  insertedProposals.forEach((proposal) => {
+    users.forEach((user, index) => {
+      if (index > 2) return;
+      const voteAt = new Date(new Date(proposal.created_at ?? now.toISOString()).getTime() + (index + 1) * 60 * 60 * 1000);
+      rows.push({
+        proposal_id: proposal.id,
+        household_id: householdId,
+        user_id: user.id,
+        vote_type: user.id === proposal.created_by || index % 2 === 0 ? "approve" : "reject",
+        created_at: voteAt.toISOString(),
+        updated_at: voteAt.toISOString()
+      });
+    });
+  });
+
+  return rows;
+};
+
+export const buildTaskTimeVacationCreditRows = ({ insertedVacations, users, householdId, now }) => {
+  const rows = [];
+  if (!insertedVacations?.length || !users.length) return rows;
+
+  insertedVacations.forEach((vacation, index) => {
+    if (!vacation?.id || !vacation.end_date || vacation.end_date >= now.toISOString().slice(0, 10)) return;
+    const creditHours = Number((1.25 + (index % 3) * 0.5).toFixed(2));
+
+    rows.push({
+      household_id: householdId,
+      user_id: vacation.user_id,
+      description: "Urlaubs-Gutschrift",
+      hours: creditHours,
+      details: "Demo-Gutschrift aus dem Durchschnitt der anwesenden Mitbewohner während des Urlaubs.",
+      image_url: null,
+      source: "vacation_credit",
+      vacation_id: vacation.id,
+      entry_date: vacation.end_date,
+      created_by: vacation.created_by ?? vacation.user_id,
+      created_at: new Date(new Date(`${vacation.end_date}T12:00:00.000Z`).getTime() + 2 * 60 * 60 * 1000).toISOString()
+    });
   });
 
   return rows;

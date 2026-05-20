@@ -1,6 +1,7 @@
-import {  useEffect, useMemo, useState } from "react";
-import Particles from "@tsparticles/react";
+import { useEffect, useMemo, useState } from "react";
+import Particles, { ParticlesProvider } from "@tsparticles/react";
 import type { ISourceOptions } from "@tsparticles/engine";
+import { initDomoraParticles } from "../lib/particles";
 import { useTheme } from "../lib/use-theme";
 
 export const VacationOverlay = () => {
@@ -43,13 +44,15 @@ export const VacationOverlay = () => {
   );
 
   return (
-    <div className="pointer-events-none fixed inset-0 z-120 h-dvh w-dvw overflow-hidden">
-      <div className="absolute inset-0 bg-gradient-to-br from-amber-50/35 via-emerald-50/20 to-sky-50/35 dark:from-amber-900/20 dark:via-emerald-900/10 dark:to-sky-900/15" />
-      <Particles
-        id="domora-vacation"
-        className="absolute inset-0 h-full w-full"
-        options={options}
-      />
-    </div>
+    <ParticlesProvider init={initDomoraParticles}>
+      <div className="pointer-events-none fixed inset-0 z-120 h-dvh w-dvw overflow-hidden">
+        <div className="absolute inset-0 bg-gradient-to-br from-amber-50/35 via-emerald-50/20 to-sky-50/35 dark:from-amber-900/20 dark:via-emerald-900/10 dark:to-sky-900/15" />
+        <Particles
+          id="domora-vacation"
+          className="absolute inset-0 h-full w-full"
+          options={options}
+        />
+      </div>
+    </ParticlesProvider>
   );
 };

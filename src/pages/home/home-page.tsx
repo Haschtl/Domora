@@ -2837,6 +2837,7 @@ export const HomePage = ({
       utilitiesMonthly: household.utilities_monthly,
       utilitiesOnRoomSqmPercent: household.utilities_on_room_sqm_percent,
       taskLazinessEnabled: household.task_laziness_enabled,
+      taskMode: household.task_mode,
       vacationTasksExcludeEnabled: household.vacation_tasks_exclude_enabled,
       vacationFinancesExcludeEnabled:
         household.vacation_finances_exclude_enabled,

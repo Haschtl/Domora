@@ -9,7 +9,11 @@ import {
   addFinanceSubscription,
   addShoppingItem,
   addTask,
+  addTaskComment,
+  addTaskTimeEntry,
+  createTaskTimeCorrectionProposal,
   createOneOffTaskClaim,
+  deleteTaskTimeEntry,
   deleteTask,
   dissolveHousehold,
   completeTask,
@@ -24,6 +28,7 @@ import {
   removeHouseholdMember,
   requestCashAudit,
   rateTaskCompletion,
+  rateTaskTimeEntry,
   renewOneOffTaskClaim,
   setHouseholdMemberRole,
   signOut,
@@ -37,6 +42,7 @@ import {
   upsertHouseholdWhiteboard,
   updateTaskActiveState,
   updateTask,
+  updateTaskTimeEntry,
   takeoverTask,
   skipTask,
   updateMemberSettings,
@@ -56,6 +62,7 @@ import {
   updateBucketItem,
   updateBucketItemStatus,
   voteOneOffTaskClaim,
+  voteTaskTimeCorrectionProposal,
   withdrawOneOffTaskClaim
 } from "../lib/api";
 import { setActiveHouseholdId } from "../lib/app-store";
@@ -70,12 +77,18 @@ import type {
   NewFinanceSubscriptionInput,
   OneOffTaskClaim,
   Household,
+  NewTaskTimeCorrectionProposalInput,
+  NewTaskTimeEntryInput,
   NewTaskInput,
   UpdateHouseholdInput,
   ShoppingRecurrenceUnit,
   ShoppingItem,
   ShoppingItemCompletion,
+  TaskComment,
+  TaskCommentTargetType,
   TaskCompletion,
+  TaskTimeCorrectionProposal,
+  TaskTimeEntry,
   TaskItem
 } from "../lib/types";
 import { useWorkspaceData } from "./use-workspace-data";
@@ -96,6 +109,8 @@ const sortBucketItems = (items: BucketItem[]) =>
   });
 
 const sortTasks = (items: TaskItem[]) => [...items].sort((a, b) => a.due_at.localeCompare(b.due_at));
+const sortTaskTimeEntries = (items: TaskTimeEntry[]) =>
+  [...items].sort((a, b) => b.entry_date.localeCompare(a.entry_date) || b.created_at.localeCompare(a.created_at));
 const sortOneOffTaskClaims = (items: OneOffTaskClaim[]) => [...items].sort((a, b) => b.created_at.localeCompare(a.created_at));
 
 const sortFinanceEntries = (items: FinanceEntry[]) =>
@@ -182,6 +197,34 @@ const applyCompletionRating = (completion: TaskCompletion, rating: number) => {
     my_rating: rating,
     rating_count: nextCount,
     rating_average: Number.isFinite(nextAverage) ? Number(nextAverage.toFixed(2)) : completion.rating_average
+  };
+};
+
+const applyTimeEntryRating = (entry: TaskTimeEntry, rating: number) => {
+  const previousRating = entry.my_rating;
+  const currentCount = entry.rating_count ?? 0;
+  const currentAverage = entry.rating_average ?? 0;
+  let nextCount: number;
+  let nextAverage: number;
+
+  if (previousRating == null) {
+    const total = currentAverage * currentCount;
+    nextCount = currentCount + 1;
+    nextAverage = (total + rating) / nextCount;
+  } else if (currentCount > 0) {
+    const total = currentAverage * currentCount;
+    nextCount = currentCount;
+    nextAverage = (total - previousRating + rating) / currentCount;
+  } else {
+    nextCount = 1;
+    nextAverage = rating;
+  }
+
+  return {
+    ...entry,
+    my_rating: rating,
+    rating_count: nextCount,
+    rating_average: Number.isFinite(nextAverage) ? Number(nextAverage.toFixed(2)) : entry.rating_average
   };
 };
 
@@ -665,6 +708,236 @@ export const useWorkspaceController = () => {
         ],
         action: async () => {
           await addTask(activeHousehold.id, input, userId);
+        }
+      });
+    },
+    [activeHousehold, runWithOptimisticUpdate, userId]
+  );
+
+  const onAddTaskTimeEntry = useCallback(
+    async (input: NewTaskTimeEntryInput) => {
+      if (!activeHousehold || !userId) return;
+
+      const nowIso = new Date().toISOString();
+      const optimisticEntry: TaskTimeEntry = {
+        id: uuid(),
+        household_id: activeHousehold.id,
+        user_id: userId,
+        description: input.description.trim(),
+        hours: Number(input.hours),
+        details: input.details?.trim() ?? "",
+        image_url: input.imageUrl ?? null,
+        source: "manual",
+        vacation_id: null,
+        entry_date: input.entryDate ?? nowIso.slice(0, 10),
+        created_by: userId,
+        created_at: nowIso,
+        rating_average: null,
+        rating_count: 0,
+        my_rating: null
+      };
+
+      await runWithOptimisticUpdate({
+        updates: [
+          {
+            queryKey: queryKeys.householdTaskTimeEntries(activeHousehold.id),
+            updater: (current) => sortTaskTimeEntries([optimisticEntry, ...((current as TaskTimeEntry[]) ?? [])])
+          }
+        ],
+        action: async () => {
+          await addTaskTimeEntry(activeHousehold.id, input, userId);
+          setMessage(t("tasks.timeEntrySaved"));
+        }
+      });
+    },
+    [activeHousehold, runWithOptimisticUpdate, t, userId]
+  );
+
+  const onAddTaskComment = useCallback(
+    async (input: { targetType: TaskCommentTargetType; targetId: string; message: string }) => {
+      if (!activeHousehold || !userId) return;
+      const nowIso = new Date().toISOString();
+      const optimistic: TaskComment = {
+        id: uuid(),
+        household_id: activeHousehold.id,
+        target_type: input.targetType,
+        task_id: input.targetType === "task" ? input.targetId : null,
+        task_time_entry_id: input.targetType === "task_time_entry" ? input.targetId : null,
+        user_id: userId,
+        message: input.message.trim(),
+        created_at: nowIso
+      };
+
+      await runWithOptimisticUpdate({
+        updates: [
+          {
+            queryKey: queryKeys.householdTaskComments(activeHousehold.id),
+            updater: (current) => [...((current as TaskComment[]) ?? []), optimistic]
+          }
+        ],
+        action: async () => {
+          await addTaskComment({
+            householdId: activeHousehold.id,
+            targetType: input.targetType,
+            targetId: input.targetId,
+            message: input.message
+          });
+        }
+      });
+    },
+    [activeHousehold, runWithOptimisticUpdate, userId]
+  );
+
+  const onDeleteTaskTimeEntry = useCallback(
+    async (entry: TaskTimeEntry) => {
+      if (!activeHousehold || entry.source !== "manual") return;
+
+      await runWithOptimisticUpdate({
+        updates: [
+          {
+            queryKey: queryKeys.householdTaskTimeEntries(activeHousehold.id),
+            updater: (current) => ((current as TaskTimeEntry[]) ?? []).filter((item) => item.id !== entry.id)
+          }
+        ],
+        action: async () => {
+          await deleteTaskTimeEntry(entry.id);
+        }
+      });
+    },
+    [activeHousehold, runWithOptimisticUpdate]
+  );
+
+  const onUpdateTaskTimeEntry = useCallback(
+    async (entry: TaskTimeEntry, input: NewTaskTimeEntryInput) => {
+      if (!activeHousehold || entry.source !== "manual") return;
+
+      await runWithOptimisticUpdate({
+        updates: [
+          {
+            queryKey: queryKeys.householdTaskTimeEntries(activeHousehold.id),
+            updater: (current) => {
+              const entries = (current as TaskTimeEntry[]) ?? [];
+              return sortTaskTimeEntries(
+                entries.map((item) =>
+                  item.id === entry.id
+                    ? {
+                        ...item,
+                        description: input.description,
+                        hours: Number(input.hours),
+                        details: input.details ?? "",
+                        image_url: input.imageUrl ?? null,
+                        entry_date: input.entryDate ?? item.entry_date
+                      }
+                    : item
+                )
+              );
+            }
+          }
+        ],
+        action: async () => {
+          await updateTaskTimeEntry(entry.id, input);
+          setMessage(t("tasks.timeEntrySaved"));
+        }
+      });
+    },
+    [activeHousehold, runWithOptimisticUpdate, t]
+  );
+
+  const onRateTaskTimeEntry = useCallback(
+    async (entryId: string, rating: number) => {
+      if (!activeHousehold) return;
+
+      await runWithOptimisticUpdate({
+        updates: [
+          {
+            queryKey: queryKeys.householdTaskTimeEntries(activeHousehold.id),
+            updater: (current) => {
+              const entries = (current as TaskTimeEntry[]) ?? [];
+              return entries.map((entry) => (entry.id === entryId ? applyTimeEntryRating(entry, rating) : entry));
+            }
+          }
+        ],
+        action: async () => {
+          await rateTaskTimeEntry(entryId, rating);
+        }
+      });
+    },
+    [activeHousehold, runWithOptimisticUpdate]
+  );
+
+  const onCreateTaskTimeCorrectionProposal = useCallback(
+    async (input: NewTaskTimeCorrectionProposalInput) => {
+      if (!activeHousehold || !userId) return;
+      const nowIso = new Date().toISOString();
+      const optimistic: TaskTimeCorrectionProposal = {
+        id: uuid(),
+        task_time_entry_id: input.taskTimeEntryId,
+        household_id: activeHousehold.id,
+        proposed_description: input.description,
+        proposed_hours: Number(input.hours),
+        proposed_details: input.details ?? "",
+        proposed_image_url: input.imageUrl ?? null,
+        reason: input.reason ?? "",
+        status: "open",
+        resolved_at: null,
+        expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+        created_by: userId,
+        created_at: nowIso,
+        votes: [
+          {
+            proposal_id: "",
+            household_id: activeHousehold.id,
+            user_id: userId,
+            vote_type: "approve",
+            created_at: nowIso,
+            updated_at: nowIso
+          }
+        ]
+      };
+
+      await runWithOptimisticUpdate({
+        updates: [
+          {
+            queryKey: queryKeys.householdTaskTimeCorrectionProposals(activeHousehold.id),
+            updater: (current) => [optimistic, ...((current as TaskTimeCorrectionProposal[]) ?? [])]
+          }
+        ],
+        action: async () => {
+          await createTaskTimeCorrectionProposal(input);
+          setMessage(t("tasks.timeCorrectionCreated"));
+        }
+      });
+    },
+    [activeHousehold, runWithOptimisticUpdate, t, userId]
+  );
+
+  const onVoteTaskTimeCorrectionProposal = useCallback(
+    async (proposalId: string, voteType: "approve" | "reject") => {
+      if (!activeHousehold || !userId) return;
+      const nowIso = new Date().toISOString();
+
+      await runWithOptimisticUpdate({
+        updates: [
+          {
+            queryKey: queryKeys.householdTaskTimeCorrectionProposals(activeHousehold.id),
+            updater: (current) =>
+              ((current as TaskTimeCorrectionProposal[]) ?? []).map((proposal) => {
+                if (proposal.id !== proposalId) return proposal;
+                const nextVotes = proposal.votes.filter((vote) => vote.user_id !== userId);
+                nextVotes.push({
+                  proposal_id: proposal.id,
+                  household_id: proposal.household_id,
+                  user_id: userId,
+                  vote_type: voteType,
+                  created_at: nowIso,
+                  updated_at: nowIso
+                });
+                return { ...proposal, votes: nextVotes };
+              })
+          }
+        ],
+        action: async () => {
+          await voteTaskTimeCorrectionProposal(proposalId, voteType);
         }
       });
     },
@@ -1771,6 +2044,13 @@ export const useWorkspaceController = () => {
     onUpdateShoppingItem,
     onDeleteShoppingItem,
     onAddTask,
+    onAddTaskComment,
+    onAddTaskTimeEntry,
+    onDeleteTaskTimeEntry,
+    onUpdateTaskTimeEntry,
+    onRateTaskTimeEntry,
+    onCreateTaskTimeCorrectionProposal,
+    onVoteTaskTimeCorrectionProposal,
     onAddOneOffTaskClaim,
     onCompleteTask,
     onSkipTask,

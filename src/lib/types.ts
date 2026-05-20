@@ -1,6 +1,7 @@
 export type AppTab = "home" | "shopping" | "tasks" | "finances" | "settings";
 export type ShoppingRecurrenceUnit = "days" | "weeks" | "months";
 export type FinanceSubscriptionRecurrence = "weekly" | "monthly" | "quarterly";
+export type HouseholdTaskMode = "rotation" | "time";
 export interface HouseholdTranslationOverride {
   find: string;
   replace: string;
@@ -141,6 +142,7 @@ export interface Household {
   utilities_monthly: number | null;
   utilities_on_room_sqm_percent: number;
   task_laziness_enabled: boolean;
+  task_mode: HouseholdTaskMode;
   vacation_tasks_exclude_enabled: boolean;
   vacation_finances_exclude_enabled: boolean;
   task_skip_enabled: boolean;
@@ -177,6 +179,7 @@ export interface UpdateHouseholdInput {
   utilitiesMonthly: number | null;
   utilitiesOnRoomSqmPercent: number;
   taskLazinessEnabled: boolean;
+  taskMode: HouseholdTaskMode;
   vacationTasksExcludeEnabled: boolean;
   vacationFinancesExcludeEnabled: boolean;
   taskSkipEnabled: boolean;
@@ -326,6 +329,85 @@ export interface TaskCompletion {
   rating_average: number | null;
   rating_count: number;
   my_rating: number | null;
+}
+
+export type TaskCommentTargetType = "task" | "task_time_entry";
+
+export interface TaskComment {
+  id: string;
+  household_id: string;
+  target_type: TaskCommentTargetType;
+  task_id: string | null;
+  task_time_entry_id: string | null;
+  user_id: string;
+  message: string;
+  created_at: string;
+}
+
+export type TaskTimeEntrySource = "manual" | "vacation_credit";
+
+export interface TaskTimeEntry {
+  id: string;
+  household_id: string;
+  user_id: string;
+  description: string;
+  hours: number;
+  details: string;
+  image_url: string | null;
+  source: TaskTimeEntrySource;
+  vacation_id: string | null;
+  entry_date: string;
+  created_by: string;
+  created_at: string;
+  rating_average: number | null;
+  rating_count: number;
+  my_rating: number | null;
+}
+
+export interface NewTaskTimeEntryInput {
+  description: string;
+  hours: number;
+  details?: string;
+  imageUrl?: string | null;
+  entryDate?: string;
+}
+
+export type TaskTimeCorrectionStatus = "open" | "approved" | "rejected";
+export type TaskTimeCorrectionVoteType = "approve" | "reject";
+
+export interface TaskTimeCorrectionVote {
+  proposal_id: string;
+  household_id: string;
+  user_id: string;
+  vote_type: TaskTimeCorrectionVoteType;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TaskTimeCorrectionProposal {
+  id: string;
+  task_time_entry_id: string;
+  household_id: string;
+  proposed_description: string;
+  proposed_hours: number;
+  proposed_details: string;
+  proposed_image_url: string | null;
+  reason: string;
+  status: TaskTimeCorrectionStatus;
+  resolved_at: string | null;
+  expires_at: string;
+  created_by: string;
+  created_at: string;
+  votes: TaskTimeCorrectionVote[];
+}
+
+export interface NewTaskTimeCorrectionProposalInput {
+  taskTimeEntryId: string;
+  description: string;
+  hours: number;
+  details?: string;
+  imageUrl?: string | null;
+  reason?: string;
 }
 
 export type OneOffTaskClaimStatus = "open" | "approved" | "rejected" | "expired" | "withdrawn";

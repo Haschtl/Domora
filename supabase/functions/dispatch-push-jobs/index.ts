@@ -111,8 +111,19 @@ const buildMessage = (job: PushJob) => {
     base.title = "Bucketlist";
     base.body = String(payload.title ?? "Neuer Bucketlist-Eintrag.");
   } else if (event === "task_due") {
-    base.title = "Aufgabe fällig";
-    base.body = String(payload.title ?? "Eine Aufgabe ist fällig.");
+    const taskTitle = String(payload.title ?? "Eine Aufgabe").trim() || "Eine Aufgabe";
+    const overdueDaysRaw = Number(payload.overdueDays ?? 0);
+    const overdueDays = Number.isFinite(overdueDaysRaw) ? Math.max(0, Math.floor(overdueDaysRaw)) : 0;
+    if (overdueDays >= 1) {
+      base.title = "Aufgabe überfällig";
+      base.body =
+        overdueDays === 1
+          ? `${taskTitle} ist seit 1 Tag überfällig.`
+          : `${taskTitle} ist seit ${overdueDays} Tagen überfällig.`;
+    } else {
+      base.title = "Aufgabe fällig";
+      base.body = `${taskTitle} ist fällig.`;
+    }
   } else if (event === "task_reminder") {
     base.title = String(payload.title ?? "Erinnerung");
     const reminderBody = String(payload.body ?? "Eine Aufgabe wartet.");

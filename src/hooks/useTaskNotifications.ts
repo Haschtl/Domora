@@ -31,6 +31,12 @@ const tryNotify = (title: string, options: NotificationOptions) => {
     return false;
   }
 };
+const getOverdueDays = (task: TaskItem, nowMillis: number) => {
+  const dueTime = new Date(task.due_at).getTime();
+  if (Number.isNaN(dueTime)) return 0;
+  const graceMinutes = Math.max(0, task.grace_minutes ?? 0);
+  return Math.max(0, Math.floor((nowMillis - (dueTime + graceMinutes * 60_000)) / 86_400_000));
+};
 
 export const useTaskNotifications = (
   tasks: TaskItem[],
@@ -59,8 +65,12 @@ export const useTaskNotifications = (
         const key = buildNotificationKey(userId, task.id, dayKey);
         if (hasBeenNotified(key)) return;
 
+        const overdueDays = getOverdueDays(task, nowMillis);
         const sent = tryNotify(i18n.t("tasks.notificationTitle"), {
-          body: i18n.t("tasks.notificationBody", { title: task.title }),
+          body:
+            overdueDays >= 1
+              ? i18n.t("tasks.notificationOverdueBody", { title: task.title, count: overdueDays })
+              : i18n.t("tasks.notificationBody", { title: task.title }),
           tag: `task-${task.id}-${dayKey}`
         });
         if (sent) markNotified(key);

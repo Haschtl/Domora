@@ -18,7 +18,7 @@ serve(async (req) => {
 
   const { data: tasks, error } = await supabase
     .from("tasks")
-    .select("id,household_id,title,due_at,last_due_notification_at,assignee_id,done,is_active")
+    .select("id,household_id,title,due_at,last_due_notification_at,assignee_id,done,is_active,grace_minutes")
     .eq("done", false)
     .eq("is_active", true)
     .lte("due_at", now.toISOString());
@@ -34,6 +34,12 @@ serve(async (req) => {
       continue;
     }
 
+    const dueAt = new Date(task.due_at);
+    const graceMinutes = Math.max(0, Number(task.grace_minutes ?? 0));
+    const overdueDays = Number.isNaN(dueAt.getTime())
+      ? 0
+      : Math.max(0, Math.floor((now.getTime() - (dueAt.getTime() + graceMinutes * 60_000)) / 86_400_000));
+
     const dedupeKey = `task_due:${task.id}:${now.toISOString().slice(0, 10)}`;
     const { error: insertError } = await supabase.from("push_jobs").insert({
       type: "task_due",
@@ -43,6 +49,7 @@ serve(async (req) => {
         title: task.title,
         taskId: task.id,
         dueAt: task.due_at,
+        overdueDays,
         actor_user_id: null
       },
       scheduled_for: now.toISOString(),

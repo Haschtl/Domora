@@ -1,11 +1,20 @@
 import { useMemo } from "react";
 import { TasksPage } from "./tasks-page";
+import { TimeTasksPage } from "./time-tasks-page";
 import { useWorkspace } from "../../context/workspace-context";
 import {
   useHouseholdEvents,
   useHouseholdTasksBatch
 } from "../../hooks/use-household-data";
-import type { HouseholdMemberPimpers, OneOffTaskClaim, TaskCompletion, TaskItem } from "../../lib/types";
+import type {
+  HouseholdMemberPimpers,
+  OneOffTaskClaim,
+  TaskComment,
+  TaskCompletion,
+  TaskItem,
+  TaskTimeCorrectionProposal,
+  TaskTimeEntry
+} from "../../lib/types";
 import { isMemberOnVacationAt } from "../../lib/vacation-utils";
 
 interface TasksPageContainerProps {
@@ -20,6 +29,13 @@ export const TasksPageContainer = ({ section }: TasksPageContainerProps) => {
     userId,
     busy,
     onAddTask,
+    onAddTaskComment,
+    onAddTaskTimeEntry,
+    onDeleteTaskTimeEntry,
+    onUpdateTaskTimeEntry,
+    onRateTaskTimeEntry,
+    onCreateTaskTimeCorrectionProposal,
+    onVoteTaskTimeCorrectionProposal,
     onAddOneOffTaskClaim,
     onCompleteTask,
     onSkipTask,
@@ -57,11 +73,37 @@ export const TasksPageContainer = ({ section }: TasksPageContainerProps) => {
   const tasksData = tasksBatchQuery.data as
     | {
         tasks: TaskItem[];
+        taskComments: TaskComment[];
         taskCompletions: TaskCompletion[];
+        taskTimeEntries: TaskTimeEntry[];
+        taskTimeCorrectionProposals: TaskTimeCorrectionProposal[];
         oneOffTaskClaims: OneOffTaskClaim[];
         memberPimpers: HouseholdMemberPimpers[];
       }
     | undefined;
+
+  if (activeHousehold.task_mode === "time") {
+    return (
+      <TimeTasksPage
+        section={section}
+        household={activeHousehold}
+        members={membersWithVacation}
+        tasks={tasksData?.tasks ?? []}
+        entries={tasksData?.taskTimeEntries ?? []}
+        comments={tasksData?.taskComments ?? []}
+        correctionProposals={tasksData?.taskTimeCorrectionProposals ?? []}
+        userId={userId}
+        busy={busy}
+        onAddTaskTimeEntry={onAddTaskTimeEntry}
+        onAddTaskComment={onAddTaskComment}
+        onDeleteTaskTimeEntry={onDeleteTaskTimeEntry}
+        onUpdateTaskTimeEntry={onUpdateTaskTimeEntry}
+        onRateTaskTimeEntry={onRateTaskTimeEntry}
+        onCreateTaskTimeCorrectionProposal={onCreateTaskTimeCorrectionProposal}
+        onVoteTaskTimeCorrectionProposal={onVoteTaskTimeCorrectionProposal}
+      />
+    );
+  }
 
   return (
     <TasksPage
@@ -69,6 +111,7 @@ export const TasksPageContainer = ({ section }: TasksPageContainerProps) => {
       household={activeHousehold}
       tasks={tasksData?.tasks ?? []}
       completions={tasksData?.taskCompletions ?? []}
+      comments={tasksData?.taskComments ?? []}
       oneOffTaskClaims={tasksData?.oneOffTaskClaims ?? []}
       householdEvents={events}
       members={membersWithVacation}
@@ -77,6 +120,7 @@ export const TasksPageContainer = ({ section }: TasksPageContainerProps) => {
       userId={userId}
       busy={busy}
       onAdd={onAddTask}
+      onAddTaskComment={onAddTaskComment}
       onAddOneOffTaskClaim={onAddOneOffTaskClaim}
       onComplete={onCompleteTask}
       onSkip={onSkipTask}

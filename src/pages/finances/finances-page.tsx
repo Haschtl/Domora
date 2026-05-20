@@ -1557,6 +1557,7 @@ export const FinancesPage = ({
         utilitiesMonthly: parsedUtilities,
         utilitiesOnRoomSqmPercent: parsedUtilitiesOnRoomSqmPercent,
         taskLazinessEnabled: household.task_laziness_enabled ?? false,
+        taskMode: household.task_mode ?? "rotation",
         vacationTasksExcludeEnabled: household.vacation_tasks_exclude_enabled ?? true,
         vacationFinancesExcludeEnabled: household.vacation_finances_exclude_enabled ?? true,
         taskSkipEnabled: household.task_skip_enabled ?? true,

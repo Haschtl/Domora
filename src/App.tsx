@@ -334,7 +334,8 @@ const AppLayout = () => {
   const taskSubTab = useMemo(() => resolveTaskSubTabFromPathname(location.pathname), [location.pathname]);
   const financeSubTab = useMemo(() => resolveFinanceSubTabFromPathname(location.pathname), [location.pathname]);
   const settingsSubTab = useMemo(() => resolveSettingsSubTabFromPathname(location.pathname), [location.pathname]);
-  const isTaskSettingsEnabled = activeHousehold?.task_laziness_enabled ?? false;
+  const isTimeTaskMode = activeHousehold?.task_mode === "time";
+  const isTaskSettingsEnabled = !isTimeTaskMode && (activeHousehold?.task_laziness_enabled ?? false);
   const featureFlags = useMemo(
     () => ({
       bucket: activeHousehold?.feature_bucket_enabled ?? true,
@@ -396,6 +397,9 @@ const AppLayout = () => {
         "shoppingCompletions",
         "tasks",
         "taskCompletions",
+        "taskComments",
+        "taskTimeEntries",
+        "taskTimeCorrectionProposals",
         "cashAuditRequests",
         "financeSubscriptions",
         "memberVacations",
@@ -426,6 +430,9 @@ const AppLayout = () => {
   }, [activeHousehold, isStandaloneRoute, queryClient, session]);
 
   const dueTasksBadge = useMemo(() => {
+    if (activeHousehold?.task_mode === "time") {
+      return { myDue: 0, allDue: 0, label: "" };
+    }
     // eslint-disable-next-line react-hooks/purity
     const nowMs = Date.now();
     const dueTasks = tasks.filter((task) => {
@@ -441,7 +448,7 @@ const AppLayout = () => {
       allDue,
       label: `${myDue}/${allDue}`
     };
-  }, [tasks, userId]);
+  }, [activeHousehold?.task_mode, tasks, userId]);
   const openShoppingCount = useMemo(
     () => shoppingItems.filter((item) => !item.done).length,
     [shoppingItems]
@@ -490,6 +497,9 @@ const AppLayout = () => {
           "bucketItems",
           "tasks",
           "taskCompletions",
+          "taskComments",
+          "taskTimeEntries",
+          "taskTimeCorrectionProposals",
           "cashAuditRequests",
           "memberVacations"
         ]);
@@ -508,6 +518,9 @@ const AppLayout = () => {
         void ensureHouseholdQueries(queryClient, householdId, [
           "tasks",
           "taskCompletions",
+          "taskComments",
+          "taskTimeEntries",
+          "taskTimeCorrectionProposals",
           "memberPimpers",
           "memberVacations"
         ]);
@@ -548,7 +561,9 @@ const AppLayout = () => {
       ? [
           { id: "overview", icon: LayoutList, labelKey: "subnav.tasks.overview", path: taskSubPathMap.overview },
           { id: "stats", icon: BarChart3, labelKey: "subnav.tasks.stats", path: taskSubPathMap.stats },
-          { id: "history", icon: Archive, labelKey: "subnav.tasks.history", path: taskSubPathMap.history },
+          ...(isTimeTaskMode
+            ? []
+            : [{ id: "history", icon: Archive, labelKey: "subnav.tasks.history", path: taskSubPathMap.history }]),
           ...(isTaskSettingsEnabled
             ? [{ id: "settings", icon: Settings, labelKey: "subnav.tasks.settings", path: taskSubPathMap.settings }]
             : [])
@@ -633,7 +648,10 @@ const AppLayout = () => {
     if (!isTaskSettingsEnabled && location.pathname.startsWith("/tasks/settings")) {
       void navigate({ to: "/tasks/overview", replace: true });
     }
-  }, [isTaskSettingsEnabled, location.pathname, navigate]);
+    if (isTimeTaskMode && location.pathname.startsWith("/tasks/history")) {
+      void navigate({ to: "/tasks/overview", replace: true });
+    }
+  }, [isTaskSettingsEnabled, isTimeTaskMode, location.pathname, navigate]);
 
   useEffect(() => {
     if (!activeHousehold) return;

@@ -24,6 +24,8 @@ import type {
   HouseholdMemberVacation,
   HouseholdMemberPimpers,
   HouseholdStorageEntry,
+  NewTaskTimeCorrectionProposalInput,
+  NewTaskTimeEntryInput,
   NewFinanceSubscriptionInput,
   NewTaskInput,
   NearbyPoi,
@@ -35,14 +37,19 @@ import type {
   ShoppingRecurrenceUnit,
   ShoppingItem,
   ShoppingItemCompletion,
+  TaskComment,
+  TaskCommentTargetType,
   TaskCompletion,
+  TaskTimeCorrectionProposal,
+  TaskTimeCorrectionVote,
+  TaskTimeEntry,
   TaskItem
 } from "./types";
 
 const buildInviteCode = () => Math.random().toString(36).slice(2, 8).toUpperCase();
 
 const SELECT_HOUSEHOLD_FIELDS =
-  "id,name,image_url,address,currency,apartment_size_sqm,cold_rent_monthly,utilities_monthly,utilities_on_room_sqm_percent,task_laziness_enabled,vacation_tasks_exclude_enabled,vacation_finances_exclude_enabled,task_skip_enabled,feature_bucket_enabled,feature_shopping_enabled,feature_tasks_enabled,feature_one_off_tasks_enabled,feature_finances_enabled,storage_provider,storage_url,storage_username,storage_base_path,one_off_claim_timeout_hours,one_off_claim_max_pimpers,theme_primary_color,theme_accent_color,theme_font_family,theme_radius_scale,translation_overrides,household_map_markers,landing_page_markdown,invite_code,created_by,created_at";
+  "id,name,image_url,address,currency,apartment_size_sqm,cold_rent_monthly,utilities_monthly,utilities_on_room_sqm_percent,task_laziness_enabled,task_mode,vacation_tasks_exclude_enabled,vacation_finances_exclude_enabled,task_skip_enabled,feature_bucket_enabled,feature_shopping_enabled,feature_tasks_enabled,feature_one_off_tasks_enabled,feature_finances_enabled,storage_provider,storage_url,storage_username,storage_base_path,one_off_claim_timeout_hours,one_off_claim_max_pimpers,theme_primary_color,theme_accent_color,theme_font_family,theme_radius_scale,translation_overrides,household_map_markers,landing_page_markdown,invite_code,created_by,created_at";
 const SELECT_HOUSEHOLD_MEMBER_FIELDS =
   "household_id,user_id,role,room_size_sqm,common_area_factor,task_laziness_factor,vacation_mode,created_at";
 const SELECT_HOUSEHOLD_MEMBER_WITH_PROFILE_FIELDS =
@@ -57,8 +64,17 @@ const SELECT_BUCKET_ITEM_FIELDS =
 const SELECT_BUCKET_ITEM_VOTE_FIELDS = "bucket_item_id,household_id,suggested_date,user_id,created_at";
 const SELECT_TASK_FIELDS =
   "id,household_id,title,description,current_state_image_url,target_state_image_url,start_date,due_at,cron_pattern,frequency_days,effort_pimpers,grace_minutes,delay_penalty_per_day,prioritize_low_pimpers,assignee_fairness_mode,is_active,done,done_at,done_by,assignee_id,ignore_delay_penalty_once,created_by,created_at";
+const SELECT_TASK_COMMENT_FIELDS =
+  "id,household_id,target_type,task_id,task_time_entry_id,user_id,message,created_at";
 const SELECT_TASK_COMPLETION_FIELDS =
   "id,task_id,household_id,task_title_snapshot,user_id,pimpers_earned,due_at_snapshot,delay_minutes,completed_at";
+const SELECT_TASK_TIME_ENTRY_FIELDS =
+  "id,household_id,user_id,description,hours,details,image_url,source,vacation_id,entry_date,created_by,created_at";
+const SELECT_TASK_TIME_ENTRY_RATING_FIELDS = "task_time_entry_id,household_id,user_id,rating";
+const SELECT_TASK_TIME_CORRECTION_PROPOSAL_FIELDS =
+  "id,task_time_entry_id,household_id,proposed_description,proposed_hours,proposed_details,proposed_image_url,reason,status,resolved_at,expires_at,created_by,created_at";
+const SELECT_TASK_TIME_CORRECTION_VOTE_FIELDS =
+  "proposal_id,household_id,user_id,vote_type,created_at,updated_at";
 const SELECT_TASK_COMPLETION_RATING_FIELDS = "task_completion_id,household_id,user_id,rating";
 const SELECT_ONE_OFF_TASK_CLAIM_FIELDS =
   "id,household_id,title,description,requested_pimpers,status,resolved_pimpers,expires_at,resolved_at,renewed_from,created_by,created_at";
@@ -262,6 +278,7 @@ const householdSchema = z.object({
   utilities_monthly: nonNegativeOptionalNumberSchema,
   utilities_on_room_sqm_percent: percentageNumberSchema.default(0),
   task_laziness_enabled: z.coerce.boolean().default(false),
+  task_mode: z.enum(["rotation", "time"]).default("rotation"),
   vacation_tasks_exclude_enabled: z.coerce.boolean().default(true),
   vacation_finances_exclude_enabled: z.coerce.boolean().default(true),
   task_skip_enabled: z.coerce.boolean().default(true),
@@ -399,6 +416,67 @@ const taskCompletionRatingSchema = z.object({
   household_id: z.string().uuid(),
   user_id: z.string().uuid(),
   rating: z.coerce.number().int().min(1).max(5)
+});
+
+const taskCommentSchema = z.object({
+  id: z.string().uuid(),
+  household_id: z.string().uuid(),
+  target_type: z.enum(["task", "task_time_entry"]),
+  task_id: z.string().uuid().nullable().optional().transform((value) => value ?? null),
+  task_time_entry_id: z.string().uuid().nullable().optional().transform((value) => value ?? null),
+  user_id: z.string().uuid(),
+  message: z.string().min(1),
+  created_at: z.string().min(1)
+});
+
+const taskTimeEntrySchema = z.object({
+  id: z.string().uuid(),
+  household_id: z.string().uuid(),
+  user_id: z.string().uuid(),
+  description: z.string().min(1),
+  hours: z.coerce.number().finite().nonnegative(),
+  details: z.string().default(""),
+  image_url: z.string().nullable().optional().transform((value) => value ?? null),
+  source: z.enum(["manual", "vacation_credit"]).default("manual"),
+  vacation_id: z.string().uuid().nullable().optional().transform((value) => value ?? null),
+  entry_date: z.string().min(1),
+  created_by: z.string().uuid(),
+  created_at: z.string().min(1),
+  rating_average: z.coerce.number().finite().nullable().optional().transform((value) => value ?? null),
+  rating_count: z.coerce.number().int().nonnegative().optional().default(0),
+  my_rating: z.coerce.number().int().min(1).max(5).nullable().optional().transform((value) => value ?? null)
+});
+
+const taskTimeEntryRatingSchema = z.object({
+  task_time_entry_id: z.string().uuid(),
+  household_id: z.string().uuid(),
+  user_id: z.string().uuid(),
+  rating: z.coerce.number().int().min(1).max(5)
+});
+
+const taskTimeCorrectionVoteSchema = z.object({
+  proposal_id: z.string().uuid(),
+  household_id: z.string().uuid(),
+  user_id: z.string().uuid(),
+  vote_type: z.enum(["approve", "reject"]),
+  created_at: z.string().min(1),
+  updated_at: z.string().min(1)
+});
+
+const taskTimeCorrectionProposalSchema = z.object({
+  id: z.string().uuid(),
+  task_time_entry_id: z.string().uuid(),
+  household_id: z.string().uuid(),
+  proposed_description: z.string().min(1),
+  proposed_hours: z.coerce.number().finite().nonnegative(),
+  proposed_details: z.string().default(""),
+  proposed_image_url: z.string().nullable().optional().transform((value) => value ?? null),
+  reason: z.string().default(""),
+  status: z.enum(["open", "approved", "rejected"]).default("open"),
+  resolved_at: z.string().nullable().optional().transform((value) => value ?? null),
+  expires_at: z.string().min(1),
+  created_by: z.string().uuid(),
+  created_at: z.string().min(1)
 });
 
 const oneOffTaskClaimVoteSchema = z.object({
@@ -562,6 +640,26 @@ const normalizeShoppingCompletion = (row: Record<string, unknown>): ShoppingItem
 
 const normalizeTaskCompletion = (row: Record<string, unknown>): TaskCompletion => ({
   ...taskCompletionSchema.parse(row)
+});
+
+const normalizeTaskComment = (row: Record<string, unknown>): TaskComment => ({
+  ...taskCommentSchema.parse(row)
+});
+
+const normalizeTaskTimeEntry = (row: Record<string, unknown>): TaskTimeEntry => ({
+  ...taskTimeEntrySchema.parse(row)
+});
+
+const normalizeTaskTimeCorrectionVote = (row: Record<string, unknown>): TaskTimeCorrectionVote => ({
+  ...taskTimeCorrectionVoteSchema.parse(row)
+});
+
+const normalizeTaskTimeCorrectionProposal = (
+  row: Record<string, unknown>,
+  votes: TaskTimeCorrectionVote[]
+): TaskTimeCorrectionProposal => ({
+  ...taskTimeCorrectionProposalSchema.parse(row),
+  votes
 });
 
 const normalizeOneOffTaskClaimVote = (row: Record<string, unknown>): OneOffTaskClaimVote => ({
@@ -1039,6 +1137,7 @@ export const updateHouseholdSettings = async (
     utilitiesMonthly: nonNegativeOptionalNumberSchema,
     utilitiesOnRoomSqmPercent: percentageNumberSchema,
     taskLazinessEnabled: z.coerce.boolean(),
+    taskMode: z.enum(["rotation", "time"]).default("rotation"),
     vacationTasksExcludeEnabled: z.coerce.boolean(),
     vacationFinancesExcludeEnabled: z.coerce.boolean(),
     taskSkipEnabled: z.coerce.boolean(),
@@ -1073,6 +1172,7 @@ export const updateHouseholdSettings = async (
       utilities_monthly: parsedInput.utilitiesMonthly,
       utilities_on_room_sqm_percent: parsedInput.utilitiesOnRoomSqmPercent,
       task_laziness_enabled: parsedInput.taskLazinessEnabled,
+      task_mode: parsedInput.taskMode,
       vacation_tasks_exclude_enabled: parsedInput.vacationTasksExcludeEnabled,
       vacation_finances_exclude_enabled: parsedInput.vacationFinancesExcludeEnabled,
       task_skip_enabled: parsedInput.taskSkipEnabled,
@@ -2321,6 +2421,55 @@ export const deleteTask = async (taskId: string): Promise<void> => {
   if (error) throw error;
 };
 
+export const getTaskComments = async (householdId: string): Promise<TaskComment[]> => {
+  const validatedHouseholdId = z.string().uuid().parse(householdId);
+  const { data, error } = await supabase
+    .from("task_comments")
+    .select(SELECT_TASK_COMMENT_FIELDS)
+    .eq("household_id", validatedHouseholdId)
+    .order("created_at", { ascending: true })
+    .limit(1000);
+
+  if (error) throw error;
+  return (data ?? []).map((entry) => normalizeTaskComment(entry as Record<string, unknown>));
+};
+
+export const addTaskComment = async (input: {
+  householdId: string;
+  targetType: TaskCommentTargetType;
+  targetId: string;
+  message: string;
+}): Promise<TaskComment> => {
+  const userId = await requireAuthenticatedUserId();
+  const parsed = z
+    .object({
+      householdId: z.string().uuid(),
+      targetType: z.enum(["task", "task_time_entry"]),
+      targetId: z.string().uuid(),
+      message: z.string().trim().min(1).max(2000)
+    })
+    .parse(input);
+
+  const insertPayload = {
+    id: uuid(),
+    household_id: parsed.householdId,
+    target_type: parsed.targetType,
+    task_id: parsed.targetType === "task" ? parsed.targetId : null,
+    task_time_entry_id: parsed.targetType === "task_time_entry" ? parsed.targetId : null,
+    user_id: userId,
+    message: parsed.message
+  };
+
+  const { data, error } = await supabase
+    .from("task_comments")
+    .insert(insertPayload)
+    .select(SELECT_TASK_COMMENT_FIELDS)
+    .single();
+
+  if (error) throw error;
+  return normalizeTaskComment(data as Record<string, unknown>);
+};
+
 export const completeTask = async (taskId: string, userId: string) => {
   const validatedTaskId = z.string().uuid().parse(taskId);
   const validatedUserId = z.string().uuid().parse(userId);
@@ -2515,6 +2664,336 @@ export const getTaskCompletions = async (householdId: string): Promise<TaskCompl
       my_rating: ratingStats.myRating
     };
   });
+};
+
+export const getTaskTimeEntries = async (householdId: string): Promise<TaskTimeEntry[]> => {
+  const validatedHouseholdId = z.string().uuid().parse(householdId);
+  const currentUserId = await requireAuthenticatedUserId();
+
+  const { error: settlementError } = await supabase.rpc("settle_task_time_vacation_credits", {
+    p_household_id: validatedHouseholdId
+  });
+  if (settlementError) throw settlementError;
+
+  const { data, error } = await supabase
+    .from("task_time_entries")
+    .select(SELECT_TASK_TIME_ENTRY_FIELDS)
+    .eq("household_id", validatedHouseholdId)
+    .order("entry_date", { ascending: false })
+    .order("created_at", { ascending: false });
+
+  if (error) throw error;
+  const entries = (data ?? []).map((entry) => normalizeTaskTimeEntry(entry as Record<string, unknown>));
+  if (entries.length === 0) return entries;
+
+  const entryIds = entries.map((entry) => entry.id);
+  const { data: ratingsData, error: ratingsError } = await supabase
+    .from("task_time_entry_ratings")
+    .select(SELECT_TASK_TIME_ENTRY_RATING_FIELDS)
+    .eq("household_id", validatedHouseholdId)
+    .in("task_time_entry_id", entryIds);
+
+  if (ratingsError) throw ratingsError;
+
+  const ratingsByEntryId = new Map<string, { total: number; count: number; myRating: number | null }>();
+  for (const row of ratingsData ?? []) {
+    const parsed = taskTimeEntryRatingSchema.parse(row);
+    const existing = ratingsByEntryId.get(parsed.task_time_entry_id) ?? {
+      total: 0,
+      count: 0,
+      myRating: null
+    };
+    existing.total += parsed.rating;
+    existing.count += 1;
+    if (parsed.user_id === currentUserId) {
+      existing.myRating = parsed.rating;
+    }
+    ratingsByEntryId.set(parsed.task_time_entry_id, existing);
+  }
+
+  return entries.map((entry) => {
+    const ratingStats = ratingsByEntryId.get(entry.id);
+    if (!ratingStats) {
+      return { ...entry, rating_average: null, rating_count: 0, my_rating: null };
+    }
+    return {
+      ...entry,
+      rating_average: Number((ratingStats.total / ratingStats.count).toFixed(2)),
+      rating_count: ratingStats.count,
+      my_rating: ratingStats.myRating
+    };
+  });
+};
+
+export const addTaskTimeEntry = async (
+  householdId: string,
+  input: NewTaskTimeEntryInput,
+  userId: string
+): Promise<TaskTimeEntry> => {
+  const parsed = z
+    .object({
+      householdId: z.string().uuid(),
+      userId: z.string().uuid(),
+      description: z.string().trim().min(1).max(200),
+      hours: z.coerce.number().finite().positive().max(24),
+      details: z.string().trim().max(4000).default(""),
+      imageUrl: z.string().trim().max(5_000_000).nullable().optional(),
+      entryDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).default(() => new Date().toISOString().slice(0, 10))
+    })
+    .parse({
+      householdId,
+      userId,
+      description: input.description,
+      hours: input.hours,
+      details: input.details ?? "",
+      imageUrl: input.imageUrl ?? null,
+      entryDate: input.entryDate ?? new Date().toISOString().slice(0, 10)
+    });
+
+  const { data, error } = await supabase
+    .from("task_time_entries")
+    .insert({
+      id: uuid(),
+      household_id: parsed.householdId,
+      user_id: parsed.userId,
+      description: parsed.description,
+      hours: parsed.hours,
+      details: parsed.details,
+      image_url: parsed.imageUrl,
+      source: "manual",
+      entry_date: parsed.entryDate,
+      created_by: parsed.userId
+    })
+    .select(SELECT_TASK_TIME_ENTRY_FIELDS)
+    .single();
+
+  if (error) throw error;
+  return normalizeTaskTimeEntry(data as Record<string, unknown>);
+};
+
+export const updateTaskTimeEntry = async (
+  entryId: string,
+  input: NewTaskTimeEntryInput
+): Promise<TaskTimeEntry> => {
+  const parsed = z
+    .object({
+      entryId: z.string().uuid(),
+      description: z.string().trim().min(1).max(200),
+      hours: z.coerce.number().finite().positive().max(24),
+      details: z.string().trim().max(4000).default(""),
+      imageUrl: z.string().trim().max(5_000_000).nullable().optional(),
+      entryDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional()
+    })
+    .parse({
+      entryId,
+      description: input.description,
+      hours: input.hours,
+      details: input.details ?? "",
+      imageUrl: input.imageUrl ?? null,
+      entryDate: input.entryDate
+    });
+
+  const updatePayload: Record<string, unknown> = {
+    description: parsed.description,
+    hours: parsed.hours,
+    details: parsed.details,
+    image_url: parsed.imageUrl
+  };
+  if (parsed.entryDate) updatePayload.entry_date = parsed.entryDate;
+
+  const { data, error } = await supabase
+    .from("task_time_entries")
+    .update(updatePayload)
+    .eq("id", parsed.entryId)
+    .eq("source", "manual")
+    .select(SELECT_TASK_TIME_ENTRY_FIELDS)
+    .single();
+
+  if (error) throw error;
+  return normalizeTaskTimeEntry(data as Record<string, unknown>);
+};
+
+export const deleteTaskTimeEntry = async (entryId: string): Promise<void> => {
+  const validatedEntryId = z.string().uuid().parse(entryId);
+  const { error } = await supabase
+    .from("task_time_entries")
+    .delete()
+    .eq("id", validatedEntryId)
+    .eq("source", "manual");
+  if (error) throw error;
+};
+
+export const rateTaskTimeEntry = async (entryId: string, rating: number): Promise<void> => {
+  const validatedEntryId = z.string().uuid().parse(entryId);
+  const validatedRating = z.coerce.number().int().min(1).max(5).parse(rating);
+  const userId = await requireAuthenticatedUserId();
+
+  const { data: entryRow, error: entryError } = await supabase
+    .from("task_time_entries")
+    .select("household_id,user_id")
+    .eq("id", validatedEntryId)
+    .single();
+  if (entryError) throw entryError;
+  if (String(entryRow.user_id) === userId) {
+    throw new Error("You cannot rate your own time entry");
+  }
+
+  const householdId = z.string().uuid().parse(String(entryRow.household_id));
+  const { error } = await supabase.from("task_time_entry_ratings").upsert(
+    {
+      task_time_entry_id: validatedEntryId,
+      household_id: householdId,
+      user_id: userId,
+      rating: validatedRating,
+      updated_at: new Date().toISOString()
+    },
+    { onConflict: "task_time_entry_id,user_id" }
+  );
+  if (error) throw error;
+};
+
+export const getTaskTimeCorrectionProposals = async (
+  householdId: string
+): Promise<TaskTimeCorrectionProposal[]> => {
+  const validatedHouseholdId = z.string().uuid().parse(householdId);
+
+  const { error: resolveError } = await supabase.rpc("resolve_task_time_correction_proposals", {
+    p_household_id: validatedHouseholdId
+  });
+  if (resolveError) throw resolveError;
+
+  const { data, error } = await supabase
+    .from("task_time_correction_proposals")
+    .select(SELECT_TASK_TIME_CORRECTION_PROPOSAL_FIELDS)
+    .eq("household_id", validatedHouseholdId)
+    .order("status", { ascending: true })
+    .order("created_at", { ascending: false })
+    .limit(100);
+  if (error) throw error;
+
+  const proposals = (data ?? []) as Record<string, unknown>[];
+  if (proposals.length === 0) return [];
+  const proposalIds = proposals.map((entry) => String(entry.id));
+
+  const { data: voteRows, error: voteError } = await supabase
+    .from("task_time_correction_votes")
+    .select(SELECT_TASK_TIME_CORRECTION_VOTE_FIELDS)
+    .eq("household_id", validatedHouseholdId)
+    .in("proposal_id", proposalIds);
+  if (voteError) throw voteError;
+
+  const votesByProposalId = new Map<string, TaskTimeCorrectionVote[]>();
+  (voteRows ?? []).forEach((row) => {
+    const vote = normalizeTaskTimeCorrectionVote(row as Record<string, unknown>);
+    votesByProposalId.set(vote.proposal_id, [...(votesByProposalId.get(vote.proposal_id) ?? []), vote]);
+  });
+
+  return proposals.map((proposal) =>
+    normalizeTaskTimeCorrectionProposal(proposal, votesByProposalId.get(String(proposal.id)) ?? [])
+  );
+};
+
+export const createTaskTimeCorrectionProposal = async (
+  input: NewTaskTimeCorrectionProposalInput
+): Promise<TaskTimeCorrectionProposal> => {
+  const userId = await requireAuthenticatedUserId();
+  const parsed = z
+    .object({
+      taskTimeEntryId: z.string().uuid(),
+      description: z.string().trim().min(1).max(200),
+      hours: z.coerce.number().finite().positive().max(24),
+      details: z.string().trim().max(4000).default(""),
+      imageUrl: z.string().trim().max(5_000_000).nullable().optional(),
+      reason: z.string().trim().max(1000).default("")
+    })
+    .parse({
+      taskTimeEntryId: input.taskTimeEntryId,
+      description: input.description,
+      hours: input.hours,
+      details: input.details ?? "",
+      imageUrl: input.imageUrl ?? null,
+      reason: input.reason ?? ""
+    });
+
+  const { data: entryRow, error: entryError } = await supabase
+    .from("task_time_entries")
+    .select("household_id,user_id")
+    .eq("id", parsed.taskTimeEntryId)
+    .single();
+  if (entryError) throw entryError;
+  if (String(entryRow.user_id) === userId) {
+    throw new Error("Use direct editing for your own time entries");
+  }
+
+  const householdId = z.string().uuid().parse(String(entryRow.household_id));
+  const { data, error } = await supabase
+    .from("task_time_correction_proposals")
+    .insert({
+      id: uuid(),
+      task_time_entry_id: parsed.taskTimeEntryId,
+      household_id: householdId,
+      proposed_description: parsed.description,
+      proposed_hours: parsed.hours,
+      proposed_details: parsed.details,
+      proposed_image_url: parsed.imageUrl,
+      reason: parsed.reason,
+      created_by: userId,
+      expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+    })
+    .select(SELECT_TASK_TIME_CORRECTION_PROPOSAL_FIELDS)
+    .single();
+  if (error) throw error;
+
+  await voteTaskTimeCorrectionProposal(String(data.id), "approve");
+  return normalizeTaskTimeCorrectionProposal(data as Record<string, unknown>, [
+    {
+      proposal_id: String(data.id),
+      household_id: householdId,
+      user_id: userId,
+      vote_type: "approve",
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    }
+  ]);
+};
+
+export const voteTaskTimeCorrectionProposal = async (
+  proposalId: string,
+  voteType: "approve" | "reject"
+): Promise<void> => {
+  const userId = await requireAuthenticatedUserId();
+  const parsed = z
+    .object({
+      proposalId: z.string().uuid(),
+      voteType: z.enum(["approve", "reject"])
+    })
+    .parse({ proposalId, voteType });
+
+  const { data: proposalRow, error: proposalError } = await supabase
+    .from("task_time_correction_proposals")
+    .select("household_id,status")
+    .eq("id", parsed.proposalId)
+    .single();
+  if (proposalError) throw proposalError;
+  if (String(proposalRow.status) !== "open") throw new Error("Correction proposal is already closed");
+
+  const householdId = z.string().uuid().parse(String(proposalRow.household_id));
+  const { error } = await supabase.from("task_time_correction_votes").upsert(
+    {
+      proposal_id: parsed.proposalId,
+      household_id: householdId,
+      user_id: userId,
+      vote_type: parsed.voteType,
+      updated_at: new Date().toISOString()
+    },
+    { onConflict: "proposal_id,user_id" }
+  );
+  if (error) throw error;
+
+  const { error: resolveError } = await supabase.rpc("resolve_task_time_correction_proposals", {
+    p_household_id: householdId
+  });
+  if (resolveError) throw resolveError;
 };
 
 const median = (values: number[]) => {

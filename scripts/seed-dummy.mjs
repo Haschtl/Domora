@@ -11,6 +11,11 @@ import {
   buildShoppingRows,
   buildRotationRows,
   buildTaskRows,
+  buildTaskTimeCorrectionProposalRows,
+  buildTaskTimeCorrectionVoteRows,
+  buildTaskTimeEntryRatingRows,
+  buildTaskTimeEntryRows,
+  buildTaskTimeVacationCreditRows,
   buildCashAuditRows,
   buildPushPreferenceRows,
   buildPushTokenRows,
@@ -69,6 +74,7 @@ const supabase = createClient(supabaseUrl, supabaseSecretKey, {
 const memberCount = toInt(process.env.DUMMY_MEMBER_COUNT, 5);
 const financeCount = toInt(process.env.DUMMY_FINANCE_COUNT, 400);
 const taskCount = toInt(process.env.DUMMY_TASK_COUNT, 14);
+const taskTimeEntryCount = toInt(process.env.DUMMY_TASK_TIME_ENTRY_COUNT, 56);
 const shoppingCount = toInt(process.env.DUMMY_SHOPPING_COUNT, 48);
 const cashAuditCount = toInt(process.env.DUMMY_CASH_AUDIT_COUNT, 5);
 
@@ -85,6 +91,11 @@ const appTablesToClear = [
   { table: "push_preferences", markerColumn: "user_id" },
   { table: "household_whiteboards", markerColumn: "household_id" },
   { table: "household_events", markerColumn: "id" },
+  { table: "task_comments", markerColumn: "id" },
+  { table: "task_time_correction_votes", markerColumn: "proposal_id" },
+  { table: "task_time_correction_proposals", markerColumn: "id" },
+  { table: "task_time_entry_ratings", markerColumn: "task_time_entry_id" },
+  { table: "task_time_entries", markerColumn: "id" },
   { table: "task_completion_ratings", markerColumn: "task_completion_id" },
   { table: "task_completions", markerColumn: "id" },
   { table: "one_off_task_claim_votes", markerColumn: "claim_id" },
@@ -423,10 +434,87 @@ const run = async () => {
     now,
     createdBy: owner.id
   });
+  let insertedMemberVacations = [];
   if (memberVacationRows.length > 0) {
-    const { error: vacationError } = await supabase.from("member_vacations").insert(memberVacationRows);
+    const { data, error: vacationError } = await supabase
+      .from("member_vacations")
+      .insert(memberVacationRows)
+      .select("id,household_id,user_id,start_date,end_date,note,created_by");
     if (vacationError) {
       throw new Error(`Failed to insert member vacations: ${vacationError.message}`);
+    }
+    insertedMemberVacations = data ?? [];
+  }
+
+  const taskTimeEntryRows = buildTaskTimeEntryRows({
+    householdId,
+    users,
+    now,
+    entryCount: taskTimeEntryCount
+  });
+  const taskTimeVacationCreditRows = buildTaskTimeVacationCreditRows({
+    insertedVacations: insertedMemberVacations,
+    users,
+    householdId,
+    now
+  });
+  const allTaskTimeEntryRows = [...taskTimeEntryRows, ...taskTimeVacationCreditRows];
+  let insertedTaskTimeEntries = [];
+  if (allTaskTimeEntryRows.length > 0) {
+    const { data, error: taskTimeEntryError } = await supabase
+      .from("task_time_entries")
+      .insert(allTaskTimeEntryRows)
+      .select("id,household_id,user_id,description,hours,details,image_url,source,vacation_id,entry_date,created_by,created_at");
+    if (taskTimeEntryError) {
+      throw new Error(`Failed to insert task time entries: ${taskTimeEntryError.message}`);
+    }
+    insertedTaskTimeEntries = data ?? [];
+  }
+
+  const taskTimeRatingRows = buildTaskTimeEntryRatingRows({
+    insertedEntries: insertedTaskTimeEntries,
+    users,
+    householdId
+  });
+  if (taskTimeRatingRows.length > 0) {
+    const { error: taskTimeRatingError } = await supabase
+      .from("task_time_entry_ratings")
+      .insert(taskTimeRatingRows);
+    if (taskTimeRatingError) {
+      throw new Error(`Failed to insert task time entry ratings: ${taskTimeRatingError.message}`);
+    }
+  }
+
+  const taskTimeCorrectionRows = buildTaskTimeCorrectionProposalRows({
+    insertedEntries: insertedTaskTimeEntries,
+    users,
+    householdId,
+    now
+  });
+  let insertedTaskTimeCorrections = [];
+  if (taskTimeCorrectionRows.length > 0) {
+    const { data, error: taskTimeCorrectionError } = await supabase
+      .from("task_time_correction_proposals")
+      .insert(taskTimeCorrectionRows)
+      .select("id,household_id,task_time_entry_id,created_by,status,created_at");
+    if (taskTimeCorrectionError) {
+      throw new Error(`Failed to insert task time correction proposals: ${taskTimeCorrectionError.message}`);
+    }
+    insertedTaskTimeCorrections = data ?? [];
+  }
+
+  const taskTimeCorrectionVoteRows = buildTaskTimeCorrectionVoteRows({
+    insertedProposals: insertedTaskTimeCorrections,
+    users,
+    householdId,
+    now
+  });
+  if (taskTimeCorrectionVoteRows.length > 0) {
+    const { error: taskTimeCorrectionVoteError } = await supabase
+      .from("task_time_correction_votes")
+      .insert(taskTimeCorrectionVoteRows);
+    if (taskTimeCorrectionVoteError) {
+      throw new Error(`Failed to insert task time correction votes: ${taskTimeCorrectionVoteError.message}`);
     }
   }
 
@@ -513,6 +601,10 @@ const run = async () => {
   });
   console.log(`Tasks created: ${insertedTasks.length}`);
   console.log(`Task completion ratings created: ${completionRatingRows.length}`);
+  console.log(`Task time entries created: ${insertedTaskTimeEntries.length}`);
+  console.log(`Task time vacation credits created: ${taskTimeVacationCreditRows.length}`);
+  console.log(`Task time entry ratings created: ${taskTimeRatingRows.length}`);
+  console.log(`Task time correction proposals created: ${insertedTaskTimeCorrections.length}`);
   console.log(`One-off task claims created: ${insertedOneOffClaims.length}`);
   console.log(`One-off task claim votes created: ${uniqueOneOffVoteRows.length}`);
   console.log(`Finance entries created: ${financeRows.length}`);

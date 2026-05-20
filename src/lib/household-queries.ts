@@ -10,7 +10,10 @@ import {
   getHouseholdWhiteboard,
   getShoppingCompletions,
   getShoppingItems,
+  getTaskComments,
   getTaskCompletions,
+  getTaskTimeCorrectionProposals,
+  getTaskTimeEntries,
   getTasks
 } from "./api";
 import { queryKeys } from "./query-keys";
@@ -35,6 +38,18 @@ export const householdQueryOptions = {
   taskCompletions: (householdId: string) => ({
     queryKey: queryKeys.householdTaskCompletions(householdId),
     queryFn: () => getTaskCompletions(householdId)
+  }),
+  taskComments: (householdId: string) => ({
+    queryKey: queryKeys.householdTaskComments(householdId),
+    queryFn: () => getTaskComments(householdId)
+  }),
+  taskTimeEntries: (householdId: string) => ({
+    queryKey: queryKeys.householdTaskTimeEntries(householdId),
+    queryFn: () => getTaskTimeEntries(householdId)
+  }),
+  taskTimeCorrectionProposals: (householdId: string) => ({
+    queryKey: queryKeys.householdTaskTimeCorrectionProposals(householdId),
+    queryFn: () => getTaskTimeCorrectionProposals(householdId)
   }),
   oneOffTaskClaims: (householdId: string) => ({
     queryKey: queryKeys.householdOneOffTaskClaims(householdId),
