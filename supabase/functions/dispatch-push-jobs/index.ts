@@ -9,6 +9,7 @@ type PushJob = {
   user_id: string | null;
   payload: Record<string, unknown>;
   attempts: number;
+  created_at: string;
 };
 
 type PushTokenRow = {
@@ -226,7 +227,7 @@ serve(async (req) => {
   const now = new Date().toISOString();
   const { data: jobs, error } = await supabase
     .from("push_jobs")
-    .select("id,type,household_id,user_id,payload,attempts")
+    .select("id,type,household_id,user_id,payload,attempts,created_at")
     .eq("status", "pending")
     .lte("scheduled_for", now)
     .order("scheduled_for", { ascending: true })
@@ -310,6 +311,7 @@ serve(async (req) => {
       .select("id,user_id,token")
       .eq("household_id", job.household_id)
       .eq("status", "active")
+      .lte("created_at", job.created_at)
       .in("user_id", filteredTargetUserIds);
 
     const message = buildMessage(job);

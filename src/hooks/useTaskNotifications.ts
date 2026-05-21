@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import i18n from "../i18n";
 import type { HouseholdEvent, TaskItem } from "../lib/types";
 
@@ -44,6 +44,14 @@ export const useTaskNotifications = (
   userId: string | undefined,
   permission: NotificationPermission
 ) => {
+  const sessionStartedAtRef = useRef(Date.now());
+  const userIdRef = useRef<string | undefined>(undefined);
+
+  if (userIdRef.current !== userId) {
+    userIdRef.current = userId;
+    sessionStartedAtRef.current = Date.now();
+  }
+
   useEffect(() => {
     if (!isNotificationSupported() || permission !== "granted" || !userId) {
       return;
@@ -64,6 +72,10 @@ export const useTaskNotifications = (
 
         const key = buildNotificationKey(userId, task.id, dayKey);
         if (hasBeenNotified(key)) return;
+        if (dueTime < sessionStartedAtRef.current) {
+          markNotified(key);
+          return;
+        }
 
         const overdueDays = getOverdueDays(task, nowMillis);
         const sent = tryNotify(i18n.t("tasks.notificationTitle"), {
@@ -83,6 +95,11 @@ export const useTaskNotifications = (
         if (event.actor_user_id && event.actor_user_id === userId) return;
         const key = buildEventNotificationKey(userId, event.id);
         if (hasBeenNotified(key)) return;
+        const eventTime = new Date(event.created_at).getTime();
+        if (Number.isFinite(eventTime) && eventTime < sessionStartedAtRef.current) {
+          markNotified(key);
+          return;
+        }
 
         const payload = event.payload ?? {};
         const notificationContent =
