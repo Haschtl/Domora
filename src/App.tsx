@@ -5,6 +5,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
   Archive,
   BarChart3,
+  BellRing,
   CheckCircle2,
   CheckSquare,
   FileText,
@@ -67,6 +68,9 @@ const SettingsMePage = lazy(() => import("./pages/settings/me").then((module) =>
 const SettingsHouseholdPage = lazy(() =>
   import("./pages/settings/household").then((module) => ({ default: module.SettingsHouseholdPage }))
 );
+const SettingsPushTestPage = lazy(() =>
+  import("./pages/settings/push-test").then((module) => ({ default: module.PushTestPage }))
+);
 const PrivacyPolicyPage = lazy(() =>
   import("./pages/legal/privacy-policy").then((module) => ({ default: module.PrivacyPolicyPage }))
 );
@@ -89,7 +93,7 @@ type HomeSubTab = "summary" | "bucket" | "feed";
 type ShoppingSubTab = "list" | "history";
 type TaskSubTab = "overview" | "stats" | "history" | "settings";
 type FinanceSubTab = "overview" | "stats" | "archive" | "subscriptions";
-type SettingsSubTab = "me" | "household";
+type SettingsSubTab = "me" | "household" | "push-test";
 
 const resolveTabFromPathname = (pathname: string): AppTab => {
   if (pathname.startsWith("/home")) return "home";
@@ -127,6 +131,7 @@ const resolveFinanceSubTabFromPathname = (pathname: string): FinanceSubTab => {
 
 const resolveSettingsSubTabFromPathname = (pathname: string): SettingsSubTab => {
   if (pathname.startsWith("/settings/household")) return "household";
+  if (pathname.startsWith("/settings/push-test")) return "push-test";
   return "me";
 };
 
@@ -164,9 +169,10 @@ const financeSubPathMap: Record<
   archive: "/finances/archive",
   subscriptions: "/finances/subscriptions"
 };
-const settingsSubPathMap: Record<SettingsSubTab, "/settings/me" | "/settings/household"> = {
+const settingsSubPathMap: Record<SettingsSubTab, "/settings/me" | "/settings/household" | "/settings/push-test"> = {
   me: "/settings/me",
-  household: "/settings/household"
+  household: "/settings/household",
+  "push-test": "/settings/push-test"
 };
 
 const LOADING_OVERLAY_EXTRA_MS = 500;
@@ -600,7 +606,17 @@ const AppLayout = () => {
                 icon: Home,
                 labelKey: "subnav.settings.household",
                 path: settingsSubPathMap.household
-              }
+              },
+              ...(currentMember?.role === "owner"
+                ? [
+                    {
+                      id: "push-test",
+                      icon: BellRing,
+                      labelKey: "subnav.settings.pushTest",
+                      path: settingsSubPathMap["push-test"]
+                    }
+                  ]
+                : [])
             ]
         : [];
 
@@ -1157,6 +1173,8 @@ const AppLayout = () => {
                     {tab === "settings" ? (
                       settingsSubTab === "household" ? (
                         <SettingsHouseholdPage />
+                      ) : settingsSubTab === "push-test" ? (
+                        <SettingsPushTestPage />
                       ) : (
                         <SettingsMePage />
                       )

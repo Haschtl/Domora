@@ -241,6 +241,12 @@ const settingsHouseholdRoute = createRoute({
   component: () => null
 });
 
+const settingsPushTestRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "settings/push-test",
+  component: () => null
+});
+
 const redirectPaymentSuccessRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "redirect-payment/success",
@@ -284,6 +290,7 @@ const routeTree = rootRoute.addChildren([
   settingsRoute,
   settingsMeRoute,
   settingsHouseholdRoute,
+  settingsPushTestRoute,
   redirectPaymentSuccessRoute,
   redirectPaymentCancelRoute
 ]);

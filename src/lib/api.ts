@@ -34,6 +34,7 @@ import type {
   PoiCategory,
   UpdateHouseholdInput,
   PushPreferences,
+  PushTestJob,
   ShoppingRecurrenceUnit,
   ShoppingItem,
   ShoppingItemCompletion,
@@ -3649,6 +3650,61 @@ export const upsertPushPreferences = async (input: {
     .single();
   if (error) throw error;
   return data as PushPreferences;
+};
+
+export const queuePushTestJob = async (input: {
+  householdId: string;
+  type: string;
+  payload: Record<string, unknown>;
+  scheduledFor: string;
+}): Promise<string> => {
+  const parsed = z
+    .object({
+      householdId: z.string().uuid(),
+      type: z.string().trim().min(1),
+      payload: z.record(z.string(), z.unknown()).default({}),
+      scheduledFor: z.string().datetime()
+    })
+    .parse(input);
+
+  const { data, error } = await supabase.rpc("queue_push_test_job", {
+    p_household_id: parsed.householdId,
+    p_type: parsed.type,
+    p_payload: parsed.payload,
+    p_scheduled_for: parsed.scheduledFor
+  });
+
+  if (error) throw error;
+  return z.string().uuid().parse(data);
+};
+
+export const getPushTestJobs = async (householdId: string, limit = 25): Promise<PushTestJob[]> => {
+  const validatedHouseholdId = z.string().uuid().parse(householdId);
+  const parsedLimit = z.coerce.number().int().min(1).max(100).parse(limit);
+
+  const { data, error } = await supabase.rpc("get_push_test_jobs", {
+    p_household_id: validatedHouseholdId,
+    p_limit: parsedLimit
+  });
+
+  if (error) throw error;
+  return ((data ?? []) as unknown[]).map((row) => {
+    const value = row as Record<string, unknown>;
+    return {
+      id: z.string().uuid().parse(value.id),
+      type: String(value.type ?? ""),
+      payload: (value.payload && typeof value.payload === "object" ? value.payload : {}) as Record<string, unknown>,
+      scheduled_for: String(value.scheduled_for ?? ""),
+      status: z.enum(["pending", "processing", "sent", "failed"]).parse(value.status),
+      attempts: Number(value.attempts ?? 0),
+      last_error: value.last_error == null ? null : String(value.last_error),
+      created_at: String(value.created_at ?? ""),
+      updated_at: String(value.updated_at ?? ""),
+      log_count: Number(value.log_count ?? 0),
+      sent_count: Number(value.sent_count ?? 0),
+      failed_count: Number(value.failed_count ?? 0)
+    };
+  });
 };
 
 export const getFinanceSubscriptions = async (householdId: string): Promise<FinanceSubscription[]> => {

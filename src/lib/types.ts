@@ -250,6 +250,21 @@ export interface PushPreferences {
   topics: string[];
 }
 
+export interface PushTestJob {
+  id: string;
+  type: string;
+  payload: Record<string, unknown>;
+  scheduled_for: string;
+  status: "pending" | "processing" | "sent" | "failed";
+  attempts: number;
+  last_error: string | null;
+  created_at: string;
+  updated_at: string;
+  log_count: number;
+  sent_count: number;
+  failed_count: number;
+}
+
 export interface ShoppingItem {
   id: string;
   household_id: string;

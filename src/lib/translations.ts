@@ -34,6 +34,7 @@ export const resources = {
         settings: {
           me: "Ich",
           household: "WG",
+          pushTest: "Push-Test",
         },
       },
       common: {
@@ -1621,6 +1622,7 @@ export const resources = {
         settings: {
           me: "Me",
           household: "Household",
+          pushTest: "Push test",
         },
       },
       common: {
