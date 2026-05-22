@@ -4,7 +4,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS"
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS"
 };
 
 type StorageAction =
@@ -185,7 +185,7 @@ serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { status: 200, headers: corsHeaders });
   }
-  if (req.method !== "POST") {
+  if (req.method !== "POST" && req.method !== "GET") {
     return new Response("Method Not Allowed", { status: 405, headers: corsHeaders });
   }
 
@@ -208,10 +208,19 @@ serve(async (req) => {
   }
 
   let payload: Record<string, unknown>;
-  try {
-    payload = (await req.json()) as Record<string, unknown>;
-  } catch {
-    return new Response("Invalid JSON", { status: 400, headers: corsHeaders });
+  if (req.method === "GET") {
+    const url = new URL(req.url);
+    payload = {
+      householdId: url.searchParams.get("householdId"),
+      action: url.searchParams.get("action"),
+      targetPath: url.searchParams.get("targetPath")
+    };
+  } else {
+    try {
+      payload = (await req.json()) as Record<string, unknown>;
+    } catch {
+      return new Response("Invalid JSON", { status: 400, headers: corsHeaders });
+    }
   }
 
   const householdId = typeof payload.householdId === "string" ? payload.householdId : "";
@@ -663,6 +672,9 @@ serve(async (req) => {
     }
 
     if (actionTyped === "download") {
+      if (req.method !== "GET") {
+        return new Response("Download must use GET", { status: 405, headers: corsHeaders });
+      }
       const targetPath = sanitizeRelativePath(payload.targetPath);
       const absolutePath = joinNormalizedPaths(config.basePath, targetPath);
       let activeWebdavBaseUrl = webdavBaseUrl;
@@ -681,18 +693,17 @@ serve(async (req) => {
         return json(response.status, { error: "webdav_download_failed", baseUrl: activeWebdavBaseUrl });
       }
       const contentType = response.headers.get("content-type") ?? "application/octet-stream";
-      const bytes = new Uint8Array(await response.arrayBuffer());
-      let binary = "";
-      const chunkSize = 0x8000;
-      for (let index = 0; index < bytes.length; index += chunkSize) {
-        binary += String.fromCharCode(...bytes.subarray(index, index + chunkSize));
-      }
-      const contentBase64 = btoa(binary);
       const fileName = decodeURIComponent(targetPath.split("/").filter(Boolean).at(-1) ?? "download");
-      return json(200, {
-        fileName,
-        contentType,
-        contentBase64
+      const headers = new Headers(corsHeaders);
+      headers.set("Content-Type", contentType);
+      headers.set("Content-Disposition", `inline; filename*=UTF-8''${encodeURIComponent(fileName)}`);
+      const contentLength = response.headers.get("content-length");
+      if (contentLength) {
+        headers.set("Content-Length", contentLength);
+      }
+      return new Response(response.body, {
+        status: 200,
+        headers
       });
     }
 

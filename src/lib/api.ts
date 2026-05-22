@@ -9,7 +9,7 @@ import {
   assertCanRemoveOwner
 } from "./household-guards";
 import { getOAuthRedirectTo, isNativePlatform, signInWithGoogleViaCapacitor } from "./native-oauth";
-import { supabase } from "./supabase";
+import { activeSupabaseUrl, supabase } from "./supabase";
 import type {
   BucketItem,
   CashAuditRequest,
@@ -4388,34 +4388,85 @@ export const uploadHouseholdStorageFile = async (input: {
   }
 };
 
+const parseContentDispositionFileName = (headerValue: string | null) => {
+  if (!headerValue) return null;
+  const utf8Match = headerValue.match(/filename\*=UTF-8''([^;]+)/i);
+  if (utf8Match?.[1]) {
+    try {
+      return decodeURIComponent(utf8Match[1]);
+    } catch {
+      return utf8Match[1];
+    }
+  }
+  const plainMatch = headerValue.match(/filename="?([^"]+)"?/i);
+  return plainMatch?.[1] ?? null;
+};
+
 export const downloadHouseholdStorageFile = async (input: {
   householdId: string;
   targetPath: string;
-}): Promise<{ fileName: string; contentType: string; contentBase64: string }> => {
+}): Promise<{ fileName: string; contentType: string; blob: Blob; bytes: Uint8Array }> => {
   const parsedInput = z
     .object({
       householdId: z.string().uuid(),
       targetPath: z.string().min(1)
     })
     .parse(input);
-  const { data, error } = await supabase.functions.invoke("storage-webdav", {
-    body: {
-      householdId: parsedInput.householdId,
-      action: "download",
-      targetPath: parsedInput.targetPath
+
+  const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+  if (sessionError) throw sessionError;
+  const accessToken = sessionData.session?.access_token;
+  if (!accessToken) {
+    throw new Error("Not authenticated");
+  }
+
+  const url = new URL(`${activeSupabaseUrl}/functions/v1/storage-webdav`);
+  url.searchParams.set("householdId", parsedInput.householdId);
+  url.searchParams.set("action", "download");
+  url.searchParams.set("targetPath", parsedInput.targetPath);
+
+  const response = await fetch(url.toString(), {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${accessToken}`
     }
   });
-  if (error) {
-    const message = await extractFunctionInvokeErrorMessage(error, "Failed to download file");
+
+  if (!response.ok) {
+    const contentType = response.headers.get("content-type") ?? "";
+    let message = "Failed to download file";
+    if (contentType.includes("application/json")) {
+      try {
+        const payload = await response.json() as { error?: unknown; message?: unknown };
+        if (typeof payload.message === "string" && payload.message.trim()) {
+          message = payload.message;
+        } else if (typeof payload.error === "string" && payload.error.trim()) {
+          message = payload.error;
+        }
+      } catch {
+        // Fall through to plain text handling.
+      }
+    } else {
+      const text = await response.text();
+      if (text.trim()) {
+        message = text.trim();
+      }
+    }
     throw new Error(message);
   }
-  return z
-    .object({
-      fileName: z.string().min(1),
-      contentType: z.string().min(1),
-      contentBase64: z.string().min(1)
-    })
-    .parse(data);
+
+  const blob = await response.blob();
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  const targetSegments = parsedInput.targetPath.split("/").filter(Boolean);
+  const fileName =
+    parseContentDispositionFileName(response.headers.get("content-disposition")) ??
+    decodeURIComponent(targetSegments[targetSegments.length - 1] ?? "download");
+  return {
+    fileName,
+    contentType: response.headers.get("content-type") ?? (blob.type || "application/octet-stream"),
+    blob,
+    bytes
+  };
 };
 
 export const renameHouseholdStorageEntry = async (input: {

@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Folder,
@@ -47,6 +47,7 @@ import {
   ContextMenuTrigger
 } from "../../components/ui/context-menu";
 import { Dialog, DialogClose, DialogContent, DialogHeader, DialogTitle } from "../../components/ui/dialog";
+import { GaussianSplatPreview, isGaussianSplatFileName } from "../../components/gaussian-splat-preview";
 import type { LucideIcon } from "lucide-react";
 
 const readFileAsBase64 = (file: File) =>
@@ -125,6 +126,12 @@ const FRIENDLY_EXT_TYPES: Record<string, string> = {
   gif: "GIF-Bild",
   webp: "WebP-Bild",
   svg: "SVG-Bild",
+  ply: "Gaussian-Splat-Datei",
+  sog: "Gaussian-Splat-Datei",
+  sogs: "Gaussian-Splat-Datei",
+  spz: "Gaussian-Splat-Datei",
+  splat: "Gaussian-Splat-Datei",
+  ksplat: "Gaussian-Splat-Datei",
   mp3: "MP3-Audio",
   wav: "WAV-Audio",
   ogg: "OGG-Audio",
@@ -171,6 +178,7 @@ const getEntryIcon = (entry: { isDirectory: boolean; contentType: string | null;
   if (dotIndex > 0 && dotIndex < entry.name.length - 1) {
     const ext = entry.name.slice(dotIndex + 1).toLowerCase();
     if (["jpg", "jpeg", "png", "gif", "webp", "svg"].includes(ext)) return FileImage;
+    if (["ply", "sog", "sogs", "spz", "splat", "ksplat"].includes(ext)) return FileImage;
     if (["mp4", "webm", "mov", "mkv"].includes(ext)) return FileVideo;
     if (["mp3", "wav", "ogg", "flac", "m4a"].includes(ext)) return FileAudio;
     if (["zip", "rar", "7z", "tar", "gz"].includes(ext)) return FileArchive;
@@ -182,12 +190,11 @@ const getEntryIcon = (entry: { isDirectory: boolean; contentType: string | null;
   return FileIcon;
 };
 
-const decodeBase64ToBytes = (contentBase64: string) => Uint8Array.from(atob(contentBase64), (char) => char.charCodeAt(0));
-
-const downloadBase64File = (fileName: string, contentType: string, contentBase64: string) => {
-  const bytes = decodeBase64ToBytes(contentBase64);
-  const blob = new Blob([bytes], { type: contentType || "application/octet-stream" });
-  const url = URL.createObjectURL(blob);
+const downloadBlobFile = (fileName: string, contentType: string, blob: Blob) => {
+  const normalizedBlob = blob.type === contentType || !contentType
+    ? blob
+    : new Blob([blob], { type: contentType });
+  const url = URL.createObjectURL(normalizedBlob);
   const anchor = document.createElement("a");
   anchor.href = url;
   anchor.download = fileName;
@@ -197,13 +204,18 @@ const downloadBase64File = (fileName: string, contentType: string, contentBase64
   URL.revokeObjectURL(url);
 };
 
-const decodeBase64Text = (contentBase64: string) => {
+const decodeText = (bytes: Uint8Array) => {
   try {
-    const bytes = decodeBase64ToBytes(contentBase64);
     return new TextDecoder().decode(bytes);
   } catch {
     return null;
   }
+};
+
+const isGaussianSplatPreview = (fileName: string, contentType: string) => {
+  if (isGaussianSplatFileName(fileName)) return true;
+  const normalizedType = contentType.split(";")[0]?.trim().toLowerCase() ?? "";
+  return normalizedType === "application/octet-stream" && isGaussianSplatFileName(fileName);
 };
 
 export const FileExplorer = ({ household }: { household: Household }) => {
@@ -385,10 +397,23 @@ export const FileExplorer = ({ household }: { household: Household }) => {
 
   const preview = filePreviewQuery.data;
   const previewType = preview?.contentType.split(";")[0]?.trim().toLowerCase() ?? "";
-  const previewDataUrl = preview ? `data:${preview.contentType};base64,${preview.contentBase64}` : null;
+  const previewObjectUrl = useMemo(
+    () => (preview?.blob ? URL.createObjectURL(preview.blob) : null),
+    [preview?.blob]
+  );
+  const previewBytes = preview?.bytes ?? null;
   const previewText = preview && (previewType.startsWith("text/") || previewType === "application/json")
-    ? decodeBase64Text(preview.contentBase64)
+    ? decodeText(preview.bytes)
     : null;
+  const previewIsGaussianSplat = preview ? isGaussianSplatPreview(preview.fileName, preview.contentType) : false;
+
+  useEffect(() => {
+    return () => {
+      if (previewObjectUrl) {
+        URL.revokeObjectURL(previewObjectUrl);
+      }
+    };
+  }, [previewObjectUrl]);
 
   const runMoveAction = async (targetPath: string) => {
     const destinationPath = window.prompt(
@@ -432,7 +457,7 @@ export const FileExplorer = ({ household }: { household: Household }) => {
       householdId: household.id,
       targetPath
     });
-    downloadBase64File(file.fileName, file.contentType, file.contentBase64);
+    downloadBlobFile(file.fileName, file.contentType, file.blob);
   };
 
   return (
@@ -771,7 +796,13 @@ export const FileExplorer = ({ household }: { household: Household }) => {
           }
         }}
       >
-        <DialogContent className="p-2 sm:max-w-3xl sm:p-5">
+        <DialogContent
+          className={
+            previewIsGaussianSplat
+              ? "max-sm:inset-0 max-sm:left-0 max-sm:top-0 max-sm:h-[100dvh] max-sm:w-[100vw] max-sm:max-h-none max-sm:-translate-x-0 max-sm:-translate-y-0 max-w-6xl p-2 sm:max-h-[92dvh] sm:w-[calc(100%-2rem)] sm:p-5"
+              : "p-2 sm:max-w-3xl sm:p-5"
+          }
+        >
           <DialogHeader className="px-1 pt-1 sm:px-0 sm:pt-0 flex flex-row items-center justify-between gap-3">
             <DialogTitle className="truncate text-base">{selectedFile?.name ?? ""}</DialogTitle>
             <DialogClose asChild>
@@ -787,7 +818,13 @@ export const FileExplorer = ({ household }: { household: Household }) => {
             </DialogClose>
           </DialogHeader>
 
-          <div className="min-h-48 rounded-lg border border-slate-200 bg-slate-50  sm:p-4 dark:border-slate-700 dark:bg-slate-950/40">
+          <div
+            className={
+              previewIsGaussianSplat
+                ? "rounded-lg bg-slate-950 sm:h-[72dvh]"
+                : "min-h-48 rounded-lg border border-slate-200 bg-slate-50 sm:p-4 dark:border-slate-700 dark:bg-slate-950/40"
+            }
+          >
             {filePreviewQuery.isLoading ? (
               <p className="text-sm text-slate-500 dark:text-slate-300">{t("common.loading", { defaultValue: "Laden..." })}</p>
             ) : filePreviewQuery.isError ? (
@@ -796,22 +833,28 @@ export const FileExplorer = ({ household }: { household: Household }) => {
                   ? filePreviewQuery.error.message
                   : t("home.storageExplorer.previewFailed", { defaultValue: "Vorschau fehlgeschlagen" })}
               </p>
-            ) : previewDataUrl && previewType.startsWith("image/") ? (
+            ) : previewIsGaussianSplat && previewBytes ? (
+              <GaussianSplatPreview
+                fileName={preview?.fileName ?? selectedFile?.name ?? "scene.ply"}
+                fileBytes={previewBytes}
+                className="h-[55dvh] sm:h-full"
+              />
+            ) : previewObjectUrl && previewType.startsWith("image/") ? (
               <img
-                src={previewDataUrl}
+                src={previewObjectUrl}
                 alt={selectedFile?.name ?? t("home.storageExplorer.preview", { defaultValue: "Vorschau" })}
                 className="max-h-[60vh] w-full rounded object-contain"
               />
-            ) : previewDataUrl && previewType === "application/pdf" ? (
+            ) : previewObjectUrl && previewType === "application/pdf" ? (
               <iframe
-                src={previewDataUrl}
+                src={previewObjectUrl}
                 title={selectedFile?.name ?? t("home.storageExplorer.preview", { defaultValue: "Vorschau" })}
                 className="h-[60vh] w-full rounded border-0"
               />
-            ) : previewDataUrl && previewType.startsWith("video/") ? (
-              <video src={previewDataUrl} controls className="max-h-[60vh] w-full rounded" />
-            ) : previewDataUrl && previewType.startsWith("audio/") ? (
-              <audio src={previewDataUrl} controls className="w-full" />
+            ) : previewObjectUrl && previewType.startsWith("video/") ? (
+              <video src={previewObjectUrl} controls className="max-h-[60vh] w-full rounded" />
+            ) : previewObjectUrl && previewType.startsWith("audio/") ? (
+              <audio src={previewObjectUrl} controls className="w-full" />
             ) : previewText != null ? (
               <pre className="max-h-[60vh] overflow-auto whitespace-pre-wrap break-words text-xs text-slate-700 dark:text-slate-200">{previewText}</pre>
             ) : (
@@ -831,7 +874,7 @@ export const FileExplorer = ({ household }: { household: Household }) => {
               type="button"
               onClick={() => {
                 if (!preview) return;
-                downloadBase64File(preview.fileName, preview.contentType, preview.contentBase64);
+                downloadBlobFile(preview.fileName, preview.contentType, preview.blob);
               }}
               disabled={!preview || filePreviewQuery.isLoading}
             >
