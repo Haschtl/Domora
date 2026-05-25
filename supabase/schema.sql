@@ -3208,7 +3208,10 @@ returns table (
   updated_at timestamptz,
   log_count bigint,
   sent_count bigint,
-  failed_count bigint
+  failed_count bigint,
+  latest_log_status text,
+  latest_log_provider_response jsonb,
+  latest_log_created_at timestamptz
 )
 language sql
 stable
@@ -3227,13 +3230,26 @@ as $$
     pj.updated_at,
     count(pl.id) as log_count,
     count(pl.id) filter (where pl.status = 'sent') as sent_count,
-    count(pl.id) filter (where pl.status = 'failed') as failed_count
+    count(pl.id) filter (where pl.status = 'failed') as failed_count,
+    latest.status as latest_log_status,
+    latest.provider_response as latest_log_provider_response,
+    latest.created_at as latest_log_created_at
   from push_jobs pj
   left join push_log pl on pl.job_id = pj.id
+  left join lateral (
+    select
+      push_log.status,
+      push_log.provider_response,
+      push_log.created_at
+    from push_log
+    where push_log.job_id = pj.id
+    order by push_log.created_at desc, push_log.id desc
+    limit 1
+  ) latest on true
   where pj.household_id = p_household_id
     and is_household_owner(p_household_id)
     and pj.payload->>'push_test' = 'true'
-  group by pj.id
+  group by pj.id, latest.status, latest.provider_response, latest.created_at
   order by pj.created_at desc
   limit least(greatest(coalesce(p_limit, 25), 1), 100);
 $$;

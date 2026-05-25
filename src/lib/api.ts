@@ -3702,7 +3702,13 @@ export const getPushTestJobs = async (householdId: string, limit = 25): Promise<
       updated_at: String(value.updated_at ?? ""),
       log_count: Number(value.log_count ?? 0),
       sent_count: Number(value.sent_count ?? 0),
-      failed_count: Number(value.failed_count ?? 0)
+      failed_count: Number(value.failed_count ?? 0),
+      latest_log_status: value.latest_log_status == null ? null : String(value.latest_log_status),
+      latest_log_provider_response:
+        value.latest_log_provider_response && typeof value.latest_log_provider_response === "object"
+          ? (value.latest_log_provider_response as Record<string, unknown>)
+          : null,
+      latest_log_created_at: value.latest_log_created_at == null ? null : String(value.latest_log_created_at)
     };
   });
 };

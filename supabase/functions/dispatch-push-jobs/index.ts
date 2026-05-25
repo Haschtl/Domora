@@ -247,6 +247,7 @@ serve(async (req) => {
     if (lockError) continue;
 
     const payload = job.payload ?? {};
+    const isPushTest = payload.push_test === true || payload.push_test === "true";
     const eventType = String(payload.event ?? job.type);
     const topicType = eventType.startsWith("vacation_mode_") ? "vacation_mode" : eventType;
     const actorUserId = String(job.payload?.actor_user_id ?? job.user_id ?? "");
@@ -263,7 +264,24 @@ serve(async (req) => {
     const targetUserIds = targetScope.filter((userId) => householdUserIds.has(userId));
 
     if (targetUserIds.length === 0) {
-      await supabase.from("push_jobs").update({ status: "sent" }).eq("id", job.id);
+      if (isPushTest) {
+        await supabase.from("push_log").insert({
+          job_id: job.id,
+          token_id: null,
+          status: "failed",
+          provider_response: {
+            reason: "no_target_users",
+            eventType,
+            explicitTarget
+          }
+        });
+        await supabase
+          .from("push_jobs")
+          .update({ status: "failed", attempts: job.attempts + 1, last_error: "No target users resolved" })
+          .eq("id", job.id);
+      } else {
+        await supabase.from("push_jobs").update({ status: "sent" }).eq("id", job.id);
+      }
       processed += 1;
       continue;
     }
@@ -277,18 +295,20 @@ serve(async (req) => {
       (prefs ?? []).map((p) => [String(p.user_id), p as { user_id: string; enabled: boolean; topics?: string[]; quiet_hours?: Record<string, unknown> }])
     );
     const quietUsers: Array<{ userId: string; nextAllowedAt: Date }> = [];
-    const filteredTargetUserIds = targetUserIds.filter((userId) => {
-      const pref = prefByUser.get(userId);
-      if (pref && pref.enabled === false) return false;
-      const topics = Array.isArray(pref?.topics) ? pref?.topics ?? [] : [];
-      if (topics.length > 0 && !topics.includes(topicType)) return false;
-      const quiet = isWithinQuietHours(new Date(), pref?.quiet_hours as { start?: string; end?: string; offsetMinutes?: number } | null);
-      if (quiet.active && quiet.nextAllowedAt) {
-        quietUsers.push({ userId, nextAllowedAt: quiet.nextAllowedAt });
-        return false;
-      }
-      return true;
-    });
+    const filteredTargetUserIds = isPushTest
+      ? targetUserIds
+      : targetUserIds.filter((userId) => {
+          const pref = prefByUser.get(userId);
+          if (pref && pref.enabled === false) return false;
+          const topics = Array.isArray(pref?.topics) ? pref?.topics ?? [] : [];
+          if (topics.length > 0 && !topics.includes(topicType)) return false;
+          const quiet = isWithinQuietHours(new Date(), pref?.quiet_hours as { start?: string; end?: string; offsetMinutes?: number } | null);
+          if (quiet.active && quiet.nextAllowedAt) {
+            quietUsers.push({ userId, nextAllowedAt: quiet.nextAllowedAt });
+            return false;
+          }
+          return true;
+        });
 
     if (filteredTargetUserIds.length === 0) {
       if (quietUsers.length > 0) {
@@ -299,6 +319,21 @@ serve(async (req) => {
           .from("push_jobs")
           .update({ status: "pending", scheduled_for: new Date(nextAt).toISOString() })
           .eq("id", job.id);
+      } else if (isPushTest) {
+        await supabase.from("push_log").insert({
+          job_id: job.id,
+          token_id: null,
+          status: "failed",
+          provider_response: {
+            reason: "all_targets_filtered",
+            eventType,
+            topicType
+          }
+        });
+        await supabase
+          .from("push_jobs")
+          .update({ status: "failed", attempts: job.attempts + 1, last_error: "All targets were filtered before dispatch" })
+          .eq("id", job.id);
       } else {
         await supabase.from("push_jobs").update({ status: "sent" }).eq("id", job.id);
       }
@@ -306,13 +341,39 @@ serve(async (req) => {
       continue;
     }
 
-    const { data: tokens } = await supabase
+    let tokensQuery = supabase
       .from("push_tokens")
       .select("id,user_id,token")
       .eq("household_id", job.household_id)
       .eq("status", "active")
-      .lte("created_at", job.created_at)
       .in("user_id", filteredTargetUserIds);
+    if (!isPushTest) {
+      tokensQuery = tokensQuery.lte("created_at", job.created_at);
+    }
+    const { data: tokens } = await tokensQuery;
+
+    if (!(tokens?.length)) {
+      await supabase.from("push_log").insert({
+        job_id: job.id,
+        token_id: null,
+        status: "failed",
+        provider_response: {
+          reason: "no_active_tokens",
+          eventType,
+          targetUserIds: filteredTargetUserIds
+        }
+      });
+      await supabase
+        .from("push_jobs")
+        .update({
+          status: "failed",
+          attempts: job.attempts + 1,
+          last_error: "No active push tokens found"
+        })
+        .eq("id", job.id);
+      processed += 1;
+      continue;
+    }
 
     const message = buildMessage(job);
     let successCount = 0;

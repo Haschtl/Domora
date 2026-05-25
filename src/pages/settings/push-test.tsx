@@ -261,6 +261,19 @@ const getStatusClass = (status: string) => {
   return "border-slate-200 bg-slate-50 text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200";
 };
 
+const getLatestReason = (providerResponse: Record<string, unknown> | null) => {
+  const rawReason = providerResponse?.reason;
+  return typeof rawReason === "string" && rawReason.trim().length > 0 ? rawReason : null;
+};
+
+const formatLatestReason = (reason: string | null) => {
+  if (!reason) return null;
+  if (reason === "no_target_users") return "Kein Zielnutzer aufgelöst";
+  if (reason === "all_targets_filtered") return "Alle Zielnutzer vor dem Versand gefiltert";
+  if (reason === "no_active_tokens") return "Keine aktiven Push-Tokens gefunden";
+  return reason;
+};
+
 export const PushTestPage = () => {
   const { activeHousehold, currentMember, userId, notificationPermission, onEnableNotifications } = useWorkspace();
   const queryClient = useQueryClient();
@@ -484,6 +497,20 @@ export const PushTestPage = () => {
                     {job.last_error ? (
                       <p className="mt-1 text-xs text-rose-600 dark:text-rose-300">{job.last_error}</p>
                     ) : null}
+                    {job.latest_log_status || job.latest_log_created_at ? (
+                      <div className="mt-2 rounded-md border border-slate-200 bg-slate-50 px-2 py-2 text-xs dark:border-slate-700 dark:bg-slate-950/40">
+                        <p className="font-semibold text-slate-700 dark:text-slate-200">Letzter Dispatch</p>
+                        <p className="mt-1 text-slate-600 dark:text-slate-300">
+                          Status: {job.latest_log_status ?? "—"}
+                          {job.latest_log_created_at ? ` | ${new Date(job.latest_log_created_at).toLocaleString()}` : ""}
+                        </p>
+                        {formatLatestReason(getLatestReason(job.latest_log_provider_response)) ? (
+                          <p className="mt-1 text-rose-700 dark:text-rose-300">
+                            Grund: {formatLatestReason(getLatestReason(job.latest_log_provider_response))}
+                          </p>
+                        ) : null}
+                      </div>
+                    ) : null}
                   </div>
                   <div className="grid grid-cols-3 gap-2 text-center text-xs sm:min-w-48">
                     <div className="rounded-md bg-slate-50 px-2 py-1 dark:bg-slate-950/40">
@@ -506,6 +533,14 @@ export const PushTestPage = () => {
                     {JSON.stringify(job.payload, null, 2)}
                   </pre>
                 </details>
+                {job.latest_log_provider_response ? (
+                  <details className="mt-2 text-xs">
+                    <summary className="cursor-pointer text-slate-500 dark:text-slate-400">Letzte Provider-Response</summary>
+                    <pre className="mt-2 max-h-56 overflow-auto rounded-md bg-slate-950 p-2 text-slate-100">
+                      {JSON.stringify(job.latest_log_provider_response, null, 2)}
+                    </pre>
+                  </details>
+                ) : null}
               </div>
             ))
           ) : (

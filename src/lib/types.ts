@@ -263,6 +263,9 @@ export interface PushTestJob {
   log_count: number;
   sent_count: number;
   failed_count: number;
+  latest_log_status: string | null;
+  latest_log_provider_response: Record<string, unknown> | null;
+  latest_log_created_at: string | null;
 }
 
 export interface ShoppingItem {
