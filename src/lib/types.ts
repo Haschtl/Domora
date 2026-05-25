@@ -268,6 +268,23 @@ export interface PushTestJob {
   latest_log_created_at: string | null;
 }
 
+export interface PushTokenDiagnostic {
+  id: string;
+  household_id: string;
+  user_id: string;
+  platform: "web" | "android" | "ios";
+  provider: "fcm" | "webpush" | "apns";
+  device_id: string;
+  app_version: string | null;
+  locale: string | null;
+  timezone: string | null;
+  status: "active" | "invalid";
+  last_seen_at: string;
+  last_error: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface ShoppingItem {
   id: string;
   household_id: string;

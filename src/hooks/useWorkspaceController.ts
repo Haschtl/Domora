@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { v4 as uuid } from "uuid";
 import { useMutation } from "@tanstack/react-query";
 import type { InfiniteData } from "@tanstack/react-query";
@@ -23,6 +23,7 @@ import {
   deleteBucketItem,
   deleteShoppingItem,
   getCurrentSession,
+  getMyPushTokens,
   joinHouseholdByInvite,
   leaveHousehold,
   removeHouseholdMember,
@@ -94,7 +95,7 @@ import type {
 } from "../lib/types";
 import { useWorkspaceData } from "./use-workspace-data";
 import { useWorkspaceActions } from "./use-workspace-actions";
-import { registerWebPushToken } from "../lib/push-registration";
+import { getLocalPushDeviceId, registerWebPushToken } from "../lib/push-registration";
 import { useNotificationPermission } from "./use-notification-permission";
 
 const sortShoppingItems = (items: ShoppingItem[]) =>
@@ -255,6 +256,7 @@ export const useWorkspaceController = () => {
   const [message, setMessage] = useState<string | null>(null);
 
   const { permission, requestPermission } = useNotificationPermission();
+  const pushHealAttemptKeyRef = useRef<string | null>(null);
 
   const actionMutation = useMutation({
     mutationFn: async (action: () => Promise<void>) => action()
@@ -1638,15 +1640,56 @@ export const useWorkspaceController = () => {
     });
   }, [activeHousehold, executeAction, permission, t]);
 
+  const ensureHealthyPushRegistration = useCallback(async () => {
+    if (!activeHousehold || !userId) return;
+    if (permission !== "granted") return;
+
+    const locale = typeof navigator !== "undefined" ? navigator.language : undefined;
+    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+    await registerWebPushToken({
+      householdId: activeHousehold.id,
+      locale,
+      timezone
+    });
+
+    const currentDeviceId = getLocalPushDeviceId();
+    const tokens = await getMyPushTokens(activeHousehold.id, userId);
+    const currentDeviceTokens = tokens.filter((entry) => entry.device_id === currentDeviceId);
+    const hasHealthyCurrentToken = currentDeviceTokens.some(
+      (entry) =>
+        entry.status === "active" &&
+        !(entry.last_error && /unregistered/i.test(entry.last_error))
+    );
+
+    if (hasHealthyCurrentToken) {
+      pushHealAttemptKeyRef.current = null;
+      return;
+    }
+
+    const hasBrokenCurrentToken = currentDeviceTokens.some(
+      (entry) =>
+        entry.status === "invalid" ||
+        Boolean(entry.last_error && /unregistered/i.test(entry.last_error))
+    );
+    if (!hasBrokenCurrentToken) return;
+
+    const healKey = `${activeHousehold.id}:${currentDeviceId}`;
+    if (pushHealAttemptKeyRef.current === healKey) return;
+    pushHealAttemptKeyRef.current = healKey;
+
+    await registerWebPushToken({
+      householdId: activeHousehold.id,
+      locale,
+      timezone
+    });
+  }, [activeHousehold, permission, userId]);
+
   useEffect(() => {
     if (!activeHousehold) return;
     if (permission !== "granted") return;
-    void registerWebPushToken({
-      householdId: activeHousehold.id,
-      locale: typeof navigator !== "undefined" ? navigator.language : undefined,
-      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone
-    });
-  }, [activeHousehold, permission]);
+    void ensureHealthyPushRegistration();
+  }, [activeHousehold, ensureHealthyPushRegistration, permission]);
 
   const onUpdateHousehold = useCallback(
     async (input: UpdateHouseholdInput) => {

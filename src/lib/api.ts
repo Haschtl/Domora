@@ -34,6 +34,7 @@ import type {
   PoiCategory,
   UpdateHouseholdInput,
   PushPreferences,
+  PushTokenDiagnostic,
   PushTestJob,
   ShoppingRecurrenceUnit,
   ShoppingItem,
@@ -3634,6 +3635,37 @@ export const getPushPreferences = async (householdId: string, userId: string): P
     ...(data as PushPreferences),
     topics: Array.isArray((data as PushPreferences).topics) ? (data as PushPreferences).topics : DEFAULT_PUSH_TOPICS
   };
+};
+
+export const getMyPushTokens = async (householdId: string, userId: string): Promise<PushTokenDiagnostic[]> => {
+  const validatedHouseholdId = z.string().uuid().parse(householdId);
+  const validatedUserId = z.string().uuid().parse(userId);
+  const { data, error } = await supabase
+    .from("push_tokens")
+    .select("id,household_id,user_id,platform,provider,device_id,app_version,locale,timezone,status,last_seen_at,last_error,created_at,updated_at")
+    .eq("household_id", validatedHouseholdId)
+    .eq("user_id", validatedUserId)
+    .order("last_seen_at", { ascending: false });
+  if (error) throw error;
+  return (data ?? []).map((entry) => {
+    const value = entry as Record<string, unknown>;
+    return {
+      id: z.string().uuid().parse(value.id),
+      household_id: z.string().uuid().parse(value.household_id),
+      user_id: z.string().uuid().parse(value.user_id),
+      platform: z.enum(["web", "android", "ios"]).parse(value.platform),
+      provider: z.enum(["fcm", "webpush", "apns"]).parse(value.provider),
+      device_id: String(value.device_id ?? ""),
+      app_version: value.app_version == null ? null : String(value.app_version),
+      locale: value.locale == null ? null : String(value.locale),
+      timezone: value.timezone == null ? null : String(value.timezone),
+      status: z.enum(["active", "invalid"]).parse(value.status),
+      last_seen_at: String(value.last_seen_at ?? ""),
+      last_error: value.last_error == null ? null : String(value.last_error),
+      created_at: String(value.created_at ?? ""),
+      updated_at: String(value.updated_at ?? "")
+    };
+  });
 };
 
 export const upsertPushPreferences = async (input: {

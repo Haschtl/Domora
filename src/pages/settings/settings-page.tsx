@@ -9,6 +9,7 @@ import type {
   Household,
   HouseholdMember,
   HouseholdMemberVacation,
+  PushTokenDiagnostic,
   HouseholdTranslationOverride,
   PushPreferences,
   TaskItem,
@@ -43,6 +44,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { Switch } from "../../components/ui/switch";
 import {
   getMyActiveSessionCount,
+  getMyPushTokens,
   getPushPreferences,
   pollNextcloudLoginFlow,
   setHouseholdStorageCredentials,
@@ -52,6 +54,7 @@ import {
   upsertHouseholdWhiteboard,
   upsertPushPreferences
 } from "../../lib/api";
+import { getLocalPushDeviceId } from "../../lib/push-registration";
 import { MemberAvatar } from "../../components/member-avatar";
 import { getFirebaseRuntimeConfig } from "../../lib/firebase-config";
 
@@ -241,6 +244,9 @@ export const SettingsPage = ({
   const [sessionCountLoading, setSessionCountLoading] = useState(false);
   const [sessionActionBusy, setSessionActionBusy] = useState<"local" | "others" | null>(null);
   const [sessionActionError, setSessionActionError] = useState<string | null>(null);
+  const [pushTokenDiagnostics, setPushTokenDiagnostics] = useState<PushTokenDiagnostic[]>([]);
+  const [pushTokenDiagnosticsLoading, setPushTokenDiagnosticsLoading] = useState(false);
+  const [pushTokenDiagnosticsError, setPushTokenDiagnosticsError] = useState<string | null>(null);
   const [selectedStorageProviderUi, setSelectedStorageProviderUi] = useState<"none" | "webdav" | "nextcloud">(
     household.storage_provider ?? "none"
   );
@@ -346,6 +352,27 @@ export const SettingsPage = ({
       setSessionActionBusy(null);
     }
   }, []);
+  const refreshPushTokenDiagnostics = useCallback(async () => {
+    setPushTokenDiagnosticsLoading(true);
+    setPushTokenDiagnosticsError(null);
+    try {
+      const diagnostics = await getMyPushTokens(household.id, userId);
+      setPushTokenDiagnostics(diagnostics);
+    } catch (error) {
+      setPushTokenDiagnosticsError(
+        error instanceof Error ? error.message : t("settings.pushDevicesLoadError")
+      );
+    } finally {
+      setPushTokenDiagnosticsLoading(false);
+    }
+  }, [household.id, t, userId]);
+
+  useEffect(() => {
+    if (section !== "me") return;
+    void refreshPushTokenDiagnostics();
+  }, [refreshPushTokenDiagnostics, section]);
+
+  const currentPushDeviceId = useMemo(() => getLocalPushDeviceId(), []);
   const isEditingVacationLocked = useMemo(() => {
     if (!editingVacation) return false;
     return editingVacation.start_date <= todayIso;
@@ -1822,18 +1849,104 @@ export const SettingsPage = ({
                           <p className="text-xs text-slate-500 dark:text-slate-400">
                             {t("settings.pushReregisterAction")}
                           </p>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => {
-                              void onReregisterPushToken();
-                            }}
-                            disabled={
-                              busy || firebaseMessagingSupport !== "supported"
-                            }
-                          >
-                            {t("settings.pushReregisterAction")}
-                          </Button>
+                          <div className="flex items-center gap-2">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                void refreshPushTokenDiagnostics();
+                              }}
+                              disabled={busy || pushTokenDiagnosticsLoading}
+                            >
+                              {t("common.refresh", { defaultValue: "Aktualisieren" })}
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                void onReregisterPushToken().then(() => refreshPushTokenDiagnostics());
+                              }}
+                              disabled={
+                                busy || firebaseMessagingSupport !== "supported"
+                              }
+                            >
+                              {t("settings.pushReregisterAction")}
+                            </Button>
+                          </div>
+                        </div>
+                        <div className="space-y-2 border-t border-brand-100 pt-3 dark:border-slate-700">
+                          <div>
+                            <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
+                              {t("settings.pushDevicesTitle")}
+                            </p>
+                            <p className="text-xs text-slate-500 dark:text-slate-400">
+                              {t("settings.pushDevicesDescription")}
+                            </p>
+                          </div>
+                          {pushTokenDiagnosticsLoading ? (
+                            <p className="text-xs text-slate-500 dark:text-slate-400">
+                              {t("settings.pushDevicesLoading")}
+                            </p>
+                          ) : pushTokenDiagnosticsError ? (
+                            <p className="text-xs text-rose-600 dark:text-rose-300">
+                              {pushTokenDiagnosticsError}
+                            </p>
+                          ) : pushTokenDiagnostics.length === 0 ? (
+                            <p className="text-xs text-slate-500 dark:text-slate-400">
+                              {t("settings.pushDevicesEmpty")}
+                            </p>
+                          ) : (
+                            <div className="space-y-2">
+                              {pushTokenDiagnostics.map((entry) => {
+                                const isCurrentDevice = entry.device_id === currentPushDeviceId;
+                                return (
+                                  <div
+                                    key={entry.id}
+                                    className={`rounded-lg border px-3 py-2 ${
+                                      isCurrentDevice
+                                        ? "border-brand-300 bg-brand-50/60 dark:border-brand-700 dark:bg-brand-900/25"
+                                        : "border-brand-100 bg-white/80 dark:border-slate-700 dark:bg-slate-900/70"
+                                    }`}
+                                  >
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <span className="text-xs font-semibold text-slate-900 dark:text-slate-100">
+                                        {entry.platform} · {entry.provider}
+                                      </span>
+                                      <span
+                                        className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                                          entry.status === "active"
+                                            ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200"
+                                            : "bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-200"
+                                        }`}
+                                      >
+                                        {entry.status}
+                                      </span>
+                                      {isCurrentDevice ? (
+                                        <span className="rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-semibold text-sky-800 dark:bg-sky-900/40 dark:text-sky-200">
+                                          {t("settings.pushDevicesCurrent")}
+                                        </span>
+                                      ) : null}
+                                    </div>
+                                    <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">
+                                      ID: {entry.device_id}
+                                    </p>
+                                    <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">
+                                      {t("settings.pushDevicesLastSeen", {
+                                        value: new Date(entry.last_seen_at).toLocaleString()
+                                      })}
+                                    </p>
+                                    {entry.last_error ? (
+                                      <p className="mt-1 text-xs text-rose-600 dark:text-rose-300">
+                                        {t("settings.pushDevicesLastError", {
+                                          value: entry.last_error
+                                        })}
+                                      </p>
+                                    ) : null}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
                         </div>
                       </div>
                     </AccordionContent>

@@ -21,7 +21,7 @@ const ensureFirebaseApp = (config: FirebaseClientConfig) => {
   }
 };
 
-const getDeviceId = () => {
+export const getLocalPushDeviceId = () => {
   if (typeof window === "undefined") return "server";
   const key = "domora:device-id";
   const existing = window.localStorage.getItem(key);
@@ -73,7 +73,7 @@ export const registerWebPushToken = async ({
   await supabase.functions.invoke("register-push-token", {
     body: {
       token,
-      deviceId: getDeviceId(),
+      deviceId: getLocalPushDeviceId(),
       householdId,
       platform: "web",
       provider: "fcm",

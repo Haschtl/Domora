@@ -1383,6 +1383,15 @@ export const resources = {
         pushPreferencesSave: "Speichern",
         pushPreferencesLoading: "Push-Einstellungen werden geholt...",
         pushPreferencesHint: "Push an, sonst keine Wünsche.",
+        pushDevicesTitle: "Deine Push-Geräte",
+        pushDevicesDescription:
+          "Zeigt die aktuell für dich registrierten Push-Tokens in dieser WG.",
+        pushDevicesLoading: "Push-Geräte werden geladen...",
+        pushDevicesLoadError: "Push-Geräte konnten nicht geladen werden.",
+        pushDevicesEmpty: "Noch keine Push-Geräte registriert.",
+        pushDevicesCurrent: "dieses Gerät",
+        pushDevicesLastSeen: "Zuletzt gesehen: {{value}}",
+        pushDevicesLastError: "Letzter Fehler: {{value}}",
         paymentHandlesTitle: "Bezahlmethoden",
         paymentHandlesDescription:
           "Diese Namen werden bei Ausgleichsvorschlägen als Schnelllinks genutzt.",
@@ -2961,6 +2970,15 @@ export const resources = {
         pushPreferencesSave: "Save",
         pushPreferencesLoading: "Fetching push preferences...",
         pushPreferencesHint: "Turn on push to tweak these.",
+        pushDevicesTitle: "Your push devices",
+        pushDevicesDescription:
+          "Shows the push tokens currently registered for you in this household.",
+        pushDevicesLoading: "Loading push devices...",
+        pushDevicesLoadError: "Could not load push devices.",
+        pushDevicesEmpty: "No push devices registered yet.",
+        pushDevicesCurrent: "this device",
+        pushDevicesLastSeen: "Last seen: {{value}}",
+        pushDevicesLastError: "Last error: {{value}}",
         paymentHandlesTitle: "Payment handles",
         paymentHandlesDescription:
           "These names are used for quick pay links in settlement suggestions.",
