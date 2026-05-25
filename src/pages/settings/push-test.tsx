@@ -266,6 +266,31 @@ const getLatestReason = (providerResponse: Record<string, unknown> | null) => {
   return typeof rawReason === "string" && rawReason.trim().length > 0 ? rawReason : null;
 };
 
+const getLatestFcmErrorCode = (providerResponse: Record<string, unknown> | null) => {
+  const rawValue = providerResponse?.fcmErrorCode;
+  return typeof rawValue === "string" && rawValue.trim().length > 0 ? rawValue : null;
+};
+
+const getLatestFcmMessage = (providerResponse: Record<string, unknown> | null) => {
+  const rawValue = providerResponse?.fcmMessage;
+  return typeof rawValue === "string" && rawValue.trim().length > 0 ? rawValue : null;
+};
+
+const getLatestDeviceLabel = (providerResponse: Record<string, unknown> | null) => {
+  const platform = typeof providerResponse?.platform === "string" ? providerResponse.platform : null;
+  const deviceId = typeof providerResponse?.deviceId === "string" ? providerResponse.deviceId : null;
+  const shortDeviceId = deviceId ? deviceId.slice(0, 10) : null;
+  if (platform && shortDeviceId) return `${platform} · ${shortDeviceId}`;
+  if (platform) return platform;
+  if (shortDeviceId) return shortDeviceId;
+  return null;
+};
+
+const getLatestHttpStatus = (providerResponse: Record<string, unknown> | null) => {
+  const rawValue = providerResponse?.httpStatus;
+  return typeof rawValue === "number" || typeof rawValue === "string" ? String(rawValue) : null;
+};
+
 const formatLatestReason = (reason: string | null) => {
   if (!reason) return null;
   if (reason === "no_target_users") return "Kein Zielnutzer aufgelöst";
@@ -507,6 +532,29 @@ export const PushTestPage = () => {
                         {formatLatestReason(getLatestReason(job.latest_log_provider_response)) ? (
                           <p className="mt-1 text-rose-700 dark:text-rose-300">
                             Grund: {formatLatestReason(getLatestReason(job.latest_log_provider_response))}
+                          </p>
+                        ) : null}
+                        {getLatestFcmErrorCode(job.latest_log_provider_response) ? (
+                          <p className="mt-1 text-rose-700 dark:text-rose-300">
+                            FCM-Code: {getLatestFcmErrorCode(job.latest_log_provider_response)}
+                          </p>
+                        ) : null}
+                        {getLatestFcmMessage(job.latest_log_provider_response) ? (
+                          <p className="mt-1 text-slate-600 dark:text-slate-300">
+                            FCM-Message: {getLatestFcmMessage(job.latest_log_provider_response)}
+                          </p>
+                        ) : null}
+                        {getLatestHttpStatus(job.latest_log_provider_response) || getLatestDeviceLabel(job.latest_log_provider_response) ? (
+                          <p className="mt-1 text-slate-600 dark:text-slate-300">
+                            {getLatestHttpStatus(job.latest_log_provider_response)
+                              ? `HTTP ${getLatestHttpStatus(job.latest_log_provider_response)}`
+                              : ""}
+                            {getLatestHttpStatus(job.latest_log_provider_response) && getLatestDeviceLabel(job.latest_log_provider_response)
+                              ? " | "
+                              : ""}
+                            {getLatestDeviceLabel(job.latest_log_provider_response)
+                              ? `Gerät: ${getLatestDeviceLabel(job.latest_log_provider_response)}`
+                              : ""}
                           </p>
                         ) : null}
                       </div>

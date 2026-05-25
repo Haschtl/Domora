@@ -16,6 +16,12 @@ type PushTokenRow = {
   id: string;
   user_id: string;
   token: string;
+  device_id: string;
+  platform: string;
+  provider: string;
+  app_version: string | null;
+  locale: string | null;
+  last_seen_at: string;
 };
 
 const parseTimeToMinutes = (value?: string) => {
@@ -207,6 +213,17 @@ const buildMessage = (job: PushJob) => {
   return base;
 };
 
+const extractFcmError = (body: Record<string, unknown>) => {
+  const error = body.error as Record<string, unknown> | undefined;
+  const details = Array.isArray(error?.details) ? error.details : [];
+  const detail = details.find((entry) => entry && typeof entry === "object") as Record<string, unknown> | undefined;
+  return {
+    status: typeof error?.status === "string" ? error.status : null,
+    message: typeof error?.message === "string" ? error.message : null,
+    errorCode: typeof detail?.errorCode === "string" ? detail.errorCode : null
+  };
+};
+
 serve(async (req) => {
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
@@ -343,7 +360,7 @@ serve(async (req) => {
 
     let tokensQuery = supabase
       .from("push_tokens")
-      .select("id,user_id,token")
+      .select("id,user_id,token,device_id,platform,provider,app_version,locale,last_seen_at")
       .eq("household_id", job.household_id)
       .eq("status", "active")
       .in("user_id", filteredTargetUserIds);
@@ -392,17 +409,36 @@ serve(async (req) => {
         data: messageData
       });
 
+      const fcmError = extractFcmError(result.body ?? {});
+
       await supabase.from("push_log").insert({
         job_id: job.id,
         token_id: tokenRow.id,
         status: result.ok ? "sent" : "failed",
-        provider_response: result.body ?? {}
+        provider_response: {
+          ok: result.ok,
+          httpStatus: result.status,
+          tokenUserId: tokenRow.user_id,
+          deviceId: tokenRow.device_id,
+          platform: tokenRow.platform,
+          provider: tokenRow.provider,
+          appVersion: tokenRow.app_version,
+          locale: tokenRow.locale,
+          lastSeenAt: tokenRow.last_seen_at,
+          fcmStatus: fcmError.status,
+          fcmMessage: fcmError.message,
+          fcmErrorCode: fcmError.errorCode,
+          body: result.body ?? {}
+        }
       });
 
       if (result.ok) {
         successCount += 1;
+        await supabase.from("push_tokens").update({ last_error: null }).eq("id", tokenRow.id);
       } else {
-        const errorCode = (result.body as { error?: { details?: Array<{ errorCode?: string }> } })?.error?.details?.[0]?.errorCode;
+        const errorCode = fcmError.errorCode;
+        const errorMessage = fcmError.message ?? fcmError.status ?? `HTTP ${result.status}`;
+        await supabase.from("push_tokens").update({ last_error: errorMessage }).eq("id", tokenRow.id);
         if (errorCode === "UNREGISTERED") {
           await supabase.from("push_tokens").update({ status: "invalid" }).eq("id", tokenRow.id);
         }

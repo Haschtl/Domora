@@ -3685,6 +3685,23 @@ revoke all on function get_push_test_jobs(uuid, integer) from public;
 grant execute on function get_push_test_jobs(uuid, integer) to authenticated, service_role;
 revoke execute on function get_push_test_jobs(uuid, integer) from anon;
 
+create or replace function get_my_active_session_count()
+returns integer
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select count(*)::integer
+  from auth.sessions
+  where auth.uid() is not null
+    and user_id = auth.uid();
+$$;
+
+revoke all on function get_my_active_session_count() from public;
+grant execute on function get_my_active_session_count() to authenticated, service_role;
+revoke execute on function get_my_active_session_count() from anon;
+
 revoke all on function run_household_data_maintenance(uuid, boolean, boolean) from public;
 revoke execute on function run_household_data_maintenance(uuid, boolean, boolean) from anon, authenticated;
 grant execute on function run_household_data_maintenance(uuid, boolean, boolean) to service_role;

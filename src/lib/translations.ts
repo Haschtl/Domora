@@ -1526,6 +1526,16 @@ export const resources = {
         leaveTitle: "Ausziehen",
         leaveDescription:
           "Du verlässt diese WG und verlierst den direkten Zugriff.",
+        sessionCountLabel: "Aktive Sitzungen/Geräte",
+        sessionCountUnknown: "—",
+        sessionCountLoading: "…",
+        sessionLoadError: "Sitzungen konnten nicht geladen werden.",
+        sessionSignOutThis: "Diese Sitzung abmelden",
+        sessionSignOutOthers: "Andere Sitzungen abmelden",
+        sessionSignOutThisError:
+          "Diese Sitzung konnte nicht beendet werden.",
+        sessionSignOutOthersError:
+          "Andere Sitzungen konnten nicht beendet werden.",
         leaveAction: "WG verlassen",
         leaveConfirmTitle: "WG wirklich verlassen?",
         leaveConfirmDescription:
@@ -3090,6 +3100,16 @@ export const resources = {
         removeImage: "Remove image",
         leaveTitle: "Move out",
         leaveDescription: "Leave this household and lose direct access.",
+        sessionCountLabel: "Active sessions/devices",
+        sessionCountUnknown: "—",
+        sessionCountLoading: "…",
+        sessionLoadError: "Could not load sessions.",
+        sessionSignOutThis: "Sign out this session",
+        sessionSignOutOthers: "Sign out other sessions",
+        sessionSignOutThisError:
+          "Could not end this session.",
+        sessionSignOutOthersError:
+          "Could not end other sessions.",
         leaveAction: "Leave household",
         leaveConfirmTitle: "Leave household now?",
         leaveConfirmDescription:

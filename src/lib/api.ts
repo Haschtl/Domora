@@ -775,10 +775,26 @@ export const signOut = async () => {
   throw error;
 };
 
+export const signOutCurrentSession = async () => {
+  const { error } = await supabase.auth.signOut({ scope: "local" });
+  if (error) throw error;
+};
+
+export const signOutOtherSessions = async () => {
+  const { error } = await supabase.auth.signOut({ scope: "others" });
+  if (error) throw error;
+};
+
 export const getCurrentSession = async () => {
   const { data, error } = await supabase.auth.getSession();
   if (error) throw error;
   return data.session;
+};
+
+export const getMyActiveSessionCount = async (): Promise<number> => {
+  const { data, error } = await supabase.rpc("get_my_active_session_count");
+  if (error) throw error;
+  return z.coerce.number().int().min(0).parse(data ?? 0);
 };
 
 const requireAuthenticatedUserId = async () => {

@@ -42,9 +42,12 @@ import { Label } from "../../components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
 import { Switch } from "../../components/ui/switch";
 import {
+  getMyActiveSessionCount,
   getPushPreferences,
   pollNextcloudLoginFlow,
   setHouseholdStorageCredentials,
+  signOutCurrentSession,
+  signOutOtherSessions,
   startNextcloudLoginFlow,
   upsertHouseholdWhiteboard,
   upsertPushPreferences
@@ -234,6 +237,10 @@ export const SettingsPage = ({
   );
   const [storageConnectBusy, setStorageConnectBusy] = useState(false);
   const [storageConnectStatus, setStorageConnectStatus] = useState<string | null>(null);
+  const [sessionCount, setSessionCount] = useState<number | null>(null);
+  const [sessionCountLoading, setSessionCountLoading] = useState(false);
+  const [sessionActionBusy, setSessionActionBusy] = useState<"local" | "others" | null>(null);
+  const [sessionActionError, setSessionActionError] = useState<string | null>(null);
   const [selectedStorageProviderUi, setSelectedStorageProviderUi] = useState<"none" | "webdav" | "nextcloud">(
     household.storage_provider ?? "none"
   );
@@ -259,6 +266,86 @@ export const SettingsPage = ({
     () => memberVacationsForUser.find((vacation) => vacation.id === editingVacationId) ?? null,
     [editingVacationId, memberVacationsForUser]
   );
+
+  useEffect(() => {
+    if (section !== "me") return;
+    let cancelled = false;
+
+    const loadSessionCount = async () => {
+      setSessionCountLoading(true);
+      setSessionActionError(null);
+      try {
+        const nextCount = await getMyActiveSessionCount();
+        if (!cancelled) {
+          setSessionCount(nextCount);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setSessionActionError(
+            error instanceof Error
+              ? error.message
+              : t("settings.sessionLoadError")
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setSessionCountLoading(false);
+        }
+      }
+    };
+
+    void loadSessionCount();
+    return () => {
+      cancelled = true;
+    };
+  }, [section]);
+
+  const refreshSessionCount = useCallback(async () => {
+    setSessionCountLoading(true);
+    setSessionActionError(null);
+    try {
+      const nextCount = await getMyActiveSessionCount();
+      setSessionCount(nextCount);
+    } catch (error) {
+      setSessionActionError(
+        error instanceof Error ? error.message : t("settings.sessionLoadError")
+      );
+    } finally {
+      setSessionCountLoading(false);
+    }
+  }, []);
+
+  const handleSignOutOthers = useCallback(async () => {
+    setSessionActionBusy("others");
+    setSessionActionError(null);
+    try {
+      await signOutOtherSessions();
+      await refreshSessionCount();
+    } catch (error) {
+      setSessionActionError(
+        error instanceof Error
+          ? error.message
+          : t("settings.sessionSignOutOthersError")
+      );
+    } finally {
+      setSessionActionBusy(null);
+    }
+  }, [refreshSessionCount]);
+
+  const handleSignOutThisSession = useCallback(async () => {
+    setSessionActionBusy("local");
+    setSessionActionError(null);
+    try {
+      await signOutCurrentSession();
+    } catch (error) {
+      setSessionActionError(
+        error instanceof Error
+          ? error.message
+          : t("settings.sessionSignOutThisError")
+      );
+      setSessionActionBusy(null);
+    }
+  }, []);
   const isEditingVacationLocked = useMemo(() => {
     if (!editingVacation) return false;
     return editingVacation.start_date <= todayIso;
@@ -3645,7 +3732,38 @@ export const SettingsPage = ({
             <CardDescription>{t("settings.leaveDescription")}</CardDescription>
           </CardHeader>
           <CardContent>
+            <div className="mb-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600 dark:border-slate-700 dark:bg-slate-900/70 dark:text-slate-300">
+              {t("settings.sessionCountLabel")}:{" "}
+              {sessionCountLoading
+                ? t("settings.sessionCountLoading")
+                : sessionCount ?? t("settings.sessionCountUnknown")}
+            </div>
+            {sessionActionError ? (
+              <p className="mb-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-200">
+                {sessionActionError}
+              </p>
+            ) : null}
             <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                disabled={busy || sessionActionBusy !== null}
+                onClick={() => {
+                  void handleSignOutThisSession();
+                }}
+              >
+                {t("settings.sessionSignOutThis")}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={busy || sessionActionBusy !== null || (sessionCount ?? 0) <= 1}
+                onClick={() => {
+                  void handleSignOutOthers();
+                }}
+              >
+                {t("settings.sessionSignOutOthers")}
+              </Button>
               <Button
                 type="button"
                 variant="ghost"
