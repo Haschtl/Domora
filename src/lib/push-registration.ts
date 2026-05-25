@@ -21,6 +21,42 @@ const ensureFirebaseApp = (config: FirebaseClientConfig) => {
   }
 };
 
+const waitForActiveServiceWorker = async (registration: ServiceWorkerRegistration) => {
+  if (registration.active) return registration;
+
+  const worker = registration.installing ?? registration.waiting;
+  if (!worker) {
+    throw new Error("Push registration failed: no active service worker.");
+  }
+
+  await new Promise<void>((resolve, reject) => {
+    const timeoutId = window.setTimeout(() => {
+      reject(new Error("Push registration failed: service worker activation timed out."));
+    }, 12000);
+
+    const handleStateChange = () => {
+      if (worker.state === "activated" && registration.active) {
+        window.clearTimeout(timeoutId);
+        worker.removeEventListener("statechange", handleStateChange);
+        resolve();
+      } else if (worker.state === "redundant") {
+        window.clearTimeout(timeoutId);
+        worker.removeEventListener("statechange", handleStateChange);
+        reject(new Error("Push registration failed: service worker became redundant."));
+      }
+    };
+
+    worker.addEventListener("statechange", handleStateChange);
+    handleStateChange();
+  });
+
+  if (!registration.active) {
+    throw new Error("Push registration failed: no active service worker.");
+  }
+
+  return registration;
+};
+
 export const getLocalPushDeviceId = () => {
   if (typeof window === "undefined") return "server";
   const key = "domora:device-id";
@@ -52,15 +88,16 @@ export const registerWebPushToken = async ({
   ensureFirebaseApp(runtimeConfig.firebase);
   const baseUrl = import.meta.env.BASE_URL || "/";
   const normalizedBaseUrl = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
-  const existingRegistration = await navigator.serviceWorker.getRegistration(`${normalizedBaseUrl}firebase/`);
-  if (existingRegistration?.active?.scriptURL?.includes("firebase-messaging-sw.js")) {
-    await existingRegistration.unregister();
-  }
   const swUrl = new URL(`${normalizedBaseUrl}firebase/firebase-messaging-sw.js`, window.location.origin);
   swUrl.searchParams.set("config", serializeFirebaseConfigForServiceWorker(runtimeConfig.firebase));
-  const registration = await navigator.serviceWorker.register(swUrl.toString(), {
+  const existingRegistration = await navigator.serviceWorker.getRegistration(`${normalizedBaseUrl}firebase/`);
+  const registration = existingRegistration ?? await navigator.serviceWorker.register(swUrl.toString(), {
     scope: `${normalizedBaseUrl}firebase/`
   });
+  if (existingRegistration) {
+    await existingRegistration.update();
+  }
+  await waitForActiveServiceWorker(registration);
   const messaging = getMessaging();
 
   const token = await getToken(messaging, {
