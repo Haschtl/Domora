@@ -107,6 +107,11 @@ export const sendFcmMessage = async ({
   data?: Record<string, string>;
 }) => {
   const accessToken = await getAccessToken(serviceAccount);
+  const messageData = {
+    ...(data ?? {}),
+    pushTitle: title,
+    pushBody: body
+  };
   const response = await fetch(
     `https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`,
     {
@@ -118,8 +123,12 @@ export const sendFcmMessage = async ({
       body: JSON.stringify({
         message: {
           token,
-          notification: { title, body },
-          data
+          data: messageData,
+          webpush: {
+            headers: {
+              Urgency: "high"
+            }
+          }
         }
       })
     }

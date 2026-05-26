@@ -50,7 +50,9 @@ const buildNotificationOptions = (payload) => {
   }
 
   const options = {
-    body: notification.body || "",
+    body: notification.body || data.pushBody || "",
+    icon: "/icon-192.png",
+    badge: "/icon-192.png",
     data,
     actions
   };
@@ -117,7 +119,8 @@ if (firebaseConfig) {
   const messaging = firebase.messaging();
   messaging.onBackgroundMessage((payload) => {
     const notification = payload.notification ?? {};
-    const title = notification.title || "Domora";
+    const data = payload.data || {};
+    const title = notification.title || data.pushTitle || "Domora";
     const options = buildNotificationOptions(payload);
     self.registration.showNotification(title, options);
   });

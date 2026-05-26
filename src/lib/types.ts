@@ -268,6 +268,15 @@ export interface PushTestJob {
   latest_log_created_at: string | null;
 }
 
+export interface PushTestJobLog {
+  id: string;
+  job_id: string;
+  token_id: string | null;
+  status: string;
+  provider_response: Record<string, unknown>;
+  created_at: string;
+}
+
 export interface PushTokenDiagnostic {
   id: string;
   household_id: string;

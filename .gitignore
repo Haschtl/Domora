@@ -10,5 +10,6 @@ test-results
 android/.gradle
 android/build
 android/app/build
+android/app/release
 android/local.properties
 *.jks

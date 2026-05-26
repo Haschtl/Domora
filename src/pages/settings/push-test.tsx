@@ -1,8 +1,8 @@
 import { useMemo, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { BellRing, Clock3, RefreshCw, Send } from "lucide-react";
 import { useWorkspace } from "../../context/workspace-context";
-import { getPushTestJobs, queuePushTestJob } from "../../lib/api";
+import { getPushTestJobLogs, getPushTestJobs, queuePushTestJob } from "../../lib/api";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
 import { Input } from "../../components/ui/input";
@@ -291,6 +291,16 @@ const getLatestHttpStatus = (providerResponse: Record<string, unknown> | null) =
   return typeof rawValue === "number" || typeof rawValue === "string" ? String(rawValue) : null;
 };
 
+const getLogDeviceLabel = (providerResponse: Record<string, unknown>) => {
+  const platform = typeof providerResponse.platform === "string" ? providerResponse.platform : null;
+  const deviceId = typeof providerResponse.deviceId === "string" ? providerResponse.deviceId : null;
+  const shortDeviceId = deviceId ? deviceId.slice(0, 10) : null;
+  if (platform && shortDeviceId) return `${platform} · ${shortDeviceId}`;
+  if (platform) return platform;
+  if (shortDeviceId) return shortDeviceId;
+  return "unbekannt";
+};
+
 const formatLatestReason = (reason: string | null) => {
   if (!reason) return null;
   if (reason === "no_target_users") return "Kein Zielnutzer aufgelöst";
@@ -307,6 +317,7 @@ export const PushTestPage = () => {
   const [schedule, setSchedule] = useState<PushTestSchedule>("now");
   const [customSchedule, setCustomSchedule] = useState("");
   const [localError, setLocalError] = useState<string | null>(null);
+  const [expandedJobIds, setExpandedJobIds] = useState<string[]>([]);
 
   const selectedCase = useMemo(
     () => PUSH_TEST_CASES.find((entry) => getCaseKey(entry) === selectedCaseKey) ?? PUSH_TEST_CASES[0]!,
@@ -320,6 +331,16 @@ export const PushTestPage = () => {
     enabled: Boolean(activeHousehold) && canTest,
     refetchInterval: 5000
   });
+  const jobLogQueries = useQueries({
+    queries: expandedJobIds.map((jobId) => ({
+      queryKey: ["push-test-job-logs", activeHousehold?.id ?? "none", jobId],
+      queryFn: () => getPushTestJobLogs(activeHousehold!.id, jobId),
+      enabled: Boolean(activeHousehold && jobId)
+    }))
+  });
+  const logsByJobId = new Map(
+    expandedJobIds.map((jobId, index) => [jobId, jobLogQueries[index]?.data ?? []])
+  );
 
   const queueMutation = useMutation({
     mutationFn: async () => {
@@ -580,6 +601,58 @@ export const PushTestPage = () => {
                   <pre className="mt-2 max-h-56 overflow-auto rounded-md bg-slate-950 p-2 text-slate-100">
                     {JSON.stringify(job.payload, null, 2)}
                   </pre>
+                </details>
+                <details
+                  className="mt-2 text-xs"
+                  onToggle={(event) => {
+                    const nextOpen = (event.currentTarget as HTMLDetailsElement).open;
+                    setExpandedJobIds((current) =>
+                      nextOpen
+                        ? current.includes(job.id)
+                          ? current
+                          : [...current, job.id]
+                        : current.filter((entry) => entry !== job.id)
+                    );
+                  }}
+                >
+                  <summary className="cursor-pointer text-slate-500 dark:text-slate-400">Token-Treffer</summary>
+                  <div className="mt-2 space-y-2">
+                    {(logsByJobId.get(job.id) ?? []).length > 0 ? (
+                      (logsByJobId.get(job.id) ?? []).map((log) => {
+                        const providerResponse = log.provider_response ?? {};
+                        const fcmCode = getLatestFcmErrorCode(providerResponse);
+                        const fcmMessage = getLatestFcmMessage(providerResponse);
+                        const httpStatus = getLatestHttpStatus(providerResponse);
+                        return (
+                          <div key={log.id} className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 dark:border-slate-700 dark:bg-slate-950/40">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="font-semibold text-slate-900 dark:text-slate-100">
+                                {getLogDeviceLabel(providerResponse)}
+                              </span>
+                              <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${getStatusClass(log.status)}`}>
+                                {log.status}
+                              </span>
+                            </div>
+                            <p className="mt-1 text-slate-600 dark:text-slate-300">
+                              {new Date(log.created_at).toLocaleString()}
+                              {httpStatus ? ` | HTTP ${httpStatus}` : ""}
+                              {fcmCode ? ` | ${fcmCode}` : ""}
+                            </p>
+                            {fcmMessage ? (
+                              <p className="mt-1 text-rose-700 dark:text-rose-300">{fcmMessage}</p>
+                            ) : null}
+                            <pre className="mt-2 max-h-40 overflow-auto rounded-md bg-slate-950 p-2 text-slate-100">
+                              {JSON.stringify(providerResponse, null, 2)}
+                            </pre>
+                          </div>
+                        );
+                      })
+                    ) : expandedJobIds.includes(job.id) ? (
+                      <p className="text-slate-500 dark:text-slate-400">Keine Token-Treffer oder noch nicht geladen.</p>
+                    ) : (
+                      <p className="text-slate-500 dark:text-slate-400">Aufklappen lädt alle Token-Treffer dieses Jobs.</p>
+                    )}
+                  </div>
                 </details>
                 {job.latest_log_provider_response ? (
                   <details className="mt-2 text-xs">

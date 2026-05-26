@@ -35,6 +35,7 @@ import type {
   UpdateHouseholdInput,
   PushPreferences,
   PushTokenDiagnostic,
+  PushTestJobLog,
   PushTestJob,
   ShoppingRecurrenceUnit,
   ShoppingItem,
@@ -3757,6 +3758,32 @@ export const getPushTestJobs = async (householdId: string, limit = 25): Promise<
           ? (value.latest_log_provider_response as Record<string, unknown>)
           : null,
       latest_log_created_at: value.latest_log_created_at == null ? null : String(value.latest_log_created_at)
+    };
+  });
+};
+
+export const getPushTestJobLogs = async (householdId: string, jobId: string): Promise<PushTestJobLog[]> => {
+  const validatedHouseholdId = z.string().uuid().parse(householdId);
+  const validatedJobId = z.string().uuid().parse(jobId);
+
+  const { data, error } = await supabase.rpc("get_push_test_job_logs", {
+    p_household_id: validatedHouseholdId,
+    p_job_id: validatedJobId
+  });
+
+  if (error) throw error;
+  return ((data ?? []) as unknown[]).map((row) => {
+    const value = row as Record<string, unknown>;
+    return {
+      id: z.string().uuid().parse(value.id),
+      job_id: z.string().uuid().parse(value.job_id),
+      token_id: value.token_id == null ? null : z.string().uuid().parse(value.token_id),
+      status: String(value.status ?? ""),
+      provider_response:
+        value.provider_response && typeof value.provider_response === "object"
+          ? (value.provider_response as Record<string, unknown>)
+          : {},
+      created_at: String(value.created_at ?? "")
     };
   });
 };

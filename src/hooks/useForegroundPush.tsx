@@ -32,8 +32,14 @@ export const useForegroundPush = ({ enabled, onNavigate }: ForegroundPushOptions
       }
       const messaging = getMessaging();
       unsubscribe = onMessage(messaging, (payload) => {
-        const title = payload.notification?.title ?? "Domora";
-        const body = payload.notification?.body ?? "";
+        const title =
+          payload.notification?.title ??
+          payload.data?.pushTitle ??
+          "Domora";
+        const body =
+          payload.notification?.body ??
+          payload.data?.pushBody ??
+          "";
         const data = payload.data ?? {};
         const handleClick =
           onNavigate && Object.keys(data).length > 0
@@ -41,9 +47,7 @@ export const useForegroundPush = ({ enabled, onNavigate }: ForegroundPushOptions
                 onNavigate(data as Record<string, string>);
               }
             : undefined;
-        const shouldShowOsNotification =
-          typeof document !== "undefined" ? document.visibilityState !== "visible" : true;
-        if (shouldShowOsNotification && typeof Notification !== "undefined" && Notification.permission === "granted") {
+        if (typeof Notification !== "undefined" && Notification.permission === "granted") {
           try {
             const notification = new Notification(title, {
               body,
