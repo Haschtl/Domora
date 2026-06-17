@@ -16,6 +16,7 @@ import {
   ChevronLeft,
   Crown,
   Leaf,
+  LoaderCircle,
   MoreHorizontal,
   PartyPopper,
   Paperclip,
@@ -368,6 +369,7 @@ type OcrCandidate = {
   boxes: OcrPreviewBox[];
   debug?: OcrDebugInfo;
 };
+type OcrRecognitionEngine = "idle" | "capture" | "detector" | "modern" | "tesseract";
 type TextDetectorLike = { detect: (input: ImageBitmapSource) => Promise<OcrDetectionResult[]> };
 type TextDetectorConstructor = new (options?: { languages?: string[] }) => TextDetectorLike;
 type TesseractWorkerLike = {
@@ -1262,6 +1264,8 @@ export const FinancesPage = ({
   const [ocrBusy, setOcrBusy] = useState(false);
   const [ocrError, setOcrError] = useState<string | null>(null);
   const [ocrCandidate, setOcrCandidate] = useState<OcrCandidate | null>(null);
+  const [ocrRecognitionEngine, setOcrRecognitionEngine] = useState<OcrRecognitionEngine>("idle");
+  const [ocrRecognitionStatus, setOcrRecognitionStatus] = useState<string | null>(null);
   const [ocrLlmStatus, setOcrLlmStatus] = useState<"idle" | "loading" | "extracting" | "done" | "error">("idle");
   const [ocrLlmProgress, setOcrLlmProgress] = useState(0);
   const [ocrLlmResult, setOcrLlmResult] = useState<ReceiptLlmResult | null>(null);
@@ -3289,6 +3293,8 @@ export const FinancesPage = ({
     setOcrBusy(true);
     setOcrError(null);
     setOcrPreviewImageUrl(null);
+    setOcrRecognitionEngine("capture");
+    setOcrRecognitionStatus(t("finances.ocrStatusCapturing"));
     try {
       const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.92));
       if (!blob) {
@@ -3300,10 +3306,13 @@ export const FinancesPage = ({
       context.drawImage(sourceBitmap, 0, 0, width, height);
       sourceBitmap.close?.();
       const previewImageUrl = canvas.toDataURL("image/jpeg", 0.88);
+      setOcrPreviewImageUrl(previewImageUrl);
       const sharpnessScore = estimateCanvasSharpness(canvas);
+      setOcrRecognitionStatus(t("finances.ocrStatusPreprocess"));
       const balancedCanvas = preprocessOcrCanvas(canvas, "balanced");
       const highContrastCanvas = preprocessOcrCanvas(canvas, "highContrast");
       const grayscaleCanvas = preprocessOcrCanvas(canvas, "grayscale");
+      setOcrRecognitionStatus(t("finances.ocrStatusDeskew"));
       const openCvResult = await preprocessOcrCanvasWithOpenCv(canvas);
       const openCvCanvas = openCvResult.canvas;
       const effectiveSharpness = openCvResult.sharpness ?? sharpnessScore;
@@ -3328,6 +3337,8 @@ export const FinancesPage = ({
       let detectorBoxes: OcrPreviewBox[] = [];
       if (detectorCtor) {
         try {
+          setOcrRecognitionEngine("detector");
+          setOcrRecognitionStatus(t("finances.ocrStatusDetector"));
           const detected = await runTextDetectorOcr(detectorCtor, balancedCanvas);
           detectorText = detected.text;
           detectorBoxes = detected.boxes;
@@ -3337,11 +3348,17 @@ export const FinancesPage = ({
         }
       }
 
+      setOcrRecognitionEngine("modern");
       const modernOcrResults = await extractReceiptTextWithModernOcr(
         [
           { id: "modernMain", canvas: openCvCanvas ?? balancedCanvas },
           ...(lowerReceiptCanvas ? [{ id: "modernLower" as const, canvas: lowerReceiptCanvas }] : [])
-        ]
+        ],
+        (report) => {
+          setOcrRecognitionStatus(
+            `${t("finances.ocrStatusModern")} ${report.progress > 0 ? `${Math.round(report.progress * 100)}%` : ""}`.trim()
+          );
+        }
       );
       const modernMainPass: OcrPassResult = {
         text: modernOcrResults.find((entry) => entry.id === "modernMain")?.text ?? "",
@@ -3370,12 +3387,15 @@ export const FinancesPage = ({
       const primaryPasses: OcrPassResult[] = [modernMainPass, modernLowerPass, detectorPass];
       const primaryText = buildUniqueLinesText(modernMainPass.text, modernLowerPass.text, detectorText);
       const primaryHasEnoughText = primaryText.replace(/\s/g, "").length >= OCR_MIN_USEFUL_TEXT_LENGTH;
+      setOcrRecognitionStatus(t("finances.ocrStatusAmount"));
       const primaryAmount = extractPriceFromOcrPassesDetailed(primaryPasses).value;
       const shouldRunTesseractFallback = !primaryHasEnoughText || primaryAmount === null;
 
       let fallbackPasses: OcrPassResult[] = [];
       let fallbackBoxes: OcrPreviewBox[] = [];
       if (shouldRunTesseractFallback) {
+        setOcrRecognitionEngine("tesseract");
+        setOcrRecognitionStatus(t("finances.ocrStatusTesseract"));
         const worker = await getOrCreateTesseractWorker();
         const runTesseractPass = async ({
           source,
@@ -3406,6 +3426,7 @@ export const FinancesPage = ({
           return { text, boxes, meanConfidence, source: sourceName, region, numericFocused } satisfies OcrPassResult;
         };
 
+        setOcrRecognitionStatus(t("finances.ocrStatusTesseractMain"));
         const mainPass = await runTesseractPass({
           source: openCvCanvas ?? balancedCanvas,
           withBoxes: true,
@@ -3418,6 +3439,7 @@ export const FinancesPage = ({
             tessedit_char_whitelist: ""
           }
         });
+        setOcrRecognitionStatus(t("finances.ocrStatusTesseractSparse"));
         const sparsePass = await runTesseractPass({
           source: grayscaleCanvas,
           sourceName: "sparse",
@@ -3429,6 +3451,7 @@ export const FinancesPage = ({
             tessedit_char_whitelist: ""
           }
         });
+        setOcrRecognitionStatus(t("finances.ocrStatusTesseractNumeric"));
         const numericPass = await runTesseractPass({
           source: numericSourceCanvas,
           rectangle: fullReceipt,
@@ -3441,6 +3464,7 @@ export const FinancesPage = ({
             tessedit_char_whitelist: "0123456789.,€EURSUMMETOTALGESAMTBETRAG"
           }
         });
+        setOcrRecognitionStatus(t("finances.ocrStatusTesseractLower"));
         const lowerNumericPass = await runTesseractPass({
           source: numericSourceCanvas,
           rectangle: lowerRegion,
@@ -3453,6 +3477,7 @@ export const FinancesPage = ({
             tessedit_char_whitelist: "0123456789.,€EURSUMMETOTALGESAMTBETRAG"
           }
         });
+        setOcrRecognitionStatus(t("finances.ocrStatusTesseractOpenCv"));
         const openCvSparsePass: OcrPassResult =
           openCvCanvas !== null
             ? await runTesseractPass({
@@ -3494,6 +3519,7 @@ export const FinancesPage = ({
       );
       const boxes = mergeUniqueBoxes(detectorBoxes, fallbackBoxes);
 
+      setOcrRecognitionStatus(t("finances.ocrStatusValidate"));
       if (!text.trim()) {
         setOcrError(
           effectiveSharpness < OCR_MIN_SHARPNESS_SCORE
@@ -3513,6 +3539,7 @@ export const FinancesPage = ({
         return;
       }
 
+      setOcrRecognitionStatus(t("finances.ocrStatusStructuring"));
       const amountFromPasses = extractPriceFromOcrPassesDetailed(passes);
       const recognizedPrice = amountFromPasses.value ?? extractPriceFromOcrText(text);
       const recognizedProduct = extractProductFromOcrText(text);
@@ -3540,6 +3567,8 @@ export const FinancesPage = ({
       };
       setOcrPreviewImageUrl(previewImageUrl);
       setOcrCandidate(candidate);
+      setOcrRecognitionEngine("idle");
+      setOcrRecognitionStatus(null);
       setOcrLlmResult(null);
       setOcrLlmStatus("idle");
       setOcrConfirmDialogOpen(true);
@@ -3566,6 +3595,8 @@ export const FinancesPage = ({
     } catch {
       setOcrError(t("finances.ocrReadError"));
     } finally {
+      setOcrRecognitionEngine("idle");
+      setOcrRecognitionStatus(null);
       setOcrBusy(false);
     }
   }, [getOrCreateTesseractWorker, ocrBusy, t]);
@@ -3575,6 +3606,16 @@ export const FinancesPage = ({
     const amount = addEntryForm.state.values.amount.trim();
     return description.length === 0 && amount.length === 0;
   }, [addEntryForm.state.values.amount, addEntryForm.state.values.description]);
+  const ocrRecognitionEngineLabel =
+    ocrRecognitionEngine === "modern"
+      ? t("finances.ocrEngineModern")
+      : ocrRecognitionEngine === "tesseract"
+        ? t("finances.ocrEngineTesseract")
+        : ocrRecognitionEngine === "detector"
+          ? t("finances.ocrEngineDetector")
+          : ocrRecognitionEngine === "capture"
+            ? t("finances.ocrEngineCapture")
+            : null;
   const renderAddEntryComposer = (mobile: boolean) => (
     <form
       onSubmit={(event) => {
@@ -6055,6 +6096,8 @@ export const FinancesPage = ({
           if (!open) {
             setOcrError(null);
             setOcrPreviewImageUrl(null);
+            setOcrRecognitionEngine("idle");
+            setOcrRecognitionStatus(null);
           }
         }}
       >
@@ -6069,11 +6112,43 @@ export const FinancesPage = ({
             <div className="relative overflow-hidden rounded-xl border border-brand-100 bg-black dark:border-slate-700">
               <video
                 ref={ocrVideoRef}
-                className="h-64 w-full object-cover"
+                className={`h-64 w-full object-cover transition-opacity duration-200 ${ocrBusy && ocrPreviewImageUrl ? "opacity-0" : "opacity-100"}`}
                 autoPlay
                 muted
                 playsInline
               />
+              {ocrPreviewImageUrl ? (
+                <img
+                  src={ocrPreviewImageUrl}
+                  alt={t("finances.receiptPreviewAlt")}
+                  className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-200 ${ocrBusy ? "opacity-100" : "opacity-0"}`}
+                />
+              ) : null}
+              {ocrBusy ? (
+                <div className="absolute inset-0 bg-slate-950/45">
+                  <div className="absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-white/10 via-transparent to-transparent" />
+                  <div className="absolute inset-x-5 top-1/2 h-0.5 -translate-y-1/2 overflow-hidden rounded-full bg-white/20">
+                    <div className="h-full w-1/3 animate-pulse rounded-full bg-brand-300 shadow-[0_0_20px_rgba(110,231,183,0.85)]" />
+                  </div>
+                  <div className="absolute inset-x-0 top-1/2 h-16 -translate-y-1/2 bg-gradient-to-b from-brand-300/0 via-brand-300/10 to-brand-300/0" />
+                  <div className="absolute inset-x-3 bottom-3 flex items-center justify-between gap-3 rounded-xl border border-white/15 bg-slate-950/70 px-3 py-2 text-white backdrop-blur">
+                    <div className="min-w-0">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-brand-200">
+                        {t("finances.ocrAnalyzingWith")}
+                      </p>
+                      <p className="truncate text-sm font-medium">
+                        {ocrRecognitionEngineLabel ?? t("finances.ocrReadingButton")}
+                      </p>
+                      {ocrRecognitionStatus ? (
+                        <p className="truncate text-xs text-slate-300">
+                          {ocrRecognitionStatus}
+                        </p>
+                      ) : null}
+                    </div>
+                    <LoaderCircle className="h-5 w-5 shrink-0 animate-spin text-brand-200" />
+                  </div>
+                </div>
+              ) : null}
               {ocrTorchSupported ? (
                 <button
                   type="button"
@@ -6081,7 +6156,7 @@ export const FinancesPage = ({
                     ocrTorchEnabled
                       ? "border-amber-300 bg-amber-400 text-amber-950 hover:bg-amber-300"
                       : "border-white/40 bg-black/45 text-white hover:bg-black/60"
-                  }`}
+                  } ${ocrBusy ? "opacity-0 pointer-events-none" : ""}`}
                   onClick={() => void toggleOcrTorch()}
                   aria-label={ocrTorchEnabled ? t("finances.ocrTorchOffButton") : t("finances.ocrTorchOnButton")}
                   title={ocrTorchEnabled ? t("finances.ocrTorchOffButton") : t("finances.ocrTorchOnButton")}
