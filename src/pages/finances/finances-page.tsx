@@ -1220,6 +1220,9 @@ export const FinancesPage = ({
   const categorySuggestionsListId = useId();
   const entryNameSuggestionsListId = useId();
   const [auditDialogOpen, setAuditDialogOpen] = useState(false);
+  const [partialAuditDialogOpen, setPartialAuditDialogOpen] = useState(false);
+  const [partialAuditSelectedIds, setPartialAuditSelectedIds] = useState<string[]>([]);
+  const [partialAuditBusy, setPartialAuditBusy] = useState(false);
   const [archiveFilterDialogOpen, setArchiveFilterDialogOpen] = useState(false);
   const [editEntryDialogOpen, setEditEntryDialogOpen] = useState(false);
   const [entryBeingEdited, setEntryBeingEdited] = useState<FinanceEntry | null>(null);
@@ -2319,6 +2322,21 @@ export const FinancesPage = ({
     return description.length > 0 && Number.isFinite(amount) && amount > 0;
   }, [previewAmountInput, previewDescription]);
   const settlementTransfers = useMemo(() => calculateSettlementTransfers(balancesByMember), [balancesByMember]);
+  const partialAuditTransfers = useMemo(() => {
+    const selectedBalances = balancesByMember.filter((b) => partialAuditSelectedIds.includes(b.memberId));
+    return calculateSettlementTransfers(selectedBalances);
+  }, [balancesByMember, partialAuditSelectedIds]);
+  const partialAuditProjectedBalances = useMemo(() => {
+    const deltas = new Map<string, number>();
+    partialAuditTransfers.forEach((t) => {
+      deltas.set(t.fromMemberId, (deltas.get(t.fromMemberId) ?? 0) + t.amount);
+      deltas.set(t.toMemberId, (deltas.get(t.toMemberId) ?? 0) - t.amount);
+    });
+    return balancesByMember.map((entry) => ({
+      memberId: entry.memberId,
+      balance: entry.balance + (deltas.get(entry.memberId) ?? 0),
+    }));
+  }, [balancesByMember, partialAuditTransfers]);
   const householdMemberIds = useMemo(() => [...new Set(members.map((member) => member.user_id))], [members]);
   const allMembersLabel = t("finances.allMembers");
   const andWord = t("common.and");
@@ -3884,13 +3902,23 @@ export const FinancesPage = ({
               </p>
             )}
 
-            <div className="mt-4">
+            <div className="mt-4 flex flex-wrap gap-2">
               <Button
                 type="button"
                 variant="outline"
                 onClick={() => setAuditDialogOpen(true)}
               >
                 {t("finances.startAudit")}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setPartialAuditSelectedIds(members.map((m) => m.user_id));
+                  setPartialAuditDialogOpen(true);
+                }}
+              >
+                {t("finances.partialAuditButton")}
               </Button>
             </div>
           </SectionPanel>
@@ -3969,6 +3997,196 @@ export const FinancesPage = ({
                     {t("common.trigger")}
                   </Button>
                 </DialogClose>
+              </div>
+            </DialogContent>
+          </Dialog>
+
+          <Dialog
+            open={partialAuditDialogOpen}
+            onOpenChange={(open) => {
+              if (!partialAuditBusy) setPartialAuditDialogOpen(open);
+            }}
+          >
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>{t("finances.partialAuditTitle")}</DialogTitle>
+                <DialogDescription>{t("finances.partialAuditDescription")}</DialogDescription>
+              </DialogHeader>
+
+              {/* Member selection */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                    {t("finances.partialAuditMembersLabel")}
+                  </span>
+                  <button
+                    type="button"
+                    className="text-xs text-brand-600 underline underline-offset-2 hover:text-brand-500 dark:text-brand-400"
+                    onClick={() => {
+                      const allIds = members.map((m) => m.user_id);
+                      setPartialAuditSelectedIds(
+                        partialAuditSelectedIds.length === allIds.length ? [] : allIds
+                      );
+                    }}
+                  >
+                    {t("finances.partialAuditSelectAll")}
+                  </button>
+                </div>
+                {members.map((member) => {
+                  const balanceEntry = balancesByMember.find((b) => b.memberId === member.user_id);
+                  const balance = balanceEntry?.balance ?? 0;
+                  const isSelected = partialAuditSelectedIds.includes(member.user_id);
+                  return (
+                    <label
+                      key={member.user_id}
+                      className={`flex cursor-pointer items-center gap-3 rounded-xl border px-3 py-2.5 transition-colors ${
+                        isSelected
+                          ? "border-brand-300 bg-brand-50/60 dark:border-brand-700 dark:bg-brand-950/30"
+                          : "border-brand-100 bg-white dark:border-slate-700 dark:bg-slate-900/50"
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 accent-brand-600"
+                        checked={isSelected}
+                        onChange={(e) => {
+                          setPartialAuditSelectedIds((prev) =>
+                            e.target.checked
+                              ? [...prev, member.user_id]
+                              : prev.filter((id) => id !== member.user_id)
+                          );
+                        }}
+                      />
+                      <MemberAvatar
+                        src={memberAvatarSrc(member.user_id)}
+                        alt={memberLabel(member.user_id)}
+                        isVacation={vacationMemberIds.has(member.user_id)}
+                        className="h-7 w-7 shrink-0 rounded-full border border-brand-100 bg-brand-50 dark:border-slate-700 dark:bg-slate-800"
+                      />
+                      <span className={`min-w-0 flex-1 text-sm ${member.user_id === userId ? "font-semibold" : ""}`}>
+                        {memberLabel(member.user_id)}
+                      </span>
+                      <span className={`shrink-0 text-xs font-medium ${
+                        balance > 0.004
+                          ? "text-emerald-700 dark:text-emerald-300"
+                          : balance < -0.004
+                            ? "text-rose-700 dark:text-rose-300"
+                            : "text-slate-500 dark:text-slate-400"
+                      }`}>
+                        {balance > 0.004 ? "+" : ""}{formatMoney(balance, locale, currency)}
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+
+              {/* Live transfer preview + projected balances side-by-side */}
+              <div className="grid grid-cols-2 gap-2">
+                <div className="rounded-xl border border-brand-100 bg-brand-50/40 p-3 dark:border-slate-700 dark:bg-slate-800/50">
+                  <p className="mb-2 text-xs font-semibold text-slate-500 dark:text-slate-400">
+                    {t("finances.partialAuditPreviewTitle")}
+                  </p>
+                  {partialAuditTransfers.length > 0 ? (
+                    <ul className="space-y-1.5">
+                      {partialAuditTransfers.map((transfer, index) => (
+                        <li
+                          key={`${transfer.fromMemberId}-${transfer.toMemberId}-${index}`}
+                          className="flex items-center gap-1.5 text-sm text-slate-700 dark:text-slate-200"
+                        >
+                          <MemberAvatar
+                            src={memberAvatarSrc(transfer.fromMemberId)}
+                            alt={memberLabel(transfer.fromMemberId)}
+                            className="h-5 w-5 shrink-0 rounded-full border border-brand-100 bg-brand-50 dark:border-slate-700 dark:bg-slate-800"
+                          />
+                          <span className="shrink-0 text-slate-400">→</span>
+                          <MemberAvatar
+                            src={memberAvatarSrc(transfer.toMemberId)}
+                            alt={memberLabel(transfer.toMemberId)}
+                            className="h-5 w-5 shrink-0 rounded-full border border-brand-100 bg-brand-50 dark:border-slate-700 dark:bg-slate-800"
+                          />
+                          <span className="ml-auto shrink-0 text-xs font-semibold text-emerald-700 dark:text-emerald-300">
+                            {moneyLabel(transfer.amount)}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      {t("finances.partialAuditPreviewEmpty")}
+                    </p>
+                  )}
+                </div>
+
+                <div className="rounded-xl border border-brand-100 bg-brand-50/40 p-3 dark:border-slate-700 dark:bg-slate-800/50">
+                  <p className="mb-2 text-xs font-semibold text-slate-500 dark:text-slate-400">
+                    {t("finances.partialAuditAfterTitle")}
+                  </p>
+                  <ul className="space-y-1.5">
+                    {partialAuditProjectedBalances.map((entry) => {
+                      const isZero = Math.abs(entry.balance) <= 0.004;
+                      const isPos = entry.balance > 0.004;
+                      return (
+                        <li
+                          key={entry.memberId}
+                          className="flex items-center gap-1.5"
+                        >
+                          <MemberAvatar
+                            src={memberAvatarSrc(entry.memberId)}
+                            alt={memberLabel(entry.memberId)}
+                            className="h-5 w-5 shrink-0 rounded-full border border-brand-100 bg-brand-50 dark:border-slate-700 dark:bg-slate-800"
+                          />
+                          <span className={`ml-auto shrink-0 text-xs font-semibold ${
+                            isZero
+                              ? "text-slate-400 dark:text-slate-500"
+                              : isPos
+                                ? "text-emerald-700 dark:text-emerald-300"
+                                : "text-rose-700 dark:text-rose-300"
+                          }`}>
+                            {isZero ? "±0" : `${isPos ? "+" : ""}${moneyLabel(entry.balance)}`}
+                          </span>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2">
+                <Button
+                  variant="ghost"
+                  type="button"
+                  disabled={partialAuditBusy}
+                  onClick={() => setPartialAuditDialogOpen(false)}
+                >
+                  {t("common.cancel")}
+                </Button>
+                <Button
+                  type="button"
+                  disabled={partialAuditBusy || partialAuditTransfers.length === 0}
+                  onClick={async () => {
+                    setPartialAuditBusy(true);
+                    try {
+                      const today = new Date().toISOString().slice(0, 10);
+                      for (const transfer of partialAuditTransfers) {
+                        await onAdd({
+                          description: t("finances.partialAuditEntry"),
+                          amount: Math.round(transfer.amount * 100) / 100,
+                          category: "kassensturz",
+                          paidByUserIds: [transfer.fromMemberId],
+                          beneficiaryUserIds: [transfer.toMemberId],
+                          entryDate: today,
+                        });
+                      }
+                      setPartialAuditDialogOpen(false);
+                    } catch {
+                      // error stays silent; server errors are handled by the workspace controller
+                    } finally {
+                      setPartialAuditBusy(false);
+                    }
+                  }}
+                >
+                  {partialAuditBusy ? t("finances.partialAuditBusy") : t("finances.partialAuditExecute")}
+                </Button>
               </div>
             </DialogContent>
           </Dialog>
