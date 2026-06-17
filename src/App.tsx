@@ -251,7 +251,6 @@ const AppLayout = () => {
     onNavigate: handleForegroundPush
   });
   const handledPushActionRef = useRef<string | null>(null);
-  const handledInviteCodeRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -492,11 +491,8 @@ const AppLayout = () => {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    if (!session || !userId || activeHousehold) return;
     if (!initialInviteCode) return;
-    if (handledInviteCodeRef.current === initialInviteCode) return;
-
-    handledInviteCodeRef.current = initialInviteCode;
+    if (!session || !activeHousehold) return;
 
     const cleanupInviteParam = () => {
       const params = new URLSearchParams(window.location.search);
@@ -506,14 +502,8 @@ const AppLayout = () => {
       window.history.replaceState({}, "", nextUrl);
     };
 
-    void onJoinHousehold(initialInviteCode)
-      .then(() => {
-        cleanupInviteParam();
-      })
-      .catch(() => {
-        handledInviteCodeRef.current = null;
-      });
-  }, [activeHousehold, initialInviteCode, onJoinHousehold, session, userId]);
+    cleanupInviteParam();
+  }, [activeHousehold, initialInviteCode, session]);
   const isVacationActive = useMemo(() => {
     if (!currentMember) return false;
     return isMemberOnVacation(

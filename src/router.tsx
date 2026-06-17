@@ -1,19 +1,30 @@
 import { createRootRoute, createRoute, createRouter, redirect } from "@tanstack/react-router";
 import App from "./App";
 import { appStore, setActiveHouseholdId } from "./lib/app-store";
-import { getCurrentSession, getHouseholdsForUser } from "./lib/api";
+import { getCurrentSession, getHouseholdsForUser, joinHouseholdByInvite } from "./lib/api";
 import { ensureHouseholdQueries } from "./lib/household-queries";
 import type { HouseholdQueryKey } from "./lib/household-queries";
 import { queryClient } from "./lib/query-client";
 import { queryKeys } from "./lib/query-keys";
 
-const ensureSessionAndHousehold = async () => {
+const ensureSessionAndHousehold = async (inviteCode?: string | null) => {
   const session = await queryClient.ensureQueryData({
     queryKey: queryKeys.session,
     queryFn: getCurrentSession
   });
   const userId = session?.user?.id;
   if (!userId) return null;
+
+  const normalizedInviteCode = inviteCode?.trim().toUpperCase() ?? "";
+  if (normalizedInviteCode) {
+    try {
+      const joinedHousehold = await joinHouseholdByInvite(normalizedInviteCode, userId);
+      await queryClient.invalidateQueries({ queryKey: queryKeys.households(userId) });
+      setActiveHouseholdId(joinedHousehold.id);
+    } catch {
+      // Keep boot flow resilient even if the invite was already consumed or invalid.
+    }
+  }
 
   const households = await queryClient.ensureQueryData({
     queryKey: queryKeys.households(userId),
@@ -36,7 +47,10 @@ const prefetchHouseholdData = async (queries: HouseholdQueryKey[]) => {
 };
 
 const rootRoute = createRootRoute({
-  beforeLoad: () => ensureSessionAndHousehold(),
+  beforeLoad: ({ location }) => {
+    const inviteCode = new URLSearchParams(location.search).get("invite");
+    return ensureSessionAndHousehold(inviteCode);
+  },
   component: App
 });
 
