@@ -7,7 +7,9 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS"
 };
 
-const normalizePublicOrigin = (value: string | null | undefined) => {
+// Returns the base URL normalized to end with exactly one trailing slash,
+// e.g. "https://example.com/" or "https://example.com/subpath/".
+const normalizePublicBaseUrl = (value: string | null | undefined) => {
   if (!value) return null;
   try {
     const parsed = new URL(value.trim());
@@ -16,7 +18,8 @@ const normalizePublicOrigin = (value: string | null | undefined) => {
     if (host === "localhost" || host === "127.0.0.1" || host === "[::1]") return null;
     parsed.hash = "";
     parsed.search = "";
-    parsed.pathname = parsed.pathname.replace(/\/+$/, "");
+    // Ensure exactly one trailing slash so appending "?..." works without double slash
+    parsed.pathname = parsed.pathname.replace(/\/+$/, "") + "/";
     return parsed.toString();
   } catch {
     return null;
@@ -66,9 +69,9 @@ serve(async (req) => {
   const householdId = typeof body.household_id === "string" ? body.household_id.trim() : null;
   const appOrigin = typeof body.app_origin === "string" ? body.app_origin.trim() : null;
   const fallbackAppOrigin =
-    normalizePublicOrigin(Deno.env.get("PUBLIC_APP_ORIGIN"))
-    ?? normalizePublicOrigin(Deno.env.get("APP_ORIGIN"));
-  const resolvedAppOrigin = normalizePublicOrigin(appOrigin) ?? fallbackAppOrigin;
+    normalizePublicBaseUrl(Deno.env.get("PUBLIC_APP_ORIGIN"))
+    ?? normalizePublicBaseUrl(Deno.env.get("APP_ORIGIN"));
+  const resolvedAppOrigin = normalizePublicBaseUrl(appOrigin) ?? fallbackAppOrigin;
 
   if (!email || !householdId || !resolvedAppOrigin) {
     return new Response("Missing email, household_id or valid public app origin", { status: 400, headers: corsHeaders });
@@ -110,7 +113,8 @@ serve(async (req) => {
   }
 
   const inviteCode = (householdRow as { invite_code: string }).invite_code;
-  const redirectTo = `${resolvedAppOrigin}/?invite=${encodeURIComponent(inviteCode)}`;
+  // resolvedAppOrigin is guaranteed to end with "/" by normalizePublicBaseUrl
+  const redirectTo = `${resolvedAppOrigin}?invite=${encodeURIComponent(inviteCode)}`;
 
   const { error: inviteError } = await adminClient.auth.admin.inviteUserByEmail(email, {
     redirectTo
