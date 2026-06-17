@@ -63,6 +63,7 @@ import { FullscreenDialog } from "../../components/ui/fullscreen-dialog";
 import { Input } from "../../components/ui/input";
 import { InputWithSuffix } from "../../components/ui/input-with-suffix";
 import { Label } from "../../components/ui/label";
+import { MobileBottomComposer } from "../../components/ui/mobile-bottom-composer";
 import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "../../components/ui/popover";
 import { SectionPanel } from "../../components/ui/section-panel";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
@@ -72,6 +73,7 @@ import { useSmartSuggestions } from "../../hooks/use-smart-suggestions";
 import { suggestCategoryLabel } from "../../lib/category-heuristics";
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger
@@ -1234,6 +1236,7 @@ export const FinancesPage = ({
   const [memberRentFormError, setMemberRentFormError] = useState<string | null>(null);
   const [overviewMemberRentFormError, setOverviewMemberRentFormError] = useState<string | null>(null);
   const [overviewEntrySearch, setOverviewEntrySearch] = useState("");
+  const [showOtherOverviewEntries, setShowOtherOverviewEntries] = useState(false);
   const [savingOverviewMemberId, setSavingOverviewMemberId] = useState<string | null>(null);
   const [receiptUploadError, setReceiptUploadError] = useState<string | null>(null);
   const [receiptPreviewUrl, setReceiptPreviewUrl] = useState<string | null>(null);
@@ -1289,7 +1292,6 @@ export const FinancesPage = ({
   const showArchive = section === "archive";
   const showSubscriptions = section === "subscriptions";
   const canEditApartment = currentMember?.role === "owner";
-  const mobileOverviewListHeight = mobileTabBarVisible ? "calc(100dvh - 9rem)" : "calc(100dvh - 5rem)";
   const addEntryForm = useForm({
     defaultValues: {
       description: "",
@@ -2476,6 +2478,11 @@ export const FinancesPage = ({
     return "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200";
   };
   const canManageFinanceEntry = (entry: FinanceEntry) => entry.created_by === userId;
+  const isUserInvolvedInEntry = (entry: FinanceEntry) => {
+    const payerIds = entry.paid_by_user_ids.length > 0 ? entry.paid_by_user_ids : [entry.paid_by];
+    const beneficiaryIds = entry.beneficiary_user_ids.length > 0 ? entry.beneficiary_user_ids : householdMemberIds;
+    return payerIds.includes(userId) || beneficiaryIds.includes(userId);
+  };
   const paidByText = (entry: FinanceEntry) =>
     t("finances.paidByMembers", {
       members: formatMemberGroupLabel(
@@ -2489,12 +2496,13 @@ export const FinancesPage = ({
     });
   const normalizedOverviewSearch = overviewEntrySearch.trim().toLowerCase();
   const filteredEntriesSinceLastAudit = useMemo(() => {
-    if (!normalizedOverviewSearch) return entriesSinceLastAudit;
     return entriesSinceLastAudit.filter((entry) => {
+      if (!showOtherOverviewEntries && !isUserInvolvedInEntry(entry)) return false;
+      if (!normalizedOverviewSearch) return true;
       const haystack = `${entry.description} ${entry.category} ${paidByText(entry)}`.toLowerCase();
       return haystack.includes(normalizedOverviewSearch);
     });
-  }, [entriesSinceLastAudit, normalizedOverviewSearch, paidByText]);
+  }, [entriesSinceLastAudit, isUserInvolvedInEntry, normalizedOverviewSearch, paidByText, showOtherOverviewEntries]);
   const entryDateText = (entry: FinanceEntry) => formatDateOnly(parseDateFallback(entry), language, parseDateFallback(entry));
   const recurrenceOptions: Array<{ value: FinanceSubscriptionRecurrence; label: string }> = [
     { value: "weekly", label: t("finances.subscriptionRecurrenceWeekly") },
@@ -3752,20 +3760,14 @@ export const FinancesPage = ({
             </Card>
           ) : null}
           {isMobileAddEntryComposer ? (
-            <div
-              className={`fixed inset-x-0 z-40 px-3 sm:hidden ${
-                mobileTabBarVisible
-                  ? "bottom-[calc(env(safe-area-inset-bottom)+3.75rem)]"
-                  : "bottom-[calc(env(safe-area-inset-bottom)-0.75rem)]"
-              }`}
+            <MobileBottomComposer
+              containerRef={addEntryComposerContainerRef}
+              mobileTabBarVisible={mobileTabBarVisible}
+              withTabBarBottomClassName="bottom-[calc(env(safe-area-inset-bottom)+3.2rem)]"
+              withoutTabBarBottomClassName="bottom-[env(safe-area-inset-bottom)]"
             >
-              <div
-                ref={addEntryComposerContainerRef}
-                className="rounded-2xl border border-brand-200/70 bg-white/75 p-1.5 shadow-xl backdrop-blur-xl dark:border-slate-700/70 dark:bg-slate-900/75"
-              >
-                {renderAddEntryComposer(true)}
-              </div>
-            </div>
+              {renderAddEntryComposer(true)}
+            </MobileBottomComposer>
           ) : null}
         </>
       ) : null}
@@ -4316,7 +4318,6 @@ export const FinancesPage = ({
               receiptLabel={t("finances.receiptLink")}
               formatMoney={moneyLabel}
               virtualized
-              virtualHeight={420}
               onEdit={group.isEditable ? onStartEditEntry : undefined}
               onDelete={
                 group.isEditable
@@ -5347,15 +5348,39 @@ export const FinancesPage = ({
                 </div>
               </CardHeader>
               <CardContent>
-                <div className="max-w-sm space-y-1">
+                <div className="max-w-sm">
                   <Label className="sr-only">
                     {t("finances.searchLabel")}
                   </Label>
-                  <Input
-                    value={overviewEntrySearch}
-                    onChange={(event) => setOverviewEntrySearch(event.target.value)}
-                    placeholder={t("finances.searchPlaceholder")}
-                  />
+                  <div className="relative">
+                    <Input
+                      value={overviewEntrySearch}
+                      onChange={(event) => setOverviewEntrySearch(event.target.value)}
+                      placeholder={t("finances.searchPlaceholder")}
+                      className="pr-12"
+                    />
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="absolute right-1 top-1 h-9 w-9 rounded-lg px-0"
+                          aria-label={t("finances.overviewFiltersButton")}
+                        >
+                          <SlidersHorizontal className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuCheckboxItem
+                          checked={showOtherOverviewEntries}
+                          onCheckedChange={(checked) => setShowOtherOverviewEntries(checked === true)}
+                        >
+                          {t("finances.showOtherEntries")}
+                        </DropdownMenuCheckboxItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -5391,15 +5416,39 @@ export const FinancesPage = ({
                         })}
                       </Badge>
                     </div>
-                    <div className="mt-2 max-w-sm space-y-1">
+                    <div className="mt-2 max-w-sm">
                       <Label className="sr-only">
                         {t("finances.searchLabel")}
                       </Label>
-                      <Input
-                        value={overviewEntrySearch}
-                        onChange={(event) => setOverviewEntrySearch(event.target.value)}
-                        placeholder={t("finances.searchPlaceholder")}
-                      />
+                      <div className="relative">
+                        <Input
+                          value={overviewEntrySearch}
+                          onChange={(event) => setOverviewEntrySearch(event.target.value)}
+                          placeholder={t("finances.searchPlaceholder")}
+                          className="pr-12"
+                        />
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="absolute right-1 top-1 h-9 w-9 rounded-lg px-0"
+                              aria-label={t("finances.overviewFiltersButton")}
+                            >
+                              <SlidersHorizontal className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuCheckboxItem
+                              checked={showOtherOverviewEntries}
+                              onCheckedChange={(checked) => setShowOtherOverviewEntries(checked === true)}
+                            >
+                              {t("finances.showOtherEntries")}
+                            </DropdownMenuCheckboxItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
                     </div>
                   </div>
                 ) : undefined
@@ -5426,7 +5475,6 @@ export const FinancesPage = ({
               canDeleteEntry={canManageFinanceEntry}
               busy={busy}
               virtualized
-              virtualHeight={isMobileAddEntryComposer ? mobileOverviewListHeight : 520}
             />
           ) : entriesSinceLastAudit.length === 0 ? (
             isMobileAddEntryComposer ? (
@@ -5452,15 +5500,39 @@ export const FinancesPage = ({
                     })}
                   </Badge>
                 </div>
-                <div className="mt-2 max-w-sm space-y-1">
+                <div className="mt-2 max-w-sm">
                   <Label className="sr-only">
                     {t("finances.searchLabel")}
                   </Label>
-                  <Input
-                    value={overviewEntrySearch}
-                    onChange={(event) => setOverviewEntrySearch(event.target.value)}
-                    placeholder={t("finances.searchPlaceholder")}
-                  />
+                  <div className="relative">
+                    <Input
+                      value={overviewEntrySearch}
+                      onChange={(event) => setOverviewEntrySearch(event.target.value)}
+                      placeholder={t("finances.searchPlaceholder")}
+                      className="pr-12"
+                    />
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="absolute right-1 top-1 h-9 w-9 rounded-lg px-0"
+                          aria-label={t("finances.overviewFiltersButton")}
+                        >
+                          <SlidersHorizontal className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuCheckboxItem
+                          checked={showOtherOverviewEntries}
+                          onCheckedChange={(checked) => setShowOtherOverviewEntries(checked === true)}
+                        >
+                          {t("finances.showOtherEntries")}
+                        </DropdownMenuCheckboxItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
                 </div>
                 <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">
                   {t("finances.empty")}

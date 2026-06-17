@@ -36,6 +36,7 @@ import {
 } from "../../../components/ui/dropdown-menu";
 import { Input } from "../../../components/ui/input";
 import { Label } from "../../../components/ui/label";
+import { MobileBottomComposer } from "../../../components/ui/mobile-bottom-composer";
 import { MultiDateCalendarSelect } from "../../../components/ui/multi-date-calendar-select";
 import {
   Popover,
@@ -612,20 +613,14 @@ export function BucketList({ bucketItems }: { bucketItems: BucketItem[] }) {
         </DialogContent>
       </Dialog>
       {isMobileBucketComposer ? (
-        <div
-          className={`fixed inset-x-0 z-40 px-3 sm:hidden ${
-            mobileTabBarVisible
-              ? "bottom-[calc(env(safe-area-inset-bottom)+3.75rem)]"
-              : "bottom-[calc(env(safe-area-inset-bottom)+0.2rem)]"
-          }`}
+        <MobileBottomComposer
+          containerRef={bucketComposerContainerRef}
+          mobileTabBarVisible={mobileTabBarVisible}
+          withTabBarBottomClassName="bottom-[calc(env(safe-area-inset-bottom)+4.2rem)]"
+          withoutTabBarBottomClassName="bottom-[env(safe-area-inset-bottom)]"
         >
-          <div
-            ref={bucketComposerContainerRef}
-            className="rounded-2xl border border-brand-200/70 bg-white/75 p-1.5 shadow-xl backdrop-blur-xl dark:border-slate-700/70 dark:bg-slate-900/75"
-          >
-            {renderBucketComposer(true)}
-          </div>
-        </div>
+          {renderBucketComposer(true)}
+        </MobileBottomComposer>
       ) : null}
     </>
   );

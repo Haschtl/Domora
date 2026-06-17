@@ -23,6 +23,7 @@ import { Dialog, DialogClose, DialogContent, DialogDescription, DialogHeader, Di
 import { Input } from "../../components/ui/input";
 import { InputWithSuffix } from "../../components/ui/input-with-suffix";
 import { Label } from "../../components/ui/label";
+import { MobileBottomComposer } from "../../components/ui/mobile-bottom-composer";
 import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "../../components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "../../components/ui/dropdown-menu";
@@ -913,20 +914,14 @@ export const ShoppingPage = ({
           </DialogContent>
         </Dialog>
         {isMobileComposer ? (
-          <div
-            className={`fixed inset-x-0 z-40 px-3 sm:hidden ${
-              mobileTabBarVisible
-                ? "bottom-[calc(env(safe-area-inset-bottom)+4.75rem)]"
-                : "bottom-[calc(env(safe-area-inset-bottom)+0.2rem)]"
-            }`}
+          <MobileBottomComposer
+            containerRef={addItemComposerContainerRef}
+            mobileTabBarVisible={mobileTabBarVisible}
+            withTabBarBottomClassName="bottom-[calc(env(safe-area-inset-bottom)+4.2rem)]"
+            withoutTabBarBottomClassName="bottom-[env(safe-area-inset-bottom)]"
           >
-            <div
-              ref={addItemComposerContainerRef}
-              className="rounded-2xl border border-brand-200/70 bg-white/75 p-1.5 shadow-xl backdrop-blur-xl dark:border-slate-700/70 dark:bg-slate-900/75"
-            >
-              {renderAddItemComposer(true)}
-            </div>
-          </div>
+            {renderAddItemComposer(true)}
+          </MobileBottomComposer>
         ) : null}
       </div>
     );
