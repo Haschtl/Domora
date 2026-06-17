@@ -7,6 +7,7 @@ import QRCode from "react-qr-code";
 import { isSupported } from "firebase/messaging";
 import type {
   Household,
+  HouseholdEvent,
   HouseholdMember,
   HouseholdMemberVacation,
   PushTokenDiagnostic,
@@ -22,7 +23,7 @@ import {
   normalizeTaskFeatureFlags
 } from "../../lib/household-task-features";
 import { createMemberLabelGetter } from "../../lib/member-label";
-import { isDueNow } from "../../lib/date";
+import { formatDateOnly, isDueNow } from "../../lib/date";
 import { getVacationStatus, isDateWithinRange, isMemberOnVacation } from "../../lib/vacation-utils";
 import { ThemeLanguageControls } from "../../components/theme-language-controls";
 import { PaymentBrandIcon } from "../../components/payment-brand-icon";
@@ -70,6 +71,7 @@ interface SettingsPageProps {
   currentMember: HouseholdMember | null;
   memberVacations: HouseholdMemberVacation[];
   tasks: TaskItem[];
+  memberHistoryEvents: HouseholdEvent[];
   userId: string;
   userEmail: string | undefined;
   userAvatarUrl: string | null;
@@ -191,6 +193,7 @@ export const SettingsPage = ({
   currentMember,
   memberVacations,
   tasks,
+  memberHistoryEvents,
   userId,
   userEmail,
   userAvatarUrl,
@@ -218,7 +221,7 @@ export const SettingsPage = ({
   onDissolveHousehold,
   onStartWizard
 }: SettingsPageProps) => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const appVersion = __APP_VERSION__;
   const isOwner = currentMember?.role === "owner";
 
@@ -3906,6 +3909,88 @@ export const SettingsPage = ({
                 {t("settings.householdSave")}
               </Button>
             </div>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {showHousehold ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>{t("settings.memberHistoryTitle")}</CardTitle>
+            <CardDescription>{t("settings.memberHistoryDescription")}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {memberHistoryEvents.length === 0 ? (
+              <p className="text-sm text-slate-500 dark:text-slate-400">
+                {t("settings.memberHistoryEmpty")}
+              </p>
+            ) : (
+              <ul className="space-y-2">
+                {memberHistoryEvents.map((event) => {
+                  const name = String(event.payload.name ?? t("common.memberFallback"));
+                  const reason = String(event.payload.reason ?? "");
+                  const isJoined = event.event_type === "member_joined";
+                  const reasonLabel =
+                    reason === "created"
+                      ? t("settings.memberHistoryReasonCreated")
+                      : reason === "invite"
+                        ? t("settings.memberHistoryReasonInvite")
+                        : reason === "removed"
+                          ? t("settings.memberHistoryReasonRemoved")
+                          : reason === "self"
+                            ? t("settings.memberHistoryReasonSelf")
+                            : null;
+                  const memberId = event.subject_user_id ?? event.actor_user_id;
+                  const existingMember = memberId
+                    ? members.find((m) => m.user_id === memberId)
+                    : null;
+                  const avatarSrc = existingMember
+                    ? createDiceBearAvatarDataUri(
+                        getMemberAvatarSeed(existingMember.user_id, existingMember.display_name),
+                        existingMember.user_color
+                      )
+                    : createDiceBearAvatarDataUri(name, null);
+                  return (
+                    <li
+                      key={event.id}
+                      className="flex items-center gap-3 rounded-xl border border-brand-100 bg-white/80 px-3 py-2.5 dark:border-slate-700 dark:bg-slate-900/60"
+                    >
+                      <MemberAvatar
+                        src={avatarSrc}
+                        alt={name}
+                        className="h-8 w-8 shrink-0 rounded-full border border-brand-100 bg-brand-50 dark:border-slate-700 dark:bg-slate-800"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium text-slate-900 dark:text-slate-100">
+                          {name}
+                        </p>
+                        <p className="flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400">
+                          <span
+                            className={
+                              isJoined
+                                ? "font-medium text-emerald-700 dark:text-emerald-400"
+                                : "font-medium text-rose-700 dark:text-rose-400"
+                            }
+                          >
+                            {isJoined
+                              ? t("settings.memberHistoryJoined")
+                              : t("settings.memberHistoryLeft")}
+                          </span>
+                          {reasonLabel ? (
+                            <span className="text-slate-400 dark:text-slate-500">
+                              · {reasonLabel}
+                            </span>
+                          ) : null}
+                        </p>
+                      </div>
+                      <span className="shrink-0 text-xs text-slate-400 dark:text-slate-500">
+                        {formatDateOnly(event.created_at, i18n.resolvedLanguage ?? i18n.language)}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
           </CardContent>
         </Card>
       ) : null}

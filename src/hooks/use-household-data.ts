@@ -10,6 +10,7 @@ import { householdQueryOptions, type HouseholdQueryKey } from "../lib/household-
 import {
   getFinanceEntriesPage,
   getHouseholdEventsPage,
+  getMemberHistoryEvents,
   getTaskTimeEntriesPage,
   type FinanceEntriesPage,
   type HouseholdEventsPage,
@@ -20,6 +21,7 @@ import type {
   BucketItem,
   CashAuditRequest,
   FinanceSubscription,
+  HouseholdEvent,
   HouseholdMemberVacation,
   HouseholdWhiteboard,
   HouseholdMemberPimpers,
@@ -295,4 +297,11 @@ export const useHouseholdWhiteboard = (householdId: string | null, enabled = tru
           })
         }),
     enabled: Boolean(householdId) && enabled
+  });
+
+export const useMemberHistoryEvents = (householdId: string | null) =>
+  useQuery<HouseholdEvent[]>({
+    queryKey: householdId ? queryKeys.householdMemberHistory(householdId) : ["household", "none", "member-history"],
+    queryFn: () => getMemberHistoryEvents(householdId!),
+    enabled: Boolean(householdId),
   });

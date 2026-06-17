@@ -3676,6 +3676,18 @@ export const getCashAuditRequests = async (householdId: string): Promise<CashAud
   return (data ?? []).map((entry) => normalizeCashAuditRequest(entry as Record<string, unknown>));
 };
 
+export const getMemberHistoryEvents = async (householdId: string): Promise<HouseholdEvent[]> => {
+  const { data, error } = await supabase
+    .from("household_events")
+    .select(SELECT_HOUSEHOLD_EVENT_FIELDS)
+    .eq("household_id", householdId)
+    .in("event_type", ["member_joined", "member_left"])
+    .order("created_at", { ascending: false });
+
+  if (error) throw error;
+  return (data ?? []).map((entry) => normalizeHouseholdEvent(entry as Record<string, unknown>));
+};
+
 export const getHouseholdEvents = async (householdId: string): Promise<HouseholdEvent[]> => {
   const { data, error } = await supabase
     .from("household_events")
