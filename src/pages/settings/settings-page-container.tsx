@@ -5,9 +5,10 @@ import { useHouseholdTasks } from "../../hooks/use-household-data";
 
 interface SettingsPageContainerProps {
   section: "me" | "household";
+  onStartWizard?: () => void;
 }
 
-export const SettingsPageContainer = ({ section }: SettingsPageContainerProps) => {
+export const SettingsPageContainer = ({ section, onStartWizard }: SettingsPageContainerProps) => {
   const navigate = useNavigate();
   const location = useLocation();
   const {
@@ -93,6 +94,7 @@ export const SettingsPageContainer = ({ section }: SettingsPageContainerProps) =
       onSignOut={onSignOut}
       onLeaveHousehold={onLeaveHouseholdWithRedirect}
       onDissolveHousehold={onDissolveHouseholdWithRedirect}
+      onStartWizard={onStartWizard}
     />
   );
 };

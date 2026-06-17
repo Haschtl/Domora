@@ -80,6 +80,9 @@ const AppParticlesBackground = lazy(() =>
 const VacationOverlay = lazy(() =>
   import("./components/vacation-overlay").then((module) => ({ default: module.VacationOverlay }))
 );
+const HouseholdSetupWizard = lazy(() =>
+  import("./features/HouseholdSetupWizard").then((module) => ({ default: module.HouseholdSetupWizard }))
+);
 
 const tabPathMap: Record<AppTab, string> = {
   home: "/home/summary",
@@ -213,8 +216,19 @@ const AppLayout = () => {
     onSignOut,
     onCreateHousehold,
     onJoinHousehold,
+    onUpdateHousehold,
     onEnableNotifications
   } = workspace;
+
+  const [wizardOpen, setWizardOpen] = useState(false);
+
+  const handleCreateHousehold = useCallback(
+    async (name: string) => {
+      await onCreateHousehold(name);
+      setWizardOpen(true);
+    },
+    [onCreateHousehold]
+  );
 
   const handleForegroundPush = useCallback(
     (data: Record<string, string>) => {
@@ -986,7 +1000,7 @@ const AppLayout = () => {
             households={households}
             busy={busy}
             initialInviteCode={initialInviteCode}
-            onCreate={onCreateHousehold}
+            onCreate={handleCreateHousehold}
             onJoin={onJoinHousehold}
             onSelect={(household) => setActiveHousehold(household)}
             onSignOut={onSignOut}
@@ -1173,7 +1187,7 @@ const AppLayout = () => {
 
                     {tab === "settings" ? (
                       settingsSubTab === "household" ? (
-                        <SettingsHouseholdPage />
+                        <SettingsHouseholdPage onStartWizard={() => setWizardOpen(true)} />
                       ) : settingsSubTab === "push-test" ? (
                         <SettingsPushTestPage />
                       ) : (
@@ -1225,6 +1239,18 @@ const AppLayout = () => {
                 })}
               </ul>
             </nav>
+          ) : null}
+
+          {activeHousehold ? (
+            <Suspense fallback={null}>
+              <HouseholdSetupWizard
+                open={wizardOpen}
+                onClose={() => setWizardOpen(false)}
+                household={activeHousehold}
+                busy={busy}
+                onUpdateHousehold={onUpdateHousehold}
+              />
+            </Suspense>
           ) : null}
         </section>
       ) : null}

@@ -61,6 +61,7 @@ import {
 import { getLocalPushDeviceId } from "../../lib/push-registration";
 import { MemberAvatar } from "../../components/member-avatar";
 import { getFirebaseRuntimeConfig } from "../../lib/firebase-config";
+import { HouseholdWizardTriggerButton } from "../../features/HouseholdSetupWizard";
 
 interface SettingsPageProps {
   section?: "me" | "household";
@@ -97,6 +98,7 @@ interface SettingsPageProps {
   onSignOut: () => Promise<void>;
   onLeaveHousehold: () => Promise<void>;
   onDissolveHousehold: () => Promise<void>;
+  onStartWizard?: () => void;
 }
 
 const normalizeCurrency = (value: string) =>
@@ -213,7 +215,8 @@ export const SettingsPage = ({
   onRemoveMember,
   onSignOut,
   onLeaveHousehold,
-  onDissolveHousehold
+  onDissolveHousehold,
+  onStartWizard
 }: SettingsPageProps) => {
   const { t } = useTranslation();
   const appVersion = __APP_VERSION__;
@@ -2391,12 +2394,19 @@ export const SettingsPage = ({
       {showHousehold ? (
         <Card>
           <CardHeader>
-            <CardTitle>{t("settings.householdTitle")}</CardTitle>
-            <CardDescription>
-              {isOwner
-                ? t("settings.householdDescription")
-                : t("settings.householdOwnerOnlyHint")}
-            </CardDescription>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <CardTitle>{t("settings.householdTitle")}</CardTitle>
+                <CardDescription>
+                  {isOwner
+                    ? t("settings.householdDescription")
+                    : t("settings.householdOwnerOnlyHint")}
+                </CardDescription>
+              </div>
+              {isOwner && onStartWizard ? (
+                <HouseholdWizardTriggerButton onStart={onStartWizard} />
+              ) : null}
+            </div>
           </CardHeader>
           <CardContent>
             <form
