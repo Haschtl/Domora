@@ -88,6 +88,12 @@ import { ReceiptPreviewDialog } from "../../components/receipt-preview-dialog";
 import { FinanceEntriesList } from "../../features/components/FinanceEntriesList";
 import { FinanceHistoryCard } from "../../features/components/FinanceHistoryCard";
 import { useFinancesDerivedData } from "../../features/hooks/use-finances-derived-data";
+import {
+  extractReceiptDataWithLlm,
+  isWebGpuAvailable,
+  type LlmProgressReport,
+  type ReceiptLlmResult,
+} from "../../lib/receipt-llm";
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, ArcElement, Tooltip, Legend);
 
@@ -1225,6 +1231,10 @@ export const FinancesPage = ({
   const [ocrBusy, setOcrBusy] = useState(false);
   const [ocrError, setOcrError] = useState<string | null>(null);
   const [ocrCandidate, setOcrCandidate] = useState<OcrCandidate | null>(null);
+  const [ocrLlmStatus, setOcrLlmStatus] = useState<"idle" | "loading" | "extracting" | "done" | "error">("idle");
+  const [ocrLlmProgress, setOcrLlmProgress] = useState(0);
+  const [ocrLlmProgressText, setOcrLlmProgressText] = useState("");
+  const [ocrLlmResult, setOcrLlmResult] = useState<ReceiptLlmResult | null>(null);
   const [ocrDebugOverlayEnabled, setOcrDebugOverlayEnabled] = useState(() => {
     if (typeof window === "undefined") return false;
     return window.localStorage.getItem(OCR_DEBUG_LOCALSTORAGE_KEY) === "1";
@@ -3443,8 +3453,25 @@ export const FinancesPage = ({
       };
       setOcrPreviewImageUrl(previewImageUrl);
       setOcrCandidate(candidate);
+      setOcrLlmResult(null);
+      setOcrLlmStatus("idle");
       setOcrConfirmDialogOpen(true);
       setOcrCameraDialogOpen(false);
+
+      if (isWebGpuAvailable()) {
+        setOcrLlmStatus("loading");
+        setOcrLlmProgress(0);
+        extractReceiptDataWithLlm(text, (report: LlmProgressReport) => {
+          setOcrLlmProgress(Math.round(report.progress * 100));
+          setOcrLlmProgressText(report.text);
+          if (report.progress >= 1) setOcrLlmStatus("extracting");
+        }).then((result) => {
+          setOcrLlmResult(result);
+          setOcrLlmStatus(result ? "done" : "error");
+        }).catch(() => {
+          setOcrLlmStatus("error");
+        });
+      }
     } catch {
       setOcrError(t("finances.ocrReadError"));
     } finally {
@@ -5804,6 +5831,8 @@ export const FinancesPage = ({
           if (!open) {
             setOcrCandidate(null);
             setOcrPreviewImageUrl(null);
+            setOcrLlmResult(null);
+            setOcrLlmStatus("idle");
           }
         }}
       >
@@ -5860,7 +5889,59 @@ export const FinancesPage = ({
                 </div>
               </div>
             ) : null}
+            {(ocrLlmStatus === "loading" || ocrLlmStatus === "extracting") ? (
+              <div className="flex items-center gap-2 rounded-xl border border-sky-100 bg-sky-50/60 px-3 py-2 text-xs text-sky-700 dark:border-sky-900/40 dark:bg-sky-950/30 dark:text-sky-300">
+                <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-sky-300 border-t-sky-600 dark:border-sky-700 dark:border-t-sky-300" />
+                <span>
+                  {ocrLlmStatus === "loading"
+                    ? `${t("finances.ocrLlmLoading")} ${ocrLlmProgress > 0 ? `${ocrLlmProgress}%` : ""}`.trim()
+                    : t("finances.ocrLlmExtracting")}
+                </span>
+              </div>
+            ) : null}
+
+            {ocrLlmStatus === "done" && ocrLlmResult ? (
+              <div className={`rounded-xl border p-3 text-sm ${
+                ocrLlmResult.confidence >= 0.7
+                  ? "border-emerald-200 bg-emerald-50/60 dark:border-emerald-900/40 dark:bg-emerald-950/30"
+                  : "border-amber-200 bg-amber-50/60 dark:border-amber-900/40 dark:bg-amber-950/30"
+              }`}>
+                <div className="mb-1.5 flex items-center gap-2">
+                  <SparklesIcon className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+                  <span className="text-xs font-semibold text-slate-700 dark:text-slate-200">{t("finances.ocrLlmResultTitle")}</span>
+                  <span className={`ml-auto rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                    ocrLlmResult.confidence >= 0.7
+                      ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200"
+                      : "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200"
+                  }`}>
+                    {Math.round(ocrLlmResult.confidence * 100)}%
+                  </span>
+                </div>
+                <p>
+                  <span className="font-semibold">{t("finances.entryNameLabel")}:</span>{" "}
+                  {ocrLlmResult.title || "-"}
+                </p>
+                <p>
+                  <span className="font-semibold">{t("finances.entryAmountLabel")}:</span>{" "}
+                  {ocrLlmResult.amount?.toFixed(2) ?? "-"} {ocrLlmResult.currency}
+                </p>
+                {ocrLlmResult.date ? (
+                  <p>
+                    <span className="font-semibold">{t("finances.ocrLlmDate")}:</span>{" "}
+                    {ocrLlmResult.date}
+                  </p>
+                ) : null}
+                {ocrLlmResult.category ? (
+                  <p>
+                    <span className="font-semibold">{t("finances.ocrLlmCategory")}:</span>{" "}
+                    {ocrLlmResult.category}
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+
             <div className="rounded-xl border border-brand-100 bg-brand-50/40 p-3 text-sm dark:border-slate-700 dark:bg-slate-800/50">
+              <p className="mb-0.5 text-xs font-semibold text-slate-500 dark:text-slate-400">{t("finances.ocrHeuristicLabel")}</p>
               <p>
                 <span className="font-semibold">
                   {t("finances.entryNameLabel")}:
@@ -5970,22 +6051,24 @@ export const FinancesPage = ({
                   type="button"
                   onClick={() => {
                     if (!ocrCandidate) return;
-                    if (
-                      !addEntryForm.state.values.description.trim() &&
-                      ocrCandidate.description
-                    ) {
-                      addEntryForm.setFieldValue(
-                        "description",
-                        ocrCandidate.description,
-                      );
-                      setPreviewDescription(ocrCandidate.description);
+                    // Use LLM result when confident, otherwise fall back to heuristics
+                    const llm = ocrLlmResult && ocrLlmResult.confidence >= 0.7 ? ocrLlmResult : null;
+                    const effectiveDescription = llm?.title || ocrCandidate.description;
+                    const effectiveAmount = llm ? llm.amount.toFixed(2) : ocrCandidate.amount;
+
+                    if (!addEntryForm.state.values.description.trim() && effectiveDescription) {
+                      addEntryForm.setFieldValue("description", effectiveDescription);
+                      setPreviewDescription(effectiveDescription);
                     }
-                    if (
-                      !addEntryForm.state.values.amount.trim() &&
-                      ocrCandidate.amount
-                    ) {
-                      addEntryForm.setFieldValue("amount", ocrCandidate.amount);
-                      setPreviewAmountInput(ocrCandidate.amount);
+                    if (!addEntryForm.state.values.amount.trim() && effectiveAmount) {
+                      addEntryForm.setFieldValue("amount", effectiveAmount);
+                      setPreviewAmountInput(effectiveAmount);
+                    }
+                    if (llm?.date && !addEntryForm.state.values.entryDate) {
+                      addEntryForm.setFieldValue("entryDate", llm.date);
+                    }
+                    if (llm?.category && addEntryForm.state.values.category === "general") {
+                      addEntryForm.setFieldValue("category", llm.category);
                     }
                   }}
                 >
