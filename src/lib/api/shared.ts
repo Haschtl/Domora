@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { normalizeTaskFeatureFlags } from "../household-task-features";
 import { supabase } from "../supabase";
 import type {
   CashAuditRequest,
@@ -371,9 +372,21 @@ const cashAuditRequestSchema = z.object({
   created_at: z.string().min(1)
 });
 
-export const normalizeHousehold = (row: Record<string, unknown>): Household => ({
-  ...householdSchema.parse(row)
-});
+export const normalizeHousehold = (row: Record<string, unknown>): Household => {
+  const parsed = householdSchema.parse(row);
+  const normalizedTaskFeatures = normalizeTaskFeatureFlags({
+    taskMode: parsed.task_mode,
+    featureTasksEnabled: parsed.feature_tasks_enabled,
+    featureOneOffTasksEnabled: parsed.feature_one_off_tasks_enabled
+  });
+
+  return {
+    ...parsed,
+    feature_tasks_enabled: normalizedTaskFeatures.featureTasksEnabled,
+    feature_one_off_tasks_enabled:
+      normalizedTaskFeatures.featureOneOffTasksEnabled
+  };
+};
 
 export const normalizeHouseholdMember = (row: Record<string, unknown>): HouseholdMember => ({
   ...householdMemberSchema.parse(row)

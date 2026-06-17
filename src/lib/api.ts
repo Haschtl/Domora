@@ -1,6 +1,7 @@
 import { v4 as uuid } from "uuid";
 import { z } from "zod";
 import { calculateBalancesByMember } from "./finance-math";
+import { normalizeTaskFeatureFlags } from "./household-task-features";
 import {
   assertCanDemoteOwner,
   assertCanDissolveHousehold,
@@ -591,9 +592,21 @@ const financeSubscriptionSchema = z.object({
   updated_at: z.string().min(1)
 });
 
-const normalizeHousehold = (row: Record<string, unknown>): Household => ({
-  ...householdSchema.parse(row)
-});
+const normalizeHousehold = (row: Record<string, unknown>): Household => {
+  const parsed = householdSchema.parse(row);
+  const normalizedTaskFeatures = normalizeTaskFeatureFlags({
+    taskMode: parsed.task_mode,
+    featureTasksEnabled: parsed.feature_tasks_enabled,
+    featureOneOffTasksEnabled: parsed.feature_one_off_tasks_enabled
+  });
+
+  return {
+    ...parsed,
+    feature_tasks_enabled: normalizedTaskFeatures.featureTasksEnabled,
+    feature_one_off_tasks_enabled:
+      normalizedTaskFeatures.featureOneOffTasksEnabled
+  };
+};
 
 const normalizeHouseholdMember = (row: Record<string, unknown>): HouseholdMember => ({
   ...householdMemberSchema.parse(row)
@@ -1178,6 +1191,11 @@ export const updateHouseholdSettings = async (
     translationOverrides: z.array(householdTranslationOverrideSchema).default([]),
     householdMapMarkers: z.array(householdMapMarkerSchema).default([])
   }).parse(input);
+  const normalizedTaskFeatures = normalizeTaskFeatureFlags({
+    taskMode: parsedInput.taskMode,
+    featureTasksEnabled: parsedInput.featureTasksEnabled,
+    featureOneOffTasksEnabled: parsedInput.featureOneOffTasksEnabled
+  });
 
   const { data, error } = await supabase
     .from("households")
@@ -1197,8 +1215,9 @@ export const updateHouseholdSettings = async (
       task_skip_enabled: parsedInput.taskSkipEnabled,
       feature_bucket_enabled: parsedInput.featureBucketEnabled,
       feature_shopping_enabled: parsedInput.featureShoppingEnabled,
-      feature_tasks_enabled: parsedInput.featureTasksEnabled,
-      feature_one_off_tasks_enabled: parsedInput.featureOneOffTasksEnabled,
+      feature_tasks_enabled: normalizedTaskFeatures.featureTasksEnabled,
+      feature_one_off_tasks_enabled:
+        normalizedTaskFeatures.featureOneOffTasksEnabled,
       feature_finances_enabled: parsedInput.featureFinancesEnabled,
       storage_provider:
         parsedInput.storageProvider ??

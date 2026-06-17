@@ -17,6 +17,10 @@ import type {
 } from "../../lib/types";
 import { createDiceBearAvatarDataUri, getMemberAvatarSeed } from "../../lib/avatar";
 import { createTrianglifyBannerBackground } from "../../lib/banner";
+import {
+  areOneOffTasksSupported,
+  normalizeTaskFeatureFlags
+} from "../../lib/household-task-features";
 import { createMemberLabelGetter } from "../../lib/member-label";
 import { isDueNow } from "../../lib/date";
 import { getVacationStatus, isDateWithinRange, isMemberOnVacation } from "../../lib/vacation-utils";
@@ -581,6 +585,11 @@ export const SettingsPage = ({
       const normalizedStorageUrl = value.storageUrl.trim();
       const normalizedStorageUsername = value.storageUsername.trim();
       const normalizedStorageBasePath = value.storageBasePath.trim() || "/domora";
+      const normalizedTaskFeatures = normalizeTaskFeatureFlags({
+        taskMode: value.taskMode,
+        featureTasksEnabled: value.featureTasksEnabled,
+        featureOneOffTasksEnabled: value.featureOneOffTasksEnabled
+      });
       if (normalizedStorageProvider === "webdav") {
         if (!normalizedStorageUrl) {
           setFormError("Storage URL fehlt.");
@@ -615,8 +624,9 @@ export const SettingsPage = ({
         taskSkipEnabled: value.taskSkipEnabled,
         featureBucketEnabled: value.featureBucketEnabled,
         featureShoppingEnabled: value.featureShoppingEnabled,
-        featureTasksEnabled: value.featureTasksEnabled,
-        featureOneOffTasksEnabled: value.featureOneOffTasksEnabled,
+        featureTasksEnabled: normalizedTaskFeatures.featureTasksEnabled,
+        featureOneOffTasksEnabled:
+          normalizedTaskFeatures.featureOneOffTasksEnabled,
         featureFinancesEnabled: value.featureFinancesEnabled,
         storageProvider: normalizedStorageProvider,
         storageUrl: normalizedStorageUrl,
@@ -668,6 +678,29 @@ export const SettingsPage = ({
     [householdForm.state.values, normalizeThemeRadiusScale]
   );
 
+  useEffect(() => {
+    const normalizedTaskFeatures = normalizeTaskFeatureFlags({
+      taskMode: householdForm.state.values.taskMode,
+      featureTasksEnabled: householdForm.state.values.featureTasksEnabled,
+      featureOneOffTasksEnabled: householdForm.state.values.featureOneOffTasksEnabled
+    });
+
+    if (
+      householdForm.state.values.featureOneOffTasksEnabled !==
+      normalizedTaskFeatures.featureOneOffTasksEnabled
+    ) {
+      householdForm.setFieldValue(
+        "featureOneOffTasksEnabled",
+        normalizedTaskFeatures.featureOneOffTasksEnabled
+      );
+    }
+  }, [
+    householdForm,
+    householdForm.state.values.featureOneOffTasksEnabled,
+    householdForm.state.values.featureTasksEnabled,
+    householdForm.state.values.taskMode
+  ]);
+
 
   useEffect(() => {
     householdForm.setFieldValue("name", household.name ?? "");
@@ -706,6 +739,7 @@ export const SettingsPage = ({
     household.image_url,
     household.name,
     household.task_laziness_enabled,
+    household.task_mode,
     household.vacation_tasks_exclude_enabled,
     household.vacation_finances_exclude_enabled,
     household.task_skip_enabled,
@@ -789,6 +823,11 @@ export const SettingsPage = ({
     if (!isOwner) return;
     try {
       const dataUrl = await compressImageToDataUrl(file);
+      const normalizedTaskFeatures = normalizeTaskFeatureFlags({
+        taskMode: householdForm.state.values.taskMode,
+        featureTasksEnabled: householdForm.state.values.featureTasksEnabled,
+        featureOneOffTasksEnabled: householdForm.state.values.featureOneOffTasksEnabled
+      });
       householdForm.setFieldValue("imageUrl", dataUrl);
       await onUpdateHousehold({
         name: householdForm.state.values.name.trim(),
@@ -806,8 +845,9 @@ export const SettingsPage = ({
         taskSkipEnabled: householdForm.state.values.taskSkipEnabled,
         featureBucketEnabled: householdForm.state.values.featureBucketEnabled,
         featureShoppingEnabled: householdForm.state.values.featureShoppingEnabled,
-        featureTasksEnabled: householdForm.state.values.featureTasksEnabled,
-        featureOneOffTasksEnabled: householdForm.state.values.featureOneOffTasksEnabled,
+        featureTasksEnabled: normalizedTaskFeatures.featureTasksEnabled,
+        featureOneOffTasksEnabled:
+          normalizedTaskFeatures.featureOneOffTasksEnabled,
         featureFinancesEnabled: householdForm.state.values.featureFinancesEnabled,
         storageProvider: householdForm.state.values.storageProvider,
         storageUrl: householdForm.state.values.storageUrl.trim(),
@@ -831,6 +871,11 @@ export const SettingsPage = ({
   const onRemoveHouseholdImage = async () => {
     if (!isOwner) return;
     try {
+      const normalizedTaskFeatures = normalizeTaskFeatureFlags({
+        taskMode: householdForm.state.values.taskMode,
+        featureTasksEnabled: householdForm.state.values.featureTasksEnabled,
+        featureOneOffTasksEnabled: householdForm.state.values.featureOneOffTasksEnabled
+      });
       householdForm.setFieldValue("imageUrl", "");
       await onUpdateHousehold({
         name: householdForm.state.values.name.trim(),
@@ -848,8 +893,9 @@ export const SettingsPage = ({
         taskSkipEnabled: householdForm.state.values.taskSkipEnabled,
         featureBucketEnabled: householdForm.state.values.featureBucketEnabled,
         featureShoppingEnabled: householdForm.state.values.featureShoppingEnabled,
-        featureTasksEnabled: householdForm.state.values.featureTasksEnabled,
-        featureOneOffTasksEnabled: householdForm.state.values.featureOneOffTasksEnabled,
+        featureTasksEnabled: normalizedTaskFeatures.featureTasksEnabled,
+        featureOneOffTasksEnabled:
+          normalizedTaskFeatures.featureOneOffTasksEnabled,
         featureFinancesEnabled: householdForm.state.values.featureFinancesEnabled,
         storageProvider: householdForm.state.values.storageProvider,
         storageUrl: householdForm.state.values.storageUrl.trim(),
@@ -907,6 +953,11 @@ export const SettingsPage = ({
     setStorageConnectStatus(null);
     setFormError(null);
     try {
+      const normalizedTaskFeatures = normalizeTaskFeatureFlags({
+        taskMode: householdForm.state.values.taskMode,
+        featureTasksEnabled: householdForm.state.values.featureTasksEnabled,
+        featureOneOffTasksEnabled: householdForm.state.values.featureOneOffTasksEnabled
+      });
       await onUpdateHousehold({
         name: householdForm.state.values.name.trim(),
         imageUrl: householdForm.state.values.imageUrl,
@@ -923,8 +974,9 @@ export const SettingsPage = ({
         taskSkipEnabled: householdForm.state.values.taskSkipEnabled,
         featureBucketEnabled: householdForm.state.values.featureBucketEnabled,
         featureShoppingEnabled: householdForm.state.values.featureShoppingEnabled,
-        featureTasksEnabled: householdForm.state.values.featureTasksEnabled,
-        featureOneOffTasksEnabled: householdForm.state.values.featureOneOffTasksEnabled,
+        featureTasksEnabled: normalizedTaskFeatures.featureTasksEnabled,
+        featureOneOffTasksEnabled:
+          normalizedTaskFeatures.featureOneOffTasksEnabled,
         featureFinancesEnabled: householdForm.state.values.featureFinancesEnabled,
         storageProvider: "nextcloud",
         storageUrl,
@@ -994,8 +1046,13 @@ export const SettingsPage = ({
   const ownerCount = useMemo(() => members.filter((member) => member.role === "owner").length, [members]);
   const isTasksFeatureEnabled = household.feature_tasks_enabled ?? true;
   const isFinancesFeatureEnabled = household.feature_finances_enabled ?? true;
+  const areOneOffTasksAvailableInForm = areOneOffTasksSupported(
+    householdForm.state.values.taskMode
+  );
   const showOneOffClaimSettings =
-    householdForm.state.values.featureTasksEnabled && householdForm.state.values.featureOneOffTasksEnabled;
+    areOneOffTasksAvailableInForm &&
+    householdForm.state.values.featureTasksEnabled &&
+    householdForm.state.values.featureOneOffTasksEnabled;
   const isOneOffTimeoutDisabled = Number(householdForm.state.values.oneOffClaimTimeoutHours) === 0;
   const isVacationTaskExclusionEnabled = household.vacation_tasks_exclude_enabled ?? true;
   const isVacationFinanceExclusionEnabled = household.vacation_finances_exclude_enabled ?? true;
@@ -2955,7 +3012,12 @@ export const SettingsPage = ({
                   }) => (
                     <Switch
                       checked={field.state.value}
-                      disabled={busy || !isOwner}
+                      disabled={
+                        busy ||
+                        !isOwner ||
+                        !householdForm.state.values.featureTasksEnabled ||
+                        !areOneOffTasksAvailableInForm
+                      }
                       onCheckedChange={field.handleChange}
                       aria-label={t("settings.featureOneOffTasksTitle")}
                     />
