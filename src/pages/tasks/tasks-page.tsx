@@ -1972,10 +1972,10 @@ export const TasksPage = ({
     await onAddTaskComment({ targetType: "task", targetId: taskId, message });
   };
 
-  const renderTaskComments = (taskId: string) => {
+  const renderTaskComments = (taskId: string, className = "mt-3") => {
     const taskComments = commentsByTaskId.get(taskId) ?? [];
     return (
-      <Accordion type="single" collapsible className="mt-3">
+      <Accordion type="single" collapsible className={className}>
         <AccordionItem value="comments" className="border-none">
           <AccordionTrigger className="py-2 text-xs font-semibold uppercase tracking-wide text-slate-500 hover:no-underline dark:text-slate-400">
             {t("tasks.commentsTitle", { count: taskComments.length })}
@@ -3773,7 +3773,6 @@ export const TasksPage = ({
                           </DropdownMenu>
                         </div>
                       </div>
-                      {renderTaskComments(task.id)}
                     </CardContent>
                   </Card>
                 );
@@ -5782,6 +5781,8 @@ export const TasksPage = ({
                   </p>
                 )}
               </div>
+
+              {taskDetailsTask ? renderTaskComments(taskDetailsTask.id, "rounded-xl border border-brand-100 bg-white/90 px-3 dark:border-slate-700 dark:bg-slate-900") : null}
           </div>
         </FullscreenDialog>
         <Dialog

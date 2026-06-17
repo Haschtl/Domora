@@ -25,6 +25,7 @@ import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "../../components/ui/accordion";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../../components/ui/dialog";
+import { FullscreenDialog } from "../../components/ui/fullscreen-dialog";
 import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
@@ -695,7 +696,7 @@ export const TimeTasksPage = ({
     const isEditingEntry = editingEntryId === entry.id;
 
     return (
-      <Dialog
+      <FullscreenDialog
         open={detailsEntryId === entry.id}
         onOpenChange={(open) => {
           setDetailsEntryId(open ? entry.id : null);
@@ -704,53 +705,65 @@ export const TimeTasksPage = ({
             setEditError(null);
           }
         }}
+        title={t("tasks.timeEntryDetailsTitle", { title: entry.description })}
+        description={`${userLabel(entry.user_id)} | ${new Date(entry.entry_date).toLocaleDateString(language)} | ${formatHours(entry.hours)} h`}
+        maxWidthClassName="sm:max-w-2xl"
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => {
+                setDetailsEntryId(null);
+                if (editingEntryId === entry.id) {
+                  setEditingEntryId(null);
+                  setEditError(null);
+                }
+              }}
+            >
+              {t("common.close")}
+            </Button>
+          </div>
+        }
       >
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>{t("tasks.timeEntryDetailsTitle", { title: entry.description })}</DialogTitle>
-            <DialogDescription>
-              {userLabel(entry.user_id)} | {new Date(entry.entry_date).toLocaleDateString(language)} | {formatHours(entry.hours)} h
-            </DialogDescription>
-          </DialogHeader>
+        <div className="space-y-4">
+          {entry.source === "manual" && entry.created_by === userId ? (
+            <div className="flex justify-end">
+              <Button
+                type="button"
+                variant="outline"
+                disabled={busy}
+                onClick={() => beginEdit(entry)}
+              >
+                <Pencil className="mr-2 h-4 w-4" />
+                {t("tasks.timeEditEntry")}
+              </Button>
+            </div>
+          ) : null}
 
-          <div className="space-y-4">
-            {entry.source === "manual" && entry.created_by === userId ? (
-              <div className="flex justify-end">
-                <Button
-                  type="button"
-                  variant="outline"
-                  disabled={busy}
-                  onClick={() => beginEdit(entry)}
-                >
-                  <Pencil className="mr-2 h-4 w-4" />
-                  {t("tasks.timeEditEntry")}
-                </Button>
-              </div>
-            ) : null}
+          {isEditingEntry ? renderEditFields(entry) : null}
 
-            {isEditingEntry ? renderEditFields(entry) : null}
+          {!isEditingEntry && entry.image_url ? (
+            <img
+              src={entry.image_url}
+              alt={entry.description}
+              className="max-h-72 w-full rounded-xl object-cover"
+            />
+          ) : null}
 
-            {!isEditingEntry && entry.image_url ? (
-              <img
-                src={entry.image_url}
-                alt={entry.description}
-                className="max-h-72 w-full rounded-xl object-cover"
-              />
-            ) : null}
+          {!isEditingEntry && entry.details ? (
+            <div className="space-y-1 rounded-xl border border-brand-100 bg-brand-50/50 px-3 py-3 dark:border-slate-700 dark:bg-slate-800/60">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                {t("tasks.timeDetailsLabel")}
+              </p>
+              <p className="whitespace-pre-line text-sm text-slate-700 dark:text-slate-200">
+                {entry.details}
+              </p>
+            </div>
+          ) : null}
 
-            {!isEditingEntry && entry.details ? (
-              <div className="space-y-1 rounded-xl border border-brand-100 bg-brand-50/50 px-3 py-3 dark:border-slate-700 dark:bg-slate-800/60">
-                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                  {t("tasks.timeDetailsLabel")}
-                </p>
-                <p className="whitespace-pre-line text-sm text-slate-700 dark:text-slate-200">
-                  {entry.details}
-                </p>
-              </div>
-            ) : null}
-
-            {!isEditingEntry ? (
-              <div className="space-y-2 rounded-xl border border-brand-100 bg-white px-3 py-3 dark:border-slate-700 dark:bg-slate-900">
+          {!isEditingEntry ? (
+            <div className="space-y-2 rounded-xl border border-brand-100 bg-white px-3 py-3 dark:border-slate-700 dark:bg-slate-900">
               <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
                 {t("tasks.timeEntryRatingTitle")}
               </p>
@@ -781,11 +794,11 @@ export const TimeTasksPage = ({
                   {t("tasks.timeEntryRatingOwnHint")}
                 </p>
               ) : null}
-              </div>
-            ) : null}
+            </div>
+          ) : null}
 
-            {!isEditingEntry ? (
-              <div className="space-y-3 rounded-xl border border-brand-100 bg-white px-3 py-3 dark:border-slate-700 dark:bg-slate-900">
+          {!isEditingEntry ? (
+            <div className="space-y-3 rounded-xl border border-brand-100 bg-white px-3 py-3 dark:border-slate-700 dark:bg-slate-900">
               <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
                 {t("tasks.commentsTitle", { count: entryComments.length })}
               </p>
@@ -836,11 +849,10 @@ export const TimeTasksPage = ({
                   {t("tasks.commentSend")}
                 </Button>
               </div>
-              </div>
-            ) : null}
-          </div>
-        </DialogContent>
-      </Dialog>
+            </div>
+          ) : null}
+        </div>
+      </FullscreenDialog>
     );
   };
 
