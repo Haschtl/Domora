@@ -38,6 +38,7 @@ import { ensureHouseholdQueries } from "./lib/household-queries";
 import { applyHouseholdTheme } from "./lib/household-theme";
 import { queryKeys } from "./lib/query-keys";
 import { isMemberOnVacation } from "./lib/vacation-utils";
+import { WelcomeProfileDialog } from "./features/WelcomeProfileDialog";
 
 const AuthView = lazy(() => import("./features/AuthView").then((module) => ({ default: module.AuthView })));
 const HouseholdSetupView = lazy(() =>
@@ -208,6 +209,8 @@ const AppLayout = () => {
     householdsLoadError,
     activeHousehold,
     userId,
+    userAvatarUrl,
+    userDisplayName,
     currentMember,
     householdMemberVacations,
     notificationPermission,
@@ -217,6 +220,7 @@ const AppLayout = () => {
     onGoogleSignIn,
     onRequestPasswordReset,
     onUpdatePassword,
+    onCompleteWelcomeProfile,
     onSignOut,
     onCreateHousehold,
     onJoinHousehold,
@@ -230,6 +234,7 @@ const AppLayout = () => {
   const [recoveryPasswordConfirm, setRecoveryPasswordConfirm] = useState("");
   const [passwordRecoveryBusy, setPasswordRecoveryBusy] = useState(false);
   const [passwordRecoveryError, setPasswordRecoveryError] = useState<string | null>(null);
+  const [welcomeProfileError, setWelcomeProfileError] = useState<string | null>(null);
 
   const handleCreateHousehold = useCallback(
     async (name: string) => {
@@ -513,6 +518,28 @@ const AppLayout = () => {
       currentMember.vacation_mode
     );
   }, [currentMember, householdMemberVacations]);
+  const needsWelcomeProfile = useMemo(() => {
+    if (!session || !activeHousehold || !currentMember) return false;
+    return !(currentMember.display_name ?? "").trim();
+  }, [activeHousehold, currentMember, session]);
+
+  const handleCompleteWelcomeProfile = useCallback(
+    async (input: { displayName: string; avatarUrl: string; userColor: string }) => {
+      try {
+        setWelcomeProfileError(null);
+        await onCompleteWelcomeProfile(input);
+      } catch (error) {
+        setWelcomeProfileError(error instanceof Error ? error.message : t("app.unknownError"));
+      }
+    },
+    [onCompleteWelcomeProfile, t]
+  );
+
+  useEffect(() => {
+    if (!needsWelcomeProfile) {
+      setWelcomeProfileError(null);
+    }
+  }, [needsWelcomeProfile]);
 
   const workspaceContextValue = useMemo(
     () => ({
@@ -1332,6 +1359,24 @@ const AppLayout = () => {
             </Suspense>
           ) : null}
         </section>
+      ) : null}
+
+      <WelcomeProfileDialog
+        open={needsWelcomeProfile}
+        displayName={userDisplayName}
+        avatarUrl={userAvatarUrl}
+        userColor={currentMember?.user_color ?? null}
+        avatarSeed={currentMember?.user_id ?? userId ?? "domora-user"}
+        busy={busy}
+        onComplete={handleCompleteWelcomeProfile}
+      />
+
+      {welcomeProfileError && needsWelcomeProfile ? (
+        <div className="pointer-events-none fixed inset-x-4 bottom-4 z-[70] sm:left-1/2 sm:right-auto sm:w-full sm:max-w-md sm:-translate-x-1/2">
+          <div className="rounded-xl border border-rose-300 bg-rose-50 px-4 py-3 text-sm text-rose-700 shadow-lg dark:border-rose-900 dark:bg-rose-950/90 dark:text-rose-200">
+            {welcomeProfileError}
+          </div>
+        </div>
       ) : null}
 
       <Dialog

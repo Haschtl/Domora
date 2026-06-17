@@ -2013,6 +2013,21 @@ export const useWorkspaceController = () => {
     [executeAction, invalidateWorkspace, t]
   );
 
+  const onCompleteWelcomeProfile = useCallback(
+    async (input: { displayName: string; avatarUrl: string; userColor: string }) => {
+      await executeAction(async () => {
+        await updateUserAvatar(input.avatarUrl);
+        await updateUserColor(input.userColor);
+        await updateUserDisplayName(input.displayName);
+        const nextSession = await getCurrentSession();
+        queryClient.setQueryData(queryKeys.session, nextSession);
+        await invalidateWorkspace();
+        setMessage(t("settings.welcomeProfileSaved"));
+      });
+    },
+    [executeAction, invalidateWorkspace, queryClient, t]
+  );
+
   const onLeaveHousehold = useCallback(async () => {
     if (!activeHousehold || !userId) return;
 
@@ -2163,6 +2178,7 @@ export const useWorkspaceController = () => {
     onUpdateUserAvatar,
     onUpdateUserDisplayName,
     onUpdateUserColor,
+    onCompleteWelcomeProfile,
     onUpdateUserPaymentHandles,
     onLeaveHousehold,
     onDissolveHousehold,
