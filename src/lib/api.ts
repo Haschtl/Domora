@@ -748,13 +748,29 @@ const getDueAtFromStartDate = (startDate: string) => {
   return asDate.toISOString();
 };
 
-export const signIn = async (email: string, password: string) => {
-  const { error } = await supabase.auth.signInWithPassword({ email, password });
+export const signIn = async (
+  email: string,
+  password: string,
+  captchaToken?: string
+) => {
+  const { error } = await supabase.auth.signInWithPassword({
+    email,
+    password,
+    options: captchaToken ? { captchaToken } : undefined
+  });
   if (error) throw error;
 };
 
-export const signUp = async (email: string, password: string) => {
-  const { error } = await supabase.auth.signUp({ email, password });
+export const signUp = async (
+  email: string,
+  password: string,
+  captchaToken?: string
+) => {
+  const { error } = await supabase.auth.signUp({
+    email,
+    password,
+    options: captchaToken ? { captchaToken } : undefined
+  });
   if (error) throw error;
 };
 

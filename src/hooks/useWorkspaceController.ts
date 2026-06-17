@@ -288,9 +288,9 @@ export const useWorkspaceController = () => {
   });
 
   const onSignIn = useCallback(
-    async (email: string, password: string) => {
+    async (email: string, password: string, captchaToken?: string) => {
       await executeAction(async () => {
-        await signIn(email, password);
+        await signIn(email, password, captchaToken);
         setMessage(t("app.signInSuccess"));
       });
     },
@@ -298,9 +298,9 @@ export const useWorkspaceController = () => {
   );
 
   const onSignUp = useCallback(
-    async (email: string, password: string) => {
+    async (email: string, password: string, captchaToken?: string) => {
       await executeAction(async () => {
-        await signUp(email, password);
+        await signUp(email, password, captchaToken);
         setMessage(t("app.signUpSuccess"));
       });
     },

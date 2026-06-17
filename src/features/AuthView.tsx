@@ -1,11 +1,13 @@
-import { FormEvent, useState } from "react";
+import { FormEvent, useCallback, useEffect, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { FcGoogle } from "react-icons/fc";
 import { useTranslation } from "react-i18next";
+import { SupabaseAuthCaptcha } from "../components/supabase-auth-captcha";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
+import { getSupabaseAuthCaptchaConfig } from "../lib/auth-captcha";
 import {
   clearPersistedQueryCaches,
   clearStoredSupabaseBackendConfig,
@@ -17,8 +19,8 @@ import { activeSupabasePublishableKey, activeSupabaseUrl, supabaseConfigSource }
 
 interface AuthViewProps {
   busy: boolean;
-  onSignIn: (email: string, password: string) => Promise<void>;
-  onSignUp: (email: string, password: string) => Promise<void>;
+  onSignIn: (email: string, password: string, captchaToken?: string) => Promise<void>;
+  onSignUp: (email: string, password: string, captchaToken?: string) => Promise<void>;
   onGoogleSignIn: () => Promise<void>;
 }
 
@@ -35,10 +37,78 @@ export const AuthView = ({ busy, onSignIn, onSignUp, onGoogleSignIn }: AuthViewP
   const [backendSaving, setBackendSaving] = useState(false);
   const [backendTestMessage, setBackendTestMessage] = useState<string | null>(null);
   const [backendTestState, setBackendTestState] = useState<"idle" | "testing" | "success" | "error">("idle");
+  const [authCaptchaToken, setAuthCaptchaToken] = useState<string | null>(null);
+  const [authCaptchaVersion, setAuthCaptchaVersion] = useState(0);
+  const [authCaptchaLoading, setAuthCaptchaLoading] = useState(true);
+  const [authCaptchaError, setAuthCaptchaError] = useState<string | null>(null);
+  const [authCaptchaConfig, setAuthCaptchaConfig] = useState<{
+    enabled: boolean;
+    provider: "turnstile" | "hcaptcha" | null;
+    siteKey: string | null;
+  }>({
+    enabled: false,
+    provider: null,
+    siteKey: null
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+    setAuthCaptchaLoading(true);
+    setAuthCaptchaError(null);
+    void (async () => {
+      try {
+        const config = await getSupabaseAuthCaptchaConfig();
+        if (!cancelled) {
+          setAuthCaptchaConfig(config);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setAuthCaptchaConfig({
+            enabled: false,
+            provider: null,
+            siteKey: null
+          });
+          setAuthCaptchaError(
+            error instanceof Error ? error.message : "Captcha-Konfiguration konnte nicht geladen werden."
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setAuthCaptchaLoading(false);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const captchaRequired =
+    authCaptchaConfig.enabled &&
+    Boolean(authCaptchaConfig.provider) &&
+    Boolean(authCaptchaConfig.siteKey);
+  const captchaUnavailable =
+    authCaptchaConfig.enabled &&
+    (!authCaptchaConfig.provider || !authCaptchaConfig.siteKey);
+
+  const consumeCaptchaToken = useCallback(() => {
+    const token = authCaptchaToken ?? undefined;
+    if (captchaRequired) {
+      setAuthCaptchaToken(null);
+      setAuthCaptchaVersion((current) => current + 1);
+    }
+    return token;
+  }, [authCaptchaToken, captchaRequired]);
 
   const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    await onSignIn(email, password);
+    if (captchaRequired && !authCaptchaToken) {
+      setAuthCaptchaError("Bitte bestätige zuerst das Captcha.");
+      return;
+    }
+    setAuthCaptchaError(null);
+    await onSignIn(email, password, consumeCaptchaToken());
   };
 
   const backendSourceLabel =
@@ -137,7 +207,46 @@ export const AuthView = ({ busy, onSignIn, onSignUp, onGoogleSignIn }: AuthViewP
             />
           </div>
 
-          <Button className="w-full" type="submit" disabled={busy}>
+          {authCaptchaLoading ? (
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Captcha-Konfiguration wird geladen...
+            </p>
+          ) : null}
+
+          {captchaRequired && authCaptchaConfig.provider && authCaptchaConfig.siteKey ? (
+            <div className="space-y-2">
+              <Label>Captcha</Label>
+              <SupabaseAuthCaptcha
+                key={`${authCaptchaConfig.provider}-${authCaptchaVersion}`}
+                provider={authCaptchaConfig.provider}
+                siteKey={authCaptchaConfig.siteKey}
+                onTokenChange={(token) => {
+                  setAuthCaptchaToken(token);
+                  if (token) {
+                    setAuthCaptchaError(null);
+                  }
+                }}
+              />
+            </div>
+          ) : null}
+
+          {authCaptchaConfig.enabled && (!authCaptchaConfig.provider || !authCaptchaConfig.siteKey) ? (
+            <p className="text-xs font-medium text-rose-700 dark:text-rose-300">
+              Captcha-Schutz ist im Backend aktiv, aber Provider oder Site Key fehlen.
+            </p>
+          ) : null}
+
+          {authCaptchaError ? (
+            <p className="text-xs font-medium text-rose-700 dark:text-rose-300">
+              {authCaptchaError}
+            </p>
+          ) : null}
+
+          <Button
+            className="w-full"
+            type="submit"
+            disabled={busy || authCaptchaLoading || captchaUnavailable}
+          >
             {t("auth.signIn")}
           </Button>
 
@@ -156,8 +265,15 @@ export const AuthView = ({ busy, onSignIn, onSignUp, onGoogleSignIn }: AuthViewP
             className="w-full"
             type="button"
             variant="outline"
-            disabled={busy}
-            onClick={() => onSignUp(email, password)}
+            disabled={busy || authCaptchaLoading || captchaUnavailable}
+            onClick={() => {
+              if (captchaRequired && !authCaptchaToken) {
+                setAuthCaptchaError("Bitte bestätige zuerst das Captcha.");
+                return;
+              }
+              setAuthCaptchaError(null);
+              void onSignUp(email, password, consumeCaptchaToken());
+            }}
           >
             {t("auth.signUp")}
           </Button>
