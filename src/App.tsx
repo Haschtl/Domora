@@ -933,7 +933,8 @@ const AppLayout = () => {
 
   return (
     <WorkspaceProvider value={workspaceContextValue}>
-    <div className="relative min-h-screen">
+    <div className="relative isolate min-h-screen">
+      <div aria-hidden="true" className="domora-app-background pointer-events-none fixed inset-0 z-0" />
       <Suspense fallback={null}>
         <AppParticlesBackground />
       </Suspense>

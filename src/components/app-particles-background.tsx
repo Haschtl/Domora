@@ -71,7 +71,7 @@ export const AppParticlesBackground = () => {
 
   return (
     <ParticlesProvider init={initDomoraParticles}>
-      <div className="pointer-events-none fixed inset-0 z-0 h-dvh w-dvw opacity-95">
+      <div className="pointer-events-none fixed inset-0 z-[1] h-dvh w-dvw opacity-95">
         <Particles
           id="domora-particles"
           className="absolute inset-0 h-full w-full"
