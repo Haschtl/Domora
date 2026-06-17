@@ -1269,6 +1269,20 @@ export const joinHouseholdByInvite = async (inviteCode: string, userId: string):
   return normalizeHousehold(household as Record<string, unknown>);
 };
 
+export const sendEmailInvite = async (householdId: string, email: string): Promise<void> => {
+  const validatedHouseholdId = z.string().uuid().parse(householdId);
+  const validatedEmail = z.string().email().parse(email.trim().toLowerCase());
+  const { data: sessionData } = await supabase.auth.getSession();
+  const accessToken = sessionData.session?.access_token;
+  if (!accessToken) throw new Error("Not authenticated");
+  const appOrigin = typeof window !== "undefined" ? window.location.origin : "";
+  const { error } = await supabase.functions.invoke("invite-by-email", {
+    body: { household_id: validatedHouseholdId, email: validatedEmail, app_origin: appOrigin },
+    headers: { Authorization: `Bearer ${accessToken}` }
+  });
+  if (error) throw error;
+};
+
 export const updateHouseholdSettings = async (
   householdId: string,
   input: UpdateHouseholdInput

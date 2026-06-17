@@ -52,6 +52,7 @@ import {
   getMyPushTokens,
   getPushPreferences,
   pollNextcloudLoginFlow,
+  sendEmailInvite,
   setHouseholdStorageCredentials,
   signOutCurrentSession,
   signOutOtherSessions,
@@ -233,6 +234,9 @@ export const SettingsPage = ({
   const [whiteboardResetBusy, setWhiteboardResetBusy] = useState(false);
   const [whiteboardResetOpen, setWhiteboardResetOpen] = useState(false);
   const [inviteCopied, setInviteCopied] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteEmailBusy, setInviteEmailBusy] = useState(false);
+  const [inviteEmailResult, setInviteEmailResult] = useState<"sent" | "error" | null>(null);
   const [vacationDialogOpen, setVacationDialogOpen] = useState(false);
   const [pendingVacationMode, setPendingVacationMode] = useState<boolean | null>(null);
   const [addressMapCenter, setAddressMapCenter] = useState<[number, number] | null>(null);
@@ -1244,6 +1248,21 @@ export const SettingsPage = ({
     if (typeof window === "undefined") return `/?invite=${encodeURIComponent(household.invite_code)}`;
     return `${window.location.origin}/?invite=${encodeURIComponent(household.invite_code)}`;
   }, [household.invite_code]);
+  const onSendEmailInvite = async () => {
+    if (!inviteEmail.trim() || inviteEmailBusy) return;
+    setInviteEmailBusy(true);
+    setInviteEmailResult(null);
+    try {
+      await sendEmailInvite(household.id, inviteEmail);
+      setInviteEmailResult("sent");
+      setInviteEmail("");
+    } catch {
+      setInviteEmailResult("error");
+    } finally {
+      setInviteEmailBusy(false);
+    }
+  };
+
   const onShareInvite = async () => {
     const shareTitle = t("settings.inviteDialogTitle");
     const shareText = t("settings.inviteShareText", { code: household.invite_code });
@@ -2713,7 +2732,11 @@ export const SettingsPage = ({
             <div className="mt-4 border-t border-brand-100 pt-4 dark:border-slate-700">
               <Dialog
                 onOpenChange={(open) => {
-                  if (!open) setInviteCopied(false);
+                  if (!open) {
+                    setInviteCopied(false);
+                    setInviteEmail("");
+                    setInviteEmailResult(null);
+                  }
                 }}
               >
                 <DialogTrigger asChild>
@@ -2783,6 +2806,48 @@ export const SettingsPage = ({
                         ? t("settings.inviteCopied")
                         : t("settings.inviteShareAction")}
                     </Button>
+                  </div>
+
+                  <div className="mt-4 border-t border-brand-100 pt-4 dark:border-slate-700">
+                    <div className="space-y-1">
+                      <Label>{t("settings.inviteEmailLabel")}</Label>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">
+                        {t("settings.inviteEmailDescription")}
+                      </p>
+                    </div>
+                    <div className="mt-2 flex gap-2">
+                      <Input
+                        type="email"
+                        placeholder={t("settings.inviteEmailPlaceholder")}
+                        value={inviteEmail}
+                        onChange={(e) => {
+                          setInviteEmail(e.target.value);
+                          setInviteEmailResult(null);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") void onSendEmailInvite();
+                        }}
+                        disabled={inviteEmailBusy}
+                        className="flex-1"
+                      />
+                      <Button
+                        type="button"
+                        variant={inviteEmailResult === "sent" ? "outline" : "default"}
+                        disabled={inviteEmailBusy || !inviteEmail.trim()}
+                        onClick={() => void onSendEmailInvite()}
+                      >
+                        {inviteEmailBusy
+                          ? t("settings.inviteEmailSending")
+                          : inviteEmailResult === "sent"
+                            ? t("settings.inviteEmailSent")
+                            : t("settings.inviteEmailSend")}
+                      </Button>
+                    </div>
+                    {inviteEmailResult === "error" && (
+                      <p className="mt-1 text-xs text-rose-600 dark:text-rose-400">
+                        {t("settings.inviteEmailError")}
+                      </p>
+                    )}
                   </div>
                 </DialogContent>
               </Dialog>

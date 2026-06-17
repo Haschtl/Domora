@@ -6,3 +6,5 @@ TEsten:
 - Finance OCR testen
 
 home-page weiter refactoren (kalender, whiteboard, karte, file-explorer, landing-page raus)
+
+
