@@ -51,6 +51,23 @@ export default defineConfig({
         manualChunks(id) {
           if (!id.includes("node_modules")) return undefined;
           if (id.includes("@tsparticles/")) return "vendor-particles";
+          if (id.includes("@mlc-ai/web-llm")) return "vendor-web-llm";
+          if (id.includes("/three/")) return "vendor-three";
+          if (
+            id.includes("@mdxeditor/editor")
+            || id.includes("/lexical/")
+            || id.includes("@lexical/")
+          ) {
+            return "vendor-editor";
+          }
+          if (
+            id.includes("/mermaid/")
+            || id.includes("mermaid-parser")
+            || id.includes("/katex/")
+          ) {
+            return "vendor-mermaid";
+          }
+          if (id.includes("@excalidraw/excalidraw")) return "vendor-excalidraw";
           // Keep markdown + charts in one shared chunk to avoid cross-chunk cycles
           // ("vendor-markdown -> vendor-charts -> vendor-markdown").
           if (
@@ -96,7 +113,8 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ["**/*.{js,css,html,svg,png,ico,json}"],
-        maximumFileSizeToCacheInBytes: 5 * 1024 * 1024
+        // Large vendor chunks currently exceed Workbox's default precache ceiling.
+        maximumFileSizeToCacheInBytes: 8 * 1024 * 1024
       }
     })
   ]

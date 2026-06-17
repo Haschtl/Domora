@@ -98,7 +98,6 @@ export const extractReceiptDataWithLlm = async (
       ],
       max_tokens: 350,
       temperature: 0.1,
-      enable_thinking: false, // Disable Qwen3 chain-of-thought – we need direct JSON
     });
 
     const content = reply.choices[0]?.message?.content ?? "";
