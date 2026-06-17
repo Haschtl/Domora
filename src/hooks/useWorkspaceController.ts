@@ -27,6 +27,7 @@ import {
   joinHouseholdByInvite,
   leaveHousehold,
   removeHouseholdMember,
+  requestPasswordReset,
   requestCashAudit,
   rateTaskCompletion,
   rateTaskTimeEntry,
@@ -36,6 +37,7 @@ import {
   signIn,
   signInWithGoogle,
   signUp,
+  updatePassword,
   updateFinanceEntry,
   updateFinanceSubscription,
   updateHouseholdSettings,
@@ -312,6 +314,26 @@ export const useWorkspaceController = () => {
       await signInWithGoogle();
     });
   }, [executeAction]);
+
+  const onRequestPasswordReset = useCallback(
+    async (email: string) => {
+      await executeAction(async () => {
+        await requestPasswordReset(email);
+        setMessage(t("auth.passwordResetSent"));
+      });
+    },
+    [executeAction, t]
+  );
+
+  const onUpdatePassword = useCallback(
+    async (password: string) => {
+      await executeAction(async () => {
+        await updatePassword(password);
+        setMessage(t("auth.passwordUpdated"));
+      });
+    },
+    [executeAction, t]
+  );
 
   const onSignOut = useCallback(async () => {
     await executeAction(async () => {
@@ -2084,6 +2106,8 @@ export const useWorkspaceController = () => {
     onSignIn,
     onSignUp,
     onGoogleSignIn,
+    onRequestPasswordReset,
+    onUpdatePassword,
     onSignOut,
     onCreateHousehold,
     onJoinHousehold,

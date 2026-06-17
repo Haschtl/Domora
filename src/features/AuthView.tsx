@@ -22,14 +22,17 @@ interface AuthViewProps {
   onSignIn: (email: string, password: string, captchaToken?: string) => Promise<void>;
   onSignUp: (email: string, password: string, captchaToken?: string) => Promise<void>;
   onGoogleSignIn: () => Promise<void>;
+  onRequestPasswordReset: (email: string) => Promise<void>;
 }
 
 const GITHUB_REPO_URL = "https://github.com/Haschtl/Domora";
 
-export const AuthView = ({ busy, onSignIn, onSignUp, onGoogleSignIn }: AuthViewProps) => {
+export const AuthView = ({ busy, onSignIn, onSignUp, onGoogleSignIn, onRequestPasswordReset }: AuthViewProps) => {
   const { t } = useTranslation();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [passwordResetState, setPasswordResetState] = useState<"idle" | "sending" | "sent" | "error">("idle");
+  const [passwordResetError, setPasswordResetError] = useState<string | null>(null);
   const [showBackendConfig, setShowBackendConfig] = useState(false);
   const [backendUrl, setBackendUrl] = useState(activeSupabaseUrl);
   const [backendKey, setBackendKey] = useState(activeSupabasePublishableKey);
@@ -111,6 +114,23 @@ export const AuthView = ({ busy, onSignIn, onSignUp, onGoogleSignIn }: AuthViewP
     await onSignIn(email, password, consumeCaptchaToken());
   };
 
+  const onForgotPassword = async () => {
+    if (!email.trim()) {
+      setPasswordResetError(t("auth.passwordResetNeedsEmail"));
+      setPasswordResetState("error");
+      return;
+    }
+    setPasswordResetError(null);
+    setPasswordResetState("sending");
+    try {
+      await onRequestPasswordReset(email.trim());
+      setPasswordResetState("sent");
+    } catch (error) {
+      setPasswordResetError(error instanceof Error ? error.message : t("auth.passwordResetError"));
+      setPasswordResetState("error");
+    }
+  };
+
   const backendSourceLabel =
     supabaseConfigSource === "runtime"
       ? t("auth.backendSourceRuntime")
@@ -188,7 +208,13 @@ export const AuthView = ({ busy, onSignIn, onSignUp, onGoogleSignIn }: AuthViewP
               autoComplete="email"
               placeholder={t("auth.emailPlaceholder")}
               value={email}
-              onChange={(event) => setEmail(event.target.value)}
+              onChange={(event) => {
+                setEmail(event.target.value);
+                if (passwordResetState !== "idle") {
+                  setPasswordResetState("idle");
+                  setPasswordResetError(null);
+                }
+              }}
               required
             />
           </div>
@@ -206,6 +232,34 @@ export const AuthView = ({ busy, onSignIn, onSignUp, onGoogleSignIn }: AuthViewP
               required
             />
           </div>
+
+          <div className="flex justify-end">
+            <Button
+              type="button"
+              variant="ghost"
+              className="h-auto px-0 py-0 text-xs text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white"
+              disabled={busy || authCaptchaLoading}
+              onClick={() => void onForgotPassword()}
+            >
+              {passwordResetState === "sending"
+                ? t("auth.passwordResetSending")
+                : passwordResetState === "sent"
+                  ? t("auth.passwordResetSent")
+                  : t("auth.passwordResetAction")}
+            </Button>
+          </div>
+
+          {passwordResetState === "sent" ? (
+            <p className="text-xs text-emerald-700 dark:text-emerald-300">
+              {t("auth.passwordResetSentHint")}
+            </p>
+          ) : null}
+
+          {passwordResetError ? (
+            <p className="text-xs font-medium text-rose-700 dark:text-rose-300">
+              {passwordResetError}
+            </p>
+          ) : null}
 
           {authCaptchaLoading ? (
             <p className="text-xs text-slate-500 dark:text-slate-400">

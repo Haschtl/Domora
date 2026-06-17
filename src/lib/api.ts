@@ -2,6 +2,7 @@ import { v4 as uuid } from "uuid";
 import { z } from "zod";
 import { calculateBalancesByMember, splitAmountEvenly } from "./finance-math";
 import { normalizeTaskFeatureFlags } from "./household-task-features";
+import { getPublicAppBaseUrl } from "./invite-url";
 import {
   assertCanDemoteOwner,
   assertCanDissolveHousehold,
@@ -881,6 +882,17 @@ export const signUp = async (
   if (error) throw error;
 };
 
+export const requestPasswordReset = async (email: string) => {
+  const redirectTo = getPublicAppBaseUrl();
+  const { error } = await supabase.auth.resetPasswordForEmail(email, redirectTo ? { redirectTo } : undefined);
+  if (error) throw error;
+};
+
+export const updatePassword = async (password: string) => {
+  const { error } = await supabase.auth.updateUser({ password });
+  if (error) throw error;
+};
+
 export const signInWithGoogle = async () => {
   if (isNativePlatform()) {
     await signInWithGoogleViaCapacitor();
@@ -1269,34 +1281,6 @@ export const joinHouseholdByInvite = async (inviteCode: string, userId: string):
   return normalizeHousehold(household as Record<string, unknown>);
 };
 
-const getInviteAppOrigin = () => {
-  const envOrigin = typeof import.meta.env.VITE_PUBLIC_APP_ORIGIN === "string"
-    ? import.meta.env.VITE_PUBLIC_APP_ORIGIN.trim()
-    : "";
-  const candidate = envOrigin || (
-    typeof window !== "undefined"
-      ? new URL(import.meta.env.BASE_URL || "/", window.location.origin).toString()
-      : ""
-  );
-  if (!candidate) return "";
-  try {
-    const parsed = new URL(candidate);
-    const host = parsed.hostname.toLowerCase();
-    if (
-      !envOrigin
-      && (host === "localhost" || host === "127.0.0.1" || host === "[::1]")
-    ) {
-      return "";
-    }
-    parsed.hash = "";
-    parsed.search = "";
-    parsed.pathname = parsed.pathname.replace(/\/+$/, "");
-    return parsed.toString();
-  } catch {
-    return "";
-  }
-};
-
 export const sendEmailInvite = async (
   householdId: string,
   email: string
@@ -1306,7 +1290,7 @@ export const sendEmailInvite = async (
   const { data: sessionData } = await supabase.auth.getSession();
   const accessToken = sessionData.session?.access_token;
   if (!accessToken) throw new Error("Not authenticated");
-  const appOrigin = getInviteAppOrigin();
+  const appOrigin = getPublicAppBaseUrl().replace(/\/$/, "");
   const { data, error } = await supabase.functions.invoke("invite-by-email", {
     body: { household_id: validatedHouseholdId, email: validatedEmail, app_origin: appOrigin },
     headers: { Authorization: `Bearer ${accessToken}` }

@@ -18,6 +18,7 @@ import type {
 } from "../../lib/types";
 import { createDiceBearAvatarDataUri, getMemberAvatarSeed } from "../../lib/avatar";
 import { createTrianglifyBannerBackground } from "../../lib/banner";
+import { buildHouseholdInviteUrl } from "../../lib/invite-url";
 import {
   areOneOffTasksSupported,
   normalizeTaskFeatureFlags
@@ -1245,9 +1246,7 @@ export const SettingsPage = ({
   const pushPreferencesControlsDisabled = pushPreferencesBusy || !(pushPreferences?.enabled ?? true);
   const pushPreferencesSaveDisabled = pushPreferencesBusy || !pushPreferencesDirty || quietHoursInvalid;
   const inviteUrl = useMemo(() => {
-    const inviteParam = `?invite=${encodeURIComponent(household.invite_code)}`;
-    if (typeof window === "undefined") return `/${inviteParam}`;
-    return new URL(`${inviteParam}`, new URL(import.meta.env.BASE_URL || "/", window.location.origin)).toString();
+    return buildHouseholdInviteUrl(household.invite_code);
   }, [household.invite_code]);
   const onSendEmailInvite = async () => {
     if (!inviteEmail.trim() || inviteEmailBusy) return;

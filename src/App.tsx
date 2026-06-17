@@ -20,7 +20,7 @@ import type { LucideIcon } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { toast } from "react-toastify";
 import { setHouseholdTranslationOverrides } from "./i18n";
-import { isSupabaseConfigured } from "./lib/supabase";
+import { isSupabaseConfigured, supabase } from "./lib/supabase";
 import { stopHouseholdLiveLocationShare, voteOneOffTaskClaim } from "./lib/api";
 import { useForegroundPush } from "./hooks/useForegroundPush";
 import { getForegroundPushRoute } from "./lib/push-navigation";
@@ -28,6 +28,8 @@ import type { AppTab } from "./lib/types";
 import { Button } from "./components/ui/button";
 import { Card, CardDescription, CardHeader, CardTitle } from "./components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "./components/ui/dialog";
+import { Input } from "./components/ui/input";
+import { Label } from "./components/ui/label";
 import { WorkspaceProvider } from "./context/workspace-context";
 import { useHouseholdEvents, useHouseholdShoppingItems, useHouseholdTasks } from "./hooks/use-household-data";
 import { useTaskNotifications } from "./hooks/useTaskNotifications";
@@ -213,6 +215,8 @@ const AppLayout = () => {
     onSignIn,
     onSignUp,
     onGoogleSignIn,
+    onRequestPasswordReset,
+    onUpdatePassword,
     onSignOut,
     onCreateHousehold,
     onJoinHousehold,
@@ -221,6 +225,11 @@ const AppLayout = () => {
   } = workspace;
 
   const [wizardOpen, setWizardOpen] = useState(false);
+  const [passwordRecoveryOpen, setPasswordRecoveryOpen] = useState(false);
+  const [recoveryPassword, setRecoveryPassword] = useState("");
+  const [recoveryPasswordConfirm, setRecoveryPasswordConfirm] = useState("");
+  const [passwordRecoveryBusy, setPasswordRecoveryBusy] = useState(false);
+  const [passwordRecoveryError, setPasswordRecoveryError] = useState<string | null>(null);
 
   const handleCreateHousehold = useCallback(
     async (name: string) => {
@@ -242,6 +251,7 @@ const AppLayout = () => {
     onNavigate: handleForegroundPush
   });
   const handledPushActionRef = useRef<string | null>(null);
+  const handledInviteCodeRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -479,6 +489,31 @@ const AppLayout = () => {
     const params = new URLSearchParams(location.search);
     return (params.get("invite") ?? "").trim().toUpperCase();
   }, [location.search]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!session || !userId || activeHousehold) return;
+    if (!initialInviteCode) return;
+    if (handledInviteCodeRef.current === initialInviteCode) return;
+
+    handledInviteCodeRef.current = initialInviteCode;
+
+    const cleanupInviteParam = () => {
+      const params = new URLSearchParams(window.location.search);
+      params.delete("invite");
+      const nextQuery = params.toString();
+      const nextUrl = `${window.location.pathname}${nextQuery ? `?${nextQuery}` : ""}${window.location.hash}`;
+      window.history.replaceState({}, "", nextUrl);
+    };
+
+    void onJoinHousehold(initialInviteCode)
+      .then(() => {
+        cleanupInviteParam();
+      })
+      .catch(() => {
+        handledInviteCodeRef.current = null;
+      });
+  }, [activeHousehold, initialInviteCode, onJoinHousehold, session, userId]);
   const isVacationActive = useMemo(() => {
     if (!currentMember) return false;
     return isMemberOnVacation(
@@ -675,6 +710,54 @@ const AppLayout = () => {
   useEffect(() => {
     if (message) toast.success(message);
   }, [message]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const openRecovery = () => {
+      setPasswordRecoveryError(null);
+      setPasswordRecoveryOpen(true);
+    };
+
+    const hasRecoveryTypeInHash = () => /(?:^|[&#?])type=recovery(?:[&#]|$)/i.test(window.location.hash);
+    if (session && hasRecoveryTypeInHash()) {
+      openRecovery();
+    }
+
+    const {
+      data: { subscription }
+    } = supabase.auth.onAuthStateChange((event) => {
+      if (event === "PASSWORD_RECOVERY") {
+        openRecovery();
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, [session]);
+
+  const onSubmitRecoveredPassword = useCallback(async () => {
+    if (recoveryPassword.length < 6) {
+      setPasswordRecoveryError(t("auth.passwordRecoveryTooShort"));
+      return;
+    }
+    if (recoveryPassword !== recoveryPasswordConfirm) {
+      setPasswordRecoveryError(t("auth.passwordRecoveryMismatch"));
+      return;
+    }
+
+    setPasswordRecoveryBusy(true);
+    setPasswordRecoveryError(null);
+    try {
+      await onUpdatePassword(recoveryPassword);
+      setRecoveryPassword("");
+      setRecoveryPasswordConfirm("");
+      setPasswordRecoveryOpen(false);
+    } catch (error) {
+      setPasswordRecoveryError(error instanceof Error ? error.message : t("auth.passwordRecoveryUpdateError"));
+    } finally {
+      setPasswordRecoveryBusy(false);
+    }
+  }, [onUpdatePassword, recoveryPassword, recoveryPasswordConfirm, t]);
 
   useEffect(() => {
     if (!isTaskSettingsEnabled && location.pathname.startsWith("/tasks/settings")) {
@@ -969,7 +1052,13 @@ const AppLayout = () => {
 
       {!loadingSession && !session ? (
         <Suspense fallback={viewLoadingFallback}>
-          <AuthView busy={busy} onSignIn={onSignIn} onSignUp={onSignUp} onGoogleSignIn={onGoogleSignIn} />
+          <AuthView
+            busy={busy}
+            onSignIn={onSignIn}
+            onSignUp={onSignUp}
+            onGoogleSignIn={onGoogleSignIn}
+            onRequestPasswordReset={onRequestPasswordReset}
+          />
         </Suspense>
       ) : null}
 
@@ -1254,7 +1343,80 @@ const AppLayout = () => {
           ) : null}
         </section>
       ) : null}
-      </div>
+
+      <Dialog
+        open={passwordRecoveryOpen}
+        onOpenChange={(open) => {
+          if (passwordRecoveryBusy) return;
+          setPasswordRecoveryOpen(open);
+          if (!open) {
+            setRecoveryPassword("");
+            setRecoveryPasswordConfirm("");
+            setPasswordRecoveryError(null);
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("auth.passwordRecoveryTitle")}</DialogTitle>
+            <DialogDescription>{t("auth.passwordRecoveryDescription")}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <Label htmlFor="recovery-password">{t("auth.passwordRecoveryNewPassword")}</Label>
+              <Input
+                id="recovery-password"
+                type="password"
+                autoComplete="new-password"
+                minLength={6}
+                value={recoveryPassword}
+                onChange={(event) => setRecoveryPassword(event.target.value)}
+                placeholder={t("auth.passwordPlaceholder")}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="recovery-password-confirm">{t("auth.passwordRecoveryConfirmPassword")}</Label>
+              <Input
+                id="recovery-password-confirm"
+                type="password"
+                autoComplete="new-password"
+                minLength={6}
+                value={recoveryPasswordConfirm}
+                onChange={(event) => setRecoveryPasswordConfirm(event.target.value)}
+                placeholder={t("auth.passwordRecoveryConfirmPlaceholder")}
+              />
+            </div>
+            {passwordRecoveryError ? (
+              <p className="text-xs font-medium text-rose-700 dark:text-rose-300">
+                {passwordRecoveryError}
+              </p>
+            ) : null}
+            <div className="flex justify-end gap-2">
+              <Button
+                type="button"
+                variant="ghost"
+                disabled={passwordRecoveryBusy}
+                onClick={() => {
+                  setPasswordRecoveryOpen(false);
+                  setRecoveryPassword("");
+                  setRecoveryPasswordConfirm("");
+                  setPasswordRecoveryError(null);
+                }}
+              >
+                {t("common.cancel")}
+              </Button>
+              <Button
+                type="button"
+                disabled={passwordRecoveryBusy}
+                onClick={() => void onSubmitRecoveredPassword()}
+              >
+                {passwordRecoveryBusy ? t("auth.passwordRecoverySaving") : t("auth.passwordRecoverySave")}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
       {showLoadingOverlay ? (
         <div
           className="fixed inset-0 z-[120] flex items-center justify-center bg-white/80 backdrop-blur-sm transition-opacity duration-300 dark:bg-slate-950/70"
