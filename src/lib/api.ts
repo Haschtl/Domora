@@ -1273,7 +1273,11 @@ const getInviteAppOrigin = () => {
   const envOrigin = typeof import.meta.env.VITE_PUBLIC_APP_ORIGIN === "string"
     ? import.meta.env.VITE_PUBLIC_APP_ORIGIN.trim()
     : "";
-  const candidate = envOrigin || (typeof window !== "undefined" ? window.location.origin : "");
+  const candidate = envOrigin || (
+    typeof window !== "undefined"
+      ? new URL(import.meta.env.BASE_URL || "/", window.location.origin).toString()
+      : ""
+  );
   if (!candidate) return "";
   try {
     const parsed = new URL(candidate);
@@ -1286,25 +1290,31 @@ const getInviteAppOrigin = () => {
     }
     parsed.hash = "";
     parsed.search = "";
-    parsed.pathname = "";
-    return parsed.toString().replace(/\/$/, "");
+    parsed.pathname = parsed.pathname.replace(/\/+$/, "");
+    return parsed.toString();
   } catch {
     return "";
   }
 };
 
-export const sendEmailInvite = async (householdId: string, email: string): Promise<void> => {
+export const sendEmailInvite = async (
+  householdId: string,
+  email: string
+): Promise<{ alreadyInvited: boolean }> => {
   const validatedHouseholdId = z.string().uuid().parse(householdId);
   const validatedEmail = z.string().email().parse(email.trim().toLowerCase());
   const { data: sessionData } = await supabase.auth.getSession();
   const accessToken = sessionData.session?.access_token;
   if (!accessToken) throw new Error("Not authenticated");
   const appOrigin = getInviteAppOrigin();
-  const { error } = await supabase.functions.invoke("invite-by-email", {
+  const { data, error } = await supabase.functions.invoke("invite-by-email", {
     body: { household_id: validatedHouseholdId, email: validatedEmail, app_origin: appOrigin },
     headers: { Authorization: `Bearer ${accessToken}` }
   });
   if (error) throw error;
+  return {
+    alreadyInvited: Boolean((data as { already_invited?: unknown } | null | undefined)?.already_invited)
+  };
 };
 
 export const updateHouseholdSettings = async (

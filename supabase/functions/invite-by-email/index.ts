@@ -16,11 +16,23 @@ const normalizePublicOrigin = (value: string | null | undefined) => {
     if (host === "localhost" || host === "127.0.0.1" || host === "[::1]") return null;
     parsed.hash = "";
     parsed.search = "";
-    parsed.pathname = "";
-    return parsed.toString().replace(/\/$/, "");
+    parsed.pathname = parsed.pathname.replace(/\/+$/, "");
+    return parsed.toString();
   } catch {
     return null;
   }
+};
+
+const isAlreadyInvitedOrRegisteredError = (message: string) => {
+  const normalized = message.trim().toLowerCase();
+  return [
+    "already been registered",
+    "already registered",
+    "already exists",
+    "already been invited",
+    "email exists",
+    "user already exists"
+  ].some((needle) => normalized.includes(needle));
 };
 
 serve(async (req) => {
@@ -105,6 +117,12 @@ serve(async (req) => {
   });
 
   if (inviteError) {
+    if (isAlreadyInvitedOrRegisteredError(inviteError.message)) {
+      return new Response(JSON.stringify({ success: true, already_invited: true }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" }
+      });
+    }
     return new Response(JSON.stringify({ error: inviteError.message }), {
       status: 400,
       headers: { ...corsHeaders, "Content-Type": "application/json" }

@@ -236,7 +236,7 @@ export const SettingsPage = ({
   const [inviteCopied, setInviteCopied] = useState(false);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteEmailBusy, setInviteEmailBusy] = useState(false);
-  const [inviteEmailResult, setInviteEmailResult] = useState<"sent" | "error" | null>(null);
+  const [inviteEmailResult, setInviteEmailResult] = useState<"sent" | "already_invited" | "error" | null>(null);
   const [vacationDialogOpen, setVacationDialogOpen] = useState(false);
   const [pendingVacationMode, setPendingVacationMode] = useState<boolean | null>(null);
   const [addressMapCenter, setAddressMapCenter] = useState<[number, number] | null>(null);
@@ -1253,8 +1253,8 @@ export const SettingsPage = ({
     setInviteEmailBusy(true);
     setInviteEmailResult(null);
     try {
-      await sendEmailInvite(household.id, inviteEmail);
-      setInviteEmailResult("sent");
+      const result = await sendEmailInvite(household.id, inviteEmail);
+      setInviteEmailResult(result.alreadyInvited ? "already_invited" : "sent");
       setInviteEmail("");
     } catch {
       setInviteEmailResult("error");
@@ -2832,17 +2832,24 @@ export const SettingsPage = ({
                       />
                       <Button
                         type="button"
-                        variant={inviteEmailResult === "sent" ? "outline" : "default"}
+                        variant={inviteEmailResult === "sent" || inviteEmailResult === "already_invited" ? "outline" : "default"}
                         disabled={inviteEmailBusy || !inviteEmail.trim()}
                         onClick={() => void onSendEmailInvite()}
                       >
                         {inviteEmailBusy
                           ? t("settings.inviteEmailSending")
-                          : inviteEmailResult === "sent"
+                          : inviteEmailResult === "already_invited"
+                            ? t("settings.inviteEmailAlreadyInvited")
+                            : inviteEmailResult === "sent"
                             ? t("settings.inviteEmailSent")
                             : t("settings.inviteEmailSend")}
                       </Button>
                     </div>
+                    {inviteEmailResult === "already_invited" && (
+                      <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">
+                        {t("settings.inviteEmailAlreadyInvitedHint")}
+                      </p>
+                    )}
                     {inviteEmailResult === "error" && (
                       <p className="mt-1 text-xs text-rose-600 dark:text-rose-400">
                         {t("settings.inviteEmailError")}
