@@ -31,6 +31,27 @@ const tryNotify = (title: string, options: NotificationOptions) => {
     return false;
   }
 };
+const getRentContractsNotificationValue = (event: HouseholdEvent, userId: string) => {
+  const payload = event.payload ?? {};
+  const beforeMap =
+    typeof payload.memberTotalsBefore === "object" && payload.memberTotalsBefore
+      ? (payload.memberTotalsBefore as Record<string, unknown>)
+      : null;
+  const afterMap =
+    typeof payload.memberTotalsAfter === "object" && payload.memberTotalsAfter
+      ? (payload.memberTotalsAfter as Record<string, unknown>)
+      : null;
+  const beforeValue = beforeMap ? Number(beforeMap[userId] ?? Number.NaN) : Number.NaN;
+  const afterValue = afterMap ? Number(afterMap[userId] ?? Number.NaN) : Number.NaN;
+  if (!Number.isFinite(afterValue)) return null;
+  if (Number.isFinite(beforeValue) && Math.abs(afterValue - beforeValue) < 0.004) return null;
+  return {
+    value: new Intl.NumberFormat(i18n.language, {
+      style: "currency",
+      currency: String(payload.currency ?? "EUR")
+    }).format(afterValue)
+  };
+};
 const getOverdueDays = (task: TaskItem, nowMillis: number) => {
   const dueTime = new Date(task.due_at).getTime();
   if (Number.isNaN(dueTime)) return 0;
@@ -118,6 +139,15 @@ export const useTaskNotifications = (
                     title: i18n.t("app.pushCashAuditTitle"),
                     body: i18n.t("app.pushCashAuditBody")
                   }
+                : ["rent_updated", "contract_created", "contract_updated", "contract_deleted"].includes(event.event_type)
+                  ? (() => {
+                      const details = getRentContractsNotificationValue(event, userId);
+                      if (!details) return null;
+                      return {
+                        title: i18n.t("app.pushRentContractsChangedTitle"),
+                        body: i18n.t("app.pushRentContractsChangedBody", { value: details.value })
+                      };
+                    })()
                 : null;
 
         if (!notificationContent) return;

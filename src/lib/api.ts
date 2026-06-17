@@ -1,6 +1,6 @@
 import { v4 as uuid } from "uuid";
 import { z } from "zod";
-import { calculateBalancesByMember } from "./finance-math";
+import { calculateBalancesByMember, splitAmountEvenly } from "./finance-math";
 import { normalizeTaskFeatureFlags } from "./household-task-features";
 import {
   assertCanDemoteOwner,
@@ -726,6 +726,113 @@ const recurrenceToCronPattern = (recurrence: FinanceSubscriptionRecurrence) => {
   return "0 9 1 * *";
 };
 
+const cronPatternToFinanceRecurrence = (cronPattern: string | null | undefined): FinanceSubscriptionRecurrence => {
+  if (cronPattern === "0 9 * * 1") return "weekly";
+  if (cronPattern === "0 9 1 */3 *") return "quarterly";
+  return "monthly";
+};
+
+const financeRecurrenceToMonthlyFactor = (recurrence: FinanceSubscriptionRecurrence) => {
+  if (recurrence === "weekly") return 52 / 12;
+  if (recurrence === "quarterly") return 1 / 3;
+  return 1;
+};
+
+const buildRentContractTotalsByUserId = (
+  household: Household,
+  members: HouseholdMember[],
+  subscriptions: FinanceSubscription[]
+) => {
+  const apartmentSizeSqm = household.apartment_size_sqm;
+  const coldRentMonthly = household.cold_rent_monthly;
+  const utilitiesMonthly = household.utilities_monthly;
+  const utilitiesOnRoomFactor = (household.utilities_on_room_sqm_percent ?? 0) / 100;
+  const utilitiesOnRoomPool = utilitiesMonthly === null ? null : utilitiesMonthly * utilitiesOnRoomFactor;
+  const totalRoomAreaSqm = members.reduce((sum, member) => sum + (member.room_size_sqm ?? 0), 0);
+  const coldPerApartmentSqm =
+    apartmentSizeSqm !== null && apartmentSizeSqm > 0 && coldRentMonthly !== null
+      ? coldRentMonthly / apartmentSizeSqm
+      : null;
+  const utilitiesPerRoomSqm =
+    utilitiesOnRoomPool !== null && totalRoomAreaSqm > 0 ? utilitiesOnRoomPool / totalRoomAreaSqm : null;
+  const memberIds = members.map((member) => member.user_id);
+  const totalsByUserId = new Map<string, { totalBeforeContracts: number | null; extraContracts: number; grandTotal: number | null }>();
+
+  members.forEach((member) => {
+    const roomSize = member.room_size_sqm ?? 0;
+    const coldForRoom = coldPerApartmentSqm === null ? null : coldPerApartmentSqm * roomSize;
+    const utilitiesForRoom = utilitiesPerRoomSqm === null ? null : utilitiesPerRoomSqm * roomSize;
+    const roomSubtotal = coldForRoom === null || utilitiesForRoom === null ? null : coldForRoom + utilitiesForRoom;
+    totalsByUserId.set(member.user_id, {
+      totalBeforeContracts: roomSubtotal,
+      extraContracts: 0,
+      grandTotal: roomSubtotal
+    });
+  });
+
+  const sharedAreaSqmRaw = apartmentSizeSqm === null ? null : apartmentSizeSqm - totalRoomAreaSqm;
+  const sharedAreaColdCosts =
+    coldPerApartmentSqm === null || sharedAreaSqmRaw === null ? null : coldPerApartmentSqm * sharedAreaSqmRaw;
+  const sharedUtilitiesCosts =
+    utilitiesMonthly === null || utilitiesOnRoomPool === null ? null : utilitiesMonthly - utilitiesOnRoomPool;
+  const remainingApartmentCosts =
+    sharedAreaColdCosts === null || sharedUtilitiesCosts === null ? null : sharedAreaColdCosts + sharedUtilitiesCosts;
+  const totalCommonWeight = members.reduce((sum, member) => sum + member.common_area_factor, 0);
+
+  members.forEach((member) => {
+    const entry = totalsByUserId.get(member.user_id);
+    if (!entry) return;
+    const commonCostsShare =
+      remainingApartmentCosts === null || totalCommonWeight <= 0
+        ? null
+        : (remainingApartmentCosts * member.common_area_factor) / totalCommonWeight;
+    entry.totalBeforeContracts =
+      entry.totalBeforeContracts === null || commonCostsShare === null ? null : entry.totalBeforeContracts + commonCostsShare;
+    entry.grandTotal = entry.totalBeforeContracts;
+  });
+
+  subscriptions.forEach((subscription) => {
+    const recurrence = cronPatternToFinanceRecurrence(subscription.cron_pattern);
+    const monthlyAmount = subscription.amount * financeRecurrenceToMonthlyFactor(recurrence);
+    const beneficiaryIds = subscription.beneficiary_user_ids.filter((memberId) => memberIds.includes(memberId));
+    const normalizedBeneficiaryIds = beneficiaryIds.length > 0 ? beneficiaryIds : memberIds;
+    if (normalizedBeneficiaryIds.length === 0) return;
+    const contractShareByMember = splitAmountEvenly(monthlyAmount, normalizedBeneficiaryIds);
+    members.forEach((member) => {
+      const entry = totalsByUserId.get(member.user_id);
+      if (!entry) return;
+      entry.extraContracts += contractShareByMember.get(member.user_id) ?? 0;
+    });
+  });
+
+  members.forEach((member) => {
+    const entry = totalsByUserId.get(member.user_id);
+    if (!entry) return;
+    entry.grandTotal = entry.totalBeforeContracts === null ? null : entry.totalBeforeContracts + entry.extraContracts;
+  });
+
+  return Object.fromEntries(members.map((member) => [member.user_id, totalsByUserId.get(member.user_id)?.grandTotal ?? null]));
+};
+
+const loadRentContractContext = async (householdId: string) => {
+  const [{ data: householdData, error: householdError }, { data: memberData, error: memberError }, { data: subscriptionData, error: subscriptionError }] =
+    await Promise.all([
+      supabase.from("households").select(SELECT_HOUSEHOLD_FIELDS).eq("id", householdId).single(),
+      supabase.from("household_members").select(SELECT_HOUSEHOLD_MEMBER_FIELDS).eq("household_id", householdId),
+      supabase.from("finance_subscriptions").select(SELECT_FINANCE_SUBSCRIPTION_FIELDS).eq("household_id", householdId)
+    ]);
+
+  if (householdError) throw householdError;
+  if (memberError) throw memberError;
+  if (subscriptionError) throw subscriptionError;
+
+  return {
+    household: normalizeHousehold(householdData as Record<string, unknown>),
+    members: (memberData ?? []).map((entry) => normalizeHouseholdMember(entry as Record<string, unknown>)),
+    subscriptions: (subscriptionData ?? []).map((entry) => normalizeFinanceSubscription(entry as Record<string, unknown>))
+  };
+};
+
 const taskFrequencyDaysToCronPattern = (frequencyDays: number) => {
   const normalized = Math.max(1, Math.floor(frequencyDays));
   return `0 9 */${normalized} * *`;
@@ -1297,13 +1404,21 @@ export const updateHouseholdSettings = async (
       .eq("user_id", actorUserId)
       .maybeSingle();
     const displayName = (profile as { display_name?: string | null } | null)?.display_name ?? null;
+    const { members, subscriptions } = await loadRentContractContext(validatedHouseholdId);
+    const beforeHousehold = normalizeHousehold({
+      ...(before as Record<string, unknown>),
+      id: validatedHouseholdId
+    });
     await insertHouseholdEvent({
       householdId: validatedHouseholdId,
       eventType: "rent_updated",
       actorUserId,
       payload: {
         changes: rentChanges,
-        name: displayName
+        name: displayName,
+        currency: normalizeHousehold(data as Record<string, unknown>).currency,
+        memberTotalsBefore: buildRentContractTotalsByUserId(beforeHousehold, members, subscriptions),
+        memberTotalsAfter: buildRentContractTotalsByUserId(normalizeHousehold(data as Record<string, unknown>), members, subscriptions)
       }
     });
   }
@@ -4047,6 +4162,9 @@ export const addFinanceSubscription = async (
     .eq("user_id", actorUserId)
     .maybeSingle();
   const displayName = (profile as { display_name?: string | null } | null)?.display_name ?? null;
+  const subscriptionHouseholdId = String((data as { household_id?: string }).household_id ?? "");
+  const { household, members, subscriptions } = await loadRentContractContext(subscriptionHouseholdId);
+  const createdSubscription = normalizeFinanceSubscription(data as Record<string, unknown>);
   await insertHouseholdEvent({
     householdId: parsedInput.householdId,
     eventType: "contract_created",
@@ -4056,7 +4174,14 @@ export const addFinanceSubscription = async (
       contractName: parsedInput.name,
       amount: parsedInput.amount,
       recurrence: parsedInput.recurrence,
-      actorName: displayName
+      actorName: displayName,
+      currency: household.currency,
+      memberTotalsBefore: buildRentContractTotalsByUserId(
+        household,
+        members,
+        subscriptions.filter((subscription) => subscription.id !== createdSubscription.id)
+      ),
+      memberTotalsAfter: buildRentContractTotalsByUserId(household, members, subscriptions)
     }
   });
   return normalizeFinanceSubscription(data as Record<string, unknown>);
@@ -4087,7 +4212,7 @@ export const updateFinanceSubscription = async (
 
   const { data: before } = await supabase
     .from("finance_subscriptions")
-    .select("name,amount,cron_pattern")
+    .select("name,amount,cron_pattern,beneficiary_user_ids")
     .eq("id", parsedInput.id)
     .maybeSingle();
 
@@ -4113,8 +4238,10 @@ export const updateFinanceSubscription = async (
     .eq("user_id", actorUserId)
     .maybeSingle();
   const displayName = (profile as { display_name?: string | null } | null)?.display_name ?? null;
+  const subscriptionHouseholdId = String((data as { household_id?: string }).household_id ?? "");
+  const { household, members, subscriptions } = await loadRentContractContext(subscriptionHouseholdId);
   await insertHouseholdEvent({
-    householdId: String((data as { household_id?: string }).household_id ?? ""),
+    householdId: subscriptionHouseholdId,
     eventType: "contract_updated",
     actorUserId,
     payload: {
@@ -4127,7 +4254,26 @@ export const updateFinanceSubscription = async (
         amount: (before as { amount?: number | null } | null)?.amount ?? null,
         recurrence: (before as { cron_pattern?: string | null } | null)?.cron_pattern ?? null
       },
-      actorName: displayName
+      actorName: displayName,
+      currency: household.currency,
+      memberTotalsBefore: buildRentContractTotalsByUserId(
+        household,
+        members,
+        subscriptions.map((subscription) =>
+          subscription.id !== parsedInput.id
+            ? subscription
+            : {
+                ...subscription,
+                name: (before as { name?: string | null } | null)?.name ?? subscription.name,
+                amount: (before as { amount?: number | null } | null)?.amount ?? subscription.amount,
+                cron_pattern: (before as { cron_pattern?: string | null } | null)?.cron_pattern ?? subscription.cron_pattern,
+                beneficiary_user_ids:
+                  (before as { beneficiary_user_ids?: string[] | null } | null)?.beneficiary_user_ids ??
+                  subscription.beneficiary_user_ids
+              }
+        )
+      ),
+      memberTotalsAfter: buildRentContractTotalsByUserId(household, members, subscriptions)
     }
   });
   return normalizeFinanceSubscription(data as Record<string, unknown>);
@@ -4142,7 +4288,7 @@ export const deleteFinanceSubscription = async (
   const actorUserId = await requireAuthenticatedUserId();
   const { data: before } = await supabase
     .from("finance_subscriptions")
-    .select("household_id,name,amount,cron_pattern")
+    .select("household_id,name,amount,cron_pattern,beneficiary_user_ids")
     .eq("id", validatedId)
     .maybeSingle();
   const { error } = await supabase.from("finance_subscriptions").delete().eq("id", validatedId);
@@ -4160,6 +4306,7 @@ export const deleteFinanceSubscription = async (
     const beforeName = (before as { name?: string | null } | null)?.name ?? null;
     const beforeAmount = (before as { amount?: number | null } | null)?.amount ?? null;
     const beforeRecurrence = (before as { cron_pattern?: string | null } | null)?.cron_pattern ?? null;
+    const { household, members, subscriptions } = await loadRentContractContext(householdId);
     await insertHouseholdEvent({
       householdId,
       eventType: "contract_deleted",
@@ -4169,7 +4316,25 @@ export const deleteFinanceSubscription = async (
         contractName: beforeName ?? fallback?.name ?? null,
         amount: beforeAmount ?? fallback?.amount ?? null,
         recurrence: beforeRecurrence ?? fallback?.recurrence ?? null,
-        actorName: displayName
+        actorName: displayName,
+        currency: household.currency,
+        memberTotalsBefore: buildRentContractTotalsByUserId(household, members, [
+          ...subscriptions,
+          normalizeFinanceSubscription({
+            id: validatedId,
+            household_id: householdId,
+            name: beforeName ?? fallback?.name ?? "",
+            category: "general",
+            amount: beforeAmount ?? fallback?.amount ?? 0,
+            paid_by_user_ids: [],
+            beneficiary_user_ids: (before as { beneficiary_user_ids?: string[] | null } | null)?.beneficiary_user_ids ?? [],
+            cron_pattern: beforeRecurrence ?? fallback?.recurrence ?? "0 9 1 * *",
+            created_by: actorUserId,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          })
+        ]),
+        memberTotalsAfter: buildRentContractTotalsByUserId(household, members, subscriptions)
       }
     });
   }

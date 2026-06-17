@@ -72,6 +72,24 @@ const buildMessage = (job: PushJob) => {
       householdId: job.household_id
     } as Record<string, string>
   };
+  const getRentContractsNotificationBody = () => {
+    if (!job.user_id) return null;
+    const beforeMap =
+      payload.payload && typeof payload.payload === "object" && typeof payload.payload.memberTotalsBefore === "object"
+        ? (payload.payload.memberTotalsBefore as Record<string, unknown>)
+        : null;
+    const afterMap =
+      payload.payload && typeof payload.payload === "object" && typeof payload.payload.memberTotalsAfter === "object"
+        ? (payload.payload.memberTotalsAfter as Record<string, unknown>)
+        : null;
+    const beforeValue = beforeMap ? Number(beforeMap[job.user_id] ?? Number.NaN) : Number.NaN;
+    const afterValue = afterMap ? Number(afterMap[job.user_id] ?? Number.NaN) : Number.NaN;
+    if (!Number.isFinite(afterValue)) return null;
+    if (Number.isFinite(beforeValue) && Math.abs(afterValue - beforeValue) < 0.004) return null;
+    const currency = String(payload.payload?.currency ?? "EUR");
+    const formatted = new Intl.NumberFormat("de-DE", { style: "currency", currency }).format(afterValue);
+    return `Du zahlst jetzt ${formatted} für Miete und Verträge. Pass deinen Dauerauftrag an.`;
+  };
 
   if (event === "finance_created") {
     base.title = "Neuer Finanzeintrag";
@@ -184,21 +202,25 @@ const buildMessage = (job: PushJob) => {
     const requestedLabel = Number.isFinite(requested) && requested > 0 ? `${Math.floor(requested)} P` : "";
     base.body = requestedLabel ? `${title} (${requestedLabel})` : title;
   } else if (event === "rent_updated") {
-    base.title = "Mietkosten geändert";
-    const name = String(payload.payload?.name ?? "Jemand");
-    base.body = `${name} hat die Mietkosten angepasst.`;
+    const personalizedBody = getRentContractsNotificationBody();
+    if (!personalizedBody) return null;
+    base.title = "Miete & Verträge geändert";
+    base.body = personalizedBody;
   } else if (event === "contract_created") {
-    base.title = "Vertrag hinzugefügt";
-    const contract = String(payload.payload?.contractName ?? "Ein Vertrag");
-    base.body = `${contract} wurde angelegt.`;
+    const personalizedBody = getRentContractsNotificationBody();
+    if (!personalizedBody) return null;
+    base.title = "Miete & Verträge geändert";
+    base.body = personalizedBody;
   } else if (event === "contract_updated") {
-    base.title = "Vertrag angepasst";
-    const contract = String(payload.payload?.contractName ?? "Ein Vertrag");
-    base.body = `${contract} wurde geändert.`;
+    const personalizedBody = getRentContractsNotificationBody();
+    if (!personalizedBody) return null;
+    base.title = "Miete & Verträge geändert";
+    base.body = personalizedBody;
   } else if (event === "contract_deleted") {
-    base.title = "Vertrag entfernt";
-    const contract = String(payload.payload?.contractName ?? "Ein Vertrag");
-    base.body = `${contract} wurde gelöscht.`;
+    const personalizedBody = getRentContractsNotificationBody();
+    if (!personalizedBody) return null;
+    base.title = "Miete & Verträge geändert";
+    base.body = personalizedBody;
   }
 
   const dataPayload = payload.payload ?? payload;
@@ -393,6 +415,18 @@ serve(async (req) => {
     }
 
     const message = buildMessage(job);
+    if (!message) {
+      await supabase
+        .from("push_jobs")
+        .update({
+          status: "done",
+          attempts: job.attempts + 1,
+          last_error: null
+        })
+        .eq("id", job.id);
+      processed += 1;
+      continue;
+    }
     let successCount = 0;
 
     for (const tokenRow of (tokens ?? []) as PushTokenRow[]) {

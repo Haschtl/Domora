@@ -92,6 +92,8 @@ export const resources = {
         pushFinanceCreatedBody: "Eintrag: {{name}}",
         pushCashAuditTitle: "Kassensturz gestartet",
         pushCashAuditBody: "Jemand hat einen Kassensturz ausgelöst.",
+        pushRentContractsChangedTitle: "Miete & Verträge geändert",
+        pushRentContractsChangedBody: "Du zahlst jetzt {{value}} für Miete und Verträge. Pass deinen Dauerauftrag an.",
         pushPromptTitle: "Push aktivieren?",
         pushPromptDescription:
           "Willst du den WG-Trubel live? Dann hol dir Erinnerungen für fällige Aufgaben + Updates zu erledigten Tasks, neuen Finanzeinträgen und Kassensturz.",
@@ -1706,6 +1708,8 @@ export const resources = {
         pushFinanceCreatedBody: "Entry: {{name}}",
         pushCashAuditTitle: "Cash audit started",
         pushCashAuditBody: "Someone started a cash audit.",
+        pushRentContractsChangedTitle: "Rent & contracts changed",
+        pushRentContractsChangedBody: "You now pay {{value}} for rent and contracts. Adjust your standing order.",
         pushPromptTitle: "Enable push?",
         pushPromptDescription:
           "Want the household drama live? Get reminders for due tasks plus updates on completed tasks, new finance entries, and cash audits.",
