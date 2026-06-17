@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { Check, ChevronLeft, ChevronRight, Wand2 } from "lucide-react";
 import type { Household, UpdateHouseholdInput } from "../lib/types";
@@ -96,16 +96,20 @@ export const HouseholdSetupWizard = ({
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
+  useEffect(() => {
+    if (open) {
+      setState(buildInitialState());
+      setStepIndex(0);
+      setError(null);
+    }
+  // buildInitialState is stable per household.id (useCallback dep)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
   const handleOpen = (nextOpen: boolean) => {
     if (!nextOpen) {
       onClose();
     }
-  };
-
-  const resetAndOpen = () => {
-    setState(buildInitialState());
-    setStepIndex(0);
-    setError(null);
   };
 
   const visibleSteps = STEP_IDS.filter((id) => {
@@ -245,10 +249,7 @@ export const HouseholdSetupWizard = ({
   return (
     <FullscreenDialog
       open={open}
-      onOpenChange={(nextOpen) => {
-        if (nextOpen) resetAndOpen();
-        handleOpen(nextOpen);
-      }}
+      onOpenChange={handleOpen}
       title={t("wizard.title")}
       description={t("wizard.description")}
       footer={footer}
@@ -290,14 +291,16 @@ const SwitchRow = ({
   description,
   checked,
   onCheckedChange,
+  disabled,
 }: {
   id: string;
   label: string;
   description?: string;
   checked: boolean;
   onCheckedChange: (checked: boolean) => void;
+  disabled?: boolean;
 }) => (
-  <div className="flex items-start justify-between gap-4 rounded-xl border border-brand-100 px-3 py-3 dark:border-slate-700">
+  <div className={`flex items-start justify-between gap-4 rounded-xl border border-brand-100 px-3 py-3 dark:border-slate-700 ${disabled ? "opacity-50" : ""}`}>
     <div className="min-w-0">
       <Label htmlFor={id} className="cursor-pointer text-sm font-medium text-slate-900 dark:text-slate-100">
         {label}
@@ -306,7 +309,7 @@ const SwitchRow = ({
         <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{description}</p>
       ) : null}
     </div>
-    <Switch id={id} checked={checked} onCheckedChange={onCheckedChange} />
+    <Switch id={id} checked={checked} onCheckedChange={onCheckedChange} disabled={disabled} />
   </div>
 );
 
@@ -365,6 +368,7 @@ const StepFeatures = ({ state, set }: { state: WizardState; set: SetFn }) => {
           description={t("wizard.featureOneOffDescription")}
           checked={state.featureOneOffTasksEnabled && state.featureTasksEnabled}
           onCheckedChange={(v) => set("featureOneOffTasksEnabled", v)}
+          disabled={!state.featureTasksEnabled}
         />
         <SwitchRow
           id="wiz-shopping"

@@ -3690,7 +3690,7 @@ returns integer
 language sql
 volatile
 security definer
-set search_path = extensions, public, auth
+set search_path = ''
 as $$
   select count(*)::integer
   from auth.sessions
@@ -4241,8 +4241,8 @@ drop policy if exists one_off_task_claims_update on one_off_task_claims;
 create policy one_off_task_claims_update on one_off_task_claims
 for update
 to authenticated
-using (is_household_member(household_id))
-with check (is_household_member(household_id));
+using (is_household_member(household_id) and (select auth.uid()) = created_by)
+with check (is_household_member(household_id) and (select auth.uid()) = created_by);
 
 drop policy if exists one_off_task_claim_votes_select on one_off_task_claim_votes;
 create policy one_off_task_claim_votes_select on one_off_task_claim_votes

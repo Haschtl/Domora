@@ -149,10 +149,10 @@ interface FinancesPageProps {
   onRequestCashAudit: () => Promise<void>;
 }
 
-const formatMoney = (value: number, locale: string) =>
+const formatMoney = (value: number, locale: string, currency: string = "EUR") =>
   new Intl.NumberFormat(locale, {
     style: "currency",
-    currency: "EUR"
+    currency,
   }).format(value);
 
 const COMMON_FACTOR_MIN = 0;
@@ -1233,8 +1233,8 @@ export const FinancesPage = ({
   const [ocrCandidate, setOcrCandidate] = useState<OcrCandidate | null>(null);
   const [ocrLlmStatus, setOcrLlmStatus] = useState<"idle" | "loading" | "extracting" | "done" | "error">("idle");
   const [ocrLlmProgress, setOcrLlmProgress] = useState(0);
-  const [ocrLlmProgressText, setOcrLlmProgressText] = useState("");
   const [ocrLlmResult, setOcrLlmResult] = useState<ReceiptLlmResult | null>(null);
+  const ocrLlmSessionRef = useRef(0);
   const [ocrDebugOverlayEnabled, setOcrDebugOverlayEnabled] = useState(() => {
     if (typeof window === "undefined") return false;
     return window.localStorage.getItem(OCR_DEBUG_LOCALSTORAGE_KEY) === "1";
@@ -1275,6 +1275,7 @@ export const FinancesPage = ({
   const ocrCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const ocrStreamRef = useRef<MediaStream | null>(null);
   const ocrTesseractWorkerRef = useRef<TesseractWorkerLike | null>(null);
+  const ocrTesseractWorkerPromiseRef = useRef<Promise<TesseractWorkerLike> | null>(null);
   const addReceiptUploadInputRef = useRef<HTMLInputElement | null>(null);
   const addReceiptCameraInputRef = useRef<HTMLInputElement | null>(null);
   const editReceiptUploadInputRef = useRef<HTMLInputElement | null>(null);
@@ -1759,7 +1760,8 @@ export const FinancesPage = ({
     const seed = getMemberAvatarSeed(memberId, member?.display_name);
     return createDiceBearAvatarDataUri(seed, member?.user_color);
   };
-  const moneyLabel = useCallback((value: number) => formatMoney(value, locale), [locale]);
+  const currency = household.currency ?? "EUR";
+  const moneyLabel = useCallback((value: number) => formatMoney(value, locale, currency), [locale, currency]);
   const rentHistoryItems = useMemo(() => {
     const rentFields: Record<string, string> = {
       apartment_size_sqm: t("settings.householdSizeLabel"),
@@ -1962,7 +1964,7 @@ export const FinancesPage = ({
         const sharedAreaSqmRaw =
           apartmentSizeSqm === null
             ? null
-            : apartmentSizeSqm - totalRoomAreaSqmInner;
+            : Math.max(0, apartmentSizeSqm - totalRoomAreaSqmInner);
         const sharedAreaColdCosts =
           coldPerApartmentSqm === null || sharedAreaSqmRaw === null
             ? null
@@ -2277,7 +2279,7 @@ export const FinancesPage = ({
 
     const memberIds = [...new Set(positiveEntries.map((entry) => entry.memberId))];
     const totalAmount = positiveEntries.reduce((sum, entry) => sum + entry.value, 0);
-    const amountLabel = formatMoney(totalAmount, locale);
+    const amountLabel = formatMoney(totalAmount, locale, currency);
 
     if (memberIds.length === 1) {
       const memberId = memberIds[0];
@@ -2349,14 +2351,14 @@ export const FinancesPage = ({
     [balancesByMember, userId]
   );
   const isPersonalBalanceNegative = personalBalance < -0.004;
-  const personalBalanceLabel = `${personalBalance > 0.004 ? "+" : ""}${formatMoney(personalBalance, locale)}`;
+  const personalBalanceLabel = `${personalBalance > 0.004 ? "+" : ""}${formatMoney(personalBalance, locale, currency)}`;
   const totalRoomAreaSqm = useMemo(
     () => members.reduce((sum, member) => sum + (member.room_size_sqm ?? 0), 0),
     [members]
   );
   const sharedAreaSqm = useMemo(() => {
     if (household.apartment_size_sqm === null) return null;
-    return household.apartment_size_sqm - totalRoomAreaSqm;
+    return Math.max(0, household.apartment_size_sqm - totalRoomAreaSqm);
   }, [household.apartment_size_sqm, totalRoomAreaSqm]);
   const formatSqm = (value: number | null) =>
     value === null ? "-" : `${Number(value.toFixed(2)).toString()} m²`;
@@ -3179,32 +3181,38 @@ export const FinancesPage = ({
 
   const getOrCreateTesseractWorker = useCallback(async () => {
     if (ocrTesseractWorkerRef.current) return ocrTesseractWorkerRef.current;
-    const tesseractModule = await import("tesseract.js");
-    let worker: TesseractWorkerLike | undefined;
-    try {
-      worker = (await tesseractModule.createWorker(["deu", "eng"], tesseractModule.OEM.LSTM_ONLY, {
-        logger: () => undefined,
-        workerPath: LOCAL_TESSERACT_WORKER_PATH,
-        corePath: LOCAL_TESSERACT_CORE_PATH,
-        langPath: LOCAL_TESSERACT_LANG_PATH
-      })) as unknown as TesseractWorkerLike;
-    } catch {
-      // Fallback to default remote paths if local assets are unavailable.
-      worker = (await tesseractModule.createWorker(["deu", "eng"], tesseractModule.OEM.LSTM_ONLY, {
-        logger: () => undefined
-      })) as unknown as TesseractWorkerLike;
-    }
-    await worker.setParameters({
-      tessedit_pageseg_mode: "6",
-      preserve_interword_spaces: "1",
-      user_defined_dpi: "300"
-    });
-    ocrTesseractWorkerRef.current = worker;
-    return worker;
+    if (ocrTesseractWorkerPromiseRef.current) return ocrTesseractWorkerPromiseRef.current;
+    ocrTesseractWorkerPromiseRef.current = (async () => {
+      const tesseractModule = await import("tesseract.js");
+      let worker: TesseractWorkerLike | undefined;
+      try {
+        worker = (await tesseractModule.createWorker(["deu", "eng"], tesseractModule.OEM.LSTM_ONLY, {
+          logger: () => undefined,
+          workerPath: LOCAL_TESSERACT_WORKER_PATH,
+          corePath: LOCAL_TESSERACT_CORE_PATH,
+          langPath: LOCAL_TESSERACT_LANG_PATH
+        })) as unknown as TesseractWorkerLike;
+      } catch {
+        // Fallback to default remote paths if local assets are unavailable.
+        worker = (await tesseractModule.createWorker(["deu", "eng"], tesseractModule.OEM.LSTM_ONLY, {
+          logger: () => undefined
+        })) as unknown as TesseractWorkerLike;
+      }
+      await worker.setParameters({
+        tessedit_pageseg_mode: "6",
+        preserve_interword_spaces: "1",
+        user_defined_dpi: "300"
+      });
+      ocrTesseractWorkerRef.current = worker;
+      ocrTesseractWorkerPromiseRef.current = null;
+      return worker;
+    })();
+    return ocrTesseractWorkerPromiseRef.current;
   }, []);
 
   useEffect(
     () => () => {
+      ocrTesseractWorkerPromiseRef.current = null;
       const worker = ocrTesseractWorkerRef.current;
       if (!worker) return;
       ocrTesseractWorkerRef.current = null;
@@ -3459,16 +3467,20 @@ export const FinancesPage = ({
       setOcrCameraDialogOpen(false);
 
       if (isWebGpuAvailable()) {
+        ocrLlmSessionRef.current += 1;
+        const session = ocrLlmSessionRef.current;
         setOcrLlmStatus("loading");
         setOcrLlmProgress(0);
         extractReceiptDataWithLlm(text, (report: LlmProgressReport) => {
+          if (ocrLlmSessionRef.current !== session) return;
           setOcrLlmProgress(Math.round(report.progress * 100));
-          setOcrLlmProgressText(report.text);
           if (report.progress >= 1) setOcrLlmStatus("extracting");
         }).then((result) => {
+          if (ocrLlmSessionRef.current !== session) return;
           setOcrLlmResult(result);
           setOcrLlmStatus(result ? "done" : "error");
         }).catch(() => {
+          if (ocrLlmSessionRef.current !== session) return;
           setOcrLlmStatus("error");
         });
       }
@@ -3819,7 +3831,7 @@ export const FinancesPage = ({
             <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
               {t("finances.settlementStats", {
                 count: entriesSinceLastAudit.length,
-                total: formatMoney(periodTotal, locale),
+                total: formatMoney(periodTotal, locale, currency),
               })}
             </p>
 
@@ -3860,7 +3872,7 @@ export const FinancesPage = ({
                         }
                       >
                         {isPositive ? "+" : ""}
-                        {formatMoney(entry.balance, locale)}
+                        {formatMoney(entry.balance, locale, currency)}
                       </span>
                     </li>
                   );
@@ -3967,7 +3979,7 @@ export const FinancesPage = ({
             </p>
             <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
               {t("finances.filteredTotal", {
-                value: formatMoney(filteredTotal, locale),
+                value: formatMoney(filteredTotal, locale, currency),
                 count: filteredEntries.length,
               })}
             </p>
@@ -4001,7 +4013,7 @@ export const FinancesPage = ({
                         callbacks: {
                           label: (context) => {
                             const value = Number(context.parsed.y ?? 0);
-                            return `${context.dataset.label ?? t("common.memberFallback")}: ${formatMoney(value, locale)}`;
+                            return `${context.dataset.label ?? t("common.memberFallback")}: ${formatMoney(value, locale, currency)}`;
                           },
                           footer: (items) => {
                             const total = items.reduce(
@@ -4009,7 +4021,7 @@ export const FinancesPage = ({
                               0,
                             );
                             return t("finances.chartStackTotal", {
-                              value: formatMoney(total, locale),
+                              value: formatMoney(total, locale, currency),
                             });
                           },
                         },
@@ -4105,7 +4117,7 @@ export const FinancesPage = ({
 
             <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
               {t("finances.filteredTotal", {
-                value: formatMoney(filteredTotal, locale),
+                value: formatMoney(filteredTotal, locale, currency),
                 count: filteredEntries.length,
               })}
             </p>
@@ -5829,6 +5841,7 @@ export const FinancesPage = ({
         onOpenChange={(open) => {
           setOcrConfirmDialogOpen(open);
           if (!open) {
+            ocrLlmSessionRef.current += 1;
             setOcrCandidate(null);
             setOcrPreviewImageUrl(null);
             setOcrLlmResult(null);

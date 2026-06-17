@@ -1244,7 +1244,6 @@ export const useWorkspaceController = () => {
     async (task: TaskItem) => {
       if (!activeHousehold) return;
 
-      const nowIso = new Date().toISOString();
       const nextActive = !task.is_active;
 
       await runWithOptimisticUpdate({
@@ -1258,7 +1257,7 @@ export const useWorkspaceController = () => {
                   ? {
                       ...entry,
                       is_active: nextActive,
-                      due_at: nextActive ? nowIso : entry.due_at,
+                      due_at: entry.due_at,
                       done: nextActive ? false : entry.done,
                       done_at: nextActive ? null : entry.done_at,
                       done_by: nextActive ? null : entry.done_by

@@ -13,12 +13,14 @@ export const useForegroundPush = ({ enabled, onNavigate }: ForegroundPushOptions
   useEffect(() => {
     if (!enabled) return;
     if (typeof window === "undefined") return;
+    let cancelled = false;
     let unsubscribe: (() => void) | null = null;
 
     const init = async () => {
       const runtimeConfig = await getFirebaseRuntimeConfig();
-      if (!runtimeConfig) return;
+      if (cancelled || !runtimeConfig) return;
       if (!(await isSupported())) return;
+      if (cancelled) return;
       if (getApps().length === 0) {
         initializeApp({
           apiKey: runtimeConfig.firebase.apiKey,
@@ -80,6 +82,7 @@ export const useForegroundPush = ({ enabled, onNavigate }: ForegroundPushOptions
 
     void init();
     return () => {
+      cancelled = true;
       if (unsubscribe) unsubscribe();
     };
   }, [enabled, onNavigate]);
