@@ -7,6 +7,22 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS"
 };
 
+const normalizePublicOrigin = (value: string | null | undefined) => {
+  if (!value) return null;
+  try {
+    const parsed = new URL(value.trim());
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return null;
+    const host = parsed.hostname.toLowerCase();
+    if (host === "localhost" || host === "127.0.0.1" || host === "[::1]") return null;
+    parsed.hash = "";
+    parsed.search = "";
+    parsed.pathname = "";
+    return parsed.toString().replace(/\/$/, "");
+  } catch {
+    return null;
+  }
+};
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { status: 200, headers: corsHeaders });
@@ -37,9 +53,13 @@ serve(async (req) => {
   const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : null;
   const householdId = typeof body.household_id === "string" ? body.household_id.trim() : null;
   const appOrigin = typeof body.app_origin === "string" ? body.app_origin.trim() : null;
+  const fallbackAppOrigin =
+    normalizePublicOrigin(Deno.env.get("PUBLIC_APP_ORIGIN"))
+    ?? normalizePublicOrigin(Deno.env.get("APP_ORIGIN"));
+  const resolvedAppOrigin = normalizePublicOrigin(appOrigin) ?? fallbackAppOrigin;
 
-  if (!email || !householdId || !appOrigin) {
-    return new Response("Missing email, household_id or app_origin", { status: 400, headers: corsHeaders });
+  if (!email || !householdId || !resolvedAppOrigin) {
+    return new Response("Missing email, household_id or valid public app origin", { status: 400, headers: corsHeaders });
   }
 
   // Use service-role client to perform admin operations
@@ -78,7 +98,7 @@ serve(async (req) => {
   }
 
   const inviteCode = (householdRow as { invite_code: string }).invite_code;
-  const redirectTo = `${appOrigin}/?invite=${encodeURIComponent(inviteCode)}`;
+  const redirectTo = `${resolvedAppOrigin}/?invite=${encodeURIComponent(inviteCode)}`;
 
   const { error: inviteError } = await adminClient.auth.admin.inviteUserByEmail(email, {
     redirectTo
