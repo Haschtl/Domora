@@ -1245,8 +1245,9 @@ export const SettingsPage = ({
   const pushPreferencesControlsDisabled = pushPreferencesBusy || !(pushPreferences?.enabled ?? true);
   const pushPreferencesSaveDisabled = pushPreferencesBusy || !pushPreferencesDirty || quietHoursInvalid;
   const inviteUrl = useMemo(() => {
-    if (typeof window === "undefined") return `/?invite=${encodeURIComponent(household.invite_code)}`;
-    return `${window.location.origin}/?invite=${encodeURIComponent(household.invite_code)}`;
+    const inviteParam = `?invite=${encodeURIComponent(household.invite_code)}`;
+    if (typeof window === "undefined") return `/${inviteParam}`;
+    return new URL(`${inviteParam}`, new URL(import.meta.env.BASE_URL || "/", window.location.origin)).toString();
   }, [household.invite_code]);
   const onSendEmailInvite = async () => {
     if (!inviteEmail.trim() || inviteEmailBusy) return;
