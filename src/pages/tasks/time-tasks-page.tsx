@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from "react";
 import imageCompression from "browser-image-compression";
-import { Camera, Check, Clock3, ImagePlus, MessageSquareMore, Pencil, Plus, Trash2, X } from "lucide-react";
+import { Camera, Check, Clock3, ImagePlus, Info, MessageSquareMore, Pencil, Plus, Trash2, X } from "lucide-react";
 import {
   BarElement,
   CategoryScale,
@@ -209,6 +209,8 @@ export const TimeTasksPage = ({
   const [correctionReason, setCorrectionReason] = useState("");
   const [editError, setEditError] = useState<string | null>(null);
   const [commentDrafts, setCommentDrafts] = useState<Record<string, string>>({});
+  const [detailsEntryId, setDetailsEntryId] = useState<string | null>(null);
+  const [deleteEntryId, setDeleteEntryId] = useState<string | null>(null);
   const [resetDialogOpen, setResetDialogOpen] = useState(false);
 
   const memberById = useMemo(
@@ -463,6 +465,7 @@ export const TimeTasksPage = ({
     [correctionProposals]
   );
   const correctionEntry = correctingEntryId ? (entryById.get(correctingEntryId) ?? null) : null;
+  const deleteEntry = deleteEntryId ? (entryById.get(deleteEntryId) ?? null) : null;
   const commentsByEntryId = useMemo(() => {
     const map = new Map<string, TaskComment[]>();
     comments
@@ -687,65 +690,157 @@ export const TimeTasksPage = ({
     await onAddTaskComment({ targetType: "task_time_entry", targetId: entryId, message });
   };
 
-  const renderComments = (entryId: string) => {
-    const entryComments = commentsByEntryId.get(entryId) ?? [];
+  const renderEntryDetailsDialog = (entry: TaskTimeEntry) => {
+    const entryComments = commentsByEntryId.get(entry.id) ?? [];
+    const isEditingEntry = editingEntryId === entry.id;
+
     return (
-      <Accordion type="single" collapsible className="mt-3">
-        <AccordionItem value="comments" className="border-none">
-          <AccordionTrigger className="py-2 text-xs font-semibold uppercase tracking-wide text-slate-500 hover:no-underline dark:text-slate-400">
-            {t("tasks.commentsTitle", { count: entryComments.length })}
-          </AccordionTrigger>
-          <AccordionContent className="space-y-3 pb-1">
-            <div className="space-y-2">
-              {entryComments.length > 0 ? (
-                entryComments.map((comment) => {
-                  const own = comment.user_id === userId;
-                  return (
-                    <div key={comment.id} className={`flex ${own ? "justify-end" : "justify-start"}`}>
-                      <div
-                        className={`max-w-[85%] rounded-2xl px-3 py-2 text-sm ${
-                          own
-                            ? "bg-brand-600 text-white"
-                            : "bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-100"
-                        }`}
-                      >
-                        <p className={`mb-1 text-xs ${own ? "text-brand-50" : "text-slate-500 dark:text-slate-400"}`}>
-                          {userLabel(comment.user_id)} | {new Date(comment.created_at).toLocaleString(language)}
-                        </p>
-                        <p className="whitespace-pre-line break-words">{comment.message}</p>
-                      </div>
-                    </div>
-                  );
-                })
-              ) : (
-                <p className="text-sm text-slate-500 dark:text-slate-400">{t("tasks.commentsEmpty")}</p>
-              )}
-            </div>
-            <div className="flex gap-2">
-              <Input
-                value={commentDrafts[entryId] ?? ""}
-                onChange={(event) => setCommentDrafts((prev) => ({ ...prev, [entryId]: event.target.value }))}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" && !event.shiftKey) {
-                    event.preventDefault();
-                    void submitComment(entryId);
-                  }
-                }}
-                placeholder={t("tasks.commentPlaceholder")}
-                disabled={busy}
+      <Dialog
+        open={detailsEntryId === entry.id}
+        onOpenChange={(open) => {
+          setDetailsEntryId(open ? entry.id : null);
+          if (!open && editingEntryId === entry.id) {
+            setEditingEntryId(null);
+            setEditError(null);
+          }
+        }}
+      >
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{t("tasks.timeEntryDetailsTitle", { title: entry.description })}</DialogTitle>
+            <DialogDescription>
+              {userLabel(entry.user_id)} | {new Date(entry.entry_date).toLocaleDateString(language)} | {formatHours(entry.hours)} h
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            {entry.source === "manual" && entry.created_by === userId ? (
+              <div className="flex justify-end">
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={busy}
+                  onClick={() => beginEdit(entry)}
+                >
+                  <Pencil className="mr-2 h-4 w-4" />
+                  {t("tasks.timeEditEntry")}
+                </Button>
+              </div>
+            ) : null}
+
+            {isEditingEntry ? renderEditFields(entry) : null}
+
+            {!isEditingEntry && entry.image_url ? (
+              <img
+                src={entry.image_url}
+                alt={entry.description}
+                className="max-h-72 w-full rounded-xl object-cover"
               />
-              <Button
-                type="button"
-                size="sm"
-                disabled={busy || !(commentDrafts[entryId] ?? "").trim()}
-                onClick={() => void submitComment(entryId)}
-              >
-                {t("tasks.commentSend")}
-              </Button>
-            </div>
-          </AccordionContent>
-        </AccordionItem>
-      </Accordion>
+            ) : null}
+
+            {!isEditingEntry && entry.details ? (
+              <div className="space-y-1 rounded-xl border border-brand-100 bg-brand-50/50 px-3 py-3 dark:border-slate-700 dark:bg-slate-800/60">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                  {t("tasks.timeDetailsLabel")}
+                </p>
+                <p className="whitespace-pre-line text-sm text-slate-700 dark:text-slate-200">
+                  {entry.details}
+                </p>
+              </div>
+            ) : null}
+
+            {!isEditingEntry ? (
+              <div className="space-y-2 rounded-xl border border-brand-100 bg-white px-3 py-3 dark:border-slate-700 dark:bg-slate-900">
+              <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                {t("tasks.timeEntryRatingTitle")}
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <StarRating
+                  value={entry.my_rating ?? 0}
+                  displayValue={entry.rating_average ?? 0}
+                  disabled={busy || entry.user_id === userId}
+                  onChange={(rating) => void onRateTaskTimeEntry(entry.id, rating)}
+                  getLabel={(rating) => t("tasks.rateAction", { rating })}
+                />
+                {entry.rating_count > 0 ? (
+                  <span className="text-xs text-slate-500 dark:text-slate-400">
+                    {t("tasks.ratingTooltipAverage", {
+                      average: Number((entry.rating_average ?? 0).toFixed(1))
+                    })}
+                    {" | "}
+                    {t("tasks.ratingTooltipCount", { count: entry.rating_count })}
+                  </span>
+                ) : (
+                  <span className="text-xs text-slate-500 dark:text-slate-400">
+                    {t("tasks.ratingNoVotes")}
+                  </span>
+                )}
+              </div>
+              {entry.user_id === userId ? (
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  {t("tasks.timeEntryRatingOwnHint")}
+                </p>
+              ) : null}
+              </div>
+            ) : null}
+
+            {!isEditingEntry ? (
+              <div className="space-y-3 rounded-xl border border-brand-100 bg-white px-3 py-3 dark:border-slate-700 dark:bg-slate-900">
+              <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                {t("tasks.commentsTitle", { count: entryComments.length })}
+              </p>
+              <div className="space-y-2">
+                {entryComments.length > 0 ? (
+                  entryComments.map((comment) => {
+                    const own = comment.user_id === userId;
+                    return (
+                      <div key={comment.id} className={`flex ${own ? "justify-end" : "justify-start"}`}>
+                        <div
+                          className={`max-w-[85%] rounded-2xl px-3 py-2 text-sm ${
+                            own
+                              ? "bg-brand-600 text-white"
+                              : "bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-100"
+                          }`}
+                        >
+                          <p className={`mb-1 text-xs ${own ? "text-brand-50" : "text-slate-500 dark:text-slate-400"}`}>
+                            {userLabel(comment.user_id)} | {new Date(comment.created_at).toLocaleString(language)}
+                          </p>
+                          <p className="whitespace-pre-line break-words">{comment.message}</p>
+                        </div>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <p className="text-sm text-slate-500 dark:text-slate-400">{t("tasks.commentsEmpty")}</p>
+                )}
+              </div>
+              <div className="flex gap-2">
+                <Input
+                  value={commentDrafts[entry.id] ?? ""}
+                  onChange={(event) => setCommentDrafts((prev) => ({ ...prev, [entry.id]: event.target.value }))}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" && !event.shiftKey) {
+                      event.preventDefault();
+                      void submitComment(entry.id);
+                    }
+                  }}
+                  placeholder={t("tasks.commentPlaceholder")}
+                  disabled={busy}
+                />
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={busy || !(commentDrafts[entry.id] ?? "").trim()}
+                  onClick={() => void submitComment(entry.id)}
+                >
+                  {t("tasks.commentSend")}
+                </Button>
+              </div>
+              </div>
+            ) : null}
+          </div>
+        </DialogContent>
+      </Dialog>
     );
   };
 
@@ -792,43 +887,25 @@ export const TimeTasksPage = ({
                   {t("tasks.timeVacationCredit")}
                 </p>
               ) : null}
-              <div className={`mt-2 flex flex-wrap items-center gap-2 ${
-                hasImage ? "rounded-lg bg-white/75 px-2 py-1 backdrop-blur-md dark:bg-slate-900/70" : ""
-              }`}>
-                <StarRating
-                  value={entry.my_rating ?? 0}
-                  displayValue={entry.rating_average ?? 0}
-                  disabled={busy || entry.user_id === userId}
-                  onChange={(rating) => void onRateTaskTimeEntry(entry.id, rating)}
-                  getLabel={(rating) => t("tasks.rateAction", { rating })}
-                />
-                {entry.rating_count > 0 ? (
-                  <span className="text-xs text-slate-500 dark:text-slate-400">
-                    {t("tasks.ratingTooltipAverage", { average: Number((entry.rating_average ?? 0).toFixed(1)) })}
-                    {" | "}
-                    {t("tasks.ratingTooltipCount", { count: entry.rating_count })}
-                  </span>
-                ) : null}
-              </div>
             </div>
           </div>
           {entry.source === "manual" && entry.created_by === userId ? (
-            <div className="flex shrink-0 gap-1">
+            <div className="flex shrink-0 flex-wrap justify-end gap-1">
               <Button
                 type="button"
                 variant="ghost"
                 disabled={busy}
-                onClick={() => beginEdit(entry)}
-                aria-label={t("tasks.timeEditEntry")}
+                onClick={() => setDetailsEntryId(entry.id)}
+                aria-label={t("tasks.timeEntryDetailsAction")}
                 className="h-9 w-9 px-0"
               >
-                <Pencil className="h-4 w-4" />
+                <Info className="h-4 w-4" />
               </Button>
               <Button
                 type="button"
                 variant="ghost"
                 disabled={busy}
-                onClick={() => void onDeleteTaskTimeEntry(entry)}
+                onClick={() => setDeleteEntryId(entry.id)}
                 aria-label={t("tasks.timeDeleteEntry")}
                 className="h-9 w-9 px-0"
               >
@@ -836,20 +913,42 @@ export const TimeTasksPage = ({
               </Button>
             </div>
           ) : entry.source === "manual" ? (
+            <div className="flex shrink-0 flex-wrap justify-end gap-2">
+              <Button
+                type="button"
+                variant="ghost"
+                disabled={busy}
+                onClick={() => setDetailsEntryId(entry.id)}
+                aria-label={t("tasks.timeEntryDetailsAction")}
+                className="h-9 w-9 px-0"
+              >
+                <Info className="h-4 w-4" />
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                disabled={busy}
+                onClick={() => beginCorrection(entry)}
+                aria-label={t("tasks.timeSuggestCorrection")}
+                className="h-9 w-9 px-0"
+              >
+                <MessageSquareMore className="h-4 w-4" />
+              </Button>
+            </div>
+          ) : (
             <Button
               type="button"
               variant="ghost"
               disabled={busy}
-              onClick={() => beginCorrection(entry)}
-              aria-label={t("tasks.timeSuggestCorrection")}
+              onClick={() => setDetailsEntryId(entry.id)}
+              aria-label={t("tasks.timeEntryDetailsAction")}
               className="h-9 w-9 px-0"
             >
-              <MessageSquareMore className="h-4 w-4" />
+              <Info className="h-4 w-4" />
             </Button>
-          ) : null}
+          )}
         </div>
-        {renderComments(entry.id)}
-        {editingEntryId === entry.id ? renderEditFields(entry) : null}
+        {detailsEntryId === entry.id ? renderEntryDetailsDialog(entry) : null}
       </div>
     );
   };
@@ -1277,12 +1376,7 @@ export const TimeTasksPage = ({
       ) : null}
 
       {section === "overview" || section === "history" ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>{t("tasks.timeHistoryTitle")}</CardTitle>
-            <CardDescription>{t("tasks.timeHistoryDescription")}</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
+        <div className="space-y-3">
             {visibleEntries.length > 0 ? visibleEntries.map(renderEntry) : (
               <p className="text-sm text-slate-500 dark:text-slate-400">{t("tasks.timeHistoryEmpty")}</p>
             )}
@@ -1298,8 +1392,7 @@ export const TimeTasksPage = ({
                 </Button>
               </div>
             ) : null}
-          </CardContent>
-        </Card>
+        </div>
       ) : null}
 
       <Dialog
@@ -1416,6 +1509,47 @@ export const TimeTasksPage = ({
             >
               <Trash2 className="mr-2 h-4 w-4" />
               {t("tasks.timeResetAction")}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(deleteEntry)}
+        onOpenChange={(open) => {
+          if (!open) setDeleteEntryId(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{t("tasks.timeDeleteConfirmTitle")}</DialogTitle>
+            <DialogDescription>
+              {t("tasks.timeDeleteConfirmDescription", {
+                title: deleteEntry?.description ?? ""
+              })}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              disabled={busy}
+              onClick={() => setDeleteEntryId(null)}
+            >
+              {t("common.cancel")}
+            </Button>
+            <Button
+              type="button"
+              variant="danger"
+              disabled={busy || !deleteEntry}
+              onClick={() => {
+                if (!deleteEntry) return;
+                setDeleteEntryId(null);
+                void onDeleteTaskTimeEntry(deleteEntry);
+              }}
+            >
+              <Trash2 className="mr-2 h-4 w-4" />
+              {t("tasks.timeDeleteConfirmAction")}
             </Button>
           </div>
         </DialogContent>
