@@ -52,6 +52,7 @@ export default defineConfig({
           if (!id.includes("node_modules")) return undefined;
           if (id.includes("@tsparticles/")) return "vendor-particles";
           if (id.includes("@mlc-ai/web-llm")) return "vendor-web-llm";
+          if (id.includes("@huggingface/transformers") || id.includes("onnxruntime-web")) return "vendor-ocr";
           if (id.includes("/three/")) return "vendor-three";
           if (
             id.includes("@mdxeditor/editor")
@@ -113,6 +114,7 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ["**/*.{js,css,html,svg,png,ico,json}"],
+        globIgnores: ["assets/ort-wasm*.wasm"],
         // Large vendor chunks currently exceed Workbox's default precache ceiling.
         maximumFileSizeToCacheInBytes: 8 * 1024 * 1024
       }

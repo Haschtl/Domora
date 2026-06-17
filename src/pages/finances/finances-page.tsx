@@ -71,6 +71,7 @@ import { Switch } from "../../components/ui/switch";
 import { Tooltip as RadixTooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../../components/ui/tooltip";
 import { useSmartSuggestions } from "../../hooks/use-smart-suggestions";
 import { suggestCategoryLabel } from "../../lib/category-heuristics";
+import { extractReceiptTextWithModernOcr } from "../../lib/receipt-ocr";
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -336,7 +337,7 @@ type OcrPassResult = {
   text: string;
   boxes: OcrPreviewBox[];
   meanConfidence: number;
-  source: "detector" | "main" | "sparse" | "numeric" | "lowerNumeric" | "opencvSparse";
+  source: "detector" | "modernMain" | "modernLower" | "main" | "sparse" | "numeric" | "lowerNumeric" | "opencvSparse";
   region: "full" | "lower";
   numericFocused: boolean;
 };
@@ -423,6 +424,29 @@ const clampOcrSize = (width: number, height: number) => {
     width: Math.max(1, Math.round(width * ratio)),
     height: Math.max(1, Math.round(height * ratio))
   };
+};
+
+const createCanvasCrop = (
+  source: HTMLCanvasElement,
+  rectangle: { left: number; top: number; width: number; height: number }
+) => {
+  const output = document.createElement("canvas");
+  output.width = Math.max(1, Math.floor(rectangle.width));
+  output.height = Math.max(1, Math.floor(rectangle.height));
+  const context = output.getContext("2d");
+  if (!context) return null;
+  context.drawImage(
+    source,
+    rectangle.left,
+    rectangle.top,
+    rectangle.width,
+    rectangle.height,
+    0,
+    0,
+    output.width,
+    output.height
+  );
+  return output;
 };
 
 const getOtsuThreshold = (pixels: Uint8ClampedArray) => {
@@ -982,7 +1006,11 @@ const extractPriceFromOcrPassesDetailed = (passes: OcrPassResult[]) =>
     passes.flatMap((pass) =>
       extractPriceCandidatesFromOcrText(pass.text, {
         baseWeight:
-          pass.source === "main"
+          pass.source === "modernMain"
+            ? 18
+            : pass.source === "modernLower"
+              ? 26
+              : pass.source === "main"
             ? 14
             : pass.source === "numeric"
               ? 24
@@ -3273,20 +3301,27 @@ export const FinancesPage = ({
       sourceBitmap.close?.();
       const previewImageUrl = canvas.toDataURL("image/jpeg", 0.88);
       const sharpnessScore = estimateCanvasSharpness(canvas);
-      if (sharpnessScore < OCR_MIN_SHARPNESS_SCORE) {
-        setOcrError(t("finances.ocrTooBlurryError"));
-        return;
-      }
       const balancedCanvas = preprocessOcrCanvas(canvas, "balanced");
       const highContrastCanvas = preprocessOcrCanvas(canvas, "highContrast");
       const grayscaleCanvas = preprocessOcrCanvas(canvas, "grayscale");
       const openCvResult = await preprocessOcrCanvasWithOpenCv(canvas);
       const openCvCanvas = openCvResult.canvas;
       const effectiveSharpness = openCvResult.sharpness ?? sharpnessScore;
-      if (effectiveSharpness < OCR_MIN_SHARPNESS_SCORE) {
-        setOcrError(t("finances.ocrTooBlurryError"));
-        return;
-      }
+
+      const numericSourceCanvas = openCvCanvas ?? highContrastCanvas;
+      const fullReceipt = {
+        left: 0,
+        top: 0,
+        width: numericSourceCanvas.width,
+        height: numericSourceCanvas.height
+      };
+      const lowerRegion = {
+        left: 0,
+        top: Math.floor(numericSourceCanvas.height * 0.45),
+        width: numericSourceCanvas.width,
+        height: Math.floor(numericSourceCanvas.height * 0.55)
+      };
+      const lowerReceiptCanvas = createCanvasCrop(numericSourceCanvas, lowerRegion);
 
       const detectorCtor = getTextDetectorConstructor();
       let detectorText = "";
@@ -3302,126 +3337,28 @@ export const FinancesPage = ({
         }
       }
 
-      const worker = await getOrCreateTesseractWorker();
-      const runTesseractPass = async ({
-        source,
-        params,
-        rectangle,
-        withBoxes,
-        sourceName,
-        region,
-        numericFocused
-      }: {
-        source: HTMLCanvasElement;
-        params: Record<string, string>;
-        rectangle?: { left: number; top: number; width: number; height: number };
-        withBoxes?: boolean;
-        sourceName: OcrPassResult["source"];
-        region: OcrPassResult["region"];
-        numericFocused: boolean;
-      }) => {
-        await worker.setParameters(params);
-        const result = await worker.recognize(source, rectangle ? { rectangle } : undefined, { text: true, blocks: true });
-        const text = result.data.text.trim();
-        const boxes = withBoxes ? extractBoxesFromTesseractResult(result, source.width, source.height) : [];
-        const confidences = [...(result.data.words ?? []), ...(result.data.lines ?? [])]
-          .map((entry) => Number(entry.confidence ?? 0))
-          .filter((value) => Number.isFinite(value) && value > 0);
-        const meanConfidence =
-          confidences.length > 0 ? confidences.reduce((sum, value) => sum + value, 0) / confidences.length : 0;
-        return { text, boxes, meanConfidence, source: sourceName, region, numericFocused } satisfies OcrPassResult;
-      };
-
-      const numericSourceCanvas = openCvCanvas ?? highContrastCanvas;
-      const fullReceipt = {
-        left: 0,
-        top: 0,
-        width: numericSourceCanvas.width,
-        height: numericSourceCanvas.height
-      };
-      const lowerRegion = {
-        left: 0,
-        top: Math.floor(numericSourceCanvas.height * 0.45),
-        width: numericSourceCanvas.width,
-        height: Math.floor(numericSourceCanvas.height * 0.55)
-      };
-
-      const mainPass = await runTesseractPass({
-        source: openCvCanvas ?? balancedCanvas,
-        withBoxes: true,
-        sourceName: "main",
+      const modernOcrResults = await extractReceiptTextWithModernOcr(
+        [
+          { id: "modernMain", canvas: openCvCanvas ?? balancedCanvas },
+          ...(lowerReceiptCanvas ? [{ id: "modernLower" as const, canvas: lowerReceiptCanvas }] : [])
+        ]
+      );
+      const modernMainPass: OcrPassResult = {
+        text: modernOcrResults.find((entry) => entry.id === "modernMain")?.text ?? "",
+        boxes: [],
+        meanConfidence: 78,
+        source: "modernMain",
         region: "full",
-        numericFocused: false,
-        params: {
-          tessedit_pageseg_mode: "6",
-          preserve_interword_spaces: "1",
-          tessedit_char_whitelist: ""
-        }
-      });
-      const sparsePass = await runTesseractPass({
-        source: grayscaleCanvas,
-        sourceName: "sparse",
-        region: "full",
-        numericFocused: false,
-        params: {
-          tessedit_pageseg_mode: "11",
-          preserve_interword_spaces: "1",
-          tessedit_char_whitelist: ""
-        }
-      });
-      const numericPass = await runTesseractPass({
-        source: numericSourceCanvas,
-        rectangle: fullReceipt,
-        sourceName: "numeric",
-        region: "full",
-        numericFocused: true,
-        params: {
-          tessedit_pageseg_mode: "6",
-          preserve_interword_spaces: "1",
-          tessedit_char_whitelist: "0123456789.,€EURSUMMETOTALGESAMTBETRAG"
-        }
-      });
-      const lowerNumericPass = await runTesseractPass({
-        source: numericSourceCanvas,
-        rectangle: lowerRegion,
-        sourceName: "lowerNumeric",
+        numericFocused: false
+      };
+      const modernLowerPass: OcrPassResult = {
+        text: modernOcrResults.find((entry) => entry.id === "modernLower")?.text ?? "",
+        boxes: [],
+        meanConfidence: 74,
+        source: "modernLower",
         region: "lower",
-        numericFocused: true,
-        params: {
-          tessedit_pageseg_mode: "11",
-          preserve_interword_spaces: "1",
-          tessedit_char_whitelist: "0123456789.,€EURSUMMETOTALGESAMTBETRAG"
-        }
-      });
-      const openCvSparsePass: OcrPassResult =
-        openCvCanvas !== null
-          ? await runTesseractPass({
-              source: openCvCanvas,
-              sourceName: "opencvSparse",
-              region: "full",
-              numericFocused: false,
-              params: {
-                tessedit_pageseg_mode: "11",
-                preserve_interword_spaces: "1",
-                tessedit_char_whitelist: ""
-              }
-            })
-          : {
-              text: "",
-              boxes: [] as OcrPreviewBox[],
-              meanConfidence: 0,
-              source: "opencvSparse",
-              region: "full",
-              numericFocused: false
-            };
-
-      await worker.setParameters({
-        tessedit_pageseg_mode: "6",
-        preserve_interword_spaces: "1",
-        tessedit_char_whitelist: "",
-        user_defined_dpi: "300"
-      });
-
+        numericFocused: true
+      };
       const detectorPass: OcrPassResult = {
         text: detectorText,
         boxes: detectorBoxes,
@@ -3430,25 +3367,149 @@ export const FinancesPage = ({
         region: "full",
         numericFocused: false
       };
-      const passes: OcrPassResult[] = [detectorPass, mainPass, sparsePass, numericPass, lowerNumericPass, openCvSparsePass];
+      const primaryPasses: OcrPassResult[] = [modernMainPass, modernLowerPass, detectorPass];
+      const primaryText = buildUniqueLinesText(modernMainPass.text, modernLowerPass.text, detectorText);
+      const primaryHasEnoughText = primaryText.replace(/\s/g, "").length >= OCR_MIN_USEFUL_TEXT_LENGTH;
+      const primaryAmount = extractPriceFromOcrPassesDetailed(primaryPasses).value;
+      const shouldRunTesseractFallback = !primaryHasEnoughText || primaryAmount === null;
+
+      let fallbackPasses: OcrPassResult[] = [];
+      let fallbackBoxes: OcrPreviewBox[] = [];
+      if (shouldRunTesseractFallback) {
+        const worker = await getOrCreateTesseractWorker();
+        const runTesseractPass = async ({
+          source,
+          params,
+          rectangle,
+          withBoxes,
+          sourceName,
+          region,
+          numericFocused
+        }: {
+          source: HTMLCanvasElement;
+          params: Record<string, string>;
+          rectangle?: { left: number; top: number; width: number; height: number };
+          withBoxes?: boolean;
+          sourceName: Extract<OcrPassResult["source"], "main" | "sparse" | "numeric" | "lowerNumeric" | "opencvSparse">;
+          region: OcrPassResult["region"];
+          numericFocused: boolean;
+        }) => {
+          await worker.setParameters(params);
+          const result = await worker.recognize(source, rectangle ? { rectangle } : undefined, { text: true, blocks: true });
+          const text = result.data.text.trim();
+          const boxes = withBoxes ? extractBoxesFromTesseractResult(result, source.width, source.height) : [];
+          const confidences = [...(result.data.words ?? []), ...(result.data.lines ?? [])]
+            .map((entry) => Number(entry.confidence ?? 0))
+            .filter((value) => Number.isFinite(value) && value > 0);
+          const meanConfidence =
+            confidences.length > 0 ? confidences.reduce((sum, value) => sum + value, 0) / confidences.length : 0;
+          return { text, boxes, meanConfidence, source: sourceName, region, numericFocused } satisfies OcrPassResult;
+        };
+
+        const mainPass = await runTesseractPass({
+          source: openCvCanvas ?? balancedCanvas,
+          withBoxes: true,
+          sourceName: "main",
+          region: "full",
+          numericFocused: false,
+          params: {
+            tessedit_pageseg_mode: "6",
+            preserve_interword_spaces: "1",
+            tessedit_char_whitelist: ""
+          }
+        });
+        const sparsePass = await runTesseractPass({
+          source: grayscaleCanvas,
+          sourceName: "sparse",
+          region: "full",
+          numericFocused: false,
+          params: {
+            tessedit_pageseg_mode: "11",
+            preserve_interword_spaces: "1",
+            tessedit_char_whitelist: ""
+          }
+        });
+        const numericPass = await runTesseractPass({
+          source: numericSourceCanvas,
+          rectangle: fullReceipt,
+          sourceName: "numeric",
+          region: "full",
+          numericFocused: true,
+          params: {
+            tessedit_pageseg_mode: "6",
+            preserve_interword_spaces: "1",
+            tessedit_char_whitelist: "0123456789.,€EURSUMMETOTALGESAMTBETRAG"
+          }
+        });
+        const lowerNumericPass = await runTesseractPass({
+          source: numericSourceCanvas,
+          rectangle: lowerRegion,
+          sourceName: "lowerNumeric",
+          region: "lower",
+          numericFocused: true,
+          params: {
+            tessedit_pageseg_mode: "11",
+            preserve_interword_spaces: "1",
+            tessedit_char_whitelist: "0123456789.,€EURSUMMETOTALGESAMTBETRAG"
+          }
+        });
+        const openCvSparsePass: OcrPassResult =
+          openCvCanvas !== null
+            ? await runTesseractPass({
+                source: openCvCanvas,
+                sourceName: "opencvSparse",
+                region: "full",
+                numericFocused: false,
+                params: {
+                  tessedit_pageseg_mode: "11",
+                  preserve_interword_spaces: "1",
+                  tessedit_char_whitelist: ""
+                }
+              })
+            : {
+                text: "",
+                boxes: [] as OcrPreviewBox[],
+                meanConfidence: 0,
+                source: "opencvSparse",
+                region: "full",
+                numericFocused: false
+              };
+
+        await worker.setParameters({
+          tessedit_pageseg_mode: "6",
+          preserve_interword_spaces: "1",
+          tessedit_char_whitelist: "",
+          user_defined_dpi: "300"
+        });
+        fallbackPasses = [mainPass, sparsePass, numericPass, lowerNumericPass, openCvSparsePass];
+        fallbackBoxes = mainPass.boxes;
+      }
+
+      const passes: OcrPassResult[] = [...primaryPasses, ...fallbackPasses];
       const text = buildUniqueLinesText(
+        modernMainPass.text,
+        modernLowerPass.text,
         detectorText,
-        mainPass.text,
-        sparsePass.text,
-        numericPass.text,
-        lowerNumericPass.text,
-        openCvSparsePass.text
+        ...fallbackPasses.map((pass) => pass.text)
       );
-      const boxes = mergeUniqueBoxes(detectorBoxes, mainPass.boxes);
+      const boxes = mergeUniqueBoxes(detectorBoxes, fallbackBoxes);
 
       if (!text.trim()) {
-        setOcrError(t("finances.ocrReadError"));
+        setOcrError(
+          effectiveSharpness < OCR_MIN_SHARPNESS_SCORE
+            ? t("finances.ocrTooBlurryError")
+            : t("finances.ocrReadError")
+        );
         return;
       }
 
       const hasEnoughText = text.replace(/\s/g, "").length >= OCR_MIN_USEFUL_TEXT_LENGTH;
       if (!hasEnoughText) {
-        setOcrError(t("finances.ocrReadError"));
+        setOcrError(
+          effectiveSharpness < OCR_MIN_SHARPNESS_SCORE
+            ? t("finances.ocrTooBlurryError")
+            : t("finances.ocrReadError")
+        );
         return;
       }
 

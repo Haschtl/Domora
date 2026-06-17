@@ -37,6 +37,7 @@
     "@dnd-kit/utilities": "^3.2.2",
     "@excalidraw/excalidraw": "^0.18.1",
     "@geoman-io/leaflet-geoman-free": "^2.19.3",
+    "@huggingface/transformers": "^4.2.0",
     "@lexical/rich-text": "^0.45.0",
     "@lexical/utils": "^0.45.0",
     "@mdxeditor/editor": "^4.0.3",
