@@ -874,12 +874,30 @@ export const signUp = async (
   password: string,
   captchaToken?: string
 ) => {
+  const normalizedEmail = email.trim();
+  if (!normalizedEmail) {
+    throw new Error("Bitte gib eine E-Mail-Adresse ein.");
+  }
+  if (password.length < 6) {
+    throw new Error("Das Passwort muss mindestens 6 Zeichen haben.");
+  }
+
   const { error } = await supabase.auth.signUp({
-    email,
+    email: normalizedEmail,
     password,
     options: captchaToken ? { captchaToken } : undefined
   });
-  if (error) throw error;
+  if (!error) return;
+
+  const details = [
+    typeof error.message === "string" && error.message.trim() ? error.message.trim() : null,
+    "status" in error && typeof error.status === "number" ? `status=${error.status}` : null,
+    "code" in error && typeof error.code === "string" && error.code.trim() ? `code=${error.code.trim()}` : null
+  ]
+    .filter(Boolean)
+    .join(", ");
+
+  throw new Error(details ? `Registrierung fehlgeschlagen: ${details}` : "Registrierung fehlgeschlagen.");
 };
 
 export const requestPasswordReset = async (email: string) => {

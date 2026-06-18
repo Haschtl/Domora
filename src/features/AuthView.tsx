@@ -1,4 +1,4 @@
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { FcGoogle } from "react-icons/fc";
 import { useTranslation } from "react-i18next";
@@ -29,6 +29,7 @@ const GITHUB_REPO_URL = "https://github.com/Haschtl/Domora";
 
 export const AuthView = ({ busy, onSignIn, onSignUp, onGoogleSignIn, onRequestPasswordReset }: AuthViewProps) => {
   const { t } = useTranslation();
+  const formRef = useRef<HTMLFormElement | null>(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [passwordResetState, setPasswordResetState] = useState<"idle" | "sending" | "sent" | "error">("idle");
@@ -199,7 +200,7 @@ export const AuthView = ({ busy, onSignIn, onSignUp, onGoogleSignIn, onRequestPa
         <CardDescription>{t("auth.description")}</CardDescription>
       </CardHeader>
       <CardContent>
-        <form className="space-y-3" onSubmit={onSubmit}>
+        <form ref={formRef} className="space-y-3" onSubmit={onSubmit}>
           <div className="space-y-1">
             <Label htmlFor="email">{t("auth.email")}</Label>
             <Input
@@ -321,12 +322,15 @@ export const AuthView = ({ busy, onSignIn, onSignUp, onGoogleSignIn, onRequestPa
             variant="outline"
             disabled={busy || authCaptchaLoading || captchaUnavailable}
             onClick={() => {
+              if (!formRef.current?.reportValidity()) {
+                return;
+              }
               if (captchaRequired && !authCaptchaToken) {
                 setAuthCaptchaError("Bitte bestätige zuerst das Captcha.");
                 return;
               }
               setAuthCaptchaError(null);
-              void onSignUp(email, password, consumeCaptchaToken());
+              void onSignUp(email.trim(), password, consumeCaptchaToken());
             }}
           >
             {t("auth.signUp")}
