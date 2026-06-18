@@ -228,6 +228,7 @@ export const FileExplorer = ({ household }: { household: Household }) => {
   const [showNewFolderInput, setShowNewFolderInput] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<{ path: string; name: string } | null>(null);
+  const [pendingDeleteEntry, setPendingDeleteEntry] = useState<{ path: string; name: string; isDirectory: boolean } | null>(null);
 
   const isConfigured =
     household.storage_provider !== "none" &&
@@ -358,6 +359,10 @@ export const FileExplorer = ({ household }: { household: Household }) => {
     },
     onSuccess: () => {
       setErrorMessage(null);
+      setPendingDeleteEntry(null);
+      setSelectedFile((current) =>
+        current?.path === pendingDeleteEntry?.path ? null : current
+      );
       refresh();
     },
     onError: (error) => {
@@ -443,13 +448,13 @@ export const FileExplorer = ({ household }: { household: Household }) => {
   };
 
   const runDeleteAction = async (targetPath: string) => {
-    const confirmed = window.confirm(
-      t("home.storageExplorer.deleteConfirm", {
-        defaultValue: "Datei wirklich löschen?"
-      })
-    );
-    if (!confirmed) return;
-    await deleteMutation.mutateAsync(targetPath);
+    const entry = listQuery.data?.entries.find((candidate) => candidate.path === targetPath);
+    const fallbackNameParts = targetPath.split("/").filter(Boolean);
+    setPendingDeleteEntry({
+      path: targetPath,
+      name: entry?.name ?? fallbackNameParts[fallbackNameParts.length - 1] ?? targetPath,
+      isDirectory: entry?.isDirectory ?? false
+    });
   };
 
   const runDownloadAction = async (targetPath: string) => {
@@ -632,6 +637,98 @@ export const FileExplorer = ({ household }: { household: Household }) => {
                     ) : null}
                     {listQuery.data?.entries.map((entry) => {
                       const EntryIcon = getEntryIcon(entry);
+                      const dropdownActionItems = (
+                        <>
+                          <DropdownMenuItem
+                            onSelect={async (event) => {
+                              event.preventDefault();
+                              await runMoveAction(entry.path);
+                            }}
+                            disabled={isBusy}
+                          >
+                            <ArrowRightLeft className="mr-2 h-3.5 w-3.5" />
+                            {t("home.storageExplorer.move", { defaultValue: "Verschieben" })}
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onSelect={async (event) => {
+                              event.preventDefault();
+                              await runRenameAction(entry.path, entry.name);
+                            }}
+                            disabled={isBusy}
+                          >
+                            <Pencil className="mr-2 h-3.5 w-3.5" />
+                            {t("home.storageExplorer.rename", { defaultValue: "Umbenennen" })}
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onSelect={async (event) => {
+                              event.preventDefault();
+                              await runDeleteAction(entry.path);
+                            }}
+                            disabled={isBusy}
+                          >
+                            <Trash2 className="mr-2 h-3.5 w-3.5" />
+                            {t("home.storageExplorer.delete", { defaultValue: "Löschen" })}
+                          </DropdownMenuItem>
+                          {!entry.isDirectory ? (
+                            <DropdownMenuItem
+                              onSelect={async (event) => {
+                                event.preventDefault();
+                                await runDownloadAction(entry.path);
+                              }}
+                              disabled={isBusy}
+                            >
+                              <Download className="mr-2 h-3.5 w-3.5" />
+                              {t("home.storageExplorer.download", { defaultValue: "Herunterladen" })}
+                            </DropdownMenuItem>
+                          ) : null}
+                        </>
+                      );
+                      const contextActionItems = (
+                        <>
+                          <ContextMenuItem
+                            onSelect={(event) => {
+                              event.preventDefault();
+                              void runMoveAction(entry.path);
+                            }}
+                            disabled={isBusy}
+                          >
+                            <ArrowRightLeft className="mr-2 h-3.5 w-3.5" />
+                            {t("home.storageExplorer.move", { defaultValue: "Verschieben" })}
+                          </ContextMenuItem>
+                          <ContextMenuItem
+                            onSelect={(event) => {
+                              event.preventDefault();
+                              void runRenameAction(entry.path, entry.name);
+                            }}
+                            disabled={isBusy}
+                          >
+                            <Pencil className="mr-2 h-3.5 w-3.5" />
+                            {t("home.storageExplorer.rename", { defaultValue: "Umbenennen" })}
+                          </ContextMenuItem>
+                          <ContextMenuItem
+                            onSelect={(event) => {
+                              event.preventDefault();
+                              void runDeleteAction(entry.path);
+                            }}
+                            disabled={isBusy}
+                          >
+                            <Trash2 className="mr-2 h-3.5 w-3.5" />
+                            {t("home.storageExplorer.delete", { defaultValue: "Löschen" })}
+                          </ContextMenuItem>
+                          {!entry.isDirectory ? (
+                            <ContextMenuItem
+                              onSelect={(event) => {
+                                event.preventDefault();
+                                void runDownloadAction(entry.path);
+                              }}
+                              disabled={isBusy}
+                            >
+                              <Download className="mr-2 h-3.5 w-3.5" />
+                              {t("home.storageExplorer.download", { defaultValue: "Herunterladen" })}
+                            </ContextMenuItem>
+                          ) : null}
+                        </>
+                      );
                       const row = (
                       <tr
                         key={entry.path}
@@ -655,9 +752,8 @@ export const FileExplorer = ({ household }: { household: Household }) => {
                               <EntryIcon className="h-4 w-4" />
                               <span className="truncate">{entry.name}</span>
                             </span>
-                            {!entry.isDirectory ? (
-                              <div data-storage-row-action="true">
-                                <DropdownMenu>
+                            <div data-storage-row-action="true">
+                              <DropdownMenu>
                                 <DropdownMenuTrigger asChild>
                                   <Button
                                     type="button"
@@ -672,51 +768,16 @@ export const FileExplorer = ({ household }: { household: Household }) => {
                                     <MoreVertical className="h-4 w-4" />
                                   </Button>
                                 </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end">
-                                  <DropdownMenuItem
-                                    onSelect={async (event) => {
-                                      event.preventDefault();
-                                      await runMoveAction(entry.path);
-                                    }}
-                                    disabled={isBusy}
-                                  >
-                                    <ArrowRightLeft className="mr-2 h-3.5 w-3.5" />
-                                    {t("home.storageExplorer.move", { defaultValue: "Verschieben" })}
-                                  </DropdownMenuItem>
-                                  <DropdownMenuItem
-                                    onSelect={async (event) => {
-                                      event.preventDefault();
-                                      await runRenameAction(entry.path, entry.name);
-                                    }}
-                                    disabled={isBusy}
-                                  >
-                                    <Pencil className="mr-2 h-3.5 w-3.5" />
-                                    {t("home.storageExplorer.rename", { defaultValue: "Umbenennen" })}
-                                  </DropdownMenuItem>
-                                  <DropdownMenuItem
-                                    onSelect={async (event) => {
-                                      event.preventDefault();
-                                      await runDeleteAction(entry.path);
-                                    }}
-                                    disabled={isBusy}
-                                  >
-                                    <Trash2 className="mr-2 h-3.5 w-3.5" />
-                                    {t("home.storageExplorer.delete", { defaultValue: "Löschen" })}
-                                  </DropdownMenuItem>
-                                  <DropdownMenuItem
-                                    onSelect={async (event) => {
-                                      event.preventDefault();
-                                      await runDownloadAction(entry.path);
-                                    }}
-                                    disabled={isBusy}
-                                  >
-                                    <Download className="mr-2 h-3.5 w-3.5" />
-                                    {t("home.storageExplorer.download", { defaultValue: "Herunterladen" })}
-                                  </DropdownMenuItem>
+                                <DropdownMenuContent
+                                  align="end"
+                                  onCloseAutoFocus={(event) => event.preventDefault()}
+                                  onPointerDown={(event) => event.stopPropagation()}
+                                  onClick={(event) => event.stopPropagation()}
+                                >
+                                  {dropdownActionItems}
                                 </DropdownMenuContent>
-                                </DropdownMenu>
-                              </div>
-                            ) : null}
+                              </DropdownMenu>
+                            </div>
                           </div>
                         </td>
                         <td className="px-2 py-1.5 text-xs text-slate-600 dark:text-slate-300">
@@ -728,54 +789,11 @@ export const FileExplorer = ({ household }: { household: Household }) => {
                       </tr>
                       );
 
-                      if (entry.isDirectory) {
-                        return row;
-                      }
-
                       return (
                         <ContextMenu key={`ctx-${entry.path}`}>
                           <ContextMenuTrigger asChild>{row}</ContextMenuTrigger>
                           <ContextMenuContent>
-                            <ContextMenuItem
-                              onSelect={(event) => {
-                                event.preventDefault();
-                                void runMoveAction(entry.path);
-                              }}
-                              disabled={isBusy}
-                            >
-                              <ArrowRightLeft className="mr-2 h-3.5 w-3.5" />
-                              {t("home.storageExplorer.move", { defaultValue: "Verschieben" })}
-                            </ContextMenuItem>
-                            <ContextMenuItem
-                              onSelect={(event) => {
-                                event.preventDefault();
-                                void runRenameAction(entry.path, entry.name);
-                              }}
-                              disabled={isBusy}
-                            >
-                              <Pencil className="mr-2 h-3.5 w-3.5" />
-                              {t("home.storageExplorer.rename", { defaultValue: "Umbenennen" })}
-                            </ContextMenuItem>
-                            <ContextMenuItem
-                              onSelect={(event) => {
-                                event.preventDefault();
-                                void runDeleteAction(entry.path);
-                              }}
-                              disabled={isBusy}
-                            >
-                              <Trash2 className="mr-2 h-3.5 w-3.5" />
-                              {t("home.storageExplorer.delete", { defaultValue: "Löschen" })}
-                            </ContextMenuItem>
-                            <ContextMenuItem
-                              onSelect={(event) => {
-                                event.preventDefault();
-                                void runDownloadAction(entry.path);
-                              }}
-                              disabled={isBusy}
-                            >
-                              <Download className="mr-2 h-3.5 w-3.5" />
-                              {t("home.storageExplorer.download", { defaultValue: "Herunterladen" })}
-                            </ContextMenuItem>
+                            {contextActionItems}
                           </ContextMenuContent>
                         </ContextMenu>
                       );
@@ -879,6 +897,49 @@ export const FileExplorer = ({ household }: { household: Household }) => {
               disabled={!preview || filePreviewQuery.isLoading}
             >
               {t("common.download", { defaultValue: "Download" })}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(pendingDeleteEntry)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setPendingDeleteEntry(null);
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {t("home.storageExplorer.delete", { defaultValue: "Löschen" })}
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-slate-600 dark:text-slate-300">
+            {t("home.storageExplorer.deleteConfirm", {
+              defaultValue: pendingDeleteEntry?.isDirectory ? "Ordner wirklich löschen?" : "Datei wirklich löschen?"
+            })}{" "}
+            <span className="font-medium text-slate-900 dark:text-slate-100">
+              {pendingDeleteEntry?.name ?? ""}
+            </span>
+          </p>
+          <div className="flex items-center justify-end gap-2 pt-2">
+            <DialogClose asChild>
+              <Button type="button" variant="outline" disabled={deleteMutation.isPending}>
+                {t("common.cancel", { defaultValue: "Abbrechen" })}
+              </Button>
+            </DialogClose>
+            <Button
+              type="button"
+              disabled={!pendingDeleteEntry || deleteMutation.isPending}
+              className="bg-rose-600 text-white hover:bg-rose-700 dark:bg-rose-700 dark:hover:bg-rose-600"
+              onClick={() => {
+                if (!pendingDeleteEntry) return;
+                void deleteMutation.mutateAsync(pendingDeleteEntry.path);
+              }}
+            >
+              {t("home.storageExplorer.delete", { defaultValue: "Löschen" })}
             </Button>
           </div>
         </DialogContent>
