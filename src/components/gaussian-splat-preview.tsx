@@ -98,8 +98,10 @@ export const GaussianSplatPreview = ({
             ? SplatFileType.SPLAT
             : extension === "ksplat"
               ? SplatFileType.KSPLAT
-              : extension === "sog" || extension === "sogs"
-                ? SplatFileType.PCSOGS
+              : extension === "sog"
+                ? SplatFileType.PCSOGSZIP
+                : extension === "sogs"
+                  ? SplatFileType.PCSOGS
                 : undefined;
 
         const splatMesh = new SplatMesh({
