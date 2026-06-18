@@ -11,6 +11,11 @@ export const Dialog = DialogPrimitive.Root;
 export const DialogTrigger = DialogPrimitive.Trigger;
 export const DialogClose = DialogPrimitive.Close;
 
+const isSelectInteractionTarget = (target: EventTarget | null) => {
+  if (!(target instanceof HTMLElement)) return false;
+  return Boolean(target.closest('[role="listbox"], [role="option"], [data-radix-select-viewport]'));
+};
+
 export const DialogPortal = ({
   ...props
 }: DialogPrimitive.DialogPortalProps) => <DialogPrimitive.Portal {...props} />;
@@ -34,7 +39,7 @@ DialogOverlay.displayName = DialogPrimitive.Overlay.displayName;
 export const DialogContent = forwardRef<
   ElementRef<typeof DialogPrimitive.Content>,
   ComponentPropsWithoutRef<typeof DialogPrimitive.Content>
->(({ className, ...props }, ref) => (
+>(({ className, onInteractOutside, ...props }, ref) => (
   <DialogPortal>
     <DialogOverlay />
     <DialogPrimitive.Content
@@ -45,6 +50,13 @@ export const DialogContent = forwardRef<
         "rounded-2xl bg-white p-5 shadow-xl dark:bg-slate-900 dark:ring-1 dark:ring-slate-700",
         className,
       )}
+      onInteractOutside={(event) => {
+        onInteractOutside?.(event);
+        if (event.defaultPrevented) return;
+        if (isSelectInteractionTarget(event.target)) {
+          event.preventDefault();
+        }
+      }}
       {...props}
     />
   </DialogPortal>
