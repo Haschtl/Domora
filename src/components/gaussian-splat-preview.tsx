@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AlertCircle, LoaderCircle, Move3D } from "lucide-react";
 import { cn } from "../lib/utils";
 
@@ -29,14 +29,13 @@ export const GaussianSplatPreview = ({
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const fileBytesForRender = useMemo(() => new Uint8Array(fileBytes), [fileBytes]);
-
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
     let disposed = false;
     let animationFrameId = 0;
+    let renderScheduled = false;
     let resizeObserver: ResizeObserver | null = null;
     let cleanupControls: (() => void) | null = null;
     let cleanupRenderer: (() => void) | null = null;
@@ -75,6 +74,18 @@ export const GaussianSplatPreview = ({
         renderer.outputColorSpace = THREE.SRGBColorSpace;
         container.replaceChildren(renderer.domElement);
 
+        const renderScene = () => {
+          if (disposed) return;
+          renderScheduled = false;
+          renderer.render(scene, camera);
+        };
+
+        const requestRender = () => {
+          if (disposed || renderScheduled) return;
+          renderScheduled = true;
+          animationFrameId = window.requestAnimationFrame(renderScene);
+        };
+
         const updateViewport = () => {
           const nextWidth = Math.max(container.clientWidth, 1);
           const nextHeight = Math.max(container.clientHeight, 1);
@@ -87,7 +98,7 @@ export const GaussianSplatPreview = ({
 
         const spark = new SparkRenderer({
           renderer,
-          onDirty: () => renderer.render(scene, camera),
+          onDirty: requestRender,
           enableLod: true
         });
         scene.add(spark);
@@ -105,7 +116,7 @@ export const GaussianSplatPreview = ({
                 : undefined;
 
         const splatMesh = new SplatMesh({
-          fileBytes: fileBytesForRender,
+          fileBytes,
           fileName,
           fileType,
           lod: true
@@ -113,14 +124,17 @@ export const GaussianSplatPreview = ({
         scene.add(splatMesh);
 
         const controls = new OrbitControls(camera, renderer.domElement);
-        controls.enableDamping = true;
-        controls.dampingFactor = 0.08;
+        controls.enableDamping = false;
         controls.rotateSpeed = 0.75;
         controls.zoomSpeed = 0.9;
         controls.panSpeed = 0.8;
         controls.target.set(0, 0, 0);
+        controls.addEventListener("change", requestRender);
 
-        cleanupControls = () => controls.dispose();
+        cleanupControls = () => {
+          controls.removeEventListener("change", requestRender);
+          controls.dispose();
+        };
         cleanupRenderer = () => renderer.dispose();
         cleanupSpark = () => spark.dispose();
         cleanupMesh = () => splatMesh.dispose();
@@ -142,19 +156,12 @@ export const GaussianSplatPreview = ({
 
         resizeObserver = new ResizeObserver(() => {
           updateViewport();
-          renderer.render(scene, camera);
+          requestRender();
         });
         resizeObserver.observe(container);
 
-        const animate = () => {
-          if (disposed) return;
-          controls.update();
-          renderer.render(scene, camera);
-          animationFrameId = window.requestAnimationFrame(animate);
-        };
-
         setStatus("ready");
-        animate();
+        requestRender();
       } catch (error) {
         if (disposed) return;
         setStatus("error");
@@ -174,7 +181,7 @@ export const GaussianSplatPreview = ({
       cleanupRenderer?.();
       container.replaceChildren();
     };
-  }, [fileBytesForRender, fileName]);
+  }, [fileBytes, fileName]);
 
   return (
     <div className={cn("relative overflow-hidden rounded-xl border border-slate-800 bg-slate-950", className)}>
