@@ -296,6 +296,15 @@ const financeRecurrenceToCronPattern = (recurrence: FinanceSubscriptionRecurrenc
   return "0 9 1 * *";
 };
 
+const getDefaultSubscriptionFormValues = (userId: string, members: HouseholdMember[]) => ({
+  name: "",
+  category: "general",
+  amount: "",
+  paidByUserIds: [userId],
+  beneficiaryUserIds: members.map((member) => member.user_id),
+  recurrence: "monthly" as FinanceSubscriptionRecurrence
+});
+
 const encodePathSegment = (value: string) => encodeURIComponent(value.trim().replace(/^@+/, ""));
 
 const normalizeUserColor = (value: string | null | undefined) => {
@@ -1461,17 +1470,9 @@ export const FinancesPage = ({
     }
   });
   const subscriptionForm = useForm({
-    defaultValues: {
-      name: "",
-      category: "general",
-      amount: "",
-      paidByUserIds: [userId],
-      beneficiaryUserIds: [] as string[],
-      recurrence: "monthly" as FinanceSubscriptionRecurrence
-    },
+    defaultValues: getDefaultSubscriptionFormValues(userId, members),
     onSubmit: async ({
       value,
-      formApi
     }: {
       value: {
         name: string;
@@ -1481,7 +1482,6 @@ export const FinancesPage = ({
         beneficiaryUserIds: string[];
         recurrence: FinanceSubscriptionRecurrence;
       };
-      formApi: { reset: () => void };
     }) => {
       const parsedAmount = Number(value.amount);
       if (
@@ -1502,7 +1502,7 @@ export const FinancesPage = ({
         beneficiaryUserIds: value.beneficiaryUserIds,
         recurrence: value.recurrence
       });
-      formApi.reset();
+      resetSubscriptionForm();
       setSubscriptionDialogOpen(false);
     }
   });
@@ -1688,6 +1688,10 @@ export const FinancesPage = ({
     if (currentBeneficiaries.length === 0 && memberIds.length > 0) {
       subscriptionForm.setFieldValue("beneficiaryUserIds", memberIds);
     }
+  }, [members, subscriptionForm, userId]);
+
+  const resetSubscriptionForm = useCallback(() => {
+    subscriptionForm.reset(getDefaultSubscriptionFormValues(userId, members));
   }, [members, subscriptionForm, userId]);
 
   useEffect(() => {
@@ -5434,7 +5438,11 @@ export const FinancesPage = ({
                 </div>
                 <Button
                   type="button"
-                  onClick={() => setSubscriptionDialogOpen(true)}
+                  onClick={() => {
+                    setSubscriptionBeingEdited(null);
+                    resetSubscriptionForm();
+                    setSubscriptionDialogOpen(true);
+                  }}
                   disabled={busy}
                 >
                   {t("finances.addSubscriptionAction")}
@@ -5908,7 +5916,12 @@ export const FinancesPage = ({
 
       <FullscreenDialog
         open={subscriptionDialogOpen}
-        onOpenChange={setSubscriptionDialogOpen}
+        onOpenChange={(open) => {
+          setSubscriptionDialogOpen(open);
+          if (!open) {
+            resetSubscriptionForm();
+          }
+        }}
         title={t("finances.addSubscriptionAction")}
         description={t("finances.subscriptionsDescription")}
         onSubmit={(event) => {
