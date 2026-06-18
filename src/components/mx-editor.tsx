@@ -1,15 +1,12 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
+  BlockTypeSelect as MdxBlockTypeSelect,
   type JsxComponentDescriptor,
   MDXEditor,
   type MDXEditorMethods,
   activeEditor$,
-  activePlugins$,
-  allowedHeadingLevels$,
   applyFormat$,
   applyListType$,
-  convertSelectionToNode$,
-  currentBlockType$,
   currentFormat$,
   currentListType$,
   iconComponentFor$,
@@ -48,8 +45,6 @@ import {
   REDO_COMMAND,
   UNDO_COMMAND
 } from "lexical";
-import { $createHeadingNode, $createQuoteNode } from "@lexical/rich-text";
-import { $createParagraphNode } from "lexical";
 import { Button } from "./ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "./ui/dialog";
 import { Input } from "./ui/input";
@@ -211,61 +206,14 @@ const DomoraListsToggle = () => {
 };
 
 const DomoraBlockTypeSelect = () => {
-  const t = useTranslation();
-  const currentBlockType = useCellValue(currentBlockType$);
-  const activePlugins = useCellValue(activePlugins$);
-  const allowedHeadingLevels = useCellValue(allowedHeadingLevels$);
-  const convertSelectionToNode = usePublisher(convertSelectionToNode$) as (factory: () => unknown) => void;
-  const hasQuote = activePlugins.includes("quote");
-  const hasHeadings = activePlugins.includes("headings");
-
-  if (!hasQuote && !hasHeadings) return null;
-
-  const items = [
-    { label: t("toolbar.blockTypes.paragraph", "Paragraph"), value: "paragraph" }
-  ];
-  if (hasQuote) items.push({ label: t("toolbar.blockTypes.quote", "Quote"), value: "quote" });
-  if (hasHeadings) {
-    items.push(
-      ...allowedHeadingLevels.map((level) => ({
-        label: t("toolbar.blockTypes.heading", "Heading {{level}}", { level }),
-        value: `h${level}`
-      }))
-    );
-  }
-
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <select
-          className="h-8 rounded-md border border-slate-300 bg-white px-2 text-xs text-slate-700 shadow-sm hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200"
-          value={currentBlockType}
-          onChange={(event) => {
-            const blockType = event.target.value;
-            switch (blockType) {
-              case "quote":
-                convertSelectionToNode(() => $createQuoteNode());
-                break;
-              case "paragraph":
-                convertSelectionToNode(() => $createParagraphNode());
-                break;
-              case "":
-                break;
-              default:
-                if (blockType.startsWith("h")) {
-                  convertSelectionToNode(() => $createHeadingNode(blockType as "h1"));
-                }
-            }
-          }}
-        >
-          {items.map((item) => (
-            <option key={item.value} value={item.value}>
-              {item.label}
-            </option>
-          ))}
-        </select>
+        <div className="min-w-0 [&>button]:h-8 [&>button]:rounded-md [&>button]:border [&>button]:border-slate-300 [&>button]:bg-white [&>button]:px-2 [&>button]:text-xs [&>button]:text-slate-700 [&>button]:shadow-sm hover:[&>button]:bg-slate-100 dark:[&>button]:border-slate-600 dark:[&>button]:bg-slate-900 dark:[&>button]:text-slate-200 dark:hover:[&>button]:bg-slate-800">
+          <MdxBlockTypeSelect />
+        </div>
       </TooltipTrigger>
-      <TooltipContent>{t("toolbar.blockTypeSelect.selectBlockTypeTooltip", "Select block type")}</TooltipContent>
+      <TooltipContent>Select block type</TooltipContent>
     </Tooltip>
   );
 };
