@@ -1,4 +1,4 @@
-import { type CSSProperties, type KeyboardEvent, type RefObject, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { type KeyboardEvent, type RefObject, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useForm } from "@tanstack/react-form";
 import imageCompression from "browser-image-compression";
 import {
@@ -11,26 +11,18 @@ import {
   Tooltip
 } from "chart.js";
 import {
-  AlertTriangle,
   Camera,
   ChevronLeft,
-  Crown,
-  Leaf,
   LoaderCircle,
   MoreHorizontal,
-  PartyPopper,
   Paperclip,
   Plus,
   RotateCcw,
-  Scale,
   SlidersHorizontal,
-  Smile,
   Sparkles as SparklesIcon,
-  TrendingDown,
   Zap,
   ZapOff
 } from "lucide-react";
-import SparklesEffect from "react-sparkle";
 import { Bar, Doughnut } from "react-chartjs-2";
 import { useTranslation } from "react-i18next";
 import { PersonSelect } from "../../components/person-select";
@@ -143,7 +135,6 @@ interface FinancesPageProps {
   onDeleteSubscription: (subscription: FinanceSubscription) => Promise<void>;
   onToggleShoppingItem: (item: ShoppingItem) => Promise<void>;
   onUpdateHousehold: (input: UpdateHouseholdInput) => Promise<void>;
-  onUpdateMemberSettings: (input: { roomSizeSqm: number | null; commonAreaFactor: number }) => Promise<void>;
   onUpdateMemberSettingsForUser: (
     targetUserId: string,
     input: { roomSizeSqm: number | null; commonAreaFactor: number }
@@ -157,49 +148,12 @@ const formatMoney = (value: number, locale: string, currency: string = "EUR") =>
     currency,
   }).format(value);
 
-const COMMON_FACTOR_MIN = 0;
-const COMMON_FACTOR_MAX = 2;
-const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
-const commonFactorLevelMeta = [
-  { icon: AlertTriangle, className: "text-rose-600 dark:text-rose-400" },
-  { icon: TrendingDown, className: "text-rose-500 dark:text-rose-400" },
-  { icon: TrendingDown, className: "text-orange-500 dark:text-orange-400" },
-  { icon: Scale, className: "text-amber-500 dark:text-amber-400" },
-  { icon: Scale, className: "text-lime-600 dark:text-lime-400" },
-  { icon: Leaf, className: "text-emerald-600 dark:text-emerald-400" },
-  { icon: SparklesIcon, className: "text-emerald-500 dark:text-emerald-300" },
-  { icon: Smile, className: "text-teal-500 dark:text-teal-300" },
-  { icon: PartyPopper, className: "text-cyan-500 dark:text-cyan-300" },
-  { icon: Crown, className: "text-blue-500 dark:text-blue-300" }
-];
-
 const toNumericInputValue = (value: number | null) => (value === null ? "" : String(value));
 const parseOptionalNumber = (value: string) => {
   const trimmed = value.trim();
   if (!trimmed) return null;
   const parsed = Number(trimmed);
   return Number.isFinite(parsed) ? parsed : Number.NaN;
-};
-
-const renderSparkleIcon = (
-  Icon: (props: { className?: string }) => React.ReactNode,
-) => {
-  const icon = <Icon className="h-3.5 w-3.5" />;
-  if (Icon !== SparklesIcon) return icon;
-  return (
-    <span className="relative inline-flex h-4 w-4 items-center justify-center">
-      {icon}
-      <SparklesEffect
-        color="currentColor"
-        count={6}
-        minSize={2}
-        maxSize={4}
-        overflowPx={4}
-        fadeOutSpeed={8}
-        flicker={false}
-      />
-    </span>
-  );
 };
 
 interface MemberMultiSelectFieldProps {
@@ -1251,7 +1205,6 @@ export const FinancesPage = ({
   onDeleteSubscription,
   onToggleShoppingItem,
   onUpdateHousehold,
-  onUpdateMemberSettings,
   onUpdateMemberSettingsForUser,
   onRequestCashAudit
 }: FinancesPageProps) => {
@@ -1287,7 +1240,6 @@ export const FinancesPage = ({
   const [ocrTorchSupported, setOcrTorchSupported] = useState(false);
   const [ocrTorchEnabled, setOcrTorchEnabled] = useState(false);
   const [rentFormError, setRentFormError] = useState<string | null>(null);
-  const [memberRentFormError, setMemberRentFormError] = useState<string | null>(null);
   const [overviewMemberRentFormError, setOverviewMemberRentFormError] = useState<string | null>(null);
   const [overviewEntrySearch, setOverviewEntrySearch] = useState("");
   const [showOtherOverviewEntries, setShowOtherOverviewEntries] = useState(false);
@@ -1625,31 +1577,6 @@ export const FinancesPage = ({
       });
     }
   });
-  const rentMemberForm = useForm({
-    defaultValues: {
-      roomSizeSqm: toNumericInputValue(currentMember?.room_size_sqm ?? null),
-      commonAreaFactor: currentMember ? String(currentMember.common_area_factor) : "1"
-    },
-    onSubmit: async ({ value }: { value: { roomSizeSqm: string; commonAreaFactor: string } }) => {
-      const parsedRoomSize = parseOptionalNumber(value.roomSizeSqm);
-      if (Number.isNaN(parsedRoomSize) || (parsedRoomSize !== null && parsedRoomSize <= 0)) {
-        setMemberRentFormError(t("settings.roomSizeError"));
-        return;
-      }
-
-      const parsedFactor = Number(value.commonAreaFactor);
-      if (!Number.isFinite(parsedFactor) || parsedFactor < 0 || parsedFactor > 2) {
-        setMemberRentFormError(t("settings.commonFactorError"));
-        return;
-      }
-
-      setMemberRentFormError(null);
-      await onUpdateMemberSettings({
-        roomSizeSqm: parsedRoomSize,
-        commonAreaFactor: parsedFactor
-      });
-    }
-  });
   const archiveFilters = archiveFilterForm.state.values;
 
   const addEntryPayers = addEntryForm.state.values.paidByUserIds;
@@ -1707,11 +1634,6 @@ export const FinancesPage = ({
     household.utilities_on_room_sqm_percent,
     rentHouseholdForm
   ]);
-
-  useEffect(() => {
-    rentMemberForm.setFieldValue("roomSizeSqm", toNumericInputValue(currentMember?.room_size_sqm ?? null));
-    rentMemberForm.setFieldValue("commonAreaFactor", currentMember ? String(currentMember.common_area_factor) : "1");
-  }, [currentMember, rentMemberForm]);
 
   useEffect(() => {
     setMemberOverviewDrafts(
@@ -2427,6 +2349,8 @@ export const FinancesPage = ({
     }));
   };
   const onSaveAllOverviewMemberSettings = async () => {
+    if (!canEditApartment) return;
+
     for (const member of members) {
       const draft = memberOverviewDrafts[member.user_id];
       if (!draft) continue;
@@ -4957,129 +4881,6 @@ export const FinancesPage = ({
                       </span>
                     </div>
                   </div>
-                </>
-              </SectionPanel>
-
-              <SectionPanel className="mt-4">
-                <>
-                  <p className="text-sm font-semibold text-brand-900 dark:text-brand-100">
-                    {t("finances.rentMineTitle")}
-                  </p>
-                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                    {t("finances.rentMineDescription")}
-                  </p>
-
-                  <form
-                    className="mt-3 grid gap-2 sm:grid-cols-[1fr_1fr_auto]"
-                    onSubmit={(event) => {
-                      event.preventDefault();
-                      event.stopPropagation();
-                      void rentMemberForm.handleSubmit();
-                    }}
-                  >
-                    <rentMemberForm.Field
-                      name="roomSizeSqm"
-                      children={(field: {
-                        state: { value: string };
-                        handleChange: (value: string) => void;
-                      }) => (
-                        <div className="space-y-1">
-                          <Label>{t("settings.roomSizeLabel")}</Label>
-                          <InputWithSuffix
-                            suffix="m²"
-                            type="number"
-                            min="0.1"
-                            step="0.1"
-                            value={field.state.value}
-                            onChange={(event) =>
-                              field.handleChange(event.target.value)
-                            }
-                            placeholder={t("settings.roomSizeLabel")}
-                          />
-                        </div>
-                      )}
-                    />
-                    <rentMemberForm.Field
-                      name="commonAreaFactor"
-                      children={(field: {
-                        state: { value: string };
-                        handleChange: (value: string) => void;
-                      }) => {
-                        const parsed = Number(field.state.value);
-                        const sliderValue = Number.isFinite(parsed)
-                          ? clamp(parsed, COMMON_FACTOR_MIN, COMMON_FACTOR_MAX)
-                          : 1;
-                        const percentage = Math.round(sliderValue * 100);
-                        const levelIndex = Math.min(
-                          9,
-                          Math.floor((sliderValue / COMMON_FACTOR_MAX) * 10),
-                        );
-                        const level = commonFactorLevelMeta[levelIndex];
-                        const LevelIcon = level.icon;
-                        const hue = Math.round(
-                          (sliderValue / COMMON_FACTOR_MAX) * 120,
-                        );
-                        const sliderStyle = {
-                          "--slider-gradient":
-                            "linear-gradient(90deg, #ef4444 0%, #f59e0b 25%, #22c55e 50%, #16a34a 75%, #15803d 100%)",
-                          "--slider-thumb": `hsl(${hue} 80% 42%)`,
-                        } as CSSProperties;
-
-                        return (
-                          <div className="space-y-2 sm:col-span-2">
-                            <input
-                              type="range"
-                              min={COMMON_FACTOR_MIN}
-                              max={COMMON_FACTOR_MAX}
-                              step="0.01"
-                              value={sliderValue}
-                              onChange={(event) => {
-                                const raw = Number(event.target.value);
-                                const snapped = raw >= 0.95 && raw <= 1.05 ? 1 : Math.round(raw * 100) / 100;
-                                field.handleChange(String(snapped));
-                              }}
-                              className="common-factor-slider w-full"
-                              style={sliderStyle}
-                              aria-label={t("settings.commonFactorLabel")}
-                            />
-                            <div className="grid grid-cols-3 items-center text-xs">
-                              <span className="text-left font-semibold text-rose-600 dark:text-rose-400">
-                                0%
-                              </span>
-                              <span className="text-center font-semibold text-emerald-700 dark:text-emerald-400">
-                                100%
-                              </span>
-                              <span className="text-right font-semibold text-emerald-600 dark:text-emerald-400">
-                                200%
-                              </span>
-                            </div>
-                            <div className="flex items-center justify-between">
-                              <div
-                                className={`inline-flex items-center gap-1 text-xs font-semibold ${level.className}`}
-                              >
-                                {renderSparkleIcon(LevelIcon)}
-                                {t(
-                                  `settings.commonFactorLevel${levelIndex + 1}`,
-                                )}
-                              </div>
-                              <div className="text-right text-xs font-semibold text-slate-600 dark:text-slate-300">
-                                {percentage}%
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      }}
-                    />
-                    <Button type="submit" variant="outline" disabled={busy}>
-                      {t("finances.rentSaveMine")}
-                    </Button>
-                  </form>
-
-                  {memberRentFormError ? (
-                    <p className="mt-2 rounded-lg border border-rose-300 bg-rose-50 px-3 py-2 text-xs text-rose-700 dark:border-rose-900 dark:bg-rose-950/60 dark:text-rose-200">
-                      {memberRentFormError}
-                    </p>
-                  ) : null}
                 </>
               </SectionPanel>
 

@@ -31,7 +31,6 @@ export const FinancesPageContainer = ({ section }: FinancesPageContainerProps) =
     onDeleteFinanceSubscription,
     onToggleShoppingItem,
     onUpdateHousehold,
-    onUpdateMemberSettings,
     onUpdateMemberSettingsForUser,
     onRequestCashAudit
   } = useWorkspace();
@@ -126,7 +125,6 @@ export const FinancesPageContainer = ({ section }: FinancesPageContainerProps) =
       onDeleteSubscription={onDeleteFinanceSubscription}
       onToggleShoppingItem={onToggleShoppingItem}
       onUpdateHousehold={onUpdateHousehold}
-      onUpdateMemberSettings={onUpdateMemberSettings}
       onUpdateMemberSettingsForUser={onUpdateMemberSettingsForUser}
       onRequestCashAudit={onRequestCashAudit}
     />
