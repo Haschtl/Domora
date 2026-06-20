@@ -414,7 +414,7 @@ export const FileExplorer = ({ household }: { household: Household }) => {
   const previewType = preview?.contentType.split(";")[0]?.trim().toLowerCase() ?? "";
   const previewObjectUrl = useMemo(
     () => (preview?.blob ? URL.createObjectURL(preview.blob) : null),
-    [preview?.blob]
+    [preview]
   );
   const previewBytes = preview?.bytes ?? null;
   const previewText = preview && (previewType.startsWith("text/") || previewType === "application/json")
@@ -429,10 +429,6 @@ export const FileExplorer = ({ household }: { household: Household }) => {
       }
     };
   }, [previewObjectUrl]);
-
-  useEffect(() => {
-    setPreviewProgress({ receivedBytes: 0, totalBytes: null });
-  }, [selectedFile?.path]);
 
   const runMoveAction = async (targetPath: string) => {
     const destinationPath = window.prompt(
@@ -757,6 +753,7 @@ export const FileExplorer = ({ household }: { household: Household }) => {
                             setPath(entry.path);
                             return;
                           }
+                          setPreviewProgress({ receivedBytes: 0, totalBytes: null });
                           setSelectedFile({ path: entry.path, name: entry.name });
                         }}
                       >

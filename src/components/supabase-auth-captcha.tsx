@@ -75,18 +75,19 @@ export const SupabaseAuthCaptcha = ({
 
   useEffect(() => {
     let cancelled = false;
+    const container = containerRef.current;
     onTokenChange(null);
 
     const renderWidget = async () => {
-      if (!containerRef.current) return;
+      if (!container) return;
 
       if (provider === "turnstile") {
         await loadScript(
           "domora-turnstile-script",
           "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit"
         );
-        if (cancelled || !containerRef.current || !window.turnstile) return;
-        widgetIdRef.current = window.turnstile.render(containerRef.current, {
+        if (cancelled || !container || !window.turnstile) return;
+        widgetIdRef.current = window.turnstile.render(container, {
           sitekey: siteKey,
           theme: resolvedTheme === "dark" ? "dark" : "light",
           callback: (token: string) => onTokenChange(token),
@@ -100,8 +101,8 @@ export const SupabaseAuthCaptcha = ({
         "domora-hcaptcha-script",
         "https://js.hcaptcha.com/1/api.js?render=explicit"
       );
-      if (cancelled || !containerRef.current || !window.hcaptcha) return;
-      widgetIdRef.current = window.hcaptcha.render(containerRef.current, {
+      if (cancelled || !container || !window.hcaptcha) return;
+      widgetIdRef.current = window.hcaptcha.render(container, {
         sitekey: siteKey,
         theme: resolvedTheme === "dark" ? "dark" : "light",
         callback: (token: string) => onTokenChange(token),
@@ -122,8 +123,8 @@ export const SupabaseAuthCaptcha = ({
         window.hcaptcha.remove(widgetIdRef.current);
       }
       widgetIdRef.current = null;
-      if (containerRef.current) {
-        containerRef.current.innerHTML = "";
+      if (container) {
+        container.innerHTML = "";
       }
     };
   }, [onTokenChange, provider, resolvedTheme, siteKey]);

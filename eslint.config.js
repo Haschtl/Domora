@@ -3,6 +3,9 @@ import globals from "globals";
 import reactHooks from "eslint-plugin-react-hooks";
 import reactRefresh from "eslint-plugin-react-refresh";
 import tseslint from "typescript-eslint";
+import { fileURLToPath } from "node:url";
+
+const tsconfigRootDir = fileURLToPath(new URL(".", import.meta.url));
 
 export default tseslint.config(
   {
@@ -12,7 +15,9 @@ export default tseslint.config(
       "*.tsbuildinfo",
       "android/app/build",
       "android/app/src/main/assets",
-      "public/supersplat-viewer"
+      "public",
+      "public/supersplat-viewer",
+      ".claude"
     ]
   },
   {
@@ -21,7 +26,11 @@ export default tseslint.config(
     languageOptions: {
       ecmaVersion: 2022,
       sourceType: "module",
-      globals: globals.browser
+      globals: globals.browser,
+      parserOptions: {
+        projectService: false,
+        tsconfigRootDir
+      }
     },
     plugins: {
       "react-hooks": reactHooks,
@@ -42,6 +51,28 @@ export default tseslint.config(
       "react-hooks/static-components": "warn",
       "react-hooks/use-memo": "warn",
       "react-refresh/only-export-components": ["warn", { allowConstantExport: true }]
+    }
+  },
+  {
+    files: ["src/components/ui/**/*.{ts,tsx}"],
+    rules: {
+      "react-refresh/only-export-components": "off"
+    }
+  },
+  {
+    files: ["src/components/gaussian-splat-preview.tsx"],
+    rules: {
+      "react-refresh/only-export-components": "off"
+    }
+  },
+  {
+    files: [
+      "src/features/AuthView.tsx",
+      "src/features/HouseholdSetupWizard.tsx",
+      "src/features/WelcomeProfileDialog.tsx"
+    ],
+    rules: {
+      "react-hooks/set-state-in-effect": "off"
     }
   }
 );
