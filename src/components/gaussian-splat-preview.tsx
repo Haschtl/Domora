@@ -1,5 +1,4 @@
-import { useEffect, useRef, useState } from "react";
-import { html as viewerHtml, css as viewerCss, js as viewerJs } from "@playcanvas/supersplat-viewer";
+import { useEffect, useState } from "react";
 import type { ExperienceSettings } from "@playcanvas/supersplat-viewer/settings";
 import { AlertCircle } from "lucide-react";
 import { cn } from "../lib/utils";
@@ -65,7 +64,6 @@ export const GaussianSplatPreview = ({
   fileBytes,
   className
 }: GaussianSplatPreviewProps) => {
-  const frameRef = useRef<HTMLIFrameElement | null>(null);
   const [viewerSrc, setViewerSrc] = useState<string | null>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -92,31 +90,8 @@ export const GaussianSplatPreview = ({
 
         const contentUrl = createObjectUrl(toBlobPart(fileBytes), inferContentType(fileName));
         const settingsUrl = createObjectUrl(JSON.stringify(createViewerSettings()), "application/json");
-        const cssUrl = createObjectUrl(viewerCss, "text/css");
-        const jsUrl = createObjectUrl(viewerJs, "text/javascript");
-
-        const injectedHtml = viewerHtml
-          .replace("./index.css", cssUrl)
-          .replace("./index.js", jsUrl)
-          .replace(
-            "</head>",
-            `<script>
-window.addEventListener("error", (event) => {
-  window.parent.postMessage({ type: "supersplat-error", message: event.message }, "*");
-});
-window.addEventListener("unhandledrejection", (event) => {
-  const reason = event.reason;
-  const message = reason && typeof reason === "object" && "message" in reason ? reason.message : String(reason);
-  window.parent.postMessage({ type: "supersplat-error", message }, "*");
-});
-window.addEventListener("DOMContentLoaded", () => {
-  window.parent.postMessage({ type: "supersplat-ready" }, "*");
-});
-</script></head>`
-          );
-
-        const htmlUrl = createObjectUrl(injectedHtml, "text/html");
-        const src = `${htmlUrl}?settings=${encodeURIComponent(settingsUrl)}&content=${encodeURIComponent(contentUrl)}`;
+        const viewerBase = `${import.meta.env.BASE_URL}supersplat-viewer/index.html`;
+        const src = `${viewerBase}?settings=${encodeURIComponent(settingsUrl)}&content=${encodeURIComponent(contentUrl)}&noui`;
         if (!disposed) setViewerSrc(src);
       } catch (error) {
         if (disposed) return;
@@ -150,7 +125,6 @@ window.addEventListener("DOMContentLoaded", () => {
     <div className={cn("relative overflow-hidden rounded-xl border border-slate-800 bg-slate-950", className)}>
       {viewerSrc ? (
         <iframe
-          ref={frameRef}
           src={viewerSrc}
           title={`${fileName} preview`}
           className="block h-full min-h-[20rem] w-full border-0"
