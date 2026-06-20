@@ -13,8 +13,13 @@
       if (pathname.indexOf("/Domora/") === 0) {
         base = "/Domora/";
       }
-      var target = base + "index.html?redirect=" + encodeURIComponent(pathname + search + hash);
-      location.replace(target);
+      var viewerPath = base + "supersplat-viewer";
+      if (pathname === viewerPath || pathname === viewerPath + "/") {
+        location.replace(viewerPath + "/index.html" + search + hash);
+      } else {
+        var target = base + "index.html?redirect=" + encodeURIComponent(pathname + search + hash);
+        location.replace(target);
+      }
     </script>
   </head>
   <body></body>

@@ -115,6 +115,7 @@ export default defineConfig({
       workbox: {
         globPatterns: ["**/*.{js,css,html,svg,png,ico,json}"],
         globIgnores: ["assets/ort-wasm*.wasm"],
+        navigateFallbackDenylist: [/^\/supersplat-viewer(?:\/|$)/, /^\/Domora\/supersplat-viewer(?:\/|$)/],
         // Large vendor chunks currently exceed Workbox's default precache ceiling.
         maximumFileSizeToCacheInBytes: 8 * 1024 * 1024
       }
