@@ -48,7 +48,7 @@ import {
   ContextMenuTrigger
 } from "../../components/ui/context-menu";
 import { Dialog, DialogClose, DialogContent, DialogHeader, DialogTitle } from "../../components/ui/dialog";
-import { GaussianSplatPreview, isGaussianSplatFileName } from "../../components/gaussian-splat-preview";
+import { GaussianSplatPreview, isGaussianSplatFileName } from "../../components/gaussian-splat-preview2";
 import type { LucideIcon } from "lucide-react";
 
 const readFileAsBase64 = (file: File) =>
