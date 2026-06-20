@@ -4803,6 +4803,12 @@ export const downloadHouseholdStorageFile = async (input: {
   const totalBytesHeader = response.headers.get("content-length");
   const totalBytes = totalBytesHeader ? Number.parseInt(totalBytesHeader, 10) : Number.NaN;
   const resolvedTotalBytes = Number.isFinite(totalBytes) && totalBytes >= 0 ? totalBytes : null;
+  const toArrayBuffer = (value: Uint8Array) => {
+    if (value.buffer instanceof ArrayBuffer) {
+      return value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength);
+    }
+    return Uint8Array.from(value).buffer;
+  };
 
   let blob: Blob;
   let bytes: Uint8Array;
@@ -4832,7 +4838,7 @@ export const downloadHouseholdStorageFile = async (input: {
       bytes.set(chunk, offset);
       offset += chunk.byteLength;
     }
-    blob = new Blob([bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)], {
+    blob = new Blob([toArrayBuffer(bytes)], {
       type: response.headers.get("content-type") ?? "application/octet-stream"
     });
   }
