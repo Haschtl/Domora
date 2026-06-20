@@ -5,6 +5,7 @@ import { RouterProvider } from "@tanstack/react-router";
 import "./i18n";
 import "./index.css";
 import "@mdxeditor/editor/style.css";
+import "@excalidraw/excalidraw/index.css";
 import "leaflet/dist/leaflet.css";
 import "@geoman-io/leaflet-geoman-free/dist/leaflet-geoman.css";
 import "leaflet.locatecontrol/dist/L.Control.Locate.min.css";

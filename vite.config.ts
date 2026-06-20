@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { execSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react-swc";
 import { VitePWA } from "vite-plugin-pwa";
@@ -42,6 +43,11 @@ const basePath = detectBasePath();
 
 export default defineConfig({
   base: basePath,
+  resolve: {
+    alias: {
+      "@excalidraw/excalidraw/index.css": fileURLToPath(new URL("./src/styles/excalidraw.css", import.meta.url))
+    }
+  },
   define: {
     __APP_VERSION__: JSON.stringify(appVersion)
   },
