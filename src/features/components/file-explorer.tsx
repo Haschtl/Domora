@@ -828,7 +828,7 @@ export const FileExplorer = ({ household }: { household: Household }) => {
         <DialogContent
           className={
             previewIsGaussianSplat
-              ? "flex h-[100dvh] w-[100vw] max-h-none max-w-none -translate-x-0 -translate-y-0 inset-0 left-0 top-0 gap-3 rounded-none border-0 p-2 sm:p-4"
+              ? "inset-0 left-0 top-0 flex h-[100dvh] w-[100vw] flex-col gap-3 rounded-none border-0 p-2 max-h-none max-w-none -translate-x-0 -translate-y-0 sm:p-4"
               : "p-2 sm:max-w-3xl sm:p-5"
           }
         >
