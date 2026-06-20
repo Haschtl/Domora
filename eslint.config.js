@@ -6,7 +6,14 @@ import tseslint from "typescript-eslint";
 
 export default tseslint.config(
   {
-    ignores: ["dist", "node_modules", "*.tsbuildinfo", "android/app/build", "android/app/src/main/assets"]
+    ignores: [
+      "dist",
+      "node_modules",
+      "*.tsbuildinfo",
+      "android/app/build",
+      "android/app/src/main/assets",
+      "public/supersplat-viewer"
+    ]
   },
   {
     files: ["**/*.{ts,tsx}"],

@@ -831,7 +831,7 @@ export const FileExplorer = ({ household }: { household: Household }) => {
         <DialogContent
           className={
             previewIsGaussianSplat
-              ? "max-sm:inset-0 max-sm:left-0 max-sm:top-0 max-sm:h-[100dvh] max-sm:w-[100vw] max-sm:max-h-none max-sm:-translate-x-0 max-sm:-translate-y-0 max-w-6xl p-2 sm:max-h-[92dvh] sm:w-[calc(100%-2rem)] sm:p-5"
+              ? "flex h-[100dvh] w-[100vw] max-h-none max-w-none -translate-x-0 -translate-y-0 inset-0 left-0 top-0 gap-3 rounded-none border-0 p-2 sm:p-4"
               : "p-2 sm:max-w-3xl sm:p-5"
           }
         >
@@ -853,7 +853,7 @@ export const FileExplorer = ({ household }: { household: Household }) => {
           <div
             className={
               previewIsGaussianSplat
-                ? "rounded-lg bg-slate-950 sm:h-[72dvh]"
+                ? "min-h-0 flex-1 rounded-lg bg-slate-950"
                 : "min-h-48 rounded-lg border border-slate-200 bg-slate-50 sm:p-4 dark:border-slate-700 dark:bg-slate-950/40"
             }
           >
@@ -889,7 +889,7 @@ export const FileExplorer = ({ household }: { household: Household }) => {
               <GaussianSplatPreview
                 fileName={preview?.fileName ?? selectedFile?.name ?? "scene.ply"}
                 fileBytes={previewBytes}
-                className="h-[55dvh] sm:h-full"
+                className="h-full"
               />
             ) : previewObjectUrl && previewType.startsWith("image/") ? (
               <img
