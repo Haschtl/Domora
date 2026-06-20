@@ -56,6 +56,9 @@ importers:
       '@mlc-ai/web-llm':
         specifier: ^0.2.84
         version: 0.2.84
+      '@playcanvas/supersplat-viewer':
+        specifier: ^1.26.3
+        version: 1.26.3
       '@radix-ui/react-accordion':
         specifier: ^1.2.14
         version: 1.2.14(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
@@ -2028,6 +2031,10 @@ packages:
 
   '@oxc-project/types@0.133.0':
     resolution: {integrity: sha512-KzkdCd6Uxqnf6l3HOw1xfatAlUURA0g14cvBYFyJ5SaNOQbOUvBr9PKArcPcrNIeRsBdgcUzOGrhKveVpvOIGA==}
+
+  '@playcanvas/supersplat-viewer@1.26.3':
+    resolution: {integrity: sha512-ciBwlFHHNI6ddpeIvYC9sgSH+hEKI5PXDd4mQ0CwIye3b9BXp4SbG/odIewfOGaSM0Gt9U94xqW+FDizR7zmtw==}
+    engines: {node: '>=18.0.0'}
 
   '@playwright/test@1.61.0':
     resolution: {integrity: sha512-cKA5B6lpFEMyMGjxF54QihfYpB4FkEGH+qZhtArDEG+wezQAJY8Pq6C7T1SjWz+FFzt3TbyoXBQYk/0292TdJA==}
@@ -10743,6 +10750,8 @@ snapshots:
   '@nodable/entities@2.2.0': {}
 
   '@oxc-project/types@0.133.0': {}
+
+  '@playcanvas/supersplat-viewer@1.26.3': {}
 
   '@playwright/test@1.61.0':
     dependencies:
