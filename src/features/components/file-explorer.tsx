@@ -251,13 +251,30 @@ export const FileExplorer = ({ household }: { household: Household }) => {
     queryFn: () => listHouseholdStorage({ householdId: household.id, path })
   });
 
+  const selectedEntry = useMemo(
+    () => listQuery.data?.entries.find((entry) => entry.path === selectedFile?.path) ?? null,
+    [listQuery.data?.entries, selectedFile?.path]
+  );
+  const selectedEntryCacheVersion = selectedEntry
+    ? `${selectedEntry.updatedAt ?? "unknown"}:${selectedEntry.size ?? "unknown"}`
+    : null;
+
   const filePreviewQuery = useQuery({
-    queryKey: ["household", household.id, "storage", "download", selectedFile?.path],
+    queryKey: [
+      "household",
+      household.id,
+      "storage",
+      "download",
+      selectedFile?.path,
+      selectedEntry?.updatedAt ?? null,
+      selectedEntry?.size ?? null
+    ],
     enabled: Boolean(selectedFile?.path),
     queryFn: () =>
       downloadHouseholdStorageFile({
         householdId: household.id,
         targetPath: selectedFile?.path ?? "",
+        cacheVersion: selectedEntryCacheVersion,
         onProgress: (progress) => setPreviewProgress(progress)
       })
   });
@@ -468,9 +485,11 @@ export const FileExplorer = ({ household }: { household: Household }) => {
   };
 
   const runDownloadAction = async (targetPath: string) => {
+    const entry = listQuery.data?.entries.find((candidate) => candidate.path === targetPath);
     const file = await downloadHouseholdStorageFile({
       householdId: household.id,
-      targetPath
+      targetPath,
+      cacheVersion: entry ? `${entry.updatedAt ?? "unknown"}:${entry.size ?? "unknown"}` : null
     });
     downloadBlobFile(file.fileName, file.contentType, file.blob);
   };

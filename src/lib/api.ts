@@ -1,6 +1,10 @@
 import { v4 as uuid } from "uuid";
 import { z } from "zod";
 import { calculateBalancesByMember, splitAmountEvenly } from "./finance-math";
+import {
+  readCachedHouseholdStorageFileResponse,
+  writeCachedHouseholdStorageFileResponse
+} from "./household-storage-file-cache";
 import { normalizeTaskFeatureFlags } from "./household-task-features";
 import { getPublicAppBaseUrl } from "./invite-url";
 import {
@@ -4748,13 +4752,15 @@ const parseContentDispositionFileName = (headerValue: string | null) => {
 export const downloadHouseholdStorageFile = async (input: {
   householdId: string;
   targetPath: string;
+  cacheVersion?: string | null;
   onProgress?: (progress: { receivedBytes: number; totalBytes: number | null }) => void;
 }): Promise<{ fileName: string; contentType: string; blob: Blob; bytes: Uint8Array }> => {
   const onProgress = input.onProgress;
   const parsedInput = z
     .object({
       householdId: z.string().uuid(),
-      targetPath: z.string().min(1)
+      targetPath: z.string().min(1),
+      cacheVersion: z.string().trim().min(1).nullable().optional()
     })
     .parse(input);
 
@@ -4769,6 +4775,76 @@ export const downloadHouseholdStorageFile = async (input: {
   url.searchParams.set("householdId", parsedInput.householdId);
   url.searchParams.set("action", "download");
   url.searchParams.set("targetPath", parsedInput.targetPath);
+
+  const toArrayBuffer = (value: Uint8Array) => {
+    if (value.buffer instanceof ArrayBuffer) {
+      return value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength);
+    }
+    return Uint8Array.from(value).buffer;
+  };
+
+  const buildDownloadResult = async (response: Response) => {
+    const totalBytesHeader = response.headers.get("content-length");
+    const totalBytes = totalBytesHeader ? Number.parseInt(totalBytesHeader, 10) : Number.NaN;
+    const resolvedTotalBytes = Number.isFinite(totalBytes) && totalBytes >= 0 ? totalBytes : null;
+
+    let blob: Blob;
+    let bytes: Uint8Array;
+    if (!response.body) {
+      blob = await response.blob();
+      bytes = new Uint8Array(await blob.arrayBuffer());
+      onProgress?.({ receivedBytes: bytes.byteLength, totalBytes: resolvedTotalBytes ?? bytes.byteLength });
+    } else {
+      const reader = response.body.getReader();
+      const chunks: Uint8Array[] = [];
+      let receivedBytes = 0;
+
+      onProgress?.({ receivedBytes: 0, totalBytes: resolvedTotalBytes });
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (!value) continue;
+        chunks.push(value);
+        receivedBytes += value.byteLength;
+        onProgress?.({ receivedBytes, totalBytes: resolvedTotalBytes });
+      }
+
+      bytes = new Uint8Array(receivedBytes);
+      let offset = 0;
+      for (const chunk of chunks) {
+        bytes.set(chunk, offset);
+        offset += chunk.byteLength;
+      }
+      blob = new Blob([toArrayBuffer(bytes)], {
+        type: response.headers.get("content-type") ?? "application/octet-stream"
+      });
+    }
+
+    const targetSegments = parsedInput.targetPath.split("/").filter(Boolean);
+    const fileName =
+      parseContentDispositionFileName(response.headers.get("content-disposition")) ??
+      decodeURIComponent(targetSegments[targetSegments.length - 1] ?? "download");
+    return {
+      fileName,
+      contentType: response.headers.get("content-type") ?? (blob.type || "application/octet-stream"),
+      blob,
+      bytes
+    };
+  };
+
+  const cachedResponse = await readCachedHouseholdStorageFileResponse({
+    backendUrl: activeSupabaseUrl,
+    householdId: parsedInput.householdId,
+    targetPath: parsedInput.targetPath,
+    cacheVersion: parsedInput.cacheVersion
+  });
+  if (cachedResponse) {
+    const cachedClone = cachedResponse.clone();
+    const result = await buildDownloadResult(cachedClone);
+    onProgress?.({ receivedBytes: result.bytes.byteLength, totalBytes: result.bytes.byteLength });
+    return result;
+  }
 
   const response = await fetch(url.toString(), {
     method: "GET",
@@ -4800,59 +4876,16 @@ export const downloadHouseholdStorageFile = async (input: {
     throw new Error(message);
   }
 
-  const totalBytesHeader = response.headers.get("content-length");
-  const totalBytes = totalBytesHeader ? Number.parseInt(totalBytesHeader, 10) : Number.NaN;
-  const resolvedTotalBytes = Number.isFinite(totalBytes) && totalBytes >= 0 ? totalBytes : null;
-  const toArrayBuffer = (value: Uint8Array) => {
-    if (value.buffer instanceof ArrayBuffer) {
-      return value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength);
-    }
-    return Uint8Array.from(value).buffer;
-  };
-
-  let blob: Blob;
-  let bytes: Uint8Array;
-  if (!response.body) {
-    blob = await response.blob();
-    bytes = new Uint8Array(await blob.arrayBuffer());
-    onProgress?.({ receivedBytes: bytes.byteLength, totalBytes: resolvedTotalBytes ?? bytes.byteLength });
-  } else {
-    const reader = response.body.getReader();
-    const chunks: Uint8Array[] = [];
-    let receivedBytes = 0;
-
-    onProgress?.({ receivedBytes: 0, totalBytes: resolvedTotalBytes });
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      if (!value) continue;
-      chunks.push(value);
-      receivedBytes += value.byteLength;
-      onProgress?.({ receivedBytes, totalBytes: resolvedTotalBytes });
-    }
-
-    bytes = new Uint8Array(receivedBytes);
-    let offset = 0;
-    for (const chunk of chunks) {
-      bytes.set(chunk, offset);
-      offset += chunk.byteLength;
-    }
-    blob = new Blob([toArrayBuffer(bytes)], {
-      type: response.headers.get("content-type") ?? "application/octet-stream"
-    });
-  }
-
-  const targetSegments = parsedInput.targetPath.split("/").filter(Boolean);
-  const fileName =
-    parseContentDispositionFileName(response.headers.get("content-disposition")) ??
-    decodeURIComponent(targetSegments[targetSegments.length - 1] ?? "download");
-  return {
-    fileName,
-    contentType: response.headers.get("content-type") ?? (blob.type || "application/octet-stream"),
-    blob,
-    bytes
-  };
+  const responseClone = response.clone();
+  const result = await buildDownloadResult(response);
+  void writeCachedHouseholdStorageFileResponse({
+    backendUrl: activeSupabaseUrl,
+    householdId: parsedInput.householdId,
+    targetPath: parsedInput.targetPath,
+    cacheVersion: parsedInput.cacheVersion,
+    response: responseClone
+  });
+  return result;
 };
 
 export const renameHouseholdStorageEntry = async (input: {
