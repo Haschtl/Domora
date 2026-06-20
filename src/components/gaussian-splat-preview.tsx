@@ -91,7 +91,7 @@ export const GaussianSplatPreview = ({
         const contentUrl = createObjectUrl(toBlobPart(fileBytes), inferContentType(fileName));
         const settingsUrl = createObjectUrl(JSON.stringify(createViewerSettings()), "application/json");
         const viewerBase = `${import.meta.env.BASE_URL}supersplat-viewer/index.html`;
-        const src = `${viewerBase}?settings=${encodeURIComponent(settingsUrl)}&content=${encodeURIComponent(contentUrl)}&filename=${encodeURIComponent(fileName)}&noui`;
+        const src = `${viewerBase}?settings=${encodeURIComponent(settingsUrl)}&content=${encodeURIComponent(contentUrl)}&filename=${encodeURIComponent(fileName)}&webgl&budget=1&perf=1&noui`;
         if (!disposed) setViewerSrc(src);
       } catch (error) {
         if (disposed) return;
@@ -128,7 +128,7 @@ export const GaussianSplatPreview = ({
           src={viewerSrc}
           title={`${fileName} preview`}
           className="block h-full min-h-[20rem] w-full border-0"
-          allow="fullscreen; xr-spatial-tracking"
+          allow="fullscreen"
         />
       ) : (
         <div className="h-full min-h-[20rem] w-full" />

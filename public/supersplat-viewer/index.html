@@ -41,6 +41,7 @@
                 ministats: url.searchParams.has('ministats'),
                 colorize: url.searchParams.has('colorize'),
                 renderer,
+                performanceMode: url.searchParams.has('perf') || url.searchParams.has('performance'),
                 aa: url.searchParams.has('aa'),
                 budget,
                 heatmap: url.searchParams.has('heatmap'),

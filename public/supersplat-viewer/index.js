@@ -90116,7 +90116,11 @@ const main = async (canvas, settingsJson, config) => {
     const state = observe(events, {
         loaded: false,
         readyToRender: false,
-        performanceMode: storedPerformanceMode !== null ? storedPerformanceMode === 'true' : platform.mobile,
+        performanceMode: typeof config.performanceMode === 'boolean'
+            ? config.performanceMode
+            : storedPerformanceMode !== null
+                ? storedPerformanceMode === 'true'
+                : platform.mobile,
         progress: 0,
         inputMode: platform.mobile ? 'touch' : 'desktop',
         cameraMode: 'orbit',
@@ -90204,4 +90208,3 @@ const main = async (canvas, settingsJson, config) => {
 console.log(`SuperSplat Viewer v${version} | Engine v${version$1} (${revision})`);
 
 export { main };
-//# sourceMappingURL=index.js.map
