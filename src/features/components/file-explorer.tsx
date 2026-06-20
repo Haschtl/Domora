@@ -17,6 +17,7 @@ import {
   Trash2,
   Download,
   RefreshCw,
+  LoaderCircle,
   Upload,
   FolderPlus,
   Plus
@@ -229,6 +230,10 @@ export const FileExplorer = ({ household }: { household: Household }) => {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<{ path: string; name: string } | null>(null);
   const [pendingDeleteEntry, setPendingDeleteEntry] = useState<{ path: string; name: string; isDirectory: boolean } | null>(null);
+  const [previewProgress, setPreviewProgress] = useState<{ receivedBytes: number; totalBytes: number | null }>({
+    receivedBytes: 0,
+    totalBytes: null
+  });
 
   const isConfigured =
     household.storage_provider !== "none" &&
@@ -252,7 +257,8 @@ export const FileExplorer = ({ household }: { household: Household }) => {
     queryFn: () =>
       downloadHouseholdStorageFile({
         householdId: household.id,
-        targetPath: selectedFile?.path ?? ""
+        targetPath: selectedFile?.path ?? "",
+        onProgress: (progress) => setPreviewProgress(progress)
       })
   });
 
@@ -401,6 +407,10 @@ export const FileExplorer = ({ household }: { household: Household }) => {
     listQuery.isFetching;
 
   const preview = filePreviewQuery.data;
+  const previewProgressPercent =
+    previewProgress.totalBytes && previewProgress.totalBytes > 0
+      ? Math.max(0, Math.min(100, Math.round((previewProgress.receivedBytes / previewProgress.totalBytes) * 100)))
+      : null;
   const previewType = preview?.contentType.split(";")[0]?.trim().toLowerCase() ?? "";
   const previewObjectUrl = useMemo(
     () => (preview?.blob ? URL.createObjectURL(preview.blob) : null),
@@ -419,6 +429,10 @@ export const FileExplorer = ({ household }: { household: Household }) => {
       }
     };
   }, [previewObjectUrl]);
+
+  useEffect(() => {
+    setPreviewProgress({ receivedBytes: 0, totalBytes: null });
+  }, [selectedFile?.path]);
 
   const runMoveAction = async (targetPath: string) => {
     const destinationPath = window.prompt(
@@ -844,7 +858,27 @@ export const FileExplorer = ({ household }: { household: Household }) => {
             }
           >
             {filePreviewQuery.isLoading ? (
-              <p className="text-sm text-slate-500 dark:text-slate-300">{t("common.loading", { defaultValue: "Laden..." })}</p>
+              <div className="flex min-h-48 flex-col items-center justify-center gap-3 px-4 py-8 text-center">
+                <LoaderCircle className="h-6 w-6 animate-spin text-slate-500 dark:text-slate-300" />
+                <div className="space-y-1">
+                  <p className="text-sm text-slate-600 dark:text-slate-200">
+                    {t("common.loading", { defaultValue: "Laden..." })}
+                  </p>
+                  <p className="text-xs text-slate-500 dark:text-slate-300">
+                    {previewProgressPercent != null
+                      ? `${previewProgressPercent}% (${formatFileSize(previewProgress.receivedBytes)} / ${formatFileSize(previewProgress.totalBytes)})`
+                      : `${formatFileSize(previewProgress.receivedBytes)} geladen`}
+                  </p>
+                </div>
+                {previewProgressPercent != null ? (
+                  <div className="h-2 w-full max-w-sm overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800">
+                    <div
+                      className="h-full rounded-full bg-slate-900 transition-[width] dark:bg-slate-200"
+                      style={{ width: `${previewProgressPercent}%` }}
+                    />
+                  </div>
+                ) : null}
+              </div>
             ) : filePreviewQuery.isError ? (
               <p className="text-sm text-rose-600 dark:text-rose-300">
                 {filePreviewQuery.error instanceof Error

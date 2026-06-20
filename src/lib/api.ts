@@ -4748,7 +4748,9 @@ const parseContentDispositionFileName = (headerValue: string | null) => {
 export const downloadHouseholdStorageFile = async (input: {
   householdId: string;
   targetPath: string;
+  onProgress?: (progress: { receivedBytes: number; totalBytes: number | null }) => void;
 }): Promise<{ fileName: string; contentType: string; blob: Blob; bytes: Uint8Array }> => {
+  const onProgress = input.onProgress;
   const parsedInput = z
     .object({
       householdId: z.string().uuid(),
@@ -4798,8 +4800,43 @@ export const downloadHouseholdStorageFile = async (input: {
     throw new Error(message);
   }
 
-  const blob = await response.blob();
-  const bytes = new Uint8Array(await blob.arrayBuffer());
+  const totalBytesHeader = response.headers.get("content-length");
+  const totalBytes = totalBytesHeader ? Number.parseInt(totalBytesHeader, 10) : Number.NaN;
+  const resolvedTotalBytes = Number.isFinite(totalBytes) && totalBytes >= 0 ? totalBytes : null;
+
+  let blob: Blob;
+  let bytes: Uint8Array;
+  if (!response.body) {
+    blob = await response.blob();
+    bytes = new Uint8Array(await blob.arrayBuffer());
+    onProgress?.({ receivedBytes: bytes.byteLength, totalBytes: resolvedTotalBytes ?? bytes.byteLength });
+  } else {
+    const reader = response.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let receivedBytes = 0;
+
+    onProgress?.({ receivedBytes: 0, totalBytes: resolvedTotalBytes });
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value) continue;
+      chunks.push(value);
+      receivedBytes += value.byteLength;
+      onProgress?.({ receivedBytes, totalBytes: resolvedTotalBytes });
+    }
+
+    bytes = new Uint8Array(receivedBytes);
+    let offset = 0;
+    for (const chunk of chunks) {
+      bytes.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    blob = new Blob([bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)], {
+      type: response.headers.get("content-type") ?? "application/octet-stream"
+    });
+  }
+
   const targetSegments = parsedInput.targetPath.split("/").filter(Boolean);
   const fileName =
     parseContentDispositionFileName(response.headers.get("content-disposition")) ??
