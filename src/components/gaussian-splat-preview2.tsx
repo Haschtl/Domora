@@ -51,6 +51,7 @@ export const GaussianSplatPreview = ({
     let animationFrameId = 0;
     let renderScheduled = false;
     let resizeObserver: ResizeObserver | null = null;
+    let resizeTimer: ReturnType<typeof setTimeout> | null = null;
     let cleanupControls: (() => void) | null = null;
     let cleanupRenderer: (() => void) | null = null;
     let cleanupSpark: (() => void) | null = null;
@@ -83,8 +84,11 @@ export const GaussianSplatPreview = ({
           antialias: false,
           alpha: false,
           powerPreference: "high-performance",
+          precision: "mediump",
+          stencil: false,
+          depth: false,
         });
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+        renderer.setPixelRatio(1);
         renderer.outputColorSpace = THREE.SRGBColorSpace;
         container.replaceChildren(renderer.domElement);
 
@@ -173,8 +177,12 @@ export const GaussianSplatPreview = ({
         }
 
         resizeObserver = new ResizeObserver(() => {
-          updateViewport();
-          requestRender();
+          if (resizeTimer !== null) clearTimeout(resizeTimer);
+          resizeTimer = setTimeout(() => {
+            resizeTimer = null;
+            updateViewport();
+            requestRender();
+          }, 100);
         });
         resizeObserver.observe(container);
 
@@ -196,6 +204,7 @@ export const GaussianSplatPreview = ({
     return () => {
       disposed = true;
       window.cancelAnimationFrame(animationFrameId);
+      if (resizeTimer !== null) clearTimeout(resizeTimer);
       resizeObserver?.disconnect();
       cleanupControls?.();
       cleanupMesh?.();
