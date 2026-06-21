@@ -520,8 +520,6 @@ const createPodiumSparkleParticle = (rank: number, slot: number): PodiumSparkleP
 
 const PodiumSparkles = ({ rank }: { rank: number }) => {
   const count = Math.max(0, (3 - rank) * 2);
-  if (count <= 0) return null;
-
   const colorClass =
     rank === 1
       ? "text-amber-400"
@@ -534,6 +532,11 @@ const PodiumSparkles = ({ rank }: { rank: number }) => {
   );
 
   useEffect(() => {
+    if (count <= 0) {
+      setParticles([]);
+      return;
+    }
+
     const timeouts: number[] = [];
     const intervals: number[] = [];
 
@@ -581,6 +584,8 @@ const PodiumSparkles = ({ rank }: { rank: number }) => {
       intervals.forEach((id) => window.clearInterval(id));
     };
   }, [count, rank]);
+
+  if (count <= 0) return null;
 
   return (
     <div className="pointer-events-none absolute inset-0 overflow-visible" aria-hidden="true">
