@@ -6,6 +6,20 @@ const applyReplacementCase = (original: string, replacement: string) => {
   return replacement;
 };
 
+const dedupeAtzenCompounds = (value: string) =>
+  value
+    .replace(/\b(?:Atzen-){2,}WG\b/g, "Atzen-WG")
+    .replace(/\b(?:Atzen-){2,}Profil\b/g, "Atzen-Profil")
+    .replace(/\b(?:Oldschool-){2,}Archiv\b/g, "Oldschool-Archiv")
+    .replace(/\b(?:Bock-){2,}Liste\b/g, "Bock-Liste")
+    .replace(/\b(?:Cash-){2,}/g, "Cash-")
+    .replace(/\b(?:Mission-){2,}/g, "Mission-")
+    .replace(/\b(?:Missions-){2,}/g, "Missions-")
+    .replace(/\b(?:Atzen-){2,}/g, "Atzen-")
+    .replace(/\b(?:Oldschool-){2,}/g, "Oldschool-")
+    .replace(/\b(?:saft-){2,}/gi, "saft-")
+    .replace(/\b(?:dick-dope-){2,}/gi, "dick-dope-");
+
 const phraseReplacements: Array<[RegExp, string]> = [
   [/\bsession wird geladen\b/gi, "dein Login-Film lädt noch kurz"],
   [/\berfolgreich eingeloggt\b/gi, "dick-dope eingeloggt, Brudi"],
@@ -136,6 +150,8 @@ export const atzenizeText = (value: string) => {
     .replace(/\bHell\b/g, "Daymode")
     .replace(/\bDunkel\b/g, "Nightmode")
     .replace(/\bSystem\b/g, "System");
+
+  next = dedupeAtzenCompounds(next);
 
   if (next.length > 24) {
     next = next.replace(/\.$/, ", saft, Diggi.");

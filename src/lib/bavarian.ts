@@ -134,10 +134,6 @@ export const bavarianizeText = (value: string) => {
     next = next.replace(/\?$/, ", odá?");
   }
 
-  if (next.length > 32 && !/[!?]$/.test(next)) {
-    next = `${next} Hawe d'Ehre.`;
-  }
-
   return next;
 };
 

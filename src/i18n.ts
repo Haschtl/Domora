@@ -11,6 +11,36 @@ let householdTranslationOverrides: HouseholdTranslationOverride[] = [];
 const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const isBavarianLanguage = (language: string | null | undefined) => language?.toLowerCase().startsWith("bar") ?? false;
 const isAtzenLanguage = (language: string | null | undefined) => language?.toLowerCase().startsWith("ffm") ?? false;
+const baseTranslation = resources.de.translation as Record<string, unknown>;
+
+const getTranslationEntry = (source: Record<string, unknown>, key: string) => {
+  const segments = key.split(".");
+  let current: unknown = source;
+
+  for (const segment of segments) {
+    if (!current || typeof current !== "object" || Array.isArray(current)) return undefined;
+    current = (current as Record<string, unknown>)[segment];
+  }
+
+  return current;
+};
+
+const hasManualLocaleOverride = (language: string | null | undefined, key: string) => {
+  const resolved = language?.toLowerCase();
+  if (!resolved || !key) return false;
+
+  const locale = supportedLanguages.find((entry) => resolved.startsWith(entry));
+  if (!locale || locale === "de" || locale === "en") return false;
+
+  const localeTranslation = resources[locale].translation as Record<string, unknown>;
+  const localeEntry = getTranslationEntry(localeTranslation, key);
+  const baseEntry = getTranslationEntry(baseTranslation, key);
+
+  if (localeEntry === undefined || baseEntry === undefined) return false;
+  if (typeof localeEntry !== "string" || typeof baseEntry !== "string") return false;
+
+  return localeEntry !== baseEntry;
+};
 
 const applyHouseholdTranslationOverrides = (value: string) => {
   if (householdTranslationOverrides.length === 0) return value;
@@ -71,7 +101,9 @@ void i18n
     name: "atzenize",
     process(value: unknown, _key: string, options?: { lng?: string }) {
       if (typeof value !== "string") return value;
-      if (!isAtzenLanguage(options?.lng ?? i18n.resolvedLanguage ?? i18n.language)) return value;
+      const language = options?.lng ?? i18n.resolvedLanguage ?? i18n.language;
+      if (!isAtzenLanguage(language)) return value;
+      if (_key && hasManualLocaleOverride(language, _key)) return value;
       return atzenizeText(value);
     }
   })
@@ -80,7 +112,9 @@ void i18n
     name: "bavarianize",
     process(value: unknown, _key: string, options?: { lng?: string }) {
       if (typeof value !== "string") return value;
-      if (!isBavarianLanguage(options?.lng ?? i18n.resolvedLanguage ?? i18n.language)) return value;
+      const language = options?.lng ?? i18n.resolvedLanguage ?? i18n.language;
+      if (!isBavarianLanguage(language)) return value;
+      if (_key && hasManualLocaleOverride(language, _key)) return value;
       return bavarianizeText(value);
     }
   })
