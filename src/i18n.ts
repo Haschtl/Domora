@@ -1,5 +1,6 @@
 import i18n from "i18next";
 import { initReactI18next } from "react-i18next";
+import { atzenizeText } from "./lib/atzen";
 import { bavarianizeText } from "./lib/bavarian";
 import { defaultLanguage, resources, supportedLanguages, type SupportedLanguage } from "./lib/translations";
 import type { HouseholdTranslationOverride } from "./lib/types";
@@ -9,6 +10,7 @@ let householdTranslationOverrides: HouseholdTranslationOverride[] = [];
 
 const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const isBavarianLanguage = (language: string | null | undefined) => language?.toLowerCase().startsWith("bar") ?? false;
+const isAtzenLanguage = (language: string | null | undefined) => language?.toLowerCase().startsWith("ffm") ?? false;
 
 const applyHouseholdTranslationOverrides = (value: string) => {
   if (householdTranslationOverrides.length === 0) return value;
@@ -66,6 +68,15 @@ export const setHouseholdTranslationOverrides = (overrides: HouseholdTranslation
 void i18n
   .use({
     type: "postProcessor",
+    name: "atzenize",
+    process(value: unknown, _key: string, options?: { lng?: string }) {
+      if (typeof value !== "string") return value;
+      if (!isAtzenLanguage(options?.lng ?? i18n.resolvedLanguage ?? i18n.language)) return value;
+      return atzenizeText(value);
+    }
+  })
+  .use({
+    type: "postProcessor",
     name: "bavarianize",
     process(value: unknown, _key: string, options?: { lng?: string }) {
       if (typeof value !== "string") return value;
@@ -89,10 +100,10 @@ void i18n
       escapeValue: false
     },
     returnNull: false,
-    postProcess: ["bavarianize", "householdReplace"]
+    postProcess: ["atzenize", "bavarianize", "householdReplace"]
   });
 
 export const getDateLocale = (language: string) =>
-  language.startsWith("de") || language.startsWith("bar") ? "de-DE" : "en-GB";
+  language.startsWith("de") || language.startsWith("bar") || language.startsWith("ffm") ? "de-DE" : "en-GB";
 
 export default i18n;

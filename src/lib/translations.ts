@@ -1,3 +1,4 @@
+import { atzenizeTranslations } from "./atzen";
 import { bavarianizeTranslations, mergeTranslationOverrides } from "./bavarian";
 
 const baseResources = {
@@ -1694,6 +1695,7 @@ const baseResources = {
         de: "DE",
         en: "EN",
         bar: "Nedabairisch",
+        ffm: "FFM Atze",
       },
       wizard: {
         title: "WG-Einrichtungs-Wizard",
@@ -3399,6 +3401,7 @@ const baseResources = {
         de: "DE",
         en: "EN",
         bar: "Lower Bavarian",
+        ffm: "Frankfurt Atzen Slang",
       },
       wizard: {
         title: "Household Setup Wizard",
@@ -4272,6 +4275,207 @@ const bavarianOverrides = {
   },
 } as const;
 
+const atzenOverrides = {
+  tab: {
+    home: "Block",
+    shopping: "Shopski",
+    tasks: "Missions",
+    finances: "Cash",
+    settings: "Settings",
+  },
+  subnav: {
+    title: "Unterfilme",
+    home: {
+      summary: "Startklar",
+      bucket: "Bock-Liste",
+      feed: "Kalender",
+    },
+    tasks: {
+      overview: "Überblick",
+      stats: "Flex-Stats",
+      history: "Was-war-Phase",
+      settings: "Settings",
+    },
+    finances: {
+      overview: "Überblick",
+      stats: "Cash-Stats",
+      archive: "Oldschool-Archiv",
+      subscriptions: "Dauerdeals",
+    },
+    shopping: {
+      list: "Shopski-Liste",
+      history: "Einkaufsfilm",
+    },
+    settings: {
+      me: "Isch",
+      household: "Atzen-WG",
+      pushTest: "Push-Probealarm",
+    },
+  },
+  common: {
+    add: "Reinorgeln",
+    edit: "Umbauen",
+    delete: "Wegflexen",
+    save: "Sichern",
+    back: "Zurück",
+    cancel: "Abbruch",
+    close: "Zumachen",
+    confirm: "Abnicken",
+    trigger: "Anstoßen",
+    logout: "Ausloggen",
+    loadMore: "Mehr Stoff",
+    loading: "Lädt grad rein…",
+    and: "und",
+    you: "Du",
+    youNominative: "du",
+    youDative: "dir",
+    youAccusative: "dich",
+    all: "Alle",
+    allExcept: "Alle außer {{member}}",
+    others: "die andern Atzen",
+    memberFallback: "Atze",
+    disabledLabel: "aus dem Game",
+  },
+  app: {
+    title: "Domora für komplette Atzen-WGs",
+    subtitle: "Mobile first, maximal stabil als PWA am Start.",
+    loadingSession: "Dein Login-Film lädt noch kurz…",
+    dashboardTitle: "Babo-Board",
+    noUserLabel: "Kein Label am Start",
+    tasksDone: "Missions durchgezogen: {{done}} / {{total}}",
+    sessionLoadError: "Session ist komplett weggerutscht",
+    householdsLoadErrorTitle: "Atzen-WG-Daten sind komplett abgekackt",
+    householdsLoadErrorDescription: "Check Netz, DNS und ob Supabase noch am Leben ist.",
+    unknownError: "Kompletter Atzen-Absturz",
+    signInSuccess: "Stabil eingeloggt, Brudi.",
+    signUpSuccess: "Account ist fresh am Start. Bestätig noch kurz die Mail.",
+    householdCreated: "Atzen-WG gebaut: {{name}}",
+    householdJoined: "Du bist jetzt in der Atzen-WG: {{name}}",
+    cashAuditQueued: "Kassensturz ist im Tunnel.",
+    pushEnabled: "Push ist jetzt maximal am Start.",
+    pushDenied: "Push wurde komplett weggedribbelt.",
+    pushHouseholdTitle: "Neuer Film aus der Atzen-WG",
+    pushTaskCompletedTitle: "Mission erledigt",
+    pushFinanceCreatedTitle: "Neuer Cash-Eintrag",
+    pushCashAuditTitle: "Kassensturz geht rein",
+    pushPromptTitle: "Push anschalten, oder was?",
+    pushPromptDescription:
+      "Wenn du den WG-Film live willst, hol dir Reminder für offene Missions, erledigte Aktionen und neuen Cash-Kram.",
+    pushPromptLater: "Später vielleicht",
+    pushPromptEnable: "Ja, gib Push",
+    paymentRedirectSuccessTitle: "Cashflow sauber durch",
+    paymentRedirectCancelTitle: "Zahlung komplett auseinandergeflogen",
+    paymentRedirectBackToFinances: "Zur Cash-Übersicht",
+  },
+  auth: {
+    title: "Willkommen im Atzen-Kontrollzentrum",
+    description: "Einloggen oder anmelden und direkt in den WG-Film rein.",
+    signIn: "Einloggen",
+    signUp: "Anmelden",
+    passwordResetAction: "Passwort hops?",
+    googleSignIn: "Mit Google reinjoggen",
+  },
+  household: {
+    createTitle: "Neue Atzen-WG bauen",
+    createDescription: "Name rein und du bist direkt der Babo vom Laden.",
+    nameLabel: "Atzen-WG-Name",
+    createAction: "WG bauen",
+    joinTitle: "Zu einer Atzen-WG dazu",
+    joinDescription: "Code rein und direkt mitmischen.",
+    joinAction: "Reingehen",
+    myHouseholdsTitle: "Deine Atzen-WGs",
+    myHouseholdsDescription: "Alles, wo du schon am Start bist.",
+  },
+  home: {
+    title: "Block",
+    switchHousehold: "WG wechseln",
+    household: "Atzen-WG",
+    tasksProgress: "Missions erledigt",
+    widgetsTitle: "Live-Filme",
+    widgetsDescription: "Schnelle Zahlen für Missions, Cash und Gerechtigkeitsfilm.",
+    widgetTasksDue: "Heute offene Missions",
+    widgetTasksForYou: "Deine offenen Missions",
+    widgetYourBalance: "Dein Cash-Stand",
+    widgetHouseholdBalance: "WG-Cash-Stand",
+    widgetRecentActivity: "Letzte Action",
+    widgetBucketShortList: "Bock-Liste",
+    widgetFairness: "Fairness-Flex",
+    widgetReliability: "Zuverlässigkeits-Flex",
+    calendarTitle: "Atzen-WG-Kalender",
+    whiteboardTitle: "Atzen-Whiteboard",
+    householdMapTitle: "Block-Karte",
+    householdWeatherTitle: "Wetter am Block",
+  },
+  shopping: {
+    title: "Shopski-Liste",
+    description: "Alles, was der Laden noch braucht.",
+    historyTitle: "Einkaufsfilm",
+    suggestionsTitle: "Schon mal gegönnt",
+    empty: "Noch nix drauf. Einer muss den ersten Move machen.",
+    deleteConfirmAction: "Wegflexen",
+  },
+  tasks: {
+    title: "Missions",
+    description: "Wiederkehrende Missionen für den WG-Laden.",
+    suggestionsTitle: "Beliebte Missions",
+    overdue: "{{count}} überfällig am Start",
+    timeTitle: "Zeit-Missions",
+    detailsKingTitle: "Mission-Babo",
+    historyTitle: "Mission-Film",
+    forecastTitle: "Glaskugel-Flex",
+    empty: "Keine Mission offen. Komplett surreal.",
+  },
+  finances: {
+    title: "Cash",
+    description: "Ausgaben tracken und Kassensturz reinzimmern.",
+    newEntryTitle: "Neuer Cash-Eintrag",
+    historyTitle: "Cash-Film",
+    settlementTitle: "Cash-Stand seit letztem Kassensturz",
+    settlementPlanTitle: "Ausgleichs-Move",
+    subscriptionsTitle: "Dauerdeals",
+    empty: "Noch kein Cash-Kram drin.",
+  },
+  settings: {
+    title: "Settings",
+    clientTitle: "Geräte-Settings",
+    profileTitle: "Atzen-Profil",
+    vacationModeLabel: "Chill-Modus",
+    householdRulesTitle: "WG-Regeln",
+    householdFeaturesTitle: "Features",
+    pushTitle: "Pushes",
+    pushPreferencesTitle: "Push-Filter",
+    paymentHandlesTitle: "Bezahlzeug",
+    householdTitle: "Atzen-WG-Verwaltung",
+    householdThemeTitle: "WG-Vibe",
+    whiteboardTitle: "Atzen-Whiteboard",
+    tenantsTitle: "Atzen-Verwaltung",
+    inviteAction: "Atzen einladen",
+    inviteDialogTitle: "Atzen einladen",
+    appVersionLabel: "Build",
+  },
+  theme: {
+    label: "Vibe",
+    system: "System",
+    light: "Daymode",
+    dark: "Nightmode",
+  },
+  language: {
+    label: "Sprache",
+    de: "Deutsch",
+    en: "English",
+    bar: "Nedabairisch",
+    ffm: "FFM Atze",
+  },
+  wizard: {
+    title: "WG-Setup für echte Atzen",
+    description: "Schritt für Schritt durch den wichtigen WG-Film.",
+    stepTasksTitle: "Missions",
+    stepFinancesTitle: "Cash",
+    stepDesignTitle: "Vibe",
+    summaryDesign: "Vibe",
+  },
+} as const;
+
 export const resources = {
   ...baseResources,
   bar: {
@@ -4280,10 +4484,16 @@ export const resources = {
       bavarianOverrides
     ),
   },
+  ffm: {
+    translation: mergeTranslationOverrides(
+      atzenizeTranslations(baseResources.de.translation),
+      atzenOverrides
+    ),
+  },
 } as const;
 
 export type SupportedLanguage = keyof typeof resources;
 
 export const defaultLanguage: SupportedLanguage = "de";
 
-export const supportedLanguages: SupportedLanguage[] = ["de", "en", "bar"];
+export const supportedLanguages: SupportedLanguage[] = ["de", "en", "bar", "ffm"];
