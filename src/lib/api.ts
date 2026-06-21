@@ -886,10 +886,14 @@ export const signUp = async (
     throw new Error("Das Passwort muss mindestens 6 Zeichen haben.");
   }
 
+  const emailRedirectTo = getPublicAppBaseUrl() || undefined;
   const { error } = await supabase.auth.signUp({
     email: normalizedEmail,
     password,
-    options: captchaToken ? { captchaToken } : undefined
+    options: {
+      ...(captchaToken ? { captchaToken } : {}),
+      ...(emailRedirectTo ? { emailRedirectTo } : {})
+    }
   });
   if (!error) return;
 
