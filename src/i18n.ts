@@ -12,6 +12,11 @@ const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\
 const isBavarianLanguage = (language: string | null | undefined) => language?.toLowerCase().startsWith("bar") ?? false;
 const isAtzenLanguage = (language: string | null | undefined) => language?.toLowerCase().startsWith("ffm") ?? false;
 const baseTranslation = resources.de.translation as Record<string, unknown>;
+const normalizeTranslationKey = (key: unknown) => {
+  if (typeof key === "string") return key;
+  if (Array.isArray(key)) return key.find((entry) => typeof entry === "string");
+  return undefined;
+};
 
 const getTranslationEntry = (source: Record<string, unknown>, key: string) => {
   const segments = key.split(".");
@@ -99,22 +104,24 @@ void i18n
   .use({
     type: "postProcessor",
     name: "atzenize",
-    process(value: unknown, _key: string, options?: { lng?: string }) {
+    process(value: unknown, _key: unknown, options?: { lng?: string }) {
       if (typeof value !== "string") return value;
       const language = options?.lng ?? i18n.resolvedLanguage ?? i18n.language;
       if (!isAtzenLanguage(language)) return value;
-      if (_key && hasManualLocaleOverride(language, _key)) return value;
+      const key = normalizeTranslationKey(_key);
+      if (key && hasManualLocaleOverride(language, key)) return value;
       return atzenizeText(value);
     }
   })
   .use({
     type: "postProcessor",
     name: "bavarianize",
-    process(value: unknown, _key: string, options?: { lng?: string }) {
+    process(value: unknown, _key: unknown, options?: { lng?: string }) {
       if (typeof value !== "string") return value;
       const language = options?.lng ?? i18n.resolvedLanguage ?? i18n.language;
       if (!isBavarianLanguage(language)) return value;
-      if (_key && hasManualLocaleOverride(language, _key)) return value;
+      const key = normalizeTranslationKey(_key);
+      if (key && hasManualLocaleOverride(language, key)) return value;
       return bavarianizeText(value);
     }
   })

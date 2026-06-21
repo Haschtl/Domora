@@ -1694,8 +1694,8 @@ const baseResources = {
         label: "Sprache",
         de: "DE",
         en: "EN",
-        bar: "Nedabairisch",
-        ffm: "FFM Atze",
+        bar: "Vreni",
+        ffm: "FFM",
       },
       wizard: {
         title: "WG-Einrichtungs-Wizard",
@@ -4238,7 +4238,7 @@ const bavarianOverrides = {
     label: "Sproch",
     de: "Deitsch",
     en: "English",
-    bar: "Nedabairisch",
+    bar: "Vreni",
   },
   wizard: {
     title: "Da Wohngmoa-Einrichtungs-Wizard",
@@ -4583,8 +4583,8 @@ const atzenOverrides = {
     label: "Sprache",
     de: "Deutsch",
     en: "English",
-    bar: "Nedabairisch",
-    ffm: "FFM Atze",
+    bar: "Vreni",
+    ffm: "FFM",
   },
   wizard: {
     title: "WG-Setup für echte Atzen",

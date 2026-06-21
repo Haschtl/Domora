@@ -6,6 +6,21 @@ const applyReplacementCase = (original: string, replacement: string) => {
   return replacement;
 };
 
+const protectInterpolationTokens = (value: string) => {
+  const tokens: string[] = [];
+  const text = value.replace(/\{\{[^}]+\}\}/g, (match) => {
+    const token = `__I18N_TOKEN_${tokens.length}__`;
+    tokens.push(match);
+    return token;
+  });
+
+  return {
+    text,
+    restore: (next: string) =>
+      tokens.reduce((result, token, index) => result.replace(`__I18N_TOKEN_${index}__`, token), next)
+  };
+};
+
 const dedupeAtzenCompounds = (value: string) =>
   value
     .replace(/\b(?:Atzen-){2,}WG\b/g, "Atzen-WG")
@@ -122,7 +137,8 @@ export const atzenizeText = (value: string) => {
   if (!value.trim()) return value;
   if (/https?:\/\/|www\.|@/.test(value)) return value;
 
-  let next = value;
+  const protectedValue = protectInterpolationTokens(value);
+  let next = protectedValue.text;
 
   for (const [pattern, replacement] of phraseReplacements) {
     next = next.replace(pattern, (match) => applyReplacementCase(match, replacement));
@@ -162,7 +178,7 @@ export const atzenizeText = (value: string) => {
     next = `${next} Rein da.`;
   }
 
-  return next;
+  return protectedValue.restore(next);
 };
 
 export const atzenizeTranslations = <T>(value: T): T => {

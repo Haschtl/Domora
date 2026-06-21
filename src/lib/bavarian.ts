@@ -6,6 +6,21 @@ const applyReplacementCase = (original: string, replacement: string) => {
   return replacement;
 };
 
+const protectInterpolationTokens = (value: string) => {
+  const tokens: string[] = [];
+  const text = value.replace(/\{\{[^}]+\}\}/g, (match) => {
+    const token = `__I18N_TOKEN_${tokens.length}__`;
+    tokens.push(match);
+    return token;
+  });
+
+  return {
+    text,
+    restore: (next: string) =>
+      tokens.reduce((result, token, index) => result.replace(`__I18N_TOKEN_${index}__`, token), next)
+  };
+};
+
 const phraseReplacements: Array<[RegExp, string]> = [
   [/\bbitte bestätige die e-mail\b/gi, "bittschee bestätig de E-Post, gell"],
   [/\bsession wird geladen\b/gi, "dei Sitzung werd grod zamgschraubt"],
@@ -100,7 +115,8 @@ export const bavarianizeText = (value: string) => {
   if (!value.trim()) return value;
   if (/https?:\/\/|www\.|@/.test(value)) return value;
 
-  let next = value;
+  const protectedValue = protectInterpolationTokens(value);
+  let next = protectedValue.text;
 
   for (const [pattern, replacement] of phraseReplacements) {
     next = next.replace(pattern, (match) => applyReplacementCase(match, replacement));
@@ -134,7 +150,7 @@ export const bavarianizeText = (value: string) => {
     next = next.replace(/\?$/, ", odá?");
   }
 
-  return next;
+  return protectedValue.restore(next);
 };
 
 export const bavarianizeTranslations = <T>(value: T): T => {
