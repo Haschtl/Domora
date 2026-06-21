@@ -5,7 +5,7 @@ import { Button } from "./ui/button";
 import { cn } from "../lib/utils";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
 import { useTheme, type ThemePreference } from "../lib/use-theme";
-import type { SupportedLanguage } from "../lib/translations";
+import { supportedLanguages, type SupportedLanguage } from "../lib/translations";
 
 const themeItems: { id: ThemePreference; icon: typeof Sun }[] = [
   { id: "light", icon: Sun },
@@ -13,7 +13,7 @@ const themeItems: { id: ThemePreference; icon: typeof Sun }[] = [
   { id: "system", icon: LaptopMinimal }
 ];
 
-const languages: SupportedLanguage[] = ["de", "en"];
+const languages: SupportedLanguage[] = supportedLanguages;
 
 interface ThemeLanguageControlsProps {
   surface?: "default" | "brand";
@@ -23,7 +23,9 @@ export const ThemeLanguageControls = ({ surface = "brand" }: ThemeLanguageContro
   const { t, i18n } = useTranslation();
   const { theme, setTheme } = useTheme();
 
-  const currentLanguage: SupportedLanguage = i18n.resolvedLanguage?.startsWith("en") ? "en" : "de";
+  const currentLanguage: SupportedLanguage =
+    supportedLanguages.find((language) => i18n.resolvedLanguage?.startsWith(language) || i18n.language?.startsWith(language)) ??
+    "de";
   const useBrandSurface = surface === "brand";
 
   const panelClass = useBrandSurface

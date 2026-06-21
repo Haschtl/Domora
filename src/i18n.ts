@@ -81,6 +81,7 @@ void i18n
     postProcess: ["householdReplace"]
   });
 
-export const getDateLocale = (language: string) => (language.startsWith("de") ? "de-DE" : "en-GB");
+export const getDateLocale = (language: string) =>
+  language.startsWith("de") || language.startsWith("bar") ? "de-DE" : "en-GB";
 
 export default i18n;

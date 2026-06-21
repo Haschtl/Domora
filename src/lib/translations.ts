@@ -1,4 +1,4 @@
-export const resources = {
+const baseResources = {
   de: {
     translation: {
       tab: {
@@ -1691,6 +1691,7 @@ export const resources = {
         label: "Sprache",
         de: "DE",
         en: "EN",
+        bar: "BAR",
       },
       wizard: {
         title: "WG-Einrichtungs-Wizard",
@@ -3395,6 +3396,7 @@ export const resources = {
         label: "Language",
         de: "DE",
         en: "EN",
+        bar: "BAR",
       },
       wizard: {
         title: "Household Setup Wizard",
@@ -3433,8 +3435,15 @@ export const resources = {
   },
 } as const;
 
+export const resources = {
+  ...baseResources,
+  bar: {
+    translation: baseResources.de.translation,
+  },
+} as const;
+
 export type SupportedLanguage = keyof typeof resources;
 
 export const defaultLanguage: SupportedLanguage = "de";
 
-export const supportedLanguages: SupportedLanguage[] = ["de", "en"];
+export const supportedLanguages: SupportedLanguage[] = ["de", "en", "bar"];
