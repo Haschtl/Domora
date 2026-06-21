@@ -32,10 +32,11 @@ import {
   Medal,
   MoreHorizontal,
   Plus,
+  Sparkles,
   Users,
   X
 } from "lucide-react";
-import SparklesEffect from "react-sparkle";
+import { AnimatePresence, motion } from "framer-motion";
 import { Bar } from "react-chartjs-2";
 import { useTranslation } from "react-i18next";
 import { toast } from "react-toastify";
@@ -479,6 +480,148 @@ const buildSkipMathChallenge = (seedSource: string): SkipMathChallenge => {
     expression: `${left} × ${right}`,
     answer: left * right
   };
+};
+
+type PodiumSparkleParticle = {
+  id: string;
+  top: string;
+  left: string;
+  size: number;
+  duration: number;
+  driftX: number;
+  driftY: number;
+  rotateStart: number;
+  rotateEnd: number;
+};
+
+const createPodiumSparkleParticle = (rank: number, slot: number): PodiumSparkleParticle => {
+  const sizeBias = rank === 1 ? 1.15 : rank === 2 ? 1 : 0.9;
+  const size = Math.round((6 + Math.random() * 7) * sizeBias);
+  const duration = 1.8 + Math.random() * 1.8;
+  const top = `${8 + Math.random() * 62}%`;
+  const left = `${10 + Math.random() * 72}%`;
+  const driftX = -10 + Math.random() * 20;
+  const driftY = -12 + Math.random() * 16;
+  const rotateStart = -18 + Math.random() * 36;
+  const rotateEnd = rotateStart + (-24 + Math.random() * 48);
+
+  return {
+    id: `podium-sparkle-${rank}-${slot}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    top,
+    left,
+    size,
+    duration,
+    driftX,
+    driftY,
+    rotateStart,
+    rotateEnd
+  };
+};
+
+const PodiumSparkles = ({ rank }: { rank: number }) => {
+  const count = Math.max(0, (3 - rank) * 2);
+  if (count <= 0) return null;
+
+  const colorClass =
+    rank === 1
+      ? "text-amber-400"
+      : rank === 2
+        ? "text-slate-300"
+        : "text-orange-400";
+
+  const [particles, setParticles] = useState<Array<PodiumSparkleParticle | null>>(() =>
+    Array.from({ length: count }, (_, index) => createPodiumSparkleParticle(rank, index))
+  );
+
+  useEffect(() => {
+    const timeouts: number[] = [];
+    const intervals: number[] = [];
+
+    setParticles(Array.from({ length: count }, (_, index) => createPodiumSparkleParticle(rank, index)));
+
+    const scheduleSlot = (slot: number) => {
+      const initialDelay = Math.random() * 700;
+      const timeoutId = window.setTimeout(() => {
+        setParticles((current) => {
+          const next = [...current];
+          next[slot] = createPodiumSparkleParticle(rank, slot);
+          return next;
+        });
+
+        const intervalId = window.setInterval(() => {
+          setParticles((current) => {
+            const next = [...current];
+            next[slot] = null;
+            return next;
+          });
+
+          const respawnDelay = 120 + Math.random() * 260;
+          const respawnId = window.setTimeout(() => {
+            setParticles((current) => {
+              const next = [...current];
+              next[slot] = createPodiumSparkleParticle(rank, slot);
+              return next;
+            });
+          }, respawnDelay);
+          timeouts.push(respawnId);
+        }, 1900 + Math.random() * 1700);
+
+        intervals.push(intervalId);
+      }, initialDelay);
+
+      timeouts.push(timeoutId);
+    };
+
+    for (let slot = 0; slot < count; slot += 1) {
+      scheduleSlot(slot);
+    }
+
+    return () => {
+      timeouts.forEach((id) => window.clearTimeout(id));
+      intervals.forEach((id) => window.clearInterval(id));
+    };
+  }, [count, rank]);
+
+  return (
+    <div className="pointer-events-none absolute inset-0 overflow-visible" aria-hidden="true">
+      <AnimatePresence initial={false}>
+        {particles.map((particle) =>
+          particle ? (
+            <motion.div
+              key={particle.id}
+              className={`absolute ${colorClass}`}
+              style={{
+                top: particle.top,
+                left: particle.left
+              }}
+              initial={{
+                opacity: 0,
+                scale: 0.35,
+                rotate: particle.rotateStart
+              }}
+              animate={{
+                x: [0, particle.driftX * 0.45, particle.driftX],
+                y: [0, particle.driftY * 0.45, particle.driftY],
+                scale: [0.35, 1, 0.55],
+                opacity: [0, 0.95, 0],
+                rotate: [particle.rotateStart, (particle.rotateStart + particle.rotateEnd) / 2, particle.rotateEnd]
+              }}
+              exit={{
+                opacity: 0,
+                scale: 0.2
+              }}
+              transition={{
+                duration: particle.duration,
+                ease: "easeInOut"
+              }}
+            >
+              <Sparkles className="drop-shadow-sm" style={{ width: particle.size, height: particle.size }} />
+            </motion.div>
+          ) : null
+        )}
+      </AnimatePresence>
+    </div>
+  );
 };
 
 export const TasksPage = ({
@@ -3959,15 +4102,7 @@ export const TasksPage = ({
                           key={member.user_id}
                           className="relative flex flex-col items-center"
                         >
-                          <SparklesEffect
-                            color="currentColor"
-                            count={(3 - rank) * 6}
-                            minSize={2}
-                            maxSize={4}
-                            overflowPx={4}
-                            fadeOutSpeed={8}
-                            flicker={false}
-                          />
+                          <PodiumSparkles rank={rank} />
                           <MemberAvatar
                             src={
                               member.avatar_url?.trim() ||
