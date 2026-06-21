@@ -145,6 +145,10 @@ void i18n
   });
 
 export const getDateLocale = (language: string) =>
-  language.startsWith("de") || language.startsWith("bar") || language.startsWith("ffm") ? "de-DE" : "en-GB";
+  language.startsWith("uk")
+    ? "uk-UA"
+    : language.startsWith("de") || language.startsWith("bar") || language.startsWith("ffm")
+      ? "de-DE"
+      : "en-GB";
 
 export default i18n;
