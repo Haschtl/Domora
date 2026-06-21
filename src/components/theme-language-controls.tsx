@@ -2,6 +2,7 @@ import { LaptopMinimal, Moon, Sun } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { persistLanguagePreference } from "../i18n";
 import { Button } from "./ui/button";
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "./ui/select";
 import { cn } from "../lib/utils";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
 import { useTheme, type ThemePreference } from "../lib/use-theme";
@@ -81,25 +82,27 @@ export const ThemeLanguageControls = ({ surface = "brand" }: ThemeLanguageContro
 
         <div className={`flex items-center gap-1 ${panelClass}`}>
           <span className={labelClass}>{t("language.label")}</span>
-          {languages.map((language) => (
-            <Button
-              key={language}
-              type="button"
-              size="sm"
-              variant="ghost"
-              className={cn(
-                buttonBaseClass,
-                currentLanguage === language ? activeButtonClass : inactiveButtonClass
-              )}
-              onClick={() => {
-                persistLanguagePreference(language);
-                void i18n.changeLanguage(language);
+          <div className="w-40">
+            <Select
+              value={currentLanguage}
+              onValueChange={(val) => {
+                const lang = val as SupportedLanguage;
+                persistLanguagePreference(lang);
+                void i18n.changeLanguage(lang);
               }}
-              aria-label={t(`language.${language}`)}
             >
-              {t(`language.${language}`)}
-            </Button>
-          ))}
+              <SelectTrigger id="language-select" className="h-9">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {languages.map((language) => (
+                  <SelectItem key={language} value={language}>
+                    {t(`language.${language}`)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
       </div>
     </TooltipProvider>
