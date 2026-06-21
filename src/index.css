@@ -1232,6 +1232,7 @@ body {
   min-height: 100%; */
   overscroll-behavior-y: none;
   overscroll-behavior-x: none;
+  overflow-x: clip;
 }
 
 @supports (height: 100dvh) {
@@ -1399,6 +1400,19 @@ body {
 
 @supports (height: 100dvh) {
   #root {
+    min-height: 100dvh;
+  }
+}
+
+.domora-app-shell {
+  display: flex;
+  min-height: 100vh;
+  flex-direction: column;
+  overflow-x: clip;
+}
+
+@supports (height: 100dvh) {
+  .domora-app-shell {
     min-height: 100dvh;
   }
 }

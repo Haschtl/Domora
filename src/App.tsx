@@ -997,11 +997,11 @@ const AppLayout = () => {
     const isSuccess = paymentRedirectStatus === "success";
     const Icon = isSuccess ? CheckCircle2 : XCircle;
     return (
-      <div className="relative min-h-screen">
+      <div className="domora-app-shell relative">
         <Suspense fallback={null}>
           <AppParticlesBackground />
         </Suspense>
-        <div className="relative z-10 mx-auto flex min-h-screen w-full max-w-3xl items-center justify-center p-4 text-slate-900 dark:text-slate-100 sm:p-6">
+        <div className="relative z-10 mx-auto flex min-h-full w-full max-w-3xl flex-1 items-center justify-center p-4 text-slate-900 dark:text-slate-100 sm:p-6">
           <Card className="w-full border-brand-200 bg-white/95 dark:border-slate-700 dark:bg-slate-900/90">
             <CardHeader>
               <div className="mb-2 flex items-center gap-2">
@@ -1032,11 +1032,11 @@ const AppLayout = () => {
 
   if (isPrivacyPolicyRoute) {
     return (
-      <div className="relative min-h-screen">
+      <div className="domora-app-shell relative">
         <Suspense fallback={null}>
           <AppParticlesBackground />
         </Suspense>
-        <div className="relative z-10 mx-auto min-h-screen w-full max-w-5xl p-4 text-slate-900 dark:text-slate-100 sm:p-6">
+        <div className="relative z-10 mx-auto min-h-full w-full max-w-5xl flex-1 p-4 text-slate-900 dark:text-slate-100 sm:p-6">
           <Suspense fallback={null}>
             <PrivacyPolicyPage />
           </Suspense>
@@ -1047,7 +1047,7 @@ const AppLayout = () => {
 
   return (
     <WorkspaceProvider value={workspaceContextValue}>
-    <div className="relative isolate min-h-screen">
+    <div className="domora-app-shell relative isolate">
       <div aria-hidden="true" className="domora-app-background pointer-events-none fixed inset-0 z-0" />
       <Suspense fallback={null}>
         <AppParticlesBackground />
@@ -1057,7 +1057,7 @@ const AppLayout = () => {
           <VacationOverlay />
         </Suspense>
       ) : null}
-      <div className="relative z-10 mx-auto min-h-screen w-full max-w-7xl p-4 pb-10 text-slate-900 dark:text-slate-100 sm:p-6">
+      <div className="relative z-10 mx-auto min-h-full w-full max-w-7xl flex-1 p-4 pb-10 text-slate-900 dark:text-slate-100 sm:p-6">
       {!isSupabaseConfigured ? (
         <Card className="mb-4 border border-amber-200 bg-amber-50/80 dark:border-amber-900 dark:bg-amber-950/60">
           <CardHeader>
