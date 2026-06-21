@@ -20,6 +20,29 @@ const readConfigFromQuery = () => {
   }
 };
 
+const getBasePath = () => {
+  try {
+    const workerUrl = new URL(self.location.href);
+    const pathname = workerUrl.pathname;
+    const marker = "/firebase/firebase-messaging-sw.js";
+    if (pathname.endsWith(marker)) {
+      const basePath = pathname.slice(0, -marker.length);
+      return basePath || "";
+    }
+    return "";
+  } catch {
+    return "";
+  }
+};
+
+const BASE_PATH = getBasePath();
+
+const buildAppUrl = (pathname) => {
+  const currentUrl = new URL(self.location.origin);
+  currentUrl.pathname = `${BASE_PATH}${pathname}`.replace(/\/{2,}/g, "/");
+  return currentUrl;
+};
+
 self.addEventListener("install", () => {
   self.skipWaiting();
 });
@@ -51,8 +74,8 @@ const buildNotificationOptions = (payload) => {
 
   const options = {
     body: notification.body || data.pushBody || "",
-    icon: "/icon-192.png",
-    badge: "/icon-192.png",
+    icon: `${BASE_PATH}/icon-192.png`,
+    badge: `${BASE_PATH}/icon-192.png`,
     data,
     actions
   };
@@ -75,8 +98,7 @@ const openClientUrl = async (url) => {
 };
 
 const buildActionUrl = (data, action) => {
-  const currentUrl = new URL(self.location.origin);
-  currentUrl.pathname = "/home/summary";
+  const currentUrl = buildAppUrl("/home/summary");
   const type = String(data?.type || "");
   if (action === "live_show_on_map" || type === "live_location_started") {
     currentUrl.searchParams.set("pushAction", "live_show_on_map");
@@ -91,14 +113,14 @@ const buildActionUrl = (data, action) => {
     return currentUrl.toString();
   }
   if ((action === "oneoff_approve" || action === "oneoff_reject" || action === "oneoff_counter") && data?.claimId) {
-    currentUrl.pathname = "/tasks/overview";
+    currentUrl.pathname = `${BASE_PATH}/tasks/overview`.replace(/\/{2,}/g, "/");
     currentUrl.searchParams.set("pushAction", action);
     currentUrl.searchParams.set("claimId", String(data.claimId));
     if (data?.requestedPimpers) currentUrl.searchParams.set("requestedPimpers", String(data.requestedPimpers));
     return currentUrl.toString();
   }
   if (type === "task_due" || type === "task_taken_over" || type === "task_completed" || type === "task_skipped") {
-    currentUrl.pathname = "/tasks/overview";
+    currentUrl.pathname = `${BASE_PATH}/tasks/overview`.replace(/\/{2,}/g, "/");
     if (data?.taskId) currentUrl.searchParams.set("taskId", String(data.taskId));
     return currentUrl.toString();
   }

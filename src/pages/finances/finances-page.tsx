@@ -2189,9 +2189,11 @@ export const FinancesPage = ({
     const referenceDay = settlementDateIsoDay ?? new Date().toISOString().slice(0, 10);
     const itemName = `${household.name} - Kassensturz vom ${formatDateOnly(referenceDay, language, referenceDay)}`;
     const currencyCode = household.currency || "EUR";
-    const appOrigin = typeof window !== "undefined" ? window.location.origin : "";
-    const returnUrl = `${appOrigin}/redirect-payment/success`;
-    const cancelReturnUrl = `${appOrigin}/redirect-payment/cancel`;
+    const appBaseUrl = typeof window !== "undefined"
+      ? new URL(import.meta.env.BASE_URL || "/", window.location.origin).toString().replace(/\/$/, "")
+      : "";
+    const returnUrl = `${appBaseUrl}/redirect-payment/success`;
+    const cancelReturnUrl = `${appBaseUrl}/redirect-payment/cancel`;
 
     if (target.paypal_name?.trim()) {
       const params = new URLSearchParams({

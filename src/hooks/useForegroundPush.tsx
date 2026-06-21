@@ -13,6 +13,7 @@ export const useForegroundPush = ({ enabled, onNavigate }: ForegroundPushOptions
   useEffect(() => {
     if (!enabled) return;
     if (typeof window === "undefined") return;
+    const iconUrl = new URL("icon-192.png", new URL(import.meta.env.BASE_URL || "/", window.location.origin)).toString();
     let cancelled = false;
     let unsubscribe: (() => void) | null = null;
 
@@ -53,8 +54,8 @@ export const useForegroundPush = ({ enabled, onNavigate }: ForegroundPushOptions
           try {
             const notification = new Notification(title, {
               body,
-              icon: "/icon-192.png",
-              badge: "/icon-192.png"
+              icon: iconUrl,
+              badge: iconUrl
             });
             if (handleClick) {
               notification.onclick = () => {
