@@ -1,5 +1,6 @@
 import i18n from "i18next";
 import { initReactI18next } from "react-i18next";
+import { bavarianizeText } from "./lib/bavarian";
 import { defaultLanguage, resources, supportedLanguages, type SupportedLanguage } from "./lib/translations";
 import type { HouseholdTranslationOverride } from "./lib/types";
 
@@ -7,6 +8,7 @@ const STORAGE_KEY = "domora-language";
 let householdTranslationOverrides: HouseholdTranslationOverride[] = [];
 
 const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const isBavarianLanguage = (language: string | null | undefined) => language?.toLowerCase().startsWith("bar") ?? false;
 
 const applyHouseholdTranslationOverrides = (value: string) => {
   if (householdTranslationOverrides.length === 0) return value;
@@ -64,6 +66,15 @@ export const setHouseholdTranslationOverrides = (overrides: HouseholdTranslation
 void i18n
   .use({
     type: "postProcessor",
+    name: "bavarianize",
+    process(value: unknown, _key: string, options?: { lng?: string }) {
+      if (typeof value !== "string") return value;
+      if (!isBavarianLanguage(options?.lng ?? i18n.resolvedLanguage ?? i18n.language)) return value;
+      return bavarianizeText(value);
+    }
+  })
+  .use({
+    type: "postProcessor",
     name: "householdReplace",
     process(value: unknown) {
       return typeof value === "string" ? applyHouseholdTranslationOverrides(value) : value;
@@ -78,7 +89,7 @@ void i18n
       escapeValue: false
     },
     returnNull: false,
-    postProcess: ["householdReplace"]
+    postProcess: ["bavarianize", "householdReplace"]
   });
 
 export const getDateLocale = (language: string) =>
