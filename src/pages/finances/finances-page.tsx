@@ -2340,6 +2340,8 @@ export const FinancesPage = ({
   }, [household.apartment_size_sqm, totalRoomAreaSqm]);
   const formatSqm = (value: number | null) =>
     value === null ? "-" : `${Number(value.toFixed(2)).toString()} m²`;
+  const formatCommonAreaFactor = (value: number | null | undefined) =>
+    Number.isFinite(value) ? Number(value).toFixed(2) : "1.00";
   const setOverviewMemberDraft = (memberId: string, patch: Partial<{ roomSizeSqm: string; commonAreaFactor: string }>) => {
     setMemberOverviewDrafts((current) => ({
       ...current,
@@ -4969,7 +4971,7 @@ export const FinancesPage = ({
                               ) : (
                                 <span className="text-slate-600 dark:text-slate-300">
                                   {t("finances.rentFactorValue", {
-                                    value: member.common_area_factor.toFixed(2),
+                                    value: formatCommonAreaFactor(member.common_area_factor),
                                   })}
                                 </span>
                               )}

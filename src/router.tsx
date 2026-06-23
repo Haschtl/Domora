@@ -51,6 +51,7 @@ const rootRoute = createRootRoute({
     const inviteCode = new URLSearchParams(location.search).get("invite");
     return ensureSessionAndHousehold(inviteCode);
   },
+  errorComponent: ({ error, reset }) => <App routeError={error} onRouteErrorReset={reset} />,
   component: App
 });
 

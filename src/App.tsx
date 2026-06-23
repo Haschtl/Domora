@@ -11,8 +11,10 @@ import {
   FileText,
   Home,
   LayoutList,
+  RefreshCw,
   Settings,
   ShoppingCart,
+  TriangleAlert,
   Wallet,
   XCircle
 } from "lucide-react";
@@ -193,7 +195,28 @@ type PushPromptState = {
   enabledAt?: number;
 };
 
-const AppLayout = () => {
+const getFriendlyRouteErrorMessage = (routeError: unknown) => {
+  if (routeError instanceof Error && routeError.message.trim().length > 0) {
+    return routeError.message.trim();
+  }
+  if (
+    typeof routeError === "object" &&
+    routeError !== null &&
+    "message" in routeError &&
+    typeof (routeError as { message?: unknown }).message === "string"
+  ) {
+    const message = (routeError as { message: string }).message.trim();
+    if (message.length > 0) return message;
+  }
+  return "Beim Laden dieser Seite ist etwas schiefgelaufen.";
+};
+
+type AppLayoutProps = {
+  routeError?: unknown;
+  onRouteErrorReset?: () => void;
+};
+
+const AppLayout = ({ routeError, onRouteErrorReset }: AppLayoutProps) => {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
@@ -402,6 +425,7 @@ const AppLayout = () => {
   const loadingOverlayDelayTimerRef = useRef<number | null>(null);
   const loadingOverlayHideTimerRef = useRef<number | null>(null);
   const delayedPrefetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const routeErrorMessage = useMemo(() => getFriendlyRouteErrorMessage(routeError), [routeError]);
   const shouldLoadTaskData =
     featureFlags.tasks &&
     !isStandaloneRoute &&
@@ -550,6 +574,7 @@ const AppLayout = () => {
   );
 
   const onTabChange = (value: string) => {
+    onRouteErrorReset?.();
     const nextTab = value as AppTab;
     if (nextTab === "shopping" && !featureFlags.shopping) return;
     if (nextTab === "tasks" && !featureFlags.tasks) return;
@@ -698,6 +723,9 @@ const AppLayout = () => {
         : tab === "settings"
           ? settingsSubPathMap[settingsSubTab]
           : "";
+  const firstVisibleSubPath = subItems[0]?.path ?? null;
+  const isActiveSubPathVisible =
+    subItems.length === 0 || subItems.some((item) => item.path === activeSubPath);
   const mobileSubItems: Array<{ id: string; icon: LucideIcon; labelKey: string; path: string }> =
     subItems.length > 0
       ? subItems
@@ -784,6 +812,11 @@ const AppLayout = () => {
       void navigate({ to: "/tasks/overview", replace: true });
     }
   }, [isTaskSettingsEnabled, isTimeTaskMode, location.pathname, navigate]);
+
+  useEffect(() => {
+    if (!firstVisibleSubPath || isActiveSubPathVisible) return;
+    void navigate({ to: firstVisibleSubPath, replace: true });
+  }, [firstVisibleSubPath, isActiveSubPathVisible, navigate]);
 
   useEffect(() => {
     if (!activeHousehold) return;
@@ -1173,7 +1206,10 @@ const AppLayout = () => {
                           <li key={item.id}>
                             <button
                               type="button"
-                              onClick={() => void navigate({ to: item.path })}
+                              onClick={() => {
+                                onRouteErrorReset?.();
+                                void navigate({ to: item.path });
+                              }}
                               onMouseEnter={() => prefetchRouteData(item.path)}
                               onFocus={() => prefetchRouteData(item.path)}
                               className={
@@ -1220,7 +1256,10 @@ const AppLayout = () => {
                           <li key={item.id}>
                             <button
                               type="button"
-                              onClick={() => void navigate({ to: item.path })}
+                              onClick={() => {
+                                onRouteErrorReset?.();
+                                void navigate({ to: item.path });
+                              }}
                               onMouseEnter={() => prefetchRouteData(item.path)}
                               onFocus={() => prefetchRouteData(item.path)}
                               className={
@@ -1248,59 +1287,105 @@ const AppLayout = () => {
                   exit={isMobileViewport ? { opacity: 0 } : { opacity: 0, y: -8 }}
                   transition={{ duration: 0.2, ease: "easeOut" }}
                 >
-                  <Suspense fallback={viewLoadingFallback}>
-                    {tab === "home" ? (
-                      homeSubTab === "bucket" ? (
-                        <HomeBucketPage />
-                      ) : homeSubTab === "feed" ? (
-                        <HomeFeedPage />
-                      ) : (
-                        <HomeSummaryPage />
-                      )
-                    ) : null}
+                  {routeError ? (
+                    <Card className="border-brand-200 bg-white/92 shadow-card dark:border-slate-700 dark:bg-slate-900/88">
+                      <CardHeader>
+                        <div className="mb-3 flex items-start gap-3">
+                          <div className="rounded-2xl bg-amber-100 p-2 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
+                            <TriangleAlert className="h-5 w-5" />
+                          </div>
+                          <div className="space-y-1">
+                            <CardTitle>Diese Seite hat gerade einen schlechten Tag.</CardTitle>
+                            <CardDescription>
+                              Der Rest der App ist weiter da. Du kannst es direkt erneut versuchen oder zu einer stabilen Seite wechseln.
+                            </CardDescription>
+                          </div>
+                        </div>
+                        <div className="rounded-xl border border-brand-100 bg-brand-50/60 px-3 py-2 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-800/70 dark:text-slate-200">
+                          {routeErrorMessage}
+                        </div>
+                        <div className="flex flex-wrap gap-2 pt-2">
+                          <Button
+                            type="button"
+                            onClick={() => {
+                              onRouteErrorReset?.();
+                              window.location.reload();
+                            }}
+                          >
+                            <RefreshCw className="mr-2 h-4 w-4" />
+                            Nochmal laden
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => {
+                              onRouteErrorReset?.();
+                              void navigate({ to: "/home/summary" });
+                            }}
+                          >
+                            <Home className="mr-2 h-4 w-4" />
+                            Zur Startseite
+                          </Button>
+                        </div>
+                      </CardHeader>
+                    </Card>
+                  ) : (
+                    <Suspense fallback={viewLoadingFallback}>
+                      {tab === "home" ? (
+                        homeSubTab === "bucket" ? (
+                          <HomeBucketPage />
+                        ) : homeSubTab === "feed" ? (
+                          <HomeFeedPage />
+                        ) : (
+                          <HomeSummaryPage />
+                        )
+                      ) : null}
 
-                    {tab === "shopping" ? (
-                      shoppingSubTab === "history" ? (
-                        <ShoppingHistoryPage />
-                      ) : (
-                        <ShoppingListPage />
-                      )
-                    ) : null}
+                      {tab === "shopping" ? (
+                        shoppingSubTab === "history" ? (
+                          <ShoppingHistoryPage />
+                        ) : (
+                          <ShoppingListPage />
+                        )
+                      ) : null}
 
-                    {tab === "tasks" ? (
-                      taskSubTab === "stats" ? (
-                        <TasksStatsPage />
-                      ) : taskSubTab === "history" ? (
-                        <TasksHistoryPage />
-                      ) : taskSubTab === "settings" ? (
-                        <TasksSettingsPage />
-                      ) : (
-                        <TasksOverviewPage />
-                      )
-                    ) : null}
+                      {tab === "tasks" ? (
+                        taskSubTab === "stats" ? (
+                          <TasksStatsPage />
+                        ) : taskSubTab === "history" ? (
+                          <TasksHistoryPage />
+                        ) : taskSubTab === "settings" ? (
+                          <TasksSettingsPage />
+                        ) : (
+                          <TasksOverviewPage />
+                        )
+                      ) : null}
 
-                    {tab === "finances" ? (
-                      financeSubTab === "stats" ? (
-                        <FinancesStatsPage />
-                      ) : financeSubTab === "archive" ? (
-                        <FinancesArchivePage />
-                      ) : financeSubTab === "subscriptions" ? (
-                        <FinancesSubscriptionsPage />
-                      ) : (
-                        <FinancesOverviewPage />
-                      )
-                    ) : null}
+                      {tab === "finances" ? (
+                        financeSubTab === "stats" ? (
+                          <FinancesStatsPage />
+                        ) : financeSubTab === "archive" ? (
+                          <FinancesArchivePage />
+                        ) : financeSubTab === "subscriptions" ? (
+                          <FinancesSubscriptionsPage />
+                        ) : (
+                          <FinancesOverviewPage />
+                        )
+                      ) : null}
 
-                    {tab === "settings" ? (
-                      settingsSubTab === "household" ? (
-                        <SettingsHouseholdPage onStartWizard={() => setWizardOpen(true)} />
-                      ) : settingsSubTab === "push-test" ? (
-                        <SettingsPushTestPage />
+                      {tab === "settings" ? (
+                        settingsSubTab === "household" ? (
+                          <SettingsHouseholdPage onStartWizard={() => setWizardOpen(true)} />
+                        ) : settingsSubTab === "push-test" ? (
+                          <SettingsPushTestPage />
+                        ) : (
+                          <SettingsMePage />
+                        )
                       ) : (
-                        <SettingsMePage />
-                      )
-                    ) : null}
-                  </Suspense>
+                        null
+                      )}
+                    </Suspense>
+                  )}
                 </motion.div>
               </AnimatePresence>
             </div>
@@ -1489,6 +1574,13 @@ const AppLayout = () => {
   );
 };
 
-const App = () => <AppLayout />;
+type AppProps = {
+  routeError?: unknown;
+  onRouteErrorReset?: () => void;
+};
+
+const App = ({ routeError, onRouteErrorReset }: AppProps) => (
+  <AppLayout routeError={routeError} onRouteErrorReset={onRouteErrorReset} />
+);
 
 export default App;
