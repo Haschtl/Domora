@@ -97,6 +97,15 @@ const TooltipTrigger = React.forwardRef<
         if (event.pointerType === "mouse") return;
         const target = event.target as HTMLElement | null;
         if (target && target.closest("select")) return;
+        const interactiveTarget = target?.closest(
+          "button, a, input, textarea, [role='button']"
+        ) as HTMLElement | null;
+        if (
+          interactiveTarget &&
+          !interactiveTarget.matches(":disabled, [aria-disabled='true']")
+        ) {
+          return;
+        }
         event.preventDefault();
         context.setOpen(true);
         context.scheduleClose();
