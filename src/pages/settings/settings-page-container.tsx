@@ -1,7 +1,10 @@
+import { useEffect } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import { SettingsPage } from "./settings-page";
 import { useWorkspace } from "../../context/workspace-context";
 import { useHouseholdTasks, useMemberHistoryEvents } from "../../hooks/use-household-data";
+import { queryKeys } from "../../lib/query-keys";
 
 interface SettingsPageContainerProps {
   section: "me" | "household";
@@ -9,6 +12,7 @@ interface SettingsPageContainerProps {
 }
 
 export const SettingsPageContainer = ({ section, onStartWizard }: SettingsPageContainerProps) => {
+  const queryClient = useQueryClient();
   const navigate = useNavigate();
   const location = useLocation();
   const {
@@ -45,6 +49,13 @@ export const SettingsPageContainer = ({ section, onStartWizard }: SettingsPageCo
 
   const tasksQuery = useHouseholdTasks(activeHousehold?.id ?? null);
   const memberHistoryQuery = useMemberHistoryEvents(activeHousehold?.id ?? null);
+
+  useEffect(() => {
+    if (section !== "household" || !activeHousehold?.id) return;
+    void queryClient.invalidateQueries({
+      queryKey: queryKeys.householdMembers(activeHousehold.id)
+    });
+  }, [activeHousehold?.id, queryClient, section]);
 
   const onLeaveHouseholdWithRedirect = async () => {
     await onLeaveHousehold();

@@ -2068,10 +2068,13 @@ export const useWorkspaceController = () => {
         ],
         action: async () => {
           await setHouseholdMemberRole(activeHousehold.id, targetUserId, role);
+          await queryClient.invalidateQueries({
+            queryKey: queryKeys.householdMembers(activeHousehold.id)
+          });
         }
       });
     },
-    [activeHousehold, runWithOptimisticUpdate]
+    [activeHousehold, queryClient, runWithOptimisticUpdate]
   );
 
   const onRemoveMember = useCallback(
