@@ -239,6 +239,7 @@ export const SettingsPage = ({
   const [inviteEmailBusy, setInviteEmailBusy] = useState(false);
   const [inviteEmailResult, setInviteEmailResult] = useState<"sent" | "already_invited" | "error" | null>(null);
   const [vacationDialogOpen, setVacationDialogOpen] = useState(false);
+  const [selfDemoteDialogOpen, setSelfDemoteDialogOpen] = useState(false);
   const [pendingVacationMode, setPendingVacationMode] = useState<boolean | null>(null);
   const [addressMapCenter, setAddressMapCenter] = useState<[number, number] | null>(null);
   const [addressMapLoading, setAddressMapLoading] = useState(false);
@@ -2682,6 +2683,10 @@ export const SettingsPage = ({
                                   busy || !isOwner || canDemoteLastOwner
                                 }
                                 onClick={() => {
+                                  if (isSelf && isMemberOwner) {
+                                    setSelfDemoteDialogOpen(true);
+                                    return;
+                                  }
                                   void onSetMemberRole(
                                     member.user_id,
                                     nextRole,
@@ -3513,10 +3518,44 @@ export const SettingsPage = ({
                     {t("settings.whiteboardClearConfirmAction")}
                   </Button>
                 </div>
-              </DialogContent>
-            </Dialog>
-          </CardContent>
-        </Card>
+                </DialogContent>
+              </Dialog>
+              <Dialog
+                open={selfDemoteDialogOpen}
+                onOpenChange={(open) => {
+                  if (busy) return;
+                  setSelfDemoteDialogOpen(open);
+                }}
+              >
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>{t("settings.tenantsSelfDemoteTitle")}</DialogTitle>
+                    <DialogDescription>
+                      {t("settings.tenantsSelfDemoteDescription")}
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="flex justify-end gap-2">
+                    <DialogClose asChild>
+                      <Button variant="ghost">{t("common.cancel")}</Button>
+                    </DialogClose>
+                    <DialogClose asChild>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        disabled={busy || !userId}
+                        onClick={() => {
+                          if (!userId) return;
+                          void onSetMemberRole(userId, "member");
+                        }}
+                      >
+                        {t("settings.tenantsSelfDemoteConfirm")}
+                      </Button>
+                    </DialogClose>
+                  </div>
+                </DialogContent>
+              </Dialog>
+            </CardContent>
+          </Card>
       ) : null}
 
       {showHousehold ? (
